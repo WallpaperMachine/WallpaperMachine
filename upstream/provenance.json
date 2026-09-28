@@ -45,7 +45,7 @@
     "directory": "Extension",
     "license": "GPL-2.0-only",
     "note": "Extension/Phosphene-LICENSE.txt records the third-party notice for the private wallpaper-extension ABI reference used while implementing it.",
-    "idleResidencyChanges": "Unlocked lock-screen surfaces retain an owned static poster and IOSurface snapshot, then release their renderer. Eligible locks reload behind the poster; failure preserves the poster and waits for a fresh unlock/lock cycle. Same-scene metadata updates reuse retained content without recreating an idle renderer. The poster CGImage retains its read-locked IOSurface through a no-copy Data provider; image release unlocks/releases the original surface instead of retaining a second bitmap. The snapshot and poster name the pixel format through kCVPixelFormatType_32BGRA."
+    "idleResidencyChanges": "Unlocked lock-screen surfaces retain an owned static poster and IOSurface snapshot, then release their renderer. Eligible locks reload behind the poster; failure preserves the poster and waits for a fresh unlock/lock cycle. Same-scene metadata updates reuse retained content without recreating an idle renderer. The poster CGImage reads its read-locked IOSurface through a no-copy Data provider instead of copying it into a second bitmap; releasing the image unlocks and releases the surface. Whether Core Animation keeps its own display copy is unmeasured. The snapshot and poster name the pixel format through kCVPixelFormatType_32BGRA."
   },
   "workshopBrowser": {
     "implementation": "Independently implemented for this application; no Unayung GPLv3 source copied.",
