@@ -304,7 +304,7 @@ export function createWelcome(helpers) {
     const limit = `<div class="welcome-range"><input id="welcome-frame-rate" type="range" data-performance="frameRateCap" min="10" max="${slider.max}" step="1" value="${slider.value}" aria-label="${e(t('Frame rate limit'))}"${off ? ' disabled' : ''}><output for="welcome-frame-rate" data-performance-readout>${e(frameRateCapReadout(slider.value, slider.max))}</output></div>`;
     return `${head(t('Performance'), t('Choose how smoothly wallpapers run and how much energy they use. You can change this later in Settings › Performance.'))}${unavailable ? `<p class="notice">${e(t('Settings are unavailable right now. You can set these later in Settings.'))}</p>` : ''}
       <fieldset class="welcome-choice"><legend>${icon('slidersVertical', 15)}${e(t('Quality preset'))}</legend><div class="welcome-options" role="radiogroup" aria-label="${e(t('Quality preset'))}">${presets}</div>${active === 'custom' ? `<p class="welcome-note">${e(t('Custom: the frame-rate limit and render scale match none of the presets.'))}</p>` : ''}</fieldset>
-      <fieldset class="welcome-choice"><legend>${icon('monitor', 15)}${e(t('Frame rate limit'))}</legend>${limit}<p class="welcome-note">${e(t('At the top of the slider there is no limit, and each display runs at 60 fps unless you choose more for it. A lower limit saves energy.'))}</p></fieldset>
+      <fieldset class="welcome-choice"><legend>${icon('monitor', 15)}${e(t('Frame rate limit'))}</legend>${limit}<p class="welcome-note">${e(t('At the top of the slider there is no limit, and each display runs at up to 60 fps unless you choose more for it. A lower limit saves energy.'))}</p></fieldset>
       ${error ? `<p class="notice error" role="alert">${e(error)}</p>` : ''}`;
   }
 

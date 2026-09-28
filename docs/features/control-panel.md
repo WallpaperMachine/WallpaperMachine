@@ -137,8 +137,8 @@ have **Skip**:
 3. **Performance.** Radio tiles for the **Low**, **Medium** and **High** quality
    presets (the same pairs as [Settings → Performance](performance.md#quality),
    shared through `settings.js`), then the **Frame rate limit** slider, whose
-   top reads **No limit**: each display then runs at its own rate, 60 fps unless
-   a higher rate was chosen for it (see
+   top reads **No limit**: each display then runs at its own rate, up to 60 fps
+   unless a higher rate was chosen for it (see
    [Default per-display frame rate](performance.md#default-per-display-frame-rate)).
    High, no limit at full render scale, is selected on a fresh install. A preset fills
    both drafts; moving the slider changes only the limit, and a pair matching
