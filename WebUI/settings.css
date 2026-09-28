@@ -224,6 +224,8 @@ label.settings-label { cursor: pointer; }
 .settings-product-mark { display: flex; flex: none; color: var(--accent); }
 .settings-product h3 { font-size: 16px; margin-bottom: 3px; letter-spacing: -0.02em; }
 .settings-attribution { margin: 14px 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 64ch; }
+/* Groups end with 6px padding because rows bring their own 9px; this footnote brings the rest. */
+.settings-update-footnote { margin-bottom: 10px; }
 .settings-footnote { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 64ch; }
 
 @media (max-width: 800px) {
