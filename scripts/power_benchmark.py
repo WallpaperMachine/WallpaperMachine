@@ -330,19 +330,21 @@ class CoalitionReader:
         return (fields[COALITION_CPU_ENERGY_FIELD], fields[COALITION_GPU_ENERGY_FIELD],
                 fields[COALITION_GPU_TIME_FIELD])
 
-    def coalition_ids(self) -> list[int]:
-        """Every resource coalition; entries are a uint64 id then two uint32 words."""
+    def coalition_ids(self) -> list[int] | None:
+        """Every resource coalition, or None when the kernel would not list them.
+
+        Entries are a uint64 id then two uint32 words."""
         capacity = 1024
         while capacity <= 65536:
             entries = (ctypes.c_uint64 * (capacity * 2))()
             size = self._list(LIST_SINGLE_TYPE, RESOURCE_COALITION, entries, ctypes.sizeof(entries))
             if size < 0:
-                return []
+                return None
             ids = coalition_ids_from_entries(list(entries), size)
             if len(ids) < capacity:
                 return ids
             capacity *= 2
-        return []
+        return None
 
 
 def coalition_ids_from_entries(words: list[int], byte_count: int) -> list[int]:
@@ -362,14 +364,19 @@ def coalition_snapshot(reader: "CoalitionReader | None", roles: dict[str, list[i
     app = set(members.get("app", []))
     members = {role: coalitions if role == "app" else [c for c in coalitions if c not in app]
                for role, coalitions in members.items()}
-    counters = {coalition: reader.counters(coalition) for coalition in reader.coalition_ids()}
+    ids = reader.coalition_ids()
+    if ids is None:
+        return None
+    counters = {coalition: reader.counters(coalition) for coalition in ids}
     return {"roles": members,
             "counters": {coalition: value for coalition, value in counters.items() if value}}
 
 
 def coalition_usage(before: dict | None, after: dict | None, elapsed: float) -> dict:
     """CPU and GPU milliwatts per role's coalitions and over all coalitions."""
-    if before is None or after is None or not before["counters"]:
+    # Either end missing or empty means the kernel's accounting could not be
+    # read; a window of zeros would look like a measurement of nothing.
+    if before is None or after is None or not before["counters"] or not after["counters"]:
         return {"measured": False, "reason": "resource-coalition accounting is unavailable"}
 
     def delta(coalitions) -> tuple[float, float, float] | None:

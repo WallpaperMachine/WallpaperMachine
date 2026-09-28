@@ -251,6 +251,16 @@ class CoalitionTests(unittest.TestCase):
         self.assertFalse(power_benchmark.coalition_usage(None, None, 1.0)["measured"])
         self.assertFalse(power_benchmark.coalition_snapshot(None, {"app": [1]}))
 
+    def test_a_listing_that_fails_at_the_end_is_unavailable_not_zero(self):
+        before = self.snapshot({10: (0, 0, 0)})
+        failing = SimpleNamespace(coalition_of={1: 10}.get, coalition_ids=lambda: None,
+                                  counters=lambda coalition: (1, 1, 1))
+        after = power_benchmark.coalition_snapshot(failing, {"app": [1]})
+        self.assertIsNone(after, "a failed listing is no snapshot at all")
+        self.assertFalse(power_benchmark.coalition_usage(before, after, 1.0)["measured"])
+        self.assertFalse(power_benchmark.coalition_usage(before, self.snapshot({}), 1.0)["measured"],
+                         "an empty final snapshot must not read as zero power")
+
     @unittest.skipUnless(sys.platform == "darwin", "resource coalitions are a Darwin feature")
     def test_this_process_has_a_readable_coalition(self):
         reader = power_benchmark.CoalitionReader.open()
