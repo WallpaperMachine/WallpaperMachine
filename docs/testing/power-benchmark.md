@@ -29,9 +29,10 @@ the document without writing an artifact.
 and the machine as a whole before and after a window of that length and writes
 `artifacts/power/measure-<timestamp>.json`: the manifest, `"measured": true`,
 the sources in `measurement_tool`, the condition marked measured, and
-`measurement` with the actual elapsed time, one row per role, the system power
-and the package power. One line per role is printed, e.g.
-`app: CPU 38.2 %, GPU 65.1 %`. The window is always the length asked for: a
+`measurement` with the actual elapsed time, one row per role, the coalition
+energy, the system power and the package power. One line per role is printed,
+e.g. `app: CPU 38.2 %, GPU 65.1 %; coalition CPU 67 mW, GPU 5434 mW`, then the
+total over all coalitions. The window is always the length asked for: a
 powermetrics that fails or is refused at once does not shorten it.
 
 | Role | Executable | Note |
@@ -47,6 +48,17 @@ powermetrics that fails or is refused at once does not shorten it.
   `AGXDeviceUserClient` entries in `ioreg`: how long its command queues kept the
   GPU busy. It is utilisation, not energy. A process whose GPU client closed
   during the window reports no GPU value instead of an undercount.
+- **Coalition energy** is the CPU and GPU energy the kernel charged to each
+  role's resource coalition over the window, in mW, plus the total over every
+  coalition, read without privileges the way the app's own Energy use readout
+  reads it (`coalition_info_resource_usage`; see
+  [performance](../features/performance.md#energy-use)). It is the figure to
+  compare WindowServer by: its coalition is its own, while `ps` CPU time says
+  nothing about energy. The app's coalition includes its XPC services and every
+  WebContent process it started, so the `web_content` row counts only other
+  coalitions. GPU energy is the whole GPU's energy shared out by GPU time, so
+  when other coalitions keep the GPU busy for 25 % of the window or more the
+  window is marked contended and the app's figure reads high.
 - **System power** is the whole machine's mean draw over the window, from the
   battery controller's own running sums in `ioreg -r -c AppleSmartBattery -a`
   (`PowerTelemetryData`): `AccumulatedSystemLoad` over

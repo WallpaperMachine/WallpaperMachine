@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -201,6 +203,70 @@ class MeasurementParserTests(unittest.TestCase):
         self.assertIsNone(power_benchmark.parse_power_telemetry(plistlib.dumps([]).decode()))
 
 
+class CoalitionTests(unittest.TestCase):
+    def snapshot(self, counters, roles=None):
+        return {"roles": roles or {"app": [10], "window_server": [20]}, "counters": counters}
+
+    def test_list_entries_are_read_as_ids_every_sixteen_bytes(self):
+        # Each entry is a uint64 id followed by two uint32 words (type, task count).
+        words = [101, 0x0000_0003_0000_0000, 202, 0x0000_0001_0000_0000, 999, 999]
+        self.assertEqual(power_benchmark.coalition_ids_from_entries(words, 32), [101, 202])
+        self.assertEqual(power_benchmark.coalition_ids_from_entries(words, 0), [])
+
+    def test_each_role_and_all_coalitions_are_reported_in_milliwatts(self):
+        before = self.snapshot({10: (0, 0, 0), 20: (0, 0, 0), 30: (0, 0, 0)})
+        after = self.snapshot({10: (2_000_000_000, 10_000_000_000, 1_000_000_000),
+                               20: (1_000_000_000, 1_000_000_000, 200_000_000),
+                               30: (500_000_000, 0, 0)})
+        usage = power_benchmark.coalition_usage(before, after, 2.0)
+        self.assertTrue(usage["measured"])
+        self.assertEqual(usage["roles"]["app"],
+                         {"coalitions": [10], "cpu_mw": 1000, "gpu_mw": 5000, "gpu_busy_percent": 50.0})
+        self.assertEqual(usage["roles"]["window_server"]["gpu_mw"], 500)
+        self.assertEqual((usage["all"]["cpu_mw"], usage["all"]["gpu_mw"]), (1750, 5500))
+        self.assertEqual(usage["other_gpu_busy_percent"], 10.0, "the app's own GPU time is not contention")
+        self.assertFalse(usage["gpu_contended"])
+
+    def test_other_coalitions_busy_for_a_quarter_of_the_window_mark_it_contended(self):
+        before = self.snapshot({10: (0, 0, 0), 30: (0, 0, 0)})
+        after = self.snapshot({10: (0, 0, 0), 30: (0, 0, 500_000_000)})
+        self.assertTrue(power_benchmark.coalition_usage(before, after, 2.0)["gpu_contended"])
+
+    def test_a_coalition_that_ended_or_went_backwards_is_left_out(self):
+        before = self.snapshot({10: (5, 5, 5), 20: (0, 0, 0)})
+        after = self.snapshot({10: (1, 1, 1)})
+        usage = power_benchmark.coalition_usage(before, after, 1.0)
+        self.assertEqual(usage["roles"]["window_server"], {"coalitions": [20]},
+                         "a role whose coalition disappeared reports no figure")
+        self.assertEqual(usage["all"]["cpu_mw"], 0)
+
+    def test_a_role_sharing_the_app_coalition_is_not_charged_its_energy_again(self):
+        reader = SimpleNamespace(coalition_of={1: 10, 2: 10, 3: 40}.get,
+                                 coalition_ids=lambda: [10, 40],
+                                 counters=lambda coalition: (1, 1, 1))
+        snapshot = power_benchmark.coalition_snapshot(reader, {"app": [1], "web_content": [2, 3]})
+        self.assertEqual(snapshot["roles"], {"app": [10], "web_content": [40]})
+
+    def test_without_accounting_nothing_is_measured(self):
+        self.assertFalse(power_benchmark.coalition_usage(None, None, 1.0)["measured"])
+        self.assertFalse(power_benchmark.coalition_snapshot(None, {"app": [1]}))
+
+    @unittest.skipUnless(sys.platform == "darwin", "resource coalitions are a Darwin feature")
+    def test_this_process_has_a_readable_coalition(self):
+        reader = power_benchmark.CoalitionReader.open()
+        if reader is None:
+            self.skipTest("libsystem does not export the coalition calls")
+        coalition = reader.coalition_of(os.getpid())
+        self.assertIsNotNone(coalition)
+        self.assertIn(coalition, reader.coalition_ids())
+        cpu_before = reader.counters(coalition)[0]
+        deadline = time.monotonic() + 0.2
+        while time.monotonic() < deadline:
+            sum(range(10_000))
+        self.assertGreater(reader.counters(coalition)[0], cpu_before,
+                           "CPU work must move the CPU energy field; a moved field reads flat")
+
+
 class MeasureWindowTests(unittest.TestCase):
     def test_a_refused_powermetrics_still_measures_the_whole_window(self):
         # sudo rejecting the password returns at once. Taking the second
@@ -222,6 +288,7 @@ class MeasureWindowTests(unittest.TestCase):
                 mock.patch.object(power_benchmark, "role_pids", lambda: {"app": [7]}), \
                 mock.patch.object(power_benchmark, "cpu_seconds", lambda pids: next(cpu)), \
                 mock.patch.object(power_benchmark, "gpu_times", lambda: None), \
+                mock.patch.object(power_benchmark, "coalition_snapshot", lambda reader, roles: None), \
                 mock.patch.object(power_benchmark, "power_telemetry", lambda: None), \
                 mock.patch.object(power_benchmark, "package_power", refused):
             measurement = power_benchmark.measure(60, True, "wrong")

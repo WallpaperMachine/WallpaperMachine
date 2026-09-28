@@ -9,7 +9,9 @@ the screen, records audio or asks for a permission.
 
 `--measure SECONDS --condition ID` also samples the accumulated CPU time (`ps`)
 and GPU time (`ioreg` AGXDeviceUserClient) of the application, WindowServer,
-coreaudiod, WebContent and the lock-screen extension across the window; the
+coreaudiod, WebContent and the lock-screen extension across the window; the CPU
+and GPU energy the kernel charged to each role's resource coalition, and to all
+coalitions together, which needs no privileges; the
 whole machine's mean power draw from the battery controller's own accumulators
 (`ioreg` AppleSmartBattery PowerTelemetryData), which is what a menu-bar watt
 meter shows and which includes memory, display and everything else outside the
@@ -22,6 +24,7 @@ from this process's stdin to sudo's stdin. See docs/testing/power-benchmark.md.
 from __future__ import annotations
 
 import argparse
+import ctypes
 from datetime import datetime, timezone
 import json
 import os
@@ -85,6 +88,23 @@ SYSTEM_POWER_ACCUMULATORS = (
     ("load_mw", "AccumulatedSystemLoad", "SystemLoadAccumulatorCount"),
     ("power_in_mw", "AccumulatedSystemPowerIn", "SystemPowerInAccumulatorCount"),
 )
+# Kernel resource-coalition accounting, read without privileges. A coalition
+# groups a process with the XPC services it launches. `coalition_info_resource_usage`
+# and `proc_listcoalitions` are private libsystem exports and flavor 20 of
+# `proc_pidinfo` is private; the layouts are the ones
+# App/Services/Diagnostics/CoalitionEnergySource.swift reads: 45 uint64 fields,
+# GPU time at 8, CPU energy at 11 and GPU energy at 41. GPU energy is the
+# whole GPU's energy shared out by GPU time, so it reads high when other
+# coalitions keep the GPU busy; at 25 % of the window or more
+# (EnergyUsageReading.contentionThreshold) a window is marked contended.
+COALITION_USAGE_FIELDS = 45
+COALITION_GPU_TIME_FIELD = 8
+COALITION_CPU_ENERGY_FIELD = 11
+COALITION_GPU_ENERGY_FIELD = 41
+PROC_PIDCOALITIONINFO = 20
+LIST_SINGLE_TYPE = 2
+RESOURCE_COALITION = 0
+GPU_CONTENTION_SHARE = 0.25
 
 
 def command_output(command):
@@ -274,6 +294,117 @@ def gpu_times() -> dict[int, int] | None:
     return None if raw is None else parse_gpu_times(raw)
 
 
+class CoalitionReader:
+    """Per-coalition CPU and GPU energy counters; None when libsystem lacks the exports."""
+
+    def __init__(self, libc):
+        self._usage = libc.coalition_info_resource_usage
+        self._usage.argtypes = [ctypes.c_uint64, ctypes.c_void_p, ctypes.c_size_t]
+        self._usage.restype = ctypes.c_int
+        self._list = libc.proc_listcoalitions
+        self._list.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+        self._list.restype = ctypes.c_int
+        self._pidinfo = libc.proc_pidinfo
+        self._pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                                  ctypes.c_void_p, ctypes.c_int]
+        self._pidinfo.restype = ctypes.c_int
+
+    @classmethod
+    def open(cls) -> "CoalitionReader | None":
+        try:
+            return cls(ctypes.CDLL(None))
+        except (OSError, AttributeError):
+            return None
+
+    def coalition_of(self, pid: int) -> int | None:
+        """Resource coalition of a process: the first of `struct proc_pidcoalitioninfo`."""
+        info = (ctypes.c_uint64 * 5)()
+        size = self._pidinfo(pid, PROC_PIDCOALITIONINFO, 0, info, ctypes.sizeof(info))
+        return info[0] if size == ctypes.sizeof(info) and info[0] else None
+
+    def counters(self, coalition: int) -> tuple[int, int, int] | None:
+        """(CPU energy nJ, GPU energy nJ, GPU time ns) of one coalition."""
+        fields = (ctypes.c_uint64 * COALITION_USAGE_FIELDS)()
+        if self._usage(coalition, fields, ctypes.sizeof(fields)) != 0:
+            return None
+        return (fields[COALITION_CPU_ENERGY_FIELD], fields[COALITION_GPU_ENERGY_FIELD],
+                fields[COALITION_GPU_TIME_FIELD])
+
+    def coalition_ids(self) -> list[int]:
+        """Every resource coalition; entries are a uint64 id then two uint32 words."""
+        capacity = 1024
+        while capacity <= 65536:
+            entries = (ctypes.c_uint64 * (capacity * 2))()
+            size = self._list(LIST_SINGLE_TYPE, RESOURCE_COALITION, entries, ctypes.sizeof(entries))
+            if size < 0:
+                return []
+            ids = coalition_ids_from_entries(list(entries), size)
+            if len(ids) < capacity:
+                return ids
+            capacity *= 2
+        return []
+
+
+def coalition_ids_from_entries(words: list[int], byte_count: int) -> list[int]:
+    """Ids from a `proc_listcoalitions` buffer of 16-byte `procinfo_coalinfo` entries."""
+    return [words[index * 2] for index in range(byte_count // 16)]
+
+
+def coalition_snapshot(reader: "CoalitionReader | None", roles: dict[str, list[int]]) -> dict | None:
+    """Counters of every coalition, and which coalitions each role's processes belong to."""
+    if reader is None:
+        return None
+    members = {role: sorted({coalition for coalition in map(reader.coalition_of, pids)
+                             if coalition is not None})
+               for role, pids in roles.items()}
+    # The app's coalition also holds its XPC services, the panel's and web
+    # wallpapers' WebContent included; that energy is the app's, not counted twice.
+    app = set(members.get("app", []))
+    members = {role: coalitions if role == "app" else [c for c in coalitions if c not in app]
+               for role, coalitions in members.items()}
+    counters = {coalition: reader.counters(coalition) for coalition in reader.coalition_ids()}
+    return {"roles": members,
+            "counters": {coalition: value for coalition, value in counters.items() if value}}
+
+
+def coalition_usage(before: dict | None, after: dict | None, elapsed: float) -> dict:
+    """CPU and GPU milliwatts per role's coalitions and over all coalitions."""
+    if before is None or after is None or not before["counters"]:
+        return {"measured": False, "reason": "resource-coalition accounting is unavailable"}
+
+    def delta(coalitions) -> tuple[float, float, float] | None:
+        common = [c for c in coalitions if c in before["counters"] and c in after["counters"]]
+        if not common:
+            return None
+        totals = [0, 0, 0]
+        for coalition in common:
+            old, new = before["counters"][coalition], after["counters"][coalition]
+            if any(n < o for o, n in zip(old, new)):
+                continue
+            totals = [total + n - o for total, o, n in zip(totals, old, new)]
+        return tuple(totals)
+
+    def milliwatts(values):
+        cpu_nj, gpu_nj, gpu_ns = values
+        return {"cpu_mw": round(cpu_nj / elapsed / 1e6), "gpu_mw": round(gpu_nj / elapsed / 1e6),
+                "gpu_busy_percent": round(gpu_ns / elapsed / 1e7, 1)}
+
+    roles = {}
+    for role, coalitions in before["roles"].items():
+        values = delta(coalitions)
+        roles[role] = {"coalitions": coalitions, **(milliwatts(values) if values else {})}
+    app = set(before["roles"].get("app", []))
+    others = delta([c for c in before["counters"] if c not in app])
+    other_share = others[2] / 1e9 / elapsed if others else 0.0
+    return {
+        "measured": True,
+        "roles": roles,
+        "all": milliwatts(delta(list(before["counters"])) or (0, 0, 0)),
+        "other_gpu_busy_percent": round(other_share * 100, 1),
+        "gpu_contended": other_share >= GPU_CONTENTION_SHARE,
+    }
+
+
 def parse_power_telemetry(text: str) -> dict | None:
     """PowerTelemetryData of the first battery in `ioreg -a` plist output."""
     try:
@@ -375,9 +506,11 @@ def measure(seconds: int, use_powermetrics: bool, sudo_password: str | None) -> 
     """Sample every role and the machine before and after the window, package power across it."""
     roles = role_pids()
     pids = sorted({pid for group in roles.values() for pid in group})
+    reader = CoalitionReader.open()
     started = time.monotonic()
     cpu_before = cpu_seconds(pids)
     gpu_before = gpu_times()
+    coalitions_before = coalition_snapshot(reader, roles)
     telemetry_before = power_telemetry()
     if use_powermetrics:
         power = package_power(seconds, sudo_password)
@@ -391,10 +524,13 @@ def measure(seconds: int, use_powermetrics: bool, sudo_password: str | None) -> 
     elapsed = time.monotonic() - started
     cpu_after = cpu_seconds(pids)
     gpu_after = gpu_times()
+    coalitions = coalition_usage(coalitions_before, coalition_snapshot(reader, roles), elapsed)
     system = system_power(telemetry_before, power_telemetry())
     tools = ["ps accumulated CPU time"]
     if gpu_before is not None and gpu_after is not None:
         tools.append("ioreg AGXDeviceUserClient accumulatedGPUTime")
+    if coalitions["measured"]:
+        tools.append("resource-coalition energy")
     if system["measured"]:
         tools.append("ioreg AppleSmartBattery PowerTelemetryData accumulators")
     if power["measured"]:
@@ -407,6 +543,7 @@ def measure(seconds: int, use_powermetrics: bool, sudo_password: str | None) -> 
                    **role_usage(group, cpu_before, cpu_after, gpu_before, gpu_after, elapsed)}
             for role, group in roles.items()
         },
+        "coalitions": coalitions,
         "system_power": system,
         "package_power": power,
     }
@@ -419,11 +556,14 @@ def positive_seconds(text: str) -> int:
     return value
 
 
-def describe_role(role: str, usage: dict) -> str:
+def describe_role(role: str, usage: dict, energy: dict | None = None) -> str:
     if not usage["pids"]:
         return f"{role}: not running"
     gpu = "unavailable" if usage["gpu_percent"] is None else f"{usage['gpu_percent']} %"
-    return f"{role}: CPU {usage['cpu_percent']} %, GPU {gpu}"
+    line = f"{role}: CPU {usage['cpu_percent']} %, GPU {gpu}"
+    if energy and "cpu_mw" in energy:
+        line += f"; coalition CPU {energy['cpu_mw']} mW, GPU {energy['gpu_mw']} mW"
+    return line
 
 
 def attach_measurement(document: dict, condition: str, seconds: int, measurement: dict) -> None:
@@ -437,6 +577,7 @@ def attach_measurement(document: dict, condition: str, seconds: int, measurement
         "seconds": seconds,
         "elapsed_seconds": measurement["elapsed_seconds"],
         "processes": measurement["processes"],
+        "coalitions": measurement["coalitions"],
         "system_power": measurement["system_power"],
         "package_power": measurement["package_power"],
     }
@@ -485,8 +626,17 @@ def main():
     else:
         report = document["measurement"]
         print(f"{MARK.step} Measurement ({args.condition}, {report['elapsed_seconds']} s): {path}")
+        coalitions = report["coalitions"]
+        energy = coalitions.get("roles", {})
         for role, usage in report["processes"].items():
-            print(f"{MARK.step} {describe_role(role, usage)}")
+            print(f"{MARK.step} {describe_role(role, usage, energy.get(role))}")
+        if coalitions["measured"]:
+            every = coalitions["all"]
+            contended = " (GPU contended: app figures read high)" if coalitions["gpu_contended"] else ""
+            print(f"{MARK.step} all coalitions: CPU {every['cpu_mw']} mW, GPU {every['gpu_mw']} mW; "
+                  f"other GPU busy {coalitions['other_gpu_busy_percent']} %{contended}")
+        else:
+            print(f"{MARK.warn} Coalition energy not measured: {coalitions['reason']}")
         power = report["package_power"]
         system = report["system_power"]
         if system["measured"]:
