@@ -260,6 +260,9 @@ class CoalitionTests(unittest.TestCase):
         self.assertFalse(power_benchmark.coalition_usage(before, after, 1.0)["measured"])
         self.assertFalse(power_benchmark.coalition_usage(before, self.snapshot({}), 1.0)["measured"],
                          "an empty final snapshot must not read as zero power")
+        self.assertFalse(
+            power_benchmark.coalition_usage(before, self.snapshot({20: (5, 5, 5)}), 1.0)["measured"],
+            "no coalition read at both ends leaves nothing to measure")
 
     @unittest.skipUnless(sys.platform == "darwin", "resource coalitions are a Darwin feature")
     def test_this_process_has_a_readable_coalition(self):

@@ -374,9 +374,9 @@ def coalition_snapshot(reader: "CoalitionReader | None", roles: dict[str, list[i
 
 def coalition_usage(before: dict | None, after: dict | None, elapsed: float) -> dict:
     """CPU and GPU milliwatts per role's coalitions and over all coalitions."""
-    # Either end missing or empty means the kernel's accounting could not be
-    # read; a window of zeros would look like a measurement of nothing.
-    if before is None or after is None or not before["counters"] or not after["counters"]:
+    # Either end missing, or no coalition read at both ends, means there is no
+    # delta to report; a window of zeros would look like a measurement of nothing.
+    if before is None or after is None or not before["counters"].keys() & after["counters"].keys():
         return {"measured": False, "reason": "resource-coalition accounting is unavailable"}
 
     def delta(coalitions) -> tuple[float, float, float] | None:
