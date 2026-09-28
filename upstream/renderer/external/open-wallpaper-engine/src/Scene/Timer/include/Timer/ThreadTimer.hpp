@@ -75,6 +75,15 @@ public:
     /// full frame period after a tick — an owed frame is not a licence to spin.
     void WakeAt(std::chrono::steady_clock::time_point when);
 
+    /// Runs the callback now and restarts the cadence from this tick.
+    ///
+    /// For a tick the owner had to drop because its previous frame was still
+    /// running and finished just after: the owner calls this only when that
+    /// frame ended within a small fraction of an interval of the dropped tick,
+    /// which already lies a whole ceiling after the last frame that ran, so it
+    /// cannot drive the scene faster than the ceiling.
+    void FireNow();
+
 private:
     std::function<void()> m_callback;
 
@@ -93,6 +102,7 @@ private:
     /// miss a request made while it was between checks.
     bool                                   m_idle { false };
     bool                                   m_wake_once { false };
+    bool                                   m_fire_now { false };
     /// Set when leaving idle so the thread restarts its cadence from now.
     bool                                   m_rebase { false };
     /// One-shot appointment honoured while idle; unset means no deadline.

@@ -930,5 +930,71 @@ TEST(ThreadTimerTest, CadenceKeepsItsPeriodDespiteWakeSlack) {
     EXPECT_LE(ticks.load(), 62) << "a late wake must not burst to catch up";
 }
 
+TEST(ThreadTimerTest, RequestsAfterALongWaitStillRespectTheCeiling) {
+    // A content-paced clock (200 ms) with a 10 ms ceiling. A request after a
+    // long wait is due at once, and the tick it runs must not become an anchor
+    // in the past that lets the next requests through back to back.
+    std::atomic<int> ticks { 0 };
+    ThreadTimer timer([&]() { ticks.fetch_add(1); });
+    timer.SetInterval(200ms);
+    timer.SetMinInterval(10ms);
+    timer.Start();
+    std::this_thread::sleep_for(150ms);
+    const int before = ticks.load();
+    const auto until = std::chrono::steady_clock::now() + 50ms;
+    while (std::chrono::steady_clock::now() < until) {
+        timer.WakeOnce();
+        std::this_thread::sleep_for(1ms);
+    }
+    const int during = ticks.load() - before;
+    timer.Stop();
+
+    EXPECT_LE(during, 50 / 10 + 1) << during << " ticks in 50 ms under a 10 ms ceiling";
+    EXPECT_GE(during, 3) << "requests must still be answered at the ceiling";
+}
+
+TEST(FrameTimerTest, ADrawSlightlyLongerThanTheIntervalDoesNotHalveTheRate) {
+    // 60 fps with 18 ms draws: each draw makes the next tick find it running.
+    // Waiting for the tick after that would deliver 30 frames a second.
+    std::mutex              mutex;
+    std::condition_variable posted;
+    int                     pending = 0;
+    std::atomic<int>        draws { 0 };
+    std::atomic<bool>       done { false };
+    FrameTimer              timer([&]() {
+        const std::lock_guard lock { mutex };
+        ++pending;
+        posted.notify_one();
+    });
+    std::thread render([&]() {
+        while (! done.load()) {
+            std::unique_lock lock { mutex };
+            if (! posted.wait_for(lock, 50ms, [&] { return pending > 0; })) continue;
+            --pending;
+            lock.unlock();
+            timer.FrameBegin();
+            // Spin rather than sleep: a sleep here is stretched by several
+            // milliseconds of timer coalescing, which is not the draw length
+            // this test is about.
+            const auto end = std::chrono::steady_clock::now() + 18ms;
+            while (std::chrono::steady_clock::now() < end) {}
+            draws.fetch_add(1);
+            timer.FrameEnd();
+        }
+    });
+    timer.SetRequiredFps(60);
+    timer.Run();
+    std::this_thread::sleep_for(200ms);
+    const int before = draws.load();
+    std::this_thread::sleep_for(1s);
+    const int delivered = draws.load() - before;
+    timer.Stop();
+    done.store(true);
+    render.join();
+
+    EXPECT_GE(delivered, 42) << delivered << " frames in 1 s with 18 ms draws at 60 fps";
+    EXPECT_LE(delivered, 60);
+}
+
 } // namespace
 } // namespace wallpaper

@@ -35,6 +35,7 @@ FrameTimer::FrameTimer(std::function<void()> cb)
           // At most one DRAW may be in flight. A slow frame drops ticks rather
           // than queueing work the display will never show.
           if (m_callback && m_frame_busy_count.load() < 1) {
+              m_owed_tick.store(steady_clock::time_point {});
               m_frame_busy_count++;
               // Cleared before the draw is posted, so an event arriving while
               // it runs is a new request rather than one this frame already
@@ -42,11 +43,13 @@ FrameTimer::FrameTimer(std::function<void()> cb)
               m_frame_requested.store(false);
               if (counters != nullptr) counters->Add(OWE_RC_DRAW_REQUESTS);
               m_callback();
-          } else if (counters != nullptr) {
+          } else {
               // The request itself is not dropped with the tick: it stays
               // outstanding until a draw actually consumes it, and the
-              // in-flight draw re-arms the clock when it ends.
-              counters->Add(OWE_RC_DRAW_TICKS_SUPPRESSED);
+              // in-flight draw re-arms the clock when it ends. The tick is
+              // owed too, if that draw ends soon enough (see FrameEnd).
+              if (m_callback) m_owed_tick.store(steady_clock::now());
+              if (counters != nullptr) counters->Add(OWE_RC_DRAW_TICKS_SUPPRESSED);
           }
       }) {
     SetRequiredFps(DEFAULT_REQUIRED_FPS);
@@ -228,6 +231,19 @@ void FrameTimer::FrameEnd(steady_clock::time_point now) {
     // decides whether it goes idle *after* this returns, so a request left
     // outstanding by a continuous tick would otherwise have no later tick to
     // notice it.
+    // A frame slightly longer than the interval made the next tick find it
+    // still running. Waiting for the tick after that would halve the rate for
+    // a scene that misses by a millisecond, so a draw that ends within a
+    // quarter interval of the dropped tick runs the owed frame at once. A
+    // draw that ends later keeps the grid, so a scene that cannot keep up
+    // degrades to a steady fraction of the rate instead of running flat out.
+    const auto owed = m_owed_tick.exchange(steady_clock::time_point {});
+    if (owed != steady_clock::time_point {} && Running() && now >= owed &&
+        now - owed <= m_tick_interval.load() / 4) {
+        m_timer.FireNow();
+        return;
+    }
+
     if (m_frame_requested.load() && Running()) m_timer.WakeOnce();
 }
 
@@ -238,6 +254,7 @@ void FrameTimer::Run() {
     if (! Running()) {
         ResetFrameTiming();
         m_frame_busy_count.store(0);
+        m_owed_tick.store(steady_clock::time_point {});
         m_timer.SetInterval(ResolveInterval());
     }
     m_timer.Start();

@@ -128,6 +128,9 @@ private:
     /// by a tick that a still-running draw suppressed.
     std::atomic<bool>                      m_frame_requested { false };
     std::atomic<i32>                       m_frame_busy_count;
+    /// When a tick was dropped because the previous draw was still running;
+    /// the epoch while none is owed.
+    std::atomic<std::chrono::steady_clock::time_point> m_owed_tick {};
 
     ThreadTimer m_timer;
 

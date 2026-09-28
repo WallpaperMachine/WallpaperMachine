@@ -103,8 +103,12 @@ at 10 ms before, 54–62 required after). Measurements taken before that date at
 a given ceiling therefore describe fewer frames than the same ceiling delivers
 now. `FrameTimer` still drops any tick that finds the
 previous DRAW still running, and on Compatibility a DRAW includes the GPU frame
-(the fence wait follows the present), so a frame longer than the remaining
-interval loses a whole period (45.7/s with a 15.5 ms draw, 26.8/s with 20 ms).
+(the fence wait follows the present). A DRAW that ends within a quarter
+interval of the tick it made the clock drop runs that frame at once and restarts
+the cadence from it (`FrameTimerTest.ADrawSlightlyLongerThanTheIntervalDoesNotHalveTheRate`:
+18 ms draws at 60 fps deliver at least 42 frames a second, 35 without it); one
+that ends later loses the whole period, so a scene that cannot keep up settles at
+a steady fraction of the rate instead of drawing back to back. Otherwise
 `FrameEnd` re-arms the clock only for an outstanding update request. This is
 measured delivery, not presentation: whether and when those frames were
 displayed is still not observable. Correcting the cadence raised delivered work

@@ -78,6 +78,12 @@ void ThreadTimer::WakeAt(std::chrono::steady_clock::time_point when) {
     m_condition.notify_all();
 }
 
+void ThreadTimer::FireNow() {
+    std::unique_lock<std::mutex> lock(m_cond_mutex);
+    m_fire_now = true;
+    m_condition.notify_all();
+}
+
 void ThreadTimer::Start() {
     std::unique_lock<std::mutex> lock(m_op_mutex);
 
@@ -104,6 +110,14 @@ void ThreadTimer::Start() {
                     if (m_rebase) {
                         m_rebase = false;
                         last_tick = std::chrono::steady_clock::now();
+                    }
+                    if (m_fire_now) {
+                        // The frame owed a dropped tick: the cadence restarts
+                        // here, so the next tick is a whole interval away.
+                        m_fire_now = false;
+                        m_wake_once = false;
+                        tick_at = std::chrono::steady_clock::now();
+                        break;
                     }
                     // The user's FPS ceiling is a floor on the gap between two
                     // callbacks, and it binds every path into one — not only
@@ -167,7 +181,11 @@ void ThreadTimer::Start() {
                     if (m_wake_once && earliest < deadline) deadline = earliest;
                     const auto now = std::chrono::steady_clock::now();
                     if (now >= deadline) {
-                        tick_at = now - deadline < m_interval.load() ? deadline : now;
+                        // Late by more than the step this deadline took — the
+                        // interval, or the ceiling when a request cut the wait
+                        // short — restarts from now, so an old anchor cannot
+                        // let requests through faster than the ceiling.
+                        tick_at = now - deadline < deadline - last_tick ? deadline : now;
                         // The tick satisfies any pending request: the frame it
                         // is about to run is the frame that was asked for.
                         // Clearing here rather than discarding at the request
