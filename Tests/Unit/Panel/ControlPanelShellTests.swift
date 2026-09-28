@@ -878,7 +878,7 @@ final class ControlPanelShellTests: ControlPanelTestCase {
       XCTAssertEqual(signedIn?["queue"] as? Bool, false, "A finished sign-in is not listed as a download")
 
       // Performance comes before the preferences. High is the default: no limit, so every display
-      // runs at its native refresh rate. Presets and the slider are drafts until Continue.
+      // runs at its own frame rate. Presets and the slider are drafts until Continue.
       _ = try await panel.js("document.querySelector('#welcome [data-action=\"continue\"]').click();")
       try await panel.waitJS("document.querySelector('#welcome .welcome-page')?.dataset.step === 'performance'")
       panel.bridge.bundleProvider = {
@@ -901,7 +901,7 @@ final class ControlPanelShellTests: ControlPanelTestCase {
         return { initial, low, custom: read() };
         """) as? [String: [String: Any]]
       XCTAssertEqual(performance?["initial"]?["checked"] as? [String], ["high"])
-      XCTAssertEqual(performance?["initial"]?["readout"] as? String, "Native refresh rate")
+      XCTAssertEqual(performance?["initial"]?["readout"] as? String, "No limit")
       XCTAssertEqual(performance?["low"]?["checked"] as? [String], ["low"])
       XCTAssertEqual(performance?["low"]?["readout"] as? String, "30 fps")
       XCTAssertEqual(performance?["custom"]?["checked"] as? [String], [], "A limit no preset uses is Custom")

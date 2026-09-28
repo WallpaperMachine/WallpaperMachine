@@ -224,7 +224,7 @@ async fn target_fps_is_clamped_to_display_refresh_rate() {
 }
 
 #[tokio::test]
-async fn requested_rate_at_the_refresh_is_stored_as_follow_native() {
+async fn only_the_default_rate_is_stored_as_following_the_display() {
     let root = tempfile::tempdir().unwrap();
     let engine = FakeEngineFacade::default();
     engine.set_snapshot(vec![display_snapshot(7, 120), display_snapshot(8, 120)]);
@@ -236,11 +236,19 @@ async fn requested_rate_at_the_refresh_is_stored_as_follow_native() {
         .inject_scene_wallpaper_config_for_test("100", "Scene")
         .await;
 
+    // The full refresh of a 120 Hz display is above the default, so it is a
+    // choice and is saved; the default itself keeps following the display.
     bridge
         .set_target_fps("100".into(), "7".into(), 120)
         .await
         .unwrap();
     let wallpaper_path = root.path().join("wallpapers").join("100.json");
+    assert_saved_monitor_rate(&wallpaper_path, Some(120));
+
+    bridge
+        .set_target_fps("100".into(), "7".into(), 60)
+        .await
+        .unwrap();
     assert_saved_monitor_rate(&wallpaper_path, None);
 
     bridge
@@ -254,6 +262,8 @@ async fn requested_rate_at_the_refresh_is_stored_as_follow_native() {
         .await
         .unwrap();
     bridge.set_mirror_target_fps("8".into(), 120).await.unwrap();
+    assert_eq!(saved_mirror_rate(root.path()), Some(120));
+    bridge.set_mirror_target_fps("8".into(), 60).await.unwrap();
     assert_eq!(saved_mirror_rate(root.path()), None);
     bridge.set_mirror_target_fps("8".into(), 45).await.unwrap();
     assert_eq!(saved_mirror_rate(root.path()), Some(45));

@@ -251,8 +251,9 @@ mod tests {
         assert!(written.get("fps").is_none(), "{written}");
         assert_eq!(written["frame_rate"], 30);
 
-        assert_eq!(MonitorRender::default().fps_on(120), 120);
+        assert_eq!(MonitorRender::default().fps_on(120), 60, "the default stops at 60");
         assert_eq!(MonitorRender::default().fps_on(60), 60);
+        assert_eq!(MonitorRender::default().fps_on(48), 48, "below 60 the default follows the display");
         assert_eq!(MonitorRender::default().fps_on(0), 1);
         assert_eq!(capped.fps_on(120), 30);
         assert_eq!(capped.fps_on(24), 24);

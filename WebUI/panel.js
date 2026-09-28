@@ -471,12 +471,12 @@ function issueLink(item, failure = '') {
 }
 
 // The background recorder's rating, with the conditions it was measured under: a rating
-// taken on two displays at native refresh says little about one display at 30 fps.
+// taken on two displays with no limit says little about one display at 30 fps.
 function energyRating(energy) {
   const level = energyLevelLabel(energy?.level);
   if (!level || !Number.isFinite(Number(energy.milliwatts))) return '';
   const displays = Number(energy.displays) === 1 ? t('1 display') : t('{count} displays', { count: Number(energy.displays) || 0 });
-  const rate = energy.frameRateCap != null && Number.isFinite(Number(energy.frameRateCap)) ? t('{fps} fps', { fps: Number(energy.frameRateCap) }) : t('native refresh rate');
+  const rate = energy.frameRateCap != null && Number.isFinite(Number(energy.frameRateCap)) ? t('{fps} fps', { fps: Number(energy.frameRateCap) }) : t('each display’s own frame rate');
   const scale = `${Math.round(Number(energy.renderScale) * 100)}%`;
   return t('{level}, about {power}. Measured while it played alone on {displays} at {rate}, {scale} render scale, with this window closed.', { level, power: milliwatts(energy.milliwatts), displays, rate, scale });
 }

@@ -382,7 +382,7 @@ async fn wallpapers_applied_under_a_frame_rate_cap_start_at_the_capped_rate() {
 }
 
 #[tokio::test]
-async fn unsaved_frame_rate_follows_native_refresh_for_every_descriptor() {
+async fn unsaved_frame_rate_follows_the_display_up_to_60_for_every_descriptor() {
     let temp = tempfile::tempdir().unwrap();
     let engine = FakeEngineFacade::default();
     engine.set_snapshot(vec![
@@ -408,15 +408,15 @@ async fn unsaved_frame_rate_follows_native_refresh_for_every_descriptor() {
     .await;
 
     let scenes = engine.rendered_scenes();
-    assert_eq!(scene_fps(&scenes, 7), 120);
+    assert_eq!(scene_fps(&scenes, 7), 60, "a 120 Hz display runs at 60 until the user picks more");
     assert_eq!(scene_fps(&scenes, 8), 60);
     let options = bridge.wallpaper_options_snapshot("100".into()).await.unwrap();
     assert!(
         options
             .display_configurations
             .iter()
-            .any(|row| row.max_fps == 120 && row.target_fps == 120),
-        "a 120 Hz display with no saved rate must report 120: {:?}",
+            .any(|row| row.max_fps == 120 && row.target_fps == 60),
+        "a 120 Hz display with no saved rate must report 60 of 120: {:?}",
         options.display_configurations
     );
     assert!(
@@ -445,7 +445,7 @@ async fn unsaved_frame_rate_follows_native_refresh_for_every_descriptor() {
     )
     .await;
     let web = bridge.web_wallpapers().await.unwrap();
-    assert_eq!(row_fps(&web, 7, |row| row.display_id, |row| row.fps), 120);
+    assert_eq!(row_fps(&web, 7, |row| row.display_id, |row| row.fps), 60);
     assert_eq!(row_fps(&web, 8, |row| row.display_id, |row| row.fps), 60);
 
     write_clip(&temp, "400");
@@ -471,10 +471,7 @@ async fn unsaved_frame_rate_follows_native_refresh_for_every_descriptor() {
     )
     .await;
     let native = bridge.native_video_wallpapers().await.unwrap();
-    assert_eq!(
-        row_fps(&native, 7, |row| row.display_id, |row| row.fps),
-        120
-    );
+    assert_eq!(row_fps(&native, 7, |row| row.display_id, |row| row.fps), 60);
     assert_eq!(row_fps(&native, 8, |row| row.display_id, |row| row.fps), 60);
 }
 

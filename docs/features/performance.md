@@ -181,7 +181,7 @@ Presets set the frame-rate limit and the internal render scale together.
 | --- | --- | --- |
 | Low | 30 fps | 50% |
 | Medium | 60 fps | 75% |
-| High | Native refresh rate (no limit) | 100% (native) |
+| High | No limit | 100% (native) |
 
 High is the default. **Custom** is shown, and is not clickable, when the
 current frame-rate cap and preferred render scale match none of those pairs.
@@ -190,8 +190,8 @@ before its Preferences page; see [First run](control-panel.md#first-run).
 
 **Frame rate limit** is a slider from 10 to the highest display refresh the
 snapshot reports (`frameRateCapMax`, or 60 when no display publishes one). The
-top of the slider reads **Native refresh rate** and sends null (no cap). Any
-lower value is the cap.
+top of the slider reads **No limit** and sends null (no cap): each display then
+runs at its own rate, 60 fps by default (below). Any lower value is the cap.
 The effective rate on a display is the minimum of the saved per-wallpaper rate,
 that display's refresh, the global cap, and the battery frame rate when
 reduced quality is in force. Saved per-wallpaper frame rates are never
@@ -210,17 +210,27 @@ It names battery as the cause only while reduced quality is actually in force.
 
 ### Default per-display frame rate
 
-A display with no saved rate runs at its native refresh rate: 120 fps on a
-ProMotion MacBook Pro, 60 fps on a MacBook Air or a 60 Hz external display. The
-wallpaper config stores the rate as `frame_rate` in each `monitors` entry, and a
-mirror display stores it as `frame_rate` in its `[[monitor_settings]]` table;
-the key is omitted to follow the display. Choosing the top of a display's frame
-rate slider (its refresh) stores nothing, so the rate follows that display if its
-refresh changes; a lower value is saved as is.
+A display with no saved rate runs at its refresh rate up to 60 fps: 60 on a
+ProMotion MacBook Pro, a MacBook Air or a 60 Hz external display, 48 on a 48 Hz
+one (`DEFAULT_FRAME_RATE_CEILING` in the bridge's `config` module). A scene's
+cost follows its frame rate. On the 120 Hz built-in display of an M3 Max, with
+the desktop exposed, Lucy (3521337568) drawn about 89 times a second took
+5.0–5.2 W of app power and 0.51 W of WindowServer compositing; at this default,
+60 frames a second, 3.0–3.3 W and 0.22–0.33 W. A higher rate is one choice
+away: the per-display slider still goes up to the display's refresh.
+
+The wallpaper config stores the rate as `frame_rate` in each `monitors` entry,
+and a mirror display stores it as `frame_rate` in its `[[monitor_settings]]`
+table; the key is omitted for the default, so the rate keeps following the
+display if its refresh changes. Any other rate, the full refresh of a display
+above 60 Hz included, is saved as chosen. Before this default a missing key
+meant the display's full refresh, so a display left at "follow the display" in
+an earlier build runs at 60 now; choosing the top of its slider again saves
+that choice.
 
 Earlier builds defaulted to 60 fps and wrote it as `fps` (wallpapers) or
 `target_fps` (mirror displays). Those keys are read once on load: a legacy `60`
-is indistinguishable from that old default and becomes "follow the display";
+is indistinguishable from that old default and becomes the default;
 any other legacy value is kept. The legacy keys are never written again, and an
 older build reading a new file falls back to its own 60 fps default.
 

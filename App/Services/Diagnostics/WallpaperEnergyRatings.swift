@@ -5,7 +5,7 @@ import Foundation
 struct WallpaperEnergyConditions: Codable, Equatable, Sendable {
   /// Displays showing the wallpaper.
   var displays: Int
-  /// Global frame-rate ceiling in force, the battery one included; nil is native refresh.
+  /// Global frame-rate ceiling in force, the battery one included; nil is no limit.
   var frameRateCap: UInt32?
   /// Render scale in force, rounded to hundredths.
   var renderScale: Double
