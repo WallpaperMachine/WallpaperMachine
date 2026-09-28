@@ -25,6 +25,27 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-28 — Lock screen: a Space created while active no longer turns the feature off
+
+M3 Max, macOS 27.2; AllSpacesAndDisplays held only another app's Idle choice. After activation macOS had copied the extension's selection into SystemDefault and some Space Defaults, so a new Space started from those copies and restorationOriginal found no native fallback in the live store. Space creation and toggling Animate Lock Screen were done by the user on request.
+
+- Reproduced on the unfixed build: adding a desktop in Mission Control logged the missing-restoration error at the next check, deactivated the feature and left the new Space's Default and display nodes pointing at the extension.
+- Fixed build: a second new desktop was journaled (70 → 72 entries, originals = system image desktop and the other app's idle, from SystemDefault's journaled original), no error; turning the feature off left no store node pointing at the extension, both new Spaces restored, journal removed.
+- `python3 scripts/test.py --only LockScreenWallpaperTests --only LockScreenWallpaperServiceTests` — 31 passed; the new test failed with the same error before the fix.
+- `python3 scripts/test.py` — 669 passed, 0 failed, 11 skipped.
+
+## 2026-09-28 — Power: covered-desktop pause, 60 fps default, frame-clock slack, WindowServer attribution
+
+M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coalition energy without root over 40–45 s windows run in alternation, other apps hidden (NSRunningApplication.hide) for the exposed-desktop runs; desktop A/B, probe window and xctrace authorised by the user. Baseline B0 = local Release build of 78ebc9c; candidate B1 = this change.
+
+- Attribution, Lucy (3521337568) exposed: B0 at ~89 fps app 5.0–5.2 W, WindowServer 0.51 W, system 31–32 W; B1 default (60 fps delivered) app 3.0–3.3 W, WindowServer 0.22–0.33 W, system 22–24 W. Probe WindowServer 31–39 mW idle, 197–213 at 30 fps, 268–364 at 60, 495–571 at 120.
+- Covered-desktop pause (smoke_i1, B1): exposed keeps rendering (app GPU 2.3–3.3 W); a zoomed-size window pauses display 1 after the settle (app GPU 0, WindowServer 365 → 23 mW); removing it resumes at once; a window leaving desktop visible does not pause; desktop clicks hit Finder's desktop window. User-driven Space switch, full-screen app and Mission Control: pause/resume pairs as expected, no stuck state.
+- Measured, not adopted: present pacing (plain / afterMinimumDuration / CAMetalDisplayLink equal at 60 fps), drawable at panel or half size (no difference), layer colour space (probe −33 % WindowServer, Lucy 12–75 mW inside spread). Unverified: ProMotion panel dropping below 120 Hz (traces disagreed); sudo powermetrics not run.
+- `python3 scripts/test.py` — 668 passed, 0 failed, 11 skipped; Python script tests all OK (test_power_benchmark 28).
+- `cargo test --release -p wallpaper-core --lib` 221 passed; `-p wallpaper-bridge --lib` 360 passed (first run hit the documented CMake configure retry). timer_tests 30 passed; the new cadence test fails without the fix (50 ticks).
+- `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped (metal_scene_draw_smoke 1, text_object_runtime_test 2).
+- Pointer monitors installed only while a scene reads the pointer: with the final build, Lucy (camera parallax) followed the mouse with the panel frontmost, after switching to another app and after a covered pause and resume (checked by the user). Untested for the covered-desktop pause: multiple displays, Stage Manager, tiled windows with gaps.
+
 ## 2026-09-28 — Display-sized packaged texture residency
 
 - scripts/test.py with CPython 3.12.14: 190 Python passed; 663 native passed, 11 skipped. Full gate run once for this feature.
@@ -112,23 +133,3 @@ Follow-up to 4ee91e5: full reconciles (Apply, display edits, backend switch, rep
 - Throwaway Swift binary (real AppUpdateModels + GitHubReleaseClient) over local HTTP: Python-written manifest decoded, arm64 dmg selected, digest parsed, API URL never requested; missing manifest fell back to the API
 - Live github.com: real releases/latest/download redirect chain followed to release-assets (0 API requests used); redirect to raw.githubusercontent.com refused as a network error; default client read v1.0.2 via API fallback at exactly 1 API request per check
 - Not run: a real release carrying the manifest (first one is the next Build run); no Release app build
-
-## 2026-09-28 — Lock-screen exchange directory (no App Data prompt)
-
-- Cause: tccd log showed kTCCServiceSystemPolicyAppData AUTHREQ_PROMPTING on every launch; app wrote/read ~/Library/Containers/app.wallpapermachine.wallpaper-extension (ad-hoc signed, grant not persisted).
-- Fix: app and extension exchange via ~/Library/Application Support/WallpaperMachine/LockScreenExchange; extension gets home-relative read-write exception; extension removes legacy container files.
-- python3 scripts/test.py --only LockScreenWallpaperServiceTests --only DiagnosticsBundleTests: 20 passed.
-- python3 scripts/test.py: 651 passed, 0 failed, 11 skipped.
-- Sandbox smoke: ad-hoc CLI signed with Extension entitlements resolved real home, read/wrote exchange, denied writes outside and reads of app-private LockScreen/.
-- Not run: live lock-screen activation on desktop (no desktop authorization); Release not rebuilt.
-
-## 2026-09-28 — Display refresh no longer reloads an unchanged scene; lock screen ignores the covered desktop
-
-User report on 1.0.2 (Workshop 3521337568, Lucy): lock screen held a still frame, and after unlocking the desktop flashed white and restarted the opening animation. App logs showed 107-425 scene loads per session, one per queued display refresh; the extension log showed the lock-screen scene exported as paused (reasons=1) right after the desktop display was suspended by occlusion.
-
-- Bridge tests written first and failing on HEAD: settings_intents::a_display_refresh_does_not_reload_a_scene_{whose_audio_response_has_nothing_to_read,held_to_the_battery_frame_rate,muted_for_other_audio,paused_by_a_lock_or_a_covered_display} and apply_options::lock_screen_export_ignores_the_desktop_display_being_covered (5 failed before the fix).
-- `cargo test --release -p wallpaper-bridge --lib` (build.py cargo environment) — exit 0; 354 passed, 0 failed.
-- `python3 scripts/test.py --only DisplayRefreshCoalescerTests` — 2 passed (first attempt stopped at the known CodeSign xattr detritus; cleared with xattr -cr on the Debug app).
-- `python3 scripts/test.py` — exit 0; 652 passed, 0 failed, 11 skipped of 663.
-- `python3 scripts/check_renderer.py` — exit 0; 23 test binaries passed, 10 generated fixtures pixel-equal pooled vs isolated, reload cycles 0 failures.
-- Not verified: the lock/unlock and display-wake behaviour on the desktop (no desktop run authorised), and no Release build was made. Apply, display edits and repair reconciles still compare saved values, so they can still reopen a scene held to a frame-rate ceiling or transient mute, as in 1.0.1.

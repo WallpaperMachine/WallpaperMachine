@@ -158,6 +158,53 @@ Findings from 2026-09 on an M5 Pro, macOS 26.6, checked against `powermetrics`:
   overstates an app sharing the GPU with a heavy load. The in-app readout uses
   it; see [features/performance.md](../features/performance.md#energy-use).
 
+## WindowServer's share
+
+Findings from 2026-09-28 on an M3 Max, macOS 27.2, built-in XDR at 120 Hz in
+a 4112x2658 scaled mode, AC power, coalition energy over 40–45 s windows run
+in alternation, other apps hidden. The probe was a disposable desktop-level
+window configured like `MWEWallpaperDesktopWindow` whose frames are one clear,
+so its own GPU work was negligible.
+
+- **It follows the present rate of a full-screen layer.** With the desktop
+  exposed, WindowServer drew 31–39 mW idle and, for the probe, 197–213 mW at
+  30 fps, 294–364 mW at 60 and 568–571 mW at 120. Lucy (3521337568) cost it
+  the same for the same rate (506 mW at about 89 fps, 297–361 mW at 46–50).
+  Next to the app's own GPU work (about 5 W at 89 fps, 2.3 W at 48, 1.1 W at
+  26) it is about a tenth, so the renderer's frame rate is the lever for both.
+- **A covered desktop still costs it.** Behind zoomed windows the strip under
+  the translucent menu bar kept the wallpaper presenting; pausing that display
+  took WindowServer from 365 to 23 mW (the covered-desktop setting in
+  [performance](../features/performance.md#playback)).
+- **No direct-to-display.** Metal System Trace's `displayed-surfaces-interval`
+  table never marked a wallpaper frame `direct-to-display` in any drawable size
+  or colour space: a desktop-level layer under the Finder desktop window and
+  the menu bar is always composited.
+- **Pacing and drawable size did not matter.** At 60 fps, plain presents,
+  `presentDrawable:afterMinimumDuration:` and a `CAMetalDisplayLink` gave
+  294–377 mW; a drawable at the panel's 3456x2234 or half the backing size
+  gave 287–388 mW against 294–364 for the backing size.
+- **Colour space costs the probe a third, the wallpaper little.** The layer
+  is tagged sRGB so it matches the sRGB desktop poster, and WindowServer
+  colour-matches it to the display. In strict alternation the probe cost
+  268–290 mW tagged sRGB against 175–200 mW tagged with the display's own
+  space at 60 fps, and 495–503 against 328–345 at 120. Lucy at 60 fps, tagged
+  or left untagged, gave 215–333 against 203–307 mW (pairs 12, 75 and 19 mW
+  apart), inside the run-to-run spread. Not adopted: an exact sRGB-to-display
+  conversion in both renderers, a poster that stays sRGB and a rebuild on
+  every display-profile change would buy at most tens of milliwatts next to
+  about 3 W of rendering.
+- **Not established:** whether the ProMotion panel drops below 120 Hz for a
+  60 fps wallpaper. Single 6-second traces disagreed (display link 78 Hz at
+  60 fps but 121 Hz at 30), and about 30 composited frames a second had no
+  attributed process even with nothing running. Panel power is outside
+  coalition energy and `powermetrics`, and battery-telemetry system power was
+  too noisy to settle it.
+
+Two traps: a covered-layout run with the user active gave an idle WindowServer
+of 141–762 mW, so compare only quiet windows; and Chrome left open triggered
+about 60 composites a second on its own.
+
 ## Runtime counters
 
 Two counter surfaces answer two different questions, and a power claim needs
