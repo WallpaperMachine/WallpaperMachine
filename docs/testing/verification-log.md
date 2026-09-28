@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Review fixes on native Metal target pruning and the lock-screen poster
+
+- Follow-up to #9 (squash-merged as 5567aab without these fixes); commits rebuilt on that main, tree identical to the gated one below.
+- New ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOff failed when ReferencedRenderTargets skipped Copy target keys (the other 5 optimisation/target tests still passed) and passes as committed; full metal_scene_draw_smoke: 39 passed, 1 skipped (no local project).
+- WE_TEST_METAL_FRAMES: WE_TEST_FRAMES=1 now skips instead of failing without projects; "abc" fails with a range message; one local scene drew 30 frames with WE_TEST_FRAMES=4 set and printed render-target bytes (240254976) beside device bytes (325681152).
+- python3 scripts/test.py --only LockScreenPosterTests: 1 passed (extension target built with kCVPixelFormatType_32BGRA).
+- python3 scripts/test.py: 198 Python passed; 672 native passed, 0 failed, 11 skipped of 683.
+- python3 scripts/check_renderer.py: 24 binaries passed, 10 generated pixel comparisons equal, 8 projects x2 reloads 0 failures; three asset-dependent tests skipped.
+- Not changed: the poster still wraps the IOSurface in a CGImage (IOSurface as layer contents needs a colour-tag decision and a real lock/unlock check); the 8 MiB Vulkan block size is unmeasured for allocation count and load or frame time (generated fixtures are too small).
+- Not run: desktop lock/unlock, Release build.
+
 ## 2026-09-28 — Native Metal allocates only graph-referenced targets
 
 - New UnreferencedTargetsStayUnallocatedAcrossOptimizationChanges regression failed on old allocation logic and passed after filtering both compile and live-toggle paths; output stays identical through on/off/on.
@@ -126,13 +137,3 @@ M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coali
 - Summed process RSS: baseline median 551.4 MiB, range 551.0–551.5; modified median 426.5 MiB, range 426.3–432.2. Observed difference −125.0 MiB (22.7%). RSS may double-count shared pages; physical footprint is reported separately.
 - Both benchmark apps quit through Codex computer use and their exit was verified. App preferences restored to the pre-run snapshot; no wallpaper was applied during this comparison. Existing app-code gates remain applicable; only documentation changed afterward.
 - Limits: foreground/active-playback CPU and RAM still unmeasured under controlled conditions; the public Workshop page and neighboring-page prefetch are not a frozen network fixture. No broad CPU-saving or all-wallpapers RAM-saving percentage is claimed.
-
-## 2026-09-28 — Authorized Release live check for preview and snapshot optimizations
-
-- Explicit follow-up authorization: live desktop run on source `075e85e`. `python3 scripts/build.py --swift-only --configuration Release` — exit 0; the Release app contains the modified panel asset (SHA-256 matched the source).
-- Release app launched with an isolated `WALLPAPER_MACHINE_HOME`; initial user desktop image URLs and app preferences were saved locally. Apple M5 Pro, macOS 27.0, built-in 3024×1964 display at 120 Hz; default Compatibility video, native render scale.
-- Live functional checks: real Discover results and animated-preview cache loaded; Settings/Installed navigation and hide/reopen remained responsive. Aurora Drift applied through the UI and the renderer logged first-frame readiness. Pause and resume controls changed state correctly; timer stop/start and occlusion suspension/resume appeared in the runtime log. No Release-process crash.
-- CPU/RSS sampled for the Release resource coalition, including its WebKit services. Discarded active-playback comparison: foreground changed repeatedly, and a separate Debug instance began running with the same bundle ID. No matched pre-change baseline or reliable whole-app CPU/RAM saving is claimed.
-- UI targeting switched to the exact Release PID after detecting the second instance. Scrolling was attempted but its viewport movement and animation pixels were not independently verified; source-release behavior remains covered by the passing headless regression.
-- Restoration: requested graceful termination of the Release PID only; it exited and logged renderer teardown. Desktop image URLs match the pre-run records. Other Debug instance left running. Only the shared window-frame preference differed; it was not overwritten while another instance owned it.
-- No screenshots, screen/audio capture, live Steam login, installation, lock-screen/sleep-wake tests, or quality/default changes. Previous passing headless gates remain applicable; this follow-up changed documentation only.

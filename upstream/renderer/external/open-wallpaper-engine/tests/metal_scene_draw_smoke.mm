@@ -552,6 +552,60 @@ TEST_F(MetalSceneDraw, UnreferencedTargetsStayUnallocatedAcrossOptimizationChang
     }
 }
 
+TEST_F(MetalSceneDraw, ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOff)
+{
+    // Nothing samples the copy's destination, so the plan drops the copy as
+    // dead and the copy step is the only thing that names that image. Turning
+    // the optimisation off makes the copy again, without recompiling, and it
+    // must find an image to write into.
+    const std::string output = std::string(SpecTex_Default);
+    const std::string copy   = "_rt_dead_copy";
+    const auto        project = WriteFixture(root_ / "project");
+    LoadedScene       loaded;
+    std::string       error;
+    ASSERT_TRUE(LoadScene(project, root_ / "cache", loaded, error)) << error;
+    SceneNode* tile = FirstDrawableNode(loaded.scene->sceneGraph.get());
+    ASSERT_NE(tile, nullptr);
+    struct Restore {
+        bool value;
+        ~Restore() { wallpaper::vulkan::SetSceneOptimizationEnabled(value); }
+    } restore { wallpaper::vulkan::SceneOptimizationEnabled() };
+    wallpaper::vulkan::SetSceneOptimizationEnabled(true);
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        MetalRenderInitInfo info {
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        };
+        ASSERT_TRUE(render.init(info));
+        rg::RenderGraph graph;
+        AddDraw(graph, tile, output, {});
+        AddCopy(graph, output, copy);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, graph)) << render.lastError();
+        for (bool enabled : { true, false, true }) {
+            SCOPED_TRACE(enabled ? "optimised" : "every copy made");
+            wallpaper::vulkan::SetSceneOptimizationEnabled(enabled);
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            // The saving is only real if the dead copy is not made while the
+            // optimisation is on; with it off, the copy is the frame's one blit.
+            EXPECT_EQ(render.LastFrameEncodeCountsForTests().blit_passes, enabled ? 0u : 1u);
+            if (enabled) continue;
+            std::vector<uint8_t> drawn, copied;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                loaded.scene->ResolveRenderTargetName(output), drawn, width, height));
+            ASSERT_TRUE(render.ReadRenderTargetForTests(copy, copied, width, height))
+                << "the restored copy has no image to write into";
+            EXPECT_EQ(copied, drawn);
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the
@@ -3740,15 +3794,23 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
     // worth comparing without them, and this backend had no way to supply
     // either.
     const char* listed = std::getenv("WE_TEST_METAL_PROJECTS");
-    const int frame_count = std::getenv("WE_TEST_FRAMES")
-        ? std::atoi(std::getenv("WE_TEST_FRAMES")) : 120;
-    ASSERT_GE(frame_count, 2);
-    ASSERT_LE(frame_count, 3600);
     const auto  assets = LocalSceneAssetsRoot();
     if (listed == nullptr || *listed == '\0' || assets.empty() ||
         ! std::filesystem::is_directory(assets)) {
         GTEST_SKIP() << "WE_TEST_METAL_PROJECTS names no local project; no real wallpaper was "
                         "drawn natively";
+    }
+    // Its own knob, not the probe's `WE_TEST_FRAMES`: that one counts samples a
+    // `WE_TEST_FRAME_STEP` apart, and the matched-time recipe sets it for the
+    // Vulkan run alone. Sharing it would silently move this frame's scene time.
+    // Two frames at least, because frame 0 is excluded from the averages.
+    int frame_count = 120;
+    if (const char* value = std::getenv("WE_TEST_METAL_FRAMES")) {
+        const std::string_view text(value);
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), frame_count);
+        ASSERT_TRUE(parsed.ec == std::errc {} && parsed.ptr == text.data() + text.size() &&
+                    frame_count >= 2 && frame_count <= 3600)
+            << "WE_TEST_METAL_FRAMES must be 2..3600, not \"" << value << "\"";
     }
 
     std::vector<std::string> projects;
@@ -3923,8 +3985,12 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                           double(encodes.scene_output_passes) / measured,
                           double(encodes.blit_passes) / measured, draw_cpu_ms / measured);
             std::cout << "[ LOCAL    ] " << paths.scene_id << ": " << encode_line << std::endl;
-            std::cout << "[ LOCAL    ] " << paths.scene_id << ": Metal allocated bytes="
-                      << device.currentAllocatedSize << std::endl;
+            // The target figure is this scene's own; the device figure is
+            // process-wide and includes the layer's drawables, so it varies
+            // between runs of the same scene.
+            std::cout << "[ LOCAL    ] " << paths.scene_id
+                      << ": render target bytes=" << render.RenderTargetBytesForTests()
+                      << " device allocated bytes=" << device.currentAllocatedSize << std::endl;
 
             if (const char* output = std::getenv("WE_TEST_OUTPUT");
                 output != nullptr && *output != '\0' && ! last.empty()) {

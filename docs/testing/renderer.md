@@ -103,7 +103,8 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_CACHE` | `text_object_runtime_test` | Disposable shader cache directory |
 | `WE_TEST_CYCLES` | `scene_reload_cycle_probe` | Reload cycles per project |
 | `WE_TEST_NO_REUSE=1` | `offscreen_scene_probe` | Isolated texture allocation (no pooling) |
-| `WE_TEST_FRAMES` | `offscreen_scene_probe`, `metal_scene_draw_smoke` | Number of sampled frames. The local-project Metal test defaults to 120 and accepts 2–3600; its output is the last frame and it also reports Metal's allocated bytes |
+| `WE_TEST_FRAMES` | `offscreen_scene_probe` | Number of sampled frames |
+| `WE_TEST_METAL_FRAMES` | `metal_scene_draw_smoke` | Frames the local-project Metal test draws, 1/60 s apart: 120 by default, 2–3600 accepted. Its own knob, so the probe's `WE_TEST_FRAMES` in the same environment cannot move the Metal frame's scene time. The last frame is the output; the test also prints the bytes of this scene's render targets and, separately, the device-wide Metal allocation, which includes the layer's drawables and varies between runs |
 | `WE_TEST_FRAME_STEP` | `offscreen_scene_probe` | Sampling interval, to look past an intro |
 | `WE_TEST_DUMP_SOURCE=1` | `offscreen_scene_probe` | Write the packaged scene JSON beneath `WE_TEST_OUTPUT`; `nodes.txt` also records per-node visibility, translate and scale, which diffs layer placement between builds without comparing pixels |
 | `WE_TEST_ASSET_PATH` | `offscreen_scene_probe` | Copy one asset from the mounted package to `asset.txt` under `WE_TEST_OUTPUT` for shader diagnosis; keep private asset output uncommitted |
@@ -150,11 +151,12 @@ The runtime clock (timelines, camera shots, scripts) takes 40 warm-up ticks of
 about `0.667 + (N + 1) * step` seconds. The scene clock (`elapsingTime`: puppet
 poses, shader `g_Time`, effects such as Earth's spin) skips the warm-up and
 advances `step` after each frame, so frame N draws at `N * step`.
-`metal_scene_draw_smoke` ticks and advances both clocks by 1/60 s for 120 frames by default
-and writes the last frame at 119/60 s on both. Comparing the two harnesses, or
+`metal_scene_draw_smoke` ticks and advances both clocks by 1/60 s for
+`WE_TEST_METAL_FRAMES` frames (120 by default) and writes the last one at
+(frames − 1)/60 s on both, 119/60 s by default. Comparing the two harnesses, or
 one render with a crop of another, therefore needs matched scene time: the Vulkan
 run with `WE_TEST_FRAMES=4` and `WE_TEST_FRAME_STEP=0.6611111` (119/180) draws
-frame 3 at the Metal frame's scene time. A puppet posed at a different scene time
+frame 3 at the default Metal frame's scene time. A puppet posed at a different scene time
 reads as a camera or backend fault, and more than once did so here. Seed both
 with the same `WE_TEST_RANDOM_SEED`.
 
@@ -605,6 +607,12 @@ desktop, or modify the imported wallpaper.
 - Texture residency comparisons must cover the scene's full visibility/crossfade
   cycle, including the moments when each affected image is actually visible.
   Matching startup frames can miss large animated layers whose opacity is still zero.
+- Native Metal allocates only targets the compiled passes name.
+  `metal_scene_draw_smoke` checks that a declared but unused target stays
+  unallocated through optimisation off/on, and that a copy the plan drops as
+  dead is not made while the optimisation is on and gets its image back,
+  filled, when it is turned off without a recompile. Compare target residency with the harness's render-target bytes,
+  not the device-wide allocation.
 - Texture lifetime tests check 32 generated multi-version graphs against a
   last-access oracle, plus nested composites with aliases, three sizes, visible
   and hidden parents, and background-copy enabled/disabled. Alias clears and

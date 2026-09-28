@@ -1549,6 +1549,8 @@ struct MetalRender::Impl
     bool compile(Scene& scene, rg::RenderGraph& graph);
     void resolveTargetSizes(Scene& scene);
     bool prepareTargets(Scene& scene);
+    /// One scene target's image, labelled with its key; nil if Metal refuses it.
+    id<MTLTexture> newSceneTarget(const std::string& name, const SceneRenderTarget& target);
     bool prepareDepthTargets();
     id<MTLDepthStencilState> depthStencilFor(bool test, bool write);
     void planCopyElision(Scene& scene);
@@ -2229,11 +2231,31 @@ static std::unordered_set<std::string> ReferencedRenderTargets(
     // Include hidden draws and elided copies: animation can reveal them, and
     // disabling optimization can restore a copy without recompiling the graph.
     for (const auto& pass : descriptions) {
-        if (!pass.target_key.empty()) required.insert(pass.target_key);
-        if (!pass.source_key.empty()) required.insert(pass.source_key);
+        if (! pass.target_key.empty()) required.insert(pass.target_key);
+        if (! pass.source_key.empty()) required.insert(pass.source_key);
         required.insert(pass.texture_keys.begin(), pass.texture_keys.end());
     }
     return required;
+}
+
+id<MTLTexture> MetalRender::Impl::newSceneTarget(const std::string&       name,
+                                                 const SceneRenderTarget& target)
+{
+    const NSUInteger levels = std::max<uint32_t>(1, target.mipmap_level);
+    MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
+        texture2DDescriptorWithPixelFormat:kSceneTargetFormat
+                                     width:(NSUInteger)target.width
+                                    height:(NSUInteger)target.height
+                                 mipmapped:levels > 1];
+    descriptor.mipmapLevelCount = levels;
+    descriptor.usage            = kRenderTargetUsage;
+    // Private, never memoryless. A later pass, the presentation draw and a
+    // poster capture all read these after the pass that wrote them has
+    // ended, so their contents have to survive the render pass.
+    descriptor.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
+    if (texture != nil) texture.label = [NSString stringWithUTF8String:name.c_str()];
+    return texture;
 }
 
 bool MetalRender::Impl::prepareTargets(Scene& scene)
@@ -2242,29 +2264,16 @@ bool MetalRender::Impl::prepareTargets(Scene& scene)
     owned_targets.clear();
     const auto required = ReferencedRenderTargets(scene, descriptions);
     for (const auto& [name, target] : scene.renderTargets) {
-        if (!required.contains(name)) continue;
+        if (! required.contains(name)) continue;
         if (target.width <= 0 || target.height <= 0) continue;
         // An aliased destination shares its source's texture, so it must not
         // get one of its own. Resolved after the loop, because the source may
         // be allocated later than the destination is visited.
         if (target_aliases.count(name) != 0) continue;
-        const NSUInteger levels = std::max<uint32_t>(1, target.mipmap_level);
-        MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:kSceneTargetFormat
-                                         width:(NSUInteger)target.width
-                                        height:(NSUInteger)target.height
-                                     mipmapped:levels > 1];
-        descriptor.mipmapLevelCount = levels;
-        descriptor.usage            = kRenderTargetUsage;
-        // Private, never memoryless. A later pass, the presentation draw and a
-        // poster capture all read these after the pass that wrote them has
-        // ended, so their contents have to survive the render pass.
-        descriptor.storageMode = MTLStorageModePrivate;
-        id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
+        id<MTLTexture> texture = newSceneTarget(name, target);
         if (texture == nil) {
             return fail("a render target could not be allocated");
         }
-        texture.label = [NSString stringWithUTF8String:name.c_str()];
         targets.emplace(name, texture);
         owned_targets.insert(name);
     }
@@ -3540,7 +3549,7 @@ bool MetalRender::Impl::applySceneOptimizationSetting(Scene& scene, id<MTLComman
     std::vector<id<MTLTexture>> cleared;
     const auto required = ReferencedRenderTargets(scene, descriptions);
     for (const auto& [name, target] : scene.renderTargets) {
-        if (!required.contains(name)) continue;
+        if (! required.contains(name)) continue;
         if (target.width <= 0 || target.height <= 0) continue;
         if (target_aliases.count(name) != 0) {
             const auto root  = ResolveAliasRoot(target_aliases, target_aliases.at(name));
@@ -3552,18 +3561,8 @@ bool MetalRender::Impl::applySceneOptimizationSetting(Scene& scene, id<MTLComman
         }
         if (owned_targets.count(name) != 0 && targets.count(name) != 0) continue;
 
-        const NSUInteger levels = std::max<uint32_t>(1, target.mipmap_level);
-        MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:kSceneTargetFormat
-                                         width:(NSUInteger)target.width
-                                        height:(NSUInteger)target.height
-                                     mipmapped:levels > 1];
-        descriptor.mipmapLevelCount = levels;
-        descriptor.usage            = kRenderTargetUsage;
-        descriptor.storageMode      = MTLStorageModePrivate;
-        id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
+        id<MTLTexture> texture = newSceneTarget(name, target);
         if (texture == nil) return fail("a render target could not be reallocated");
-        texture.label = [NSString stringWithUTF8String:name.c_str()];
         targets[name] = texture;
         owned_targets.insert(name);
         cleared.push_back(texture);
@@ -4922,6 +4921,21 @@ MetalRender::FrameEncodeCountsForTests MetalRender::LastFrameEncodeCountsForTest
     if (pImpl == nullptr) return {};
     const auto& last = pImpl->last_frame_encodes;
     return { last.render_passes, last.scene_output_passes, last.blit_passes };
+}
+
+uint64_t MetalRender::RenderTargetBytesForTests() const
+{
+    if (pImpl == nullptr) return 0;
+    std::unordered_set<const void*> counted;
+    uint64_t                        bytes = 0;
+    for (const auto* table : { &pImpl->targets, &pImpl->depth_targets }) {
+        for (const auto& [key, texture] : *table) {
+            (void)key;
+            if (texture == nil || ! counted.insert((__bridge const void*)texture).second) continue;
+            bytes += texture.allocatedSize;
+        }
+    }
+    return bytes;
 }
 
 uint64_t MetalRender::ProgramCompilesForTests() { return MetalProgramCache::shared().compileCount(); }

@@ -229,6 +229,13 @@ public:
     };
     [[nodiscard]] FrameEncodeCountsForTests LastFrameEncodeCountsForTests() const;
 
+    /// Bytes Metal allocated for this renderer's colour and depth targets, each
+    /// texture counted once however many keys share it.
+    ///
+    /// Test-only, and the number to compare when target residency changes: the
+    /// device's own counter is process-wide and moves with the drawable pool.
+    [[nodiscard]] uint64_t RenderTargetBytesForTests() const;
+
     /// How many shader sources this process has handed to the Metal compiler.
     ///
     /// Test-only, and process-wide rather than per renderer: what it exists to
