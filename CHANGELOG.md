@@ -7,29 +7,6 @@ sections list the commits. The GitHub Release body and the app's What's new card
 repeat the section, so the three always say the same thing. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
-## 1.1.0 — 2026-09-28
-
-This release lowers WallpaperMachine's memory use and pauses wallpapers when windows cover the desktop.
-
-### New
-
-- Wallpapers now pause when windows cover the desktop, keeping their last frame visible, and resume as soon as any of the desktop shows again
-- Choose Pause or Keep running under Settings → Performance → Playback → When windows cover the desktop, with Pause as the default
-
-### Improved
-
-- Scene wallpapers use less memory by loading textures sized for your display and allocating only the graphics resources a scene needs
-- Wallpapers now default to a 60 fps frame rate
-- Workshop preview animations in Discover are released when scrolled out of view or hidden, then resume from the local cache
-- The control panel frees its web content resources when you close it
-- The experimental animated lock screen shows a still poster while unlocked and loads the scene only when the lock screen can display it
-
-### Fixed
-
-- Frame rate limits are now met, where a 60 fps limit previously delivered only about 50 frames a second
-
-**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.0.3...v1.1.0
-
 ## 1.0.3 — 2026-09-28
 
 This release stops wallpapers from flashing and restarting after unlocking, makes Restart to Update work again, and keeps the control panel open after you apply a wallpaper.
