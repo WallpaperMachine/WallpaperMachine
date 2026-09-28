@@ -369,6 +369,7 @@ extension WebPanelController {
       "frameRateCapMax": Self.frameRateCapMax(settings),
       "displaySleepAction": playback.displaySleepAction.rawValue,
       "otherAudioAction": playback.otherAudioAction.rawValue,
+      "desktopCoveredAction": playback.desktopCoveredAction.rawValue,
       "appRules": playback.appRules.map { rule in
         [
           "id": rule.id.uuidString,

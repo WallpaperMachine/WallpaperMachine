@@ -113,14 +113,31 @@ app delegate and reachable from the panel as `BridgeStore.wallpaperEnergyRatings
 
 ## Playback
 
-Covered, full-screen and hidden wallpapers are **Paused automatically**. That
-is the existing occlusion policy. There is no control for it.
+A wallpaper nobody can see — behind a full-screen app, on a hidden Space or
+under windows that leave no pixel of it — pauses automatically, per display.
+There is no control for that part.
 
 | Setting | Values | Default |
 | --- | --- | --- |
+| When windows cover the desktop | **Pause**, **Keep running** | Pause |
 | When another app plays sound | **Keep running**, **Mute**, **Pause** | Keep running |
 | When displays sleep | **Pause**, **Stop (free memory)** | Pause |
 | On battery | **Keep running**, **Reduced quality**, **Pause** | Keep running |
+
+**When windows cover the desktop** handles the case AppKit never reports as
+hidden. A zoomed (not full-screen) window leaves the strip under the translucent
+menu bar and its own rounded corners showing, so the wallpaper window stays
+"visible" and a scene kept drawing at the full frame rate for that strip: on
+the 4112x2658 built-in display of an M3 Max, Lucy (3521337568) at about 100
+frames/s cost about 5.5 W of app GPU. With **Pause** the display counts as
+covered once other windows hide its working area — the screen minus the menu
+bar and a shown Dock, inset by 32 pt — and that display pauses after the usual
+one-second settle; the strip and the edges keep the last frame, and exposing
+any of the working area resumes it at once. A translucent window does not
+cover, because macOS decides what covers what. **Keep running** leaves the
+wallpaper animating in the gaps. `WallpaperCoverageProbes` measures this with
+one fully transparent, mouse-transparent window per display just above the
+wallpaper; see [architecture](../architecture.md#desktop-wallpaper-windows-and-private-api-handling).
 
 **Mute** affects scene and video wallpapers only. Web wallpapers have no mute
 channel, so Mute does not silence them. **Pause** applies to every wallpaper

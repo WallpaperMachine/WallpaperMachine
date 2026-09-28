@@ -548,9 +548,8 @@ export default {
 
   // Settings: performance
   'Playback': '播放',
-  'Covered, full-screen or hidden': '被遮挡、全屏或隐藏',
-  'Paused automatically': '自动暂停',
-  'A wallpaper you can’t see stops on its own. This is not a setting.': '看不见的壁纸会自行停止。这不是一项设置。',
+  'When windows cover the desktop': '桌面被窗口盖住时',
+  'Covered means windows hide everything but the menu bar and the screen edges. Pause keeps the last frame there. Wallpapers you can’t see at all always pause.': '窗口挡住除菜单栏和屏幕边缘以外的全部桌面，就算盖住。选“暂停”时，露出的地方停在最后一帧。完全看不见的壁纸总是会暂停。',
   'When another app plays sound': '其他应用播放声音时',
   'Keep running': '继续运行',
   'Reduced quality': '降低画质',
@@ -588,7 +587,8 @@ export default {
   'Limited to {fps} fps by Performance settings': '受性能设置限制为 {fps} fps',
   'Open Performance': '打开性能设置',
   'Keep wallpapers running, lower their quality, or pause them while on battery.': '使用电池时可以继续运行壁纸、降低画质，或暂停它们。',
-  'Covered, full-screen and hidden wallpapers pause on their own. When another app plays sound, Mute silences scene and video wallpapers only — web wallpapers have no mute channel — and Pause stops every wallpaper until that sound ends.': '被遮挡、全屏或隐藏的壁纸会自行暂停。其他应用播放声音时，静音只让场景壁纸和视频壁纸安静——网页壁纸没有静音通道——暂停则会在声音结束前停止所有壁纸。',
+  'Wallpapers you can’t see, such as behind a full-screen app, pause on their own. When windows cover the desktop, Pause keeps the last frame and Keep running keeps it moving in the gaps.': '看不见的壁纸（比如在全屏应用后面）会自行暂停。桌面被窗口盖住时，选“暂停”会停在最后一帧，选“继续运行”则在露出的地方继续播放。',
+  'When another app plays sound, Mute silences scene and video wallpapers only. Web wallpapers have no mute channel. Pause stops every wallpaper until that sound ends.': '其他应用播放声音时，静音只让场景壁纸和视频壁纸安静。网页壁纸没有静音通道。暂停会在声音结束前停止所有壁纸。',
   'When displays sleep, Pause keeps wallpapers loaded. Stop frees renderer memory and reloads them when the display wakes.': '显示器休眠时，暂停会保持壁纸已加载。停止会释放渲染器占用的内存，并在显示器唤醒后重新加载。',
   'On battery, Keep running leaves quality alone, Reduced quality uses the battery scale and frame rate, and Pause stops wallpapers until you plug in. None of these promises a measured power saving.': '使用电池时，继续运行不改变画质，降低画质会使用电池模式的渲染比例和帧率，暂停则会在接上电源前停止壁纸。这些都不是经过测量的省电承诺。',
   'App rules pause, mute or stop wallpapers while a chosen app is running or in front. Your own Play and Pause are not changed.': '应用规则会在所选应用正在运行或位于前台时暂停、静音或停止壁纸，不会改动你自己的播放和暂停。',

@@ -81,6 +81,7 @@
 		53A38F898530E57FA71B76EB /* AppRuleMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FDA5FA38CEAF14407999615 /* AppRuleMonitorTests.swift */; };
 		53DA4EDBEB38CE8EB98364DD /* DeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FD3C95C18D430D508ADA33 /* DeletionTests.swift */; };
 		544E378483D36B5AED043412 /* WebWallpaperWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688F4E980B136CA89A7A3372 /* WebWallpaperWindow.swift */; };
+		54D6043DFF6F5F46AAD16C60 /* WallpaperCoverageProbes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37050933D37A3659D19758EF /* WallpaperCoverageProbes.swift */; };
 		561B80CC17D9392EE1161165 /* helpers.m in Sources */ = {isa = PBXBuildFile; fileRef = 3BF334E75BC43C66F8401792 /* helpers.m */; };
 		598FDC3D3D9556811A34D293 /* keys.h in Headers */ = {isa = PBXBuildFile; fileRef = 950C6E82A3CFA807985C9A78 /* keys.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		5AF0C610DCB9169597CEA861 /* WebWallpaperMediaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F2A78D0B0B6A1C6674A67A /* WebWallpaperMediaRelay.swift */; };
@@ -314,6 +315,7 @@
 		339850BB03F83A2AA45C5066 /* DiagnosticsRedactorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsRedactorTests.swift; sourceTree = "<group>"; };
 		3503666BFB572F4354ED44F2 /* RuntimeCountersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCountersTests.swift; sourceTree = "<group>"; };
 		3529ED95013463D6B5B08697 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		37050933D37A3659D19758EF /* WallpaperCoverageProbes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperCoverageProbes.swift; sourceTree = "<group>"; };
 		374FCEFAD56766BE8236E660 /* LockScreenConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenConfiguration.swift; sourceTree = "<group>"; };
 		37504A9CCC0640CBE43CC077 /* RuntimeCounters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeCounters.swift; sourceTree = "<group>"; };
 		37B8CD53F4ABE178F294E2DF /* SystemMediaTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMediaTestSupport.swift; sourceTree = "<group>"; };
@@ -930,6 +932,7 @@
 				EF840DBFECBCEF1AC7D98542 /* OtherAudioMonitor.swift */,
 				50C25B094039C8D7E8CA22C0 /* PlaybackPreferences.swift */,
 				2D3168ED82EE642DD85BE1D1 /* ScreenLock.swift */,
+				37050933D37A3659D19758EF /* WallpaperCoverageProbes.swift */,
 				ADF788FE5EE5706BF76DEE6A /* WallpaperPresentationPolicy.swift */,
 			);
 			path = Desktop;
@@ -1504,6 +1507,7 @@
 				42A303AEDD07369C02730A62 /* UserAssetStorage.swift in Sources */,
 				F81474D91E66F769D86FED74 /* UserAssetStore.swift in Sources */,
 				F73CF78193AFF9D3C339A797 /* WallpaperBridge.swift in Sources */,
+				54D6043DFF6F5F46AAD16C60 /* WallpaperCoverageProbes.swift in Sources */,
 				4B6CB9EFE64DCF6C5FD9FC3C /* WallpaperDeletionService.swift in Sources */,
 				69A69A6C2E66847AADCF9983 /* WallpaperEditorState.swift in Sources */,
 				FBAF562203A209C568B6446B /* WallpaperEnergyRatings.swift in Sources */,

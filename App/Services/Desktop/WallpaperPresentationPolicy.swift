@@ -34,10 +34,11 @@ enum GlobalPresentation: Comparable, Sendable {
 }
 
 /// Suspends wallpaper presentation per display while no pixel from that display
-/// can reach the user, and globally only for conditions that really do cover
-/// every screen. Suspension never changes the user's Play/Pause choice: the
-/// bridge composes this signal with the playback state and restores playback
-/// when it clears.
+/// can reach the user, or, unless the user chose to keep it running, while
+/// other windows cover that display's working area; and globally only for
+/// conditions that really do cover every screen. Suspension never changes the
+/// user's Play/Pause choice: the bridge composes this signal with the playback
+/// state and restores playback when it clears.
 ///
 /// The split matters for power: a window covering the wallpaper on one display
 /// must stop that display's decoding and rendering, and must not stop a display
@@ -57,6 +58,10 @@ final class WallpaperPresentationPolicy {
     private let appRuleActions: @MainActor () -> Set<AppRuleAction>
     private let otherAudioActive: @MainActor () -> Bool
     private let otherAudioAction: @MainActor () -> OtherAudioAction
+    private let desktopCoveredAction: @MainActor () -> DesktopCoveredAction
+    private let coveredDisplays: @MainActor () -> Set<UInt32>
+    /// Owned only when neither surfaces nor coverage were injected.
+    private let probes: WallpaperCoverageProbes?
     private let occlusionSettleDelay: Duration
     private let counters: RuntimeCounters
     private let applyGlobal: @MainActor (GlobalPresentation, @escaping ApplyCompletion) -> Void
@@ -79,7 +84,7 @@ final class WallpaperPresentationPolicy {
     private(set) var globalPresentation: GlobalPresentation = .running
     /// Wallpaper audio held down by a mute rule or other-app audio.
     private(set) var isAudioSuppressed = false
-    /// Displays suspended on their own, by occlusion.
+    /// Displays suspended on their own, by occlusion or a covered working area.
     private(set) var suspendedDisplayIDs: Set<UInt32> = []
 
     /// True when presentation is suspended or unloaded. Occlusion of one display
@@ -99,6 +104,8 @@ final class WallpaperPresentationPolicy {
         appRuleActions: (@MainActor () -> Set<AppRuleAction>)? = nil,
         otherAudioActive: (@MainActor () -> Bool)? = nil,
         otherAudioAction: (@MainActor () -> OtherAudioAction)? = nil,
+        desktopCoveredAction: (@MainActor () -> DesktopCoveredAction)? = nil,
+        coveredDisplays: (@MainActor () -> Set<UInt32>)? = nil,
         occlusionSettleDelay: Duration = .seconds(1),
         counters: RuntimeCounters? = nil,
         applyGlobal: @escaping @MainActor (GlobalPresentation, @escaping ApplyCompletion) -> Void,
@@ -114,6 +121,18 @@ final class WallpaperPresentationPolicy {
         self.appRuleActions = appRuleActions ?? { [] }
         self.otherAudioActive = otherAudioActive ?? { false }
         self.otherAudioAction = otherAudioAction ?? { .keepRunning }
+        self.desktopCoveredAction = desktopCoveredAction ?? { .keepRunning }
+        if let coveredDisplays {
+            self.coveredDisplays = coveredDisplays
+            probes = nil
+        } else if surfaces == nil {
+            let probes = WallpaperCoverageProbes()
+            self.coveredDisplays = { probes.coveredDisplayIDs() }
+            self.probes = probes
+        } else {
+            self.coveredDisplays = { [] }
+            probes = nil
+        }
         self.occlusionSettleDelay = occlusionSettleDelay
         self.counters = counters ?? .shared
         self.applyGlobal = applyGlobal
@@ -151,6 +170,13 @@ final class WallpaperPresentationPolicy {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.evaluate() }
         }))
+        // A resolution change or the Dock appearing moves the working area the
+        // coverage probes measure.
+        observers.append((windowCenter, windowCenter.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.evaluate() }
+        }))
         evaluate()
     }
 
@@ -159,6 +185,7 @@ final class WallpaperPresentationPolicy {
         settle = nil
         for (center, token) in observers { center.removeObserver(token) }
         observers.removeAll()
+        probes?.removeAll()
         displaysAsleep = false
         // Teardown must never leave a surface suspended or muted.
         pendingDisplays.formUnion(suspendedDisplayIDs)
@@ -207,11 +234,37 @@ final class WallpaperPresentationPolicy {
             ?? false
     }
 
+    /// Wallpaper visibility with a covered working area counted as hidden when
+    /// the user chose to pause for it.
+    private func currentSurfaces() -> [WallpaperSurfaceVisibility] {
+        let current = surfaces()
+        guard desktopCoveredAction() == .pause else { return current }
+        let covered = coveredDisplays()
+        guard !covered.isEmpty else { return current }
+        return current.map { surface in
+            covered.contains(surface.displayID)
+                ? WallpaperSurfaceVisibility(displayID: surface.displayID, isVisible: false)
+                : surface
+        }
+    }
+
+    /// Probes exist only while a covered desktop pauses, so keeping the
+    /// wallpaper running costs no extra windows.
+    private func syncProbes() {
+        guard let probes, !observers.isEmpty else { return }
+        if desktopCoveredAction() == .pause {
+            probes.sync()
+        } else {
+            probes.removeAll()
+        }
+    }
+
     /// Retry unacknowledged delivery even when visibility is unchanged.
     func evaluate() {
+        syncProbes()
         let presentation = resolvedPresentation()
         let audio = resolvedAudioSuppressed()
-        let current = surfaces()
+        let current = currentSurfaces()
         let hidden = Set(current.filter { !$0.isVisible }.map(\.displayID))
         let known = Set(current.map(\.displayID))
         settle?.cancel()
@@ -255,7 +308,7 @@ final class WallpaperPresentationPolicy {
             guard let self else { return }
             do { try await Task.sleep(for: self.occlusionSettleDelay) } catch { return }
             guard !Task.isCancelled else { return }
-            let stillHidden = Set(self.surfaces().filter { !$0.isVisible }.map(\.displayID))
+            let stillHidden = Set(self.currentSurfaces().filter { !$0.isVisible }.map(\.displayID))
             self.commitHidden(newlyHidden.intersection(stillHidden))
         }
         if audioChanged { deliverPending() }

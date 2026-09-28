@@ -12,6 +12,9 @@ private final class PolicyProbe {
         WallpaperSurfaceVisibility(displayID: 1, isVisible: true)
     ]
     var sessionLocked = false
+    /// Displays whose working area other windows cover.
+    var covered: Set<UInt32> = []
+    var coveredAction: DesktopCoveredAction = .pause
 
     func setVisible(_ visible: Bool, display: UInt32 = 1) {
         if let index = surfaces.firstIndex(where: { $0.displayID == display }) {
@@ -43,6 +46,8 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
             windowCenter: windowCenter,
             surfaces: { probe.surfaces },
             isSessionLocked: { probe.sessionLocked },
+            desktopCoveredAction: { probe.coveredAction },
+            coveredDisplays: { probe.covered },
             occlusionSettleDelay: settle,
             counters: counters,
             applyGlobal: { presentation, completion in
@@ -113,6 +118,76 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
         XCTAssertTrue(probe.appliedDisplays.isEmpty, "Mission Control passes must never reach the engine")
         XCTAssertFalse(policy.isSuspended)
         XCTAssertTrue(policy.suspendedDisplayIDs.isEmpty)
+    }
+
+    // MARK: - Covered working area
+
+    func testACoveredWorkingAreaPausesThatDisplayAfterTheSettleDelay() async throws {
+        let probe = PolicyProbe()
+        probe.surfaces = [
+            WallpaperSurfaceVisibility(displayID: 1, isVisible: true),
+            WallpaperSurfaceVisibility(displayID: 2, isVisible: true),
+        ]
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+
+        // The wallpaper window still shows under the menu bar, so AppKit keeps
+        // reporting it visible; only the working area is covered.
+        probe.covered = [1]
+        windowCenter.post(name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        XCTAssertTrue(probe.appliedDisplays.isEmpty, "Covering is subject to the same settle delay as occlusion")
+
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true])
+        XCTAssertEqual(probe.displayDecisions(for: 2), [], "An uncovered display keeps running")
+        XCTAssertEqual(probe.applied, [], "Covering is a per-display condition")
+    }
+
+    func testKeepRunningIgnoresACoveredWorkingArea() {
+        let probe = PolicyProbe()
+        probe.coveredAction = .keepRunning
+        probe.covered = [1]
+        let policy = makePolicy(probe, settle: .zero)
+        policy.start()
+        defer { policy.stop() }
+
+        windowCenter.post(name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        XCTAssertTrue(probe.appliedDisplays.isEmpty, "A visible strip keeps animating when the user chose Keep running")
+        XCTAssertTrue(policy.suspendedDisplayIDs.isEmpty)
+    }
+
+    func testUncoveringResumesAtOnceAndChangingTheChoiceAppliesOnTheNextEvaluation() {
+        let probe = PolicyProbe()
+        probe.covered = [1]
+        let policy = makePolicy(probe, settle: .zero)
+        policy.start()
+        defer { policy.stop() }
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true])
+
+        probe.covered = []
+        windowCenter.post(name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true, false], "Exposing the desktop must resume without delay")
+
+        probe.covered = [1]
+        probe.coveredAction = .keepRunning
+        policy.evaluate()
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true, false], "Keep running leaves a covered display alone")
+
+        probe.coveredAction = .pause
+        policy.evaluate()
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true, false, true])
+    }
+
+    func testTheCoverageProbeCoversTheWorkingAreaInsideItsMargin() {
+        let working = NSRect(x: 0, y: 0, width: 2056, height: 1290)
+        XCTAssertEqual(
+            WallpaperCoverageProbes.probeFrame(for: working),
+            NSRect(x: 32, y: 32, width: 1992, height: 1226),
+            "The margin leaves room for rounded window corners and screen-edge gaps")
+        XCTAssertNil(
+            WallpaperCoverageProbes.probeFrame(for: NSRect(x: 0, y: 0, width: 60, height: 900)),
+            "A working area narrower than both margins has nothing left to probe")
     }
 
     // MARK: - P01: per-display granularity

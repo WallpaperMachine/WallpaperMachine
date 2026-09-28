@@ -209,6 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 appRuleActions: { appRules.actions },
                 otherAudioActive: { otherAudio.isActive },
                 otherAudioAction: { preferences.otherAudioAction },
+                desktopCoveredAction: { preferences.desktopCoveredAction },
                 applyGlobal: { [weak self] presentation, completion in
                     guard let self, let store = self.store,
                           !self.shutdownInProgress, !self.shutdownComplete else {

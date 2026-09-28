@@ -11,6 +11,12 @@ enum OtherAudioAction: String, Codable, CaseIterable, Sendable {
     case pause
 }
 
+/// What a wallpaper does while other windows cover its display's working area.
+enum DesktopCoveredAction: String, Codable, CaseIterable, Sendable {
+    case pause
+    case keepRunning
+}
+
 enum AppRuleCondition: String, Codable, CaseIterable, Sendable {
     case running
     case frontmost
@@ -30,8 +36,8 @@ struct AppRule: Codable, Equatable, Identifiable, Sendable {
     var action: AppRuleAction
 }
 
-/// UserDefaults-backed playback rules for display sleep, other-app audio and
-/// per-app pause, mute and stop. Mutations post `didChangeNotification` once.
+/// UserDefaults-backed playback rules for display sleep, other-app audio, a
+/// covered desktop and per-app pause, mute and stop. Mutations post `didChangeNotification` once.
 @MainActor
 final class PlaybackPreferences {
     static let didChangeNotification = Notification.Name("WallpaperMachine.playbackPreferencesDidChange")
@@ -45,6 +51,7 @@ final class PlaybackPreferences {
 
     private static let displaySleepKey = "WallpaperMachine.displaySleepAction"
     private static let otherAudioKey = "WallpaperMachine.otherAudioAction"
+    private static let desktopCoveredKey = "WallpaperMachine.desktopCoveredAction"
     private static let appRulesKey = "WallpaperMachine.appRules"
 
     private let defaults: UserDefaults
@@ -62,6 +69,11 @@ final class PlaybackPreferences {
     var otherAudioAction: OtherAudioAction {
         get { storedEnum(Self.otherAudioKey, default: .keepRunning) }
         set { store(newValue.rawValue, forKey: Self.otherAudioKey) }
+    }
+
+    var desktopCoveredAction: DesktopCoveredAction {
+        get { storedEnum(Self.desktopCoveredKey, default: .pause) }
+        set { store(newValue.rawValue, forKey: Self.desktopCoveredKey) }
     }
 
     private(set) var appRules: [AppRule]

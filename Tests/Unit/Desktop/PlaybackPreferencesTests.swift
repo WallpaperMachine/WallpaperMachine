@@ -24,6 +24,7 @@ final class PlaybackPreferencesTests: XCTestCase {
         let preferences = PlaybackPreferences(defaults: defaults)
         XCTAssertEqual(preferences.displaySleepAction, .pause)
         XCTAssertEqual(preferences.otherAudioAction, .keepRunning)
+        XCTAssertEqual(preferences.desktopCoveredAction, .pause, "A covered desktop pauses unless the user opts out")
         XCTAssertTrue(preferences.appRules.isEmpty)
     }
 
@@ -31,6 +32,7 @@ final class PlaybackPreferencesTests: XCTestCase {
         let preferences = PlaybackPreferences(defaults: defaults)
         preferences.displaySleepAction = .stop
         preferences.otherAudioAction = .mute
+        preferences.desktopCoveredAction = .keepRunning
         let added = preferences.addRule(bundleIdentifier: "com.example.Player", name: "Player")
         try? preferences.updateRule(id: added.id, condition: .frontmost)
         try? preferences.updateRule(id: added.id, action: .stop)
@@ -38,6 +40,7 @@ final class PlaybackPreferencesTests: XCTestCase {
         let reloaded = PlaybackPreferences(defaults: defaults)
         XCTAssertEqual(reloaded.displaySleepAction, .stop)
         XCTAssertEqual(reloaded.otherAudioAction, .mute)
+        XCTAssertEqual(reloaded.desktopCoveredAction, .keepRunning)
         XCTAssertEqual(reloaded.appRules.count, 1)
         XCTAssertEqual(reloaded.appRules[0].bundleIdentifier, "com.example.Player")
         XCTAssertEqual(reloaded.appRules[0].condition, .frontmost)
@@ -48,11 +51,13 @@ final class PlaybackPreferencesTests: XCTestCase {
     func testCorruptStoredValuesFallBackToDefaults() {
         defaults.set("not-an-action", forKey: "WallpaperMachine.displaySleepAction")
         defaults.set("louder", forKey: "WallpaperMachine.otherAudioAction")
+        defaults.set("sometimes", forKey: "WallpaperMachine.desktopCoveredAction")
         defaults.set(Data("not-json".utf8), forKey: "WallpaperMachine.appRules")
 
         let preferences = PlaybackPreferences(defaults: defaults)
         XCTAssertEqual(preferences.displaySleepAction, .pause)
         XCTAssertEqual(preferences.otherAudioAction, .keepRunning)
+        XCTAssertEqual(preferences.desktopCoveredAction, .pause)
         XCTAssertTrue(preferences.appRules.isEmpty)
     }
 

@@ -255,6 +255,11 @@ extension WebPanelController {
           throw WebPanelRequest.invalid
         }
         playback.otherAudioAction = action
+      case "desktopCoveredAction":
+        guard let action = DesktopCoveredAction(rawValue: try request.string("value")) else {
+          throw WebPanelRequest.invalid
+        }
+        playback.desktopCoveredAction = action
       case "verboseLogging":
         try await store.setVerboseLoggingAsync(enabled: try request.boolean("value"))
       case "keepWindowsOnWallpaperClick":

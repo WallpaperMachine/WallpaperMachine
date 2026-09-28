@@ -29,6 +29,22 @@ final class WebPanelPerformanceSettingsTests: XCTestCase {
     XCTAssertTrue(context.bridge.renderScales.isEmpty)
   }
 
+  func testDesktopCoveredActionIsSavedAndAnUnknownValueRefused() async throws {
+    let context = try Context()
+    defer { context.tearDown() }
+
+    try await context.controller.perform(
+      "setting", body: ["key": "desktopCoveredAction", "value": "keepRunning"])
+    XCTAssertEqual(context.playback.desktopCoveredAction, .keepRunning)
+
+    do {
+      try await context.controller.perform(
+        "setting", body: ["key": "desktopCoveredAction", "value": "sometimes"])
+      XCTFail("An unrecognised choice must not be applied")
+    } catch {}
+    XCTAssertEqual(context.playback.desktopCoveredAction, .keepRunning)
+  }
+
   func testUnknownVideoBackendIsRefusedInsteadOfSilentlyDefaulting() async throws {
     let context = try Context()
     defer { context.tearDown() }
@@ -241,6 +257,7 @@ final class WebPanelPerformanceSettingsTests: XCTestCase {
     context.store.settingsSnapshot.frameRateCap = 45
     context.playback.displaySleepAction = .stop
     context.playback.otherAudioAction = .mute
+    context.playback.desktopCoveredAction = .keepRunning
     _ = context.playback.addRule(bundleIdentifier: "com.example.sample", name: "Sample")
 
     let settings = try XCTUnwrap(context.controller.snapshot()["settings"] as? [String: Any])
@@ -261,6 +278,7 @@ final class WebPanelPerformanceSettingsTests: XCTestCase {
     XCTAssertEqual(settings["frameRateCapMax"] as? Int, 60)
     XCTAssertEqual(settings["displaySleepAction"] as? String, "stop")
     XCTAssertEqual(settings["otherAudioAction"] as? String, "mute")
+    XCTAssertEqual(settings["desktopCoveredAction"] as? String, "keepRunning")
     let rules = try XCTUnwrap(settings["appRules"] as? [[String: Any]])
     XCTAssertEqual(rules.count, 1)
     XCTAssertEqual(rules[0]["name"] as? String, "Sample")
