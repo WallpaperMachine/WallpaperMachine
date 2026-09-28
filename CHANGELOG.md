@@ -7,6 +7,33 @@ sections list the commits. The GitHub Release body and the app's What's new card
 repeat the section, so the three always say the same thing. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.1.0 — 2026-09-28
+
+Wallpapers now pause when windows cover the desktop and use less memory, and actions queue and run in order instead of showing an error.
+
+### New
+
+- Wallpapers pause when windows cover the desktop and resume once any of it shows, set in Settings → Performance → Playback with Pause as default or Keep running
+
+### Improved
+
+- Actions from the control panel and menu bar now queue and run in order, and clicking several wallpapers in a row applies the last one
+- The tile being applied shows a progress ring, and wallpapers queued behind it are marked
+- Wallpapers use less memory by loading textures sized for your display and releasing renderers and allocations they are not using
+- The experimental animated lock screen keeps a still poster while unlocked and loads its scene only when it can be shown
+- Discover releases preview animations for tiles scrolled out of view, and the control panel frees its web resources when closed
+- Favorites, Show in Finder and the delete confirmation no longer wait for or hold up other actions
+- The default frame rate limit is now 60 fps
+
+### Fixed
+
+- Switching wallpapers while another action was running no longer shows a red "Wait for the current action to finish" banner
+- Frame rate limits now reach their target, where a 60 fps limit previously delivered about 50 frames a second
+- Library refreshes after downloads and imports no longer fail while a wallpaper is being applied
+- The Updates and license cards in Settings → About now leave the same space below their last line as other cards
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.0.3...v1.1.0
+
 ## 1.0.3 — 2026-09-28
 
 This release stops wallpapers from flashing and restarting after unlocking, makes Restart to Update work again, and keeps the control panel open after you apply a wallpaper.
