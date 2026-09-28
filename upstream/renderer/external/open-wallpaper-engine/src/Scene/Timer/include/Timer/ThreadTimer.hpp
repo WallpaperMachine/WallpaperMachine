@@ -35,7 +35,13 @@ public:
     /// request, an appointment, an appointment already past — had nothing to
     /// clamp it and could drive the scene as fast as events arrived. This is
     /// that ceiling, expressed where every path has to pass it: the earliest
-    /// moment a callback may run is always `last callback + min interval`.
+    /// moment a callback may run is always `last tick + min interval`, where the
+    /// last tick is the moment that callback was due. A callback that woke late
+    /// is followed by one sooner by at most that lateness, which is what keeps
+    /// the average at the ceiling; measuring from the late wake instead added
+    /// every wake's slack to the period (a 60 fps ceiling delivered about 50).
+    /// `FireNow` follows a tick that was itself due a whole period after the
+    /// last callback, so it is bounded the same way.
     ///
     /// Zero disables the floor, which is the behaviour of a timer whose owner
     /// never states a ceiling.
