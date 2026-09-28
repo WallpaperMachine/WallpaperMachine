@@ -137,9 +137,10 @@ have **Skip**:
 3. **Performance.** Radio tiles for the **Low**, **Medium** and **High** quality
    presets (the same pairs as [Settings → Performance](performance.md#quality),
    shared through `settings.js`), then the **Frame rate limit** slider, whose
-   top reads **Native refresh rate**: each display runs at its own refresh rate
-   (120 fps on a ProMotion MacBook Pro, 60 fps on a MacBook Air). High, no
-   limit at full render scale, is selected on a fresh install. A preset fills
+   top reads **No limit**: each display then runs at its own rate, 60 fps unless
+   a higher rate was chosen for it (see
+   [Default per-display frame rate](performance.md#default-per-display-frame-rate)).
+   High, no limit at full render scale, is selected on a fresh install. A preset fills
    both drafts; moving the slider changes only the limit, and a pair matching
    no preset leaves every tile unchecked with a **Custom** note. They are
    drafts: **Continue** sends only what changed as `setting` / `renderScale`
