@@ -95,6 +95,20 @@ final class LockScreenWallpaperSelection {
     var retained: [Entry] = []
     var changed = false
     let selection = try Self.selection(revision: revision)
+    // Originals already journaled, decoded only when a fallback in the live
+    // store turns out to hold a copy of this extension's selection.
+    var decodedOriginals: [[String]: [String: Any]] = [:]
+    let journaledOriginal = { (path: [String]) -> [String: Any]? in
+      if let decoded = decodedOriginals[path] { return decoded }
+      guard
+        let data = (retained.first { $0.path == path } ?? self.entries.first { $0.path == path })?
+          .original,
+        let original = try? PropertyListSerialization.propertyList(from: data, format: nil)
+          as? [String: Any]
+      else { return nil }
+      decodedOriginals[path] = original
+      return original
+    }
     for entry in entries {
       if entry.observeOnly == true && !displays.isEmpty {
         retained.append(entry)
@@ -172,7 +186,8 @@ final class LockScreenWallpaperSelection {
         Entry(
           path: path,
           original: try Self.encode(
-            Self.restorationOriginal(original ?? [:], path: path, root: root)),
+            Self.restorationOriginal(
+              original ?? [:], path: path, root: root, journaled: journaledOriginal)),
           created: original == nil, observeOnly: true))
     }
     let restorationRoot = root
@@ -181,8 +196,10 @@ final class LockScreenWallpaperSelection {
       var node = existing ?? [:]
       // An orphaned provider cannot be its own restoration target. Recover only
       // its fields from surviving native fallbacks; preserve external choices.
-      let original = try Self.restorationOriginal(node, path: path, root: restorationRoot)
-        .filter { ["Desktop", "Idle", "Type"].contains($0.key) }
+      let original = try Self.restorationOriginal(
+        node, path: path, root: restorationRoot, journaled: journaledOriginal
+      )
+      .filter { ["Desktop", "Idle", "Type"].contains($0.key) }
       retained.append(
         Entry(path: path, original: try Self.encode(original), created: existing == nil))
       node["Desktop"] = selection
@@ -230,8 +247,13 @@ final class LockScreenWallpaperSelection {
     }
   }
 
+  /// A fallback that macOS overwrote with a copy of this extension's selection
+  /// still has its native choice in the journal, so `journaled` is consulted
+  /// after the live value: a Space created after that copy, a full-screen
+  /// app's included, would otherwise have no fallback left at all.
   private static func restorationOriginal(
-    _ node: [String: Any], path: [String], root: [String: Any]
+    _ node: [String: Any], path: [String], root: [String: Any],
+    journaled: ([String]) -> [String: Any]?
   ) throws -> [String: Any] {
     var original = node
     var fallbackPaths: [[String]] = []
@@ -242,9 +264,14 @@ final class LockScreenWallpaperSelection {
     fallbackPaths += [["SystemDefault"], ["AllSpacesAndDisplays"]]
     for key in ["Desktop", "Idle"] where owns(node[key]) {
       guard
-        let replacement = fallbackPaths.lazy
+        let replacement = fallbackPaths
           .filter({ $0 != path })
-          .compactMap({ Self.node(root, path: $0)?[key] as? [String: Any] })
+          .flatMap({ fallback in
+            [
+              Self.node(root, path: fallback)?[key] as? [String: Any],
+              journaled(fallback)?[key] as? [String: Any],
+            ].compactMap { $0 }
+          })
           .first(where: { value in
             guard !owns(value), let content = value["Content"] as? [String: Any],
               let choices = content["Choices"] as? [[String: Any]], !choices.isEmpty

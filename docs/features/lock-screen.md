@@ -97,6 +97,16 @@ recovery union is persisted before changing the store, and pruned only after a
 successful reload; failed writes, reloads or journal removal retain recovery
 information for retry.
 
+macOS copies the extension's selection into the fallbacks it reloads
+(`SystemDefault` and each Space's `Default`), and a Space created while the
+feature is on, a new desktop or a full-screen app's, starts from those copies,
+so the live store has no native choice left to restore it to. Such a Space is
+taken over like any other, with originals taken from the journaled originals
+of those fallbacks, and restored to them when the feature turns off. Before
+2026-09-28 the first check after a new Space failed with "no restoration
+journal or surviving system fallback", turned the feature off and left that
+Space pointing at the extension.
+
 ## Storage
 
 Lock-screen assets are isolated copies, using APFS clones where available. They
