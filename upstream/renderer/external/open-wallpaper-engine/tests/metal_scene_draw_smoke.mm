@@ -3791,15 +3791,23 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
     // worth comparing without them, and this backend had no way to supply
     // either.
     const char* listed = std::getenv("WE_TEST_METAL_PROJECTS");
-    const int frame_count = std::getenv("WE_TEST_FRAMES")
-        ? std::atoi(std::getenv("WE_TEST_FRAMES")) : 120;
-    ASSERT_GE(frame_count, 2);
-    ASSERT_LE(frame_count, 3600);
     const auto  assets = LocalSceneAssetsRoot();
     if (listed == nullptr || *listed == '\0' || assets.empty() ||
         ! std::filesystem::is_directory(assets)) {
         GTEST_SKIP() << "WE_TEST_METAL_PROJECTS names no local project; no real wallpaper was "
                         "drawn natively";
+    }
+    // Its own knob, not the probe's `WE_TEST_FRAMES`: that one counts samples a
+    // `WE_TEST_FRAME_STEP` apart, and the matched-time recipe sets it for the
+    // Vulkan run alone. Sharing it would silently move this frame's scene time.
+    // Two frames at least, because frame 0 is excluded from the averages.
+    int frame_count = 120;
+    if (const char* value = std::getenv("WE_TEST_METAL_FRAMES")) {
+        const std::string_view text(value);
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), frame_count);
+        ASSERT_TRUE(parsed.ec == std::errc {} && parsed.ptr == text.data() + text.size() &&
+                    frame_count >= 2 && frame_count <= 3600)
+            << "WE_TEST_METAL_FRAMES must be 2..3600, not \"" << value << "\"";
     }
 
     std::vector<std::string> projects;
@@ -3974,8 +3982,12 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                           double(encodes.scene_output_passes) / measured,
                           double(encodes.blit_passes) / measured, draw_cpu_ms / measured);
             std::cout << "[ LOCAL    ] " << paths.scene_id << ": " << encode_line << std::endl;
-            std::cout << "[ LOCAL    ] " << paths.scene_id << ": Metal allocated bytes="
-                      << device.currentAllocatedSize << std::endl;
+            // The target figure is this scene's own; the device figure is
+            // process-wide and includes the layer's drawables, so it varies
+            // between runs of the same scene.
+            std::cout << "[ LOCAL    ] " << paths.scene_id
+                      << ": render target bytes=" << render.RenderTargetBytesForTests()
+                      << " device allocated bytes=" << device.currentAllocatedSize << std::endl;
 
             if (const char* output = std::getenv("WE_TEST_OUTPUT");
                 output != nullptr && *output != '\0' && ! last.empty()) {

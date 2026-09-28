@@ -4923,6 +4923,21 @@ MetalRender::FrameEncodeCountsForTests MetalRender::LastFrameEncodeCountsForTest
     return { last.render_passes, last.scene_output_passes, last.blit_passes };
 }
 
+uint64_t MetalRender::RenderTargetBytesForTests() const
+{
+    if (pImpl == nullptr) return 0;
+    std::unordered_set<const void*> counted;
+    uint64_t                        bytes = 0;
+    for (const auto* table : { &pImpl->targets, &pImpl->depth_targets }) {
+        for (const auto& [key, texture] : *table) {
+            (void)key;
+            if (texture == nil || ! counted.insert((__bridge const void*)texture).second) continue;
+            bytes += texture.allocatedSize;
+        }
+    }
+    return bytes;
+}
+
 uint64_t MetalRender::ProgramCompilesForTests() { return MetalProgramCache::shared().compileCount(); }
 
 bool MetalRender::PipelineArchiveServesEverySeenPipelineForTests()
