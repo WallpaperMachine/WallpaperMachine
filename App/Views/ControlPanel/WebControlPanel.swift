@@ -67,7 +67,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   var pageGeneration: UInt64 = 0
   let isPresentationVisible: (@MainActor () -> Bool)?
   var observationInstalled = false
-  var commandBusy = false
   var actionError: String?
   var importTask: Task<Void, Never>? {
     didSet { navigation.isImporting = importTask != nil }

@@ -35,8 +35,11 @@ final class BridgeStore {
     /// Per-wallpaper energy ratings, owned by the app delegate's background recorder.
     @ObservationIgnored var wallpaperEnergyRatings: WallpaperEnergyRatings?
     let editorState = WallpaperEditorState()
+    /// The user's commands, from the control panel and the menu bar, run through here.
+    let commands = UserCommandQueue()
     private(set) var activatingWallpaperID: String?
     private(set) var applyingWallpaperID: String?
+    @ObservationIgnored private var activationWaiters: [CheckedContinuation<Void, Never>] = []
     private var activeWallpaperEdits: [String: Int] = [:]
     private var wallpaperAppliesNeedingSave = Set<String>()
     private(set) var activationNeedsRefresh = false
@@ -65,7 +68,7 @@ final class BridgeStore {
     }
 
     func refreshAllAsync() async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         do {
             let bundle = try await (activationNeedsRefresh ? bridge.refreshDisplays() : bridge.allSnapshots())
             apply(bundle)
@@ -90,7 +93,7 @@ final class BridgeStore {
     }
 
     func refreshLibraryAsync() async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         do {
             let bundle = try await bridge.refreshLibrary()
             apply(bundle)
@@ -158,13 +161,13 @@ final class BridgeStore {
     }
 
     func activateWallpaperAsync(id: String, displayId: String) async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: id)
         guard librarySnapshot.wallpapers.contains(where: { $0.id == id }) else {
             throw WallpaperActionError(message: String(localized: "This wallpaper is no longer in your library. Refresh Library and choose another wallpaper."))
         }
         activatingWallpaperID = id
-        defer { activatingWallpaperID = nil }
+        defer { activatingWallpaperID = nil; resumeActivationWaiters() }
         try await selectWallpaperAsync(id: id)
         guard !activationNeedsRefresh else {
             throw WallpaperActionError(message: String(localized: "Refresh all wallpaper state before applying again."))
@@ -225,9 +228,29 @@ final class BridgeStore {
         }
     }
 
-    private func requireIdleActivation() throws {
-        guard activatingWallpaperID == nil, applyingWallpaperID == nil else {
-            throw WallpaperActionError(message: String(localized: "Wait for the current wallpaper to finish applying."))
+    /// Callers outside the command queue (downloads, imports, the menu bar's refresh) can
+    /// reach the store while a wallpaper is being applied; they wait for it, not fail.
+    /// Each caller claims its own flag before its next suspension, so the loop re-checks.
+    private func waitForIdleActivation() async {
+        while activatingWallpaperID != nil || applyingWallpaperID != nil {
+            await withCheckedContinuation { activationWaiters.append($0) }
+        }
+    }
+
+    private func resumeActivationWaiters() {
+        let waiters = activationWaiters
+        activationWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private static let activationSlotPrefix = "activate:"
+    static func activationSlot(displayId: String) -> String { activationSlotPrefix + displayId }
+    static let selectionSlot = "select"
+
+    /// Wallpapers whose switch is queued behind the running command, oldest first.
+    var waitingActivationIDs: [String] {
+        commands.waiting.compactMap {
+            $0.slot?.hasPrefix(Self.activationSlotPrefix) == true ? $0.subject : nil
         }
     }
 
@@ -518,13 +541,13 @@ final class BridgeStore {
     }
 
     func applyWallpaperOptionsAsync(wallpaperId: String) async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: wallpaperId)
         guard !activationNeedsRefresh else {
             throw WallpaperActionError(message: String(localized: "Refresh all wallpaper state before applying again."))
         }
         applyingWallpaperID = wallpaperId
-        defer { applyingWallpaperID = nil }
+        defer { applyingWallpaperID = nil; resumeActivationWaiters() }
         try await validateWallpaperForPlaybackAsync(id: wallpaperId)
         try await commitPendingWallpaperEditsAsync(id: wallpaperId)
         do {
@@ -592,10 +615,10 @@ final class BridgeStore {
     }
 
     func cancelWallpaperOptionsAsync(wallpaperId: String) async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: wallpaperId)
         applyingWallpaperID = wallpaperId
-        defer { applyingWallpaperID = nil }
+        defer { applyingWallpaperID = nil; resumeActivationWaiters() }
         let bundle = try await bridge.cancelWallpaperOptions(wallpaperId: wallpaperId)
         apply(bundle)
         editorState.discard(wallpaperID: wallpaperId)
@@ -635,7 +658,7 @@ final class BridgeStore {
         displayId: String,
         wallpaperId: String
     ) async throws {
-        try requireIdleActivation()
+        await waitForIdleActivation()
         let bundle = try await bridge.ejectWallpaperFromDisplay(displayId: displayId, wallpaperId: wallpaperId)
         apply(bundle)
     }

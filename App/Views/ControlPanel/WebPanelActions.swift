@@ -119,56 +119,51 @@ extension WebPanelController {
       return
     default: break
     }
-    guard !commandBusy else {
-      throw WallpaperActionError(message: String(localized: "Wait for the current action to finish."))
-    }
-    commandBusy = true
     actionError = nil
     scheduleUpdate()
-    defer { commandBusy = false }
     switch action {
-    case "target":
-      let id = try request.string("id")
-      guard
-        store.settingsSnapshot.displays.contains(where: {
-          $0.displayId == id && $0.enabled && $0.mode == .standalone
-        })
-      else { throw WebPanelRequest.invalid }
-      navigation.targetDisplayID = id
-    case "select": try await store.selectWallpaperAsync(id: try wallpaperID(request))
+    // Neither touches the renderer, so neither waits behind a command that does.
     case "favorite":
       let id = try wallpaperID(request)
       if !favoriteIDs.insert(id).inserted { favoriteIDs.remove(id) }
       UserDefaults.standard.set(
         try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
-    case "activate":
-      try await store.activateWallpaperAsync(
-        id: try wallpaperID(request), displayId: navigation.targetDisplayID)
-      // Get out of the way so the freshly applied wallpaper is visible.
-      if hidesAfterActivating { NSApp.hide(nil) }
-    case "apply": try await store.applyWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
-    case "revert":
-      try await store.cancelWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
-    case "refresh":
-      try await store.refreshAllAsync()
-      try await store.refreshLibraryAsync()
-    case "playback":
-      if store.appSnapshot.playbackState == .paused {
-        try await store.playAllAsync()
-      } else {
-        try await store.pauseAllAsync()
+    case "reveal":
+      NSWorkspace.shared.activateFileViewerSelecting([
+        ClientPaths.libraryURL.appendingPathComponent(try wallpaperID(request))
+      ])
+    // Only the latest selection and the latest switch per display matter: a newer click
+    // replaces one still waiting, and nothing the user asked for fails for being early.
+    case "select":
+      let id = try wallpaperID(request)
+      try await store.commands.run(slot: BridgeStore.selectionSlot, subject: id) {
+        try await store.selectWallpaperAsync(id: id)
       }
+    case "activate":
+      let id = try wallpaperID(request)
+      // The display is the one targeted when the user asked, not when the command runs.
+      let displayID = navigation.targetDisplayID
+      let slot = BridgeStore.activationSlot(displayId: displayID)
+      try await store.commands.run(slot: slot, subject: id) {
+        try await store.activateWallpaperAsync(id: id, displayId: displayID)
+        // Get out of the way so the freshly applied wallpaper is visible, unless another
+        // switch is already waiting to replace it.
+        if hidesAfterActivating, !store.commands.hasWaiting(slot: slot) { NSApp.hide(nil) }
+      }
+    // The confirmation is asked before queueing, so an open sheet holds up nothing else.
     case "delete":
       let id = try wallpaperID(request)
       let title = store.librarySnapshot.wallpapers.first { $0.id == id }?.title ?? id
-      if await confirm(
-        String(localized: "Move \(title) to Trash?"),
-        detail: String(
-          localized:
-            "It is removed from your library and stops playing. The original files you imported are not affected."
-        ),
-        button: String(localized: "Move to Trash"))
-      {
+      guard
+        await confirm(
+          String(localized: "Move \(title) to Trash?"),
+          detail: String(
+            localized:
+              "It is removed from your library and stops playing. The original files you imported are not affected."
+          ),
+          button: String(localized: "Move to Trash"))
+      else { return }
+      try await store.commands.run {
         try await store.deleteWallpaperAsync(id: id)
         try forgetFavorites([id])
       }
@@ -180,14 +175,16 @@ extension WebPanelController {
           localized:
             "Move \(store.librarySnapshot.wallpapers.first(where: { $0.id == ids[0] })?.title ?? ids[0]) to Trash?")
         : String(localized: "Move \(ids.count) wallpapers to Trash?")
-      if await confirm(
-        title,
-        detail: String(
-          localized:
-            "They are removed from your library and stop playing. The original files you imported are not affected."
-        ),
-        button: String(localized: "Move to Trash"))
-      {
+      guard
+        await confirm(
+          title,
+          detail: String(
+            localized:
+              "They are removed from your library and stop playing. The original files you imported are not affected."
+          ),
+          button: String(localized: "Move to Trash"))
+      else { return }
+      try await store.commands.run {
         let report = try await store.deleteWallpapersAsync(ids: ids)
         try forgetFavorites(report.deleted)
         if !report.failures.isEmpty {
@@ -202,10 +199,36 @@ extension WebPanelController {
           )
         }
       }
-    case "reveal":
-      NSWorkspace.shared.activateFileViewerSelecting([
-        ClientPaths.libraryURL.appendingPathComponent(try wallpaperID(request))
-      ])
+    default:
+      try await store.commands.run { try await performQueued(action, request: request, body: body) }
+    }
+  }
+
+  /// Commands that change renderer or app state, run one at a time through `store.commands`.
+  private func performQueued(_ action: String, request: WebPanelRequest, body: [String: Any])
+    async throws
+  {
+    switch action {
+    case "target":
+      let id = try request.string("id")
+      guard
+        store.settingsSnapshot.displays.contains(where: {
+          $0.displayId == id && $0.enabled && $0.mode == .standalone
+        })
+      else { throw WebPanelRequest.invalid }
+      navigation.targetDisplayID = id
+    case "apply": try await store.applyWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
+    case "revert":
+      try await store.cancelWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
+    case "refresh":
+      try await store.refreshAllAsync()
+      try await store.refreshLibraryAsync()
+    case "playback":
+      if store.appSnapshot.playbackState == .paused {
+        try await store.playAllAsync()
+      } else {
+        try await store.pauseAllAsync()
+      }
     case "import": try await beginImport(request)
     case "wallpaperSetting": try await wallpaperSetting(request)
     case "displayConfig": try await displayConfig(request)

@@ -111,6 +111,14 @@ holds the `WallpaperBridge` handle and the cached snapshot values (`appSnapshot`
 `librarySnapshot`, `wallpaperOptionsSnapshot`, `monitorInformationSnapshot`, `settingsSnapshot`,
 `snapshotRevision`, `libraryLoadState`), exposes async mutation calls, and publishes
 `onSnapshotApplied` so `AppDelegate` can re-evaluate presentation policy and lock-screen state.
+User commands from the panel and the menu bar run one at a time through `BridgeStore.commands`
+(`App/ViewModels/UserCommandQueue.swift`). A command given while another runs waits its turn
+instead of failing; commands sharing a slot (selecting a wallpaper, switching one display's
+wallpaper) keep only the newest waiting request, so rapid clicks apply the last choice. Favorite
+and Show in Finder skip the queue, and delete confirmations are asked before queueing. The panel
+marks the tile being applied and any queued behind it; busy is never shown as an error. Callers
+outside the queue (downloads, imports) that reach an activation-guarded store call wait for the
+running apply rather than throw.
 `App/ViewModels/WallpaperEditorState.swift` holds transient editor drafts (scaling text,
 property text, expanded sections) that must not be pushed into the renderer on every keystroke.
 `App/Logging/AppLog.swift` writes Swift log lines straight into the bridge's log from any thread, holding

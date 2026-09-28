@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		01DC6E1BECAF040144A7AE96 /* ManagedUserAssetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0AE5BFFCA601EC284BB3373 /* ManagedUserAssetStore.swift */; };
+		0342BE183E598D79EB34E74F /* UserCommandQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0DAE34E87FBDEF0E3871A2 /* UserCommandQueue.swift */; };
 		03C71384C6CFB98AD13A834C /* SceneMediaSink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8839E121D4CCD4C2CEBDD9B /* SceneMediaSink.swift */; };
 		04897786A3EBED132A72E0DE /* DiagnosticsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC6681491A71C3D2B8106515 /* DiagnosticsBundle.swift */; };
 		068E30F69F43B1F570FCBEAF /* WallpaperActivationRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D9E1B7E6B2917C7E75B5ED /* WallpaperActivationRecoveryTests.swift */; };
@@ -118,6 +119,7 @@
 		8A252221624CD425BE02949D /* ControlPanelShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80826F4A235FD5E6D91FCB26 /* ControlPanelShellTests.swift */; };
 		8B2E46CD0015496172FA3246 /* WallpaperMachineExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 06C762182CE14CCFAE5FEDA1 /* WallpaperMachineExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8BACA536AEFA565A965F2D20 /* LibraryMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC8F26EEAEC3C347AC30E6A /* LibraryMetricsTests.swift */; };
+		8CA179812986CD14B970D964 /* UserCommandQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD323FA35344BDFB8F88B9FB /* UserCommandQueueTests.swift */; };
 		8D4F7CB70DB86A681204638C /* DisplayTitleResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D854DE3C7A668038646A5AA9 /* DisplayTitleResolver.swift */; };
 		8DD31D8DE091F74232364420 /* WebControlPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C777C5B0FFAA472EAEAE3CA /* WebControlPanel.swift */; };
 		8EC170155E5E021236056E31 /* LockScreenWallpaperSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD1FA0716201E21C2542A66 /* LockScreenWallpaperSelection.swift */; };
@@ -403,6 +405,7 @@
 		950C6E82A3CFA807985C9A78 /* keys.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = keys.h; sourceTree = "<group>"; };
 		98B8190005D147048B4356C4 /* AppLogRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogRouterTests.swift; sourceTree = "<group>"; };
 		993D8952E8B60B4EFFCB3E79 /* WebPanelAssetPropertiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPanelAssetPropertiesTests.swift; sourceTree = "<group>"; };
+		9A0DAE34E87FBDEF0E3871A2 /* UserCommandQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserCommandQueue.swift; sourceTree = "<group>"; };
 		9D4BD4032DA1F895B22A6F77 /* WallpaperPresentationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperPresentationPolicyTests.swift; sourceTree = "<group>"; };
 		9E14E5E8368A68E8D548F4C5 /* DesktopWallpaperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWallpaperTests.swift; sourceTree = "<group>"; };
 		9E923E82D4021F3D72B15588 /* AppUpdateInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateInstaller.swift; sourceTree = "<group>"; };
@@ -478,6 +481,7 @@
 		F3C6750EC44FE7719033B28A /* DiagnosticsBundleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsBundleTests.swift; sourceTree = "<group>"; };
 		F4AD9E79BA6BF063B8C95DB8 /* MediaRemoteAdapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MediaRemoteAdapter.h; sourceTree = "<group>"; };
 		FB971B62174C5F9F826731BB /* WebWallpaperPageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebWallpaperPageTests.swift; sourceTree = "<group>"; };
+		FD323FA35344BDFB8F88B9FB /* UserCommandQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserCommandQueueTests.swift; sourceTree = "<group>"; };
 		FDED59360BA927412A6F031A /* FallbackSystemMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallbackSystemMediaProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -505,6 +509,7 @@
 				BEDF1A6C47C49475D68E2D10 /* OtherAudioMonitorTests.swift */,
 				294CC02380EF3DB03FD31F13 /* PlaybackPolicyCompositionTests.swift */,
 				37D3C3C4AFA603E96958AA9C /* PlaybackPreferencesTests.swift */,
+				FD323FA35344BDFB8F88B9FB /* UserCommandQueueTests.swift */,
 				C8D9E1B7E6B2917C7E75B5ED /* WallpaperActivationRecoveryTests.swift */,
 				9D4BD4032DA1F895B22A6F77 /* WallpaperPresentationPolicyTests.swift */,
 			);
@@ -536,6 +541,7 @@
 			isa = PBXGroup;
 			children = (
 				01BA23F761AEA2A7FFA8B12E /* BridgeStore.swift */,
+				9A0DAE34E87FBDEF0E3871A2 /* UserCommandQueue.swift */,
 				1537B17F0B579033F2712CD9 /* WallpaperEditorState.swift */,
 			);
 			path = ViewModels;
@@ -1428,6 +1434,7 @@
 				F93EF90727E984D44A84DF86 /* SystemMediaTestSupport.swift in Sources */,
 				AC61ABE4368494ABDECC2619 /* TestAppLanguage.swift in Sources */,
 				2ED43E4FFD0BBC30EC4E93BC /* UserAssetStoreTests.swift in Sources */,
+				8CA179812986CD14B970D964 /* UserCommandQueueTests.swift in Sources */,
 				068E30F69F43B1F570FCBEAF /* WallpaperActivationRecoveryTests.swift in Sources */,
 				0EB33622F9ED97430EB2B4A3 /* WallpaperEditorStateTests.swift in Sources */,
 				BA1EFCC88078A571F5350223 /* WallpaperEnergyRatingsTests.swift in Sources */,
@@ -1516,6 +1523,7 @@
 				0BE2E38556C2DC38D26934A5 /* UserAssetPicker.swift in Sources */,
 				42A303AEDD07369C02730A62 /* UserAssetStorage.swift in Sources */,
 				F81474D91E66F769D86FED74 /* UserAssetStore.swift in Sources */,
+				0342BE183E598D79EB34E74F /* UserCommandQueue.swift in Sources */,
 				F73CF78193AFF9D3C339A797 /* WallpaperBridge.swift in Sources */,
 				54D6043DFF6F5F46AAD16C60 /* WallpaperCoverageProbes.swift in Sources */,
 				4B6CB9EFE64DCF6C5FD9FC3C /* WallpaperDeletionService.swift in Sources */,

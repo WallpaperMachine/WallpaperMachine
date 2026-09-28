@@ -14,6 +14,8 @@ extension WebPanelController {
     _ = store.libraryLoadState
     _ = store.activatingWallpaperID
     _ = store.applyingWallpaperID
+    _ = store.commands.isBusy
+    _ = store.commands.waiting
     _ = store.latestBridgeErrorMessage
     _ = store.latestBridgeErrorRevision
     let lock = store.lockScreenWallpaper
@@ -437,7 +439,12 @@ extension WebPanelController {
       "language": appLanguage.snapshot,
       "selectedID": store.appSnapshot.selectedWallpaperId as Any? ?? null,
       "paused": store.appSnapshot.playbackState == .paused,
-      "busy": commandBusy || store.activatingWallpaperID != nil || store.applyingWallpaperID != nil,
+      "busy": store.commands.isBusy || store.activatingWallpaperID != nil
+        || store.applyingWallpaperID != nil,
+      // Tiles mark the wallpaper being switched to and any queued behind it; waiting is shown
+      // as progress, never as an error.
+      "applyingID": (store.activatingWallpaperID ?? store.applyingWallpaperID) as Any? ?? null,
+      "queuedApplyIDs": store.waitingActivationIDs,
       "error": error as Any? ?? null,
       "libraryLoading": loading, "favorites": favoriteIDs.sorted(), "wallpapers": wallpapers,
       "filtersCollapsed": filtersCollapsed,

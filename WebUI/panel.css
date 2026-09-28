@@ -405,6 +405,7 @@ small, .muted { color: var(--muted); }
 .tile-download:is(:hover:not(:disabled), :focus-visible) > :has(+ .ring-hover) { display: none; }
 .tile-download:is(.queued, .attention, .failed) { background: var(--media-chip); }
 .tile-download.queued { color: var(--media-ink-dim); }
+.tile-download.tile-status { pointer-events: none; }
 .tile-download.attention { color: var(--media-star); animation: ring-pulse 1.6s ease-out infinite; }
 .tile-download.attention .ring-track { stroke: var(--media-star); }
 .tile-download.failed { color: var(--media-danger); }

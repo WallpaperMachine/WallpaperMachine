@@ -669,7 +669,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             actions.append(menuItem(playbackTitle, action: #selector(togglePlayback)))
         }
         if let store, !shutdownInProgress, !shutdownComplete,
-           store.activatingWallpaperID == nil,
            store.nextWallpaperID(displayId: controlPanelNavigation.targetDisplayID) != nil
         {
             actions.append(menuItem("Next Wallpaper", action: #selector(activateNextWallpaper)))
@@ -882,14 +881,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func activateNextWallpaper() {
         let displayId = controlPanelNavigation.targetDisplayID
         guard let store, !shutdownInProgress, !shutdownComplete,
-              let id = store.nextWallpaperID(displayId: displayId)
+              store.nextWallpaperID(displayId: displayId) != nil
         else {
             return
         }
 
         Task {
             do {
-                try await store.activateWallpaperAsync(id: id, displayId: displayId)
+                // Shares the panel's slot: the latest switch for this display wins, and "next"
+                // is measured from whatever the display shows when this one gets its turn.
+                try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId)) {
+                    guard let id = store.nextWallpaperID(displayId: displayId) else { return }
+                    try await store.activateWallpaperAsync(id: id, displayId: displayId)
+                }
                 lastError = nil
             } catch {
                 lastError = error

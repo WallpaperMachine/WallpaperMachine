@@ -25,6 +25,13 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-28 — Busy state: queue user commands instead of erroring
+
+- python3 scripts/test.py: 664 passed, 0 failed, 11 skipped (Python script tests all OK).
+- Targeted: UserCommandQueueTests, WallpaperActivationRecoveryTests, ControlPanelLibraryTests, ControlPanelShellTests passed.
+- Throwaway offscreen panel smoke (deleted): queued 'target' waited behind a held command with no error; tile ring showed Applying/queued, pointer-events none, error banner hidden.
+- Not checked: live desktop switching and visual look of the rings (no desktop run authorized); Release app not rebuilt.
+
 ## 2026-09-29 — Review fixes on native Metal target pruning and the lock-screen poster
 
 - Follow-up to #9 (squash-merged as 5567aab without these fixes); commits rebuilt on that main, tree identical to the gated one below.
@@ -126,14 +133,3 @@ M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coali
 - Extension log confirms first-frame readiness followed by renderer unload while retaining its poster. Actual lock/unlock reload verification is pending user participation. No texture downsampling was applied; two 7680×4320 input images each require about 173 MiB on this scene.
 - Corrected test-bundle extension registration pollution: unregistered non-installed copies, renamed the two task-owned benchmark apps to non-launchable backup bundles, and verified the single registered/running extension is under `/Applications`. Config comparison confirmed playback, quality, power and monitor assignments unchanged.
 - Heap-pressure and prefetch/upload-overlap experiments were removed: no reliable useful gain on this scene (heap call reported zero; peak probe change about 6 MiB). Their measurements are not credited to the final change. Private wallpaper pixels, app copies and traces stay out of Git.
-
-## 2026-09-28 — Release before-after resource measurements with Codex computer use
-
-- Built baseline and modified Release bundles with `python3 scripts/build.py --configuration Release`; both exit 0. Baseline restores the four changed production files from `31fb981`; modified code is `075e85e` (subsequent commits are docs). Current source and normal Release build restored; benchmark bundles use isolated homes and identical signing treatment.
-- Used Codex built-in computer use for the final A/B UI sequence. Same 1054×659 panel, Chinese locale, same 30 displayed Discover titles, six page-scrolls down and six up, then Command-W. No active wallpaper or quality/default changes. Both sessions seeded with the same 120 thumbnail-cache files, verified byte-identical; live adjacent-page prefetch differed by one unused animated preview/still pair.
-- Collected three approximately 22-second closed-panel windows per build, 21 samples each. Every sample verified no on-screen test panel, exactly one WallpaperMachine instance, and a stable resource-coalition process set. These are repeated windows within one app session per build, not independent launches. Interrupted foreground attempts excluded.
-- App plus helper CPU: baseline median 0.64%, range 0.25–1.02%; modified median 0.60%, range 0.45–3.94%. Ranges overlap and the first modified window was higher: no demonstrated idle-CPU improvement. Mach-absolute rusage times converted with the local 125/3 timebase, checked against ps cumulative CPU time.
-- Physical footprint: baseline median 248.6 MiB, range 248.6–248.7; modified median 186.0 MiB, range 185.7–199.9. Observed difference −62.6 MiB (25.2%) in this browsing/closed-panel comparison, not a general playback or system-RAM claim.
-- Summed process RSS: baseline median 551.4 MiB, range 551.0–551.5; modified median 426.5 MiB, range 426.3–432.2. Observed difference −125.0 MiB (22.7%). RSS may double-count shared pages; physical footprint is reported separately.
-- Both benchmark apps quit through Codex computer use and their exit was verified. App preferences restored to the pre-run snapshot; no wallpaper was applied during this comparison. Existing app-code gates remain applicable; only documentation changed afterward.
-- Limits: foreground/active-playback CPU and RAM still unmeasured under controlled conditions; the public Workshop page and neighboring-page prefetch are not a frozen network fixture. No broad CPU-saving or all-wallpapers RAM-saving percentage is claimed.

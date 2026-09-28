@@ -55,6 +55,28 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
         XCTAssertTrue(store.activationNeedsRefresh,
                       "Without a trustworthy re-read the app must ask for a full refresh")
     }
+
+    /// Downloads and imports rescan the library on their own schedule; one landing mid-apply
+    /// waits for the apply instead of failing with a "wait" error.
+    func testLibraryRefreshDuringApplyWaitsForIt() async throws {
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        bridge.applyError = nil
+        let store = BridgeStore(bridge: bridge)
+        try await store.refreshAllAsync()
+        var release: CheckedContinuation<Void, Never>?
+        bridge.holdApply = { await withCheckedContinuation { release = $0 } }
+
+        let activation = Task { try await store.activateWallpaperAsync(id: "failing", displayId: "primary") }
+        while release == nil { await Task.yield() }
+        let refresh = Task { try await store.refreshLibraryAsync() }
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertNil(bridge.refreshSawActive, "The rescan must not start while the apply is in flight")
+
+        release?.resume()
+        try await activation.value
+        try await refresh.value
+        XCTAssertEqual(bridge.refreshSawActive, true)
+    }
 }
 
 private func XCTAssertThrowsErrorAsync(
@@ -72,6 +94,14 @@ private final class ApplyFailureBridge: WallpaperBridge {
     var applyError: Error? = WallpaperActionError(
         message: "The wallpaper did not render a first frame within 90 seconds.")
     var snapshotsFail = false
+    var holdApply: (@MainActor () async -> Void)?
+    /// Whether the wallpaper was already active when the library rescan reached the bridge.
+    var refreshSawActive: Bool?
+
+    override func refreshLibrary() async throws -> BridgeSnapshotBundle {
+        refreshSawActive = active
+        return bundle
+    }
 
     override func allSnapshots() async throws -> BridgeSnapshotBundle {
         if snapshotsFail { throw CancellationError() }
@@ -97,6 +127,7 @@ private final class ApplyFailureBridge: WallpaperBridge {
     override func applyWallpaperOptions(
         wallpaperId: String
     ) async throws -> BridgeWallpaperMutationBundle {
+        if let holdApply { await holdApply() }
         if let applyError { throw applyError }
         active = true
         return mutation

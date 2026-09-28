@@ -283,12 +283,6 @@
     "The selected display is unavailable, disabled, or mirroring another display. Choose an enabled independent display in Settings." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The selected display is unavailable, disabled, or mirroring another display. Choose an enabled independent display in Settings."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "所选显示器不可用、已停用或正在镜像其他显示器。请在设置中选择已启用的独立显示器。"}}}
     },
-    "Wait for the current action to finish." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wait for the current action to finish."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请等待当前操作完成。"}}}
-    },
-    "Wait for the current wallpaper to finish applying." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wait for the current wallpaper to finish applying."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请等待当前壁纸应用完成。"}}}
-    },
     "Wait for the pending setting to finish before applying." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wait for the pending setting to finish before applying."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "应用前，请等待当前设置操作完成。"}}}
     },
