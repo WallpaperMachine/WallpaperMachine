@@ -552,6 +552,57 @@ TEST_F(MetalSceneDraw, UnreferencedTargetsStayUnallocatedAcrossOptimizationChang
     }
 }
 
+TEST_F(MetalSceneDraw, ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOff)
+{
+    // Nothing samples the copy's destination, so the plan drops the copy as
+    // dead and the copy step is the only thing that names that image. Turning
+    // the optimisation off makes the copy again, without recompiling, and it
+    // must find an image to write into.
+    const std::string output = std::string(SpecTex_Default);
+    const std::string copy   = "_rt_dead_copy";
+    const auto        project = WriteFixture(root_ / "project");
+    LoadedScene       loaded;
+    std::string       error;
+    ASSERT_TRUE(LoadScene(project, root_ / "cache", loaded, error)) << error;
+    SceneNode* tile = FirstDrawableNode(loaded.scene->sceneGraph.get());
+    ASSERT_NE(tile, nullptr);
+    struct Restore {
+        bool value;
+        ~Restore() { wallpaper::vulkan::SetSceneOptimizationEnabled(value); }
+    } restore { wallpaper::vulkan::SceneOptimizationEnabled() };
+    wallpaper::vulkan::SetSceneOptimizationEnabled(true);
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        MetalRenderInitInfo info {
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        };
+        ASSERT_TRUE(render.init(info));
+        rg::RenderGraph graph;
+        AddDraw(graph, tile, output, {});
+        AddCopy(graph, output, copy);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, graph)) << render.lastError();
+        for (bool enabled : { true, false, true }) {
+            SCOPED_TRACE(enabled ? "optimised" : "every copy made");
+            wallpaper::vulkan::SetSceneOptimizationEnabled(enabled);
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            if (enabled) continue;
+            std::vector<uint8_t> drawn, copied;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                loaded.scene->ResolveRenderTargetName(output), drawn, width, height));
+            ASSERT_TRUE(render.ReadRenderTargetForTests(copy, copied, width, height))
+                << "the restored copy has no image to write into";
+            EXPECT_EQ(copied, drawn);
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the

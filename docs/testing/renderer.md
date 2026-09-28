@@ -605,6 +605,11 @@ desktop, or modify the imported wallpaper.
 - Texture residency comparisons must cover the scene's full visibility/crossfade
   cycle, including the moments when each affected image is actually visible.
   Matching startup frames can miss large animated layers whose opacity is still zero.
+- Native Metal allocates only targets the compiled passes name.
+  `metal_scene_draw_smoke` checks that a declared but unused target stays
+  unallocated through optimisation off/on, and that a copy the plan drops as
+  dead gets its image back, filled, when the optimisation is turned off without
+  a recompile.
 - Texture lifetime tests check 32 generated multi-version graphs against a
   last-access oracle, plus nested composites with aliases, three sizes, visible
   and hidden parents, and background-copy enabled/disabled. Alias clears and
