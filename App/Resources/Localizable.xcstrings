@@ -1544,6 +1544,48 @@
     },
     "That app rule no longer exists." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "That app rule no longer exists."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "该应用规则已不存在。"}}}
+    },
+    "Couldn’t reach pixiv: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Couldn’t reach pixiv: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法连接 pixiv：%@"}}}
+    },
+    "pixiv has nothing at this address any more. The work may have been deleted, or the ranking has no more pages." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv has nothing at this address any more. The work may have been deleted, or the ranking has no more pages."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 上已没有这个地址的内容。作品可能已被删除，或者排行榜没有更多页了。"}}}
+    },
+    "pixiv is limiting requests from this network right now. Wait a minute, then try again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv is limiting requests from this network right now. Wait a minute, then try again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 目前正在限制来自此网络的请求。请稍等一分钟后再试。"}}}
+    },
+    "pixiv refused the request. Wait a minute, then try again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv refused the request. Wait a minute, then try again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 拒绝了请求。请稍等一分钟后再试。"}}}
+    },
+    "pixiv returned status %lld. Try again later." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv returned status %lld. Try again later."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 返回了状态码 %lld。请稍后再试。"}}}
+    },
+    "pixiv sent an answer this version of WallpaperMachine can’t read. Try again, or open the work on pixiv." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv sent an answer this version of WallpaperMachine can’t read. Try again, or open the work on pixiv."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 返回的内容无法被此版本的 WallpaperMachine 读取。请重试，或在 pixiv 上打开该作品。"}}}
+    },
+    "pixiv shows this work only to signed-in members, or only to the artist’s followers. Sign in to pixiv, or open the work there." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv shows this work only to signed-in members, or only to the artist’s followers. Sign in to pixiv, or open the work there."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 仅向已登录的会员或作者的关注者展示此作品。请登录 pixiv，或在 pixiv 上打开该作品。"}}}
+    },
+    "The image is larger than the %lld MB WallpaperMachine accepts." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The image is larger than the %lld MB WallpaperMachine accepts."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "图片超过了 WallpaperMachine 可接受的 %lld MB 上限。"}}}
+    },
+    "pixiv sent a file that is not a JPEG, PNG or GIF image." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv sent a file that is not a JPEG, PNG or GIF image."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 发送的文件不是 JPEG、PNG 或 GIF 图片。"}}}
+    },
+    "The downloaded image couldn’t be read. Try downloading it again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The downloaded image couldn’t be read. Try downloading it again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "下载的图片无法读取。请重新下载。"}}}
+    },
+    "pixiv didn’t accept the sign-in. Sign in to pixiv again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv didn’t accept the sign-in. Sign in to pixiv again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 未接受此次登录。请重新登录 pixiv。"}}}
+    },
+    "pixiv won’t show R-18 works to this account. Turn them on in pixiv’s settings under Viewing restrictions, then refresh." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "pixiv won’t show R-18 works to this account. Turn them on in pixiv’s settings under Viewing restrictions, then refresh."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "pixiv 不会向此账户显示 R-18 作品。请在 pixiv 设置的“浏览限制”中开启，然后刷新。"}}}
+    },
+    "Signed in, but the keychain didn’t keep the sign-in, so you’ll need to sign in again after WallpaperMachine quits." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Signed in, but the keychain didn’t keep the sign-in, so you’ll need to sign in again after WallpaperMachine quits."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已登录，但钥匙串未能保存登录信息，WallpaperMachine 退出后需要重新登录。"}}}
+    },
+    "Sign in to pixiv" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Sign in to pixiv"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "登录 pixiv"}}}
     }
   },
   "version" : "1.0"

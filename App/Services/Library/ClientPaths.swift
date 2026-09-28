@@ -34,6 +34,7 @@ enum ClientPaths {
     }
     static var managedSteamCMDURL: URL { supportURL.appendingPathComponent("SteamCMD", isDirectory: true) }
     static var thumbnailCacheURL: URL { supportURL.appendingPathComponent("Cache/WorkshopThumbnails", isDirectory: true) }
+    static var pixivThumbnailCacheURL: URL { supportURL.appendingPathComponent("Cache/PixivThumbnails", isDirectory: true) }
 
     static func prepare() throws {
         try FileManager.default.createDirectory(at: libraryURL, withIntermediateDirectories: true)

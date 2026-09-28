@@ -25,6 +25,18 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — pixiv tab, sign-in and R-18 works
+
+Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.
+
+- Linux SwiftPM harness (Swift 6.1.2, `App/Services/Pixiv` and `Tests/Unit/Pixiv` with Darwin stand-ins) — `swift test`: 54 passed (service 25, store 15, packager 8, queue 6), three runs after the rebase; library clean under `-strict-concurrency=complete`
+- `python3 -m unittest discover scripts/tests` — 198 ran, OK, 10 skipped; `node --check` on every `WebUI` module
+- Chromium/Playwright with a mocked native bridge (not WKWebView) — pixiv tab browse, filters, paging, inspector, downloads and the account group (signed out, signing in, signed in, log out, R-18 hidden), Mature box and R-18 rankings; en and zh-Hans at 760–1240 px, no overflow, no page errors
+- Anonymous pixiv answers (ranking, search, pages, status) decode; `daily_r18` answers 403 anonymously. Signed-in answers and the real sign-in page were not checked
+- XcodeGen 2.46.0 (Linux build) regenerated `WallpaperMachine.xcodeproj` from main's: pixiv files added, nothing else changed
+- Not run: `python3 scripts/test.py` (needs macOS and Xcode), so `WebPanelPixivTests`, `ControlPanelPixivTests` and every native suite; `PixivSignInWindow`, keychain and WKWebView behaviour; no Release build
+- `python3 scripts/check_renderer.py` — not applicable: no renderer or bridge change
+
 ## 2026-09-28 — Busy state: queue user commands instead of erroring
 
 - python3 scripts/test.py: 664 passed, 0 failed, 11 skipped (Python script tests all OK).
@@ -121,15 +133,3 @@ M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coali
 - Fresh startup remained above 1 GiB before freed decode allocations were reclaimed; closing the panel does not solve the remaining scene texture/renderer memory.
 - Existing native Metal local-scene harness drew 120 frames at 3840x2160; no demonstrated memory win and no live backend switch. Raw-mip copy experiment did not apply to this scene’s embedded PNGs and was removed.
 - Local imports retain the hidden page until the next close to avoid cancellation. This exception was reviewed but not exercised with a real file picker; real lock/unlock remains pending user operation.
-
-## 2026-09-28 — Reduce active-scene reservations and release unlocked lock-screen renderer
-
-- Memory follow-up to the active-wallpaper report, not an idle-panel result. User approved unloading the unlocked lock-screen renderer and cold reloading on the next lock; original texture resolution, render scale, frame-rate ceiling and playback settings remain unchanged.
-- `scripts/test.py` with CPython 3.12.14 — exit 0; 190 Python passed, 663 native passed, 11 skipped. Final `python3 scripts/test.py --only WallpaperPresentationAuthorityTests` — 14 passed; covers retained-poster eligibility, paused/sleeping/host-suspended reload refusal, and failed-reload retry boundaries.
-- `python3 scripts/check_renderer.py` — exit 0; 23 test binaries, ten generated pixel comparisons, eight synthetic projects reloaded twice. Three asset-dependent cases skipped. Allocator regression fails under the prior policy (about 160 MiB unused retained allocation) and passes with the 32 MiB Apple block policy.
-- Current local scene, three-frame offscreen comparison: allocator reservation 632,029,696 → 514,261,760 bytes (−112.3 MiB); live allocation 479,332,096 bytes unchanged; all three output frames byte-identical. Probe now reports image extents/allocation requirements, retired-upload allocator totals and process footprint/peak separately.
-- `scripts/build.py --renderer-only` and `scripts/build.py --swift-only --configuration Release` — passed. Installed into `/Applications/WallpaperMachine.app`, signature checked, backups retained. Desktop-control actions used Codex computer use.
-- Live unlocked-session observation on the same selected scene: earlier vmmap main 820.4 MiB and extension 624.8 MiB; final main 745.9–749.9 MiB and extension 38.7 MiB. Final app coalition plus separately measured extension: 915.5–923.9 MiB over three samples ten seconds apart. No claim that the remaining roughly 0.9 GiB is a solved low-memory target.
-- Extension log confirms first-frame readiness followed by renderer unload while retaining its poster. Actual lock/unlock reload verification is pending user participation. No texture downsampling was applied; two 7680×4320 input images each require about 173 MiB on this scene.
-- Corrected test-bundle extension registration pollution: unregistered non-installed copies, renamed the two task-owned benchmark apps to non-launchable backup bundles, and verified the single registered/running extension is under `/Applications`. Config comparison confirmed playback, quality, power and monitor assignments unchanged.
-- Heap-pressure and prefetch/upload-overlap experiments were removed: no reliable useful gain on this scene (heap call reported zero; peak probe change about 6 MiB). Their measurements are not credited to the final change. Private wallpaper pixels, app copies and traces stay out of Git.

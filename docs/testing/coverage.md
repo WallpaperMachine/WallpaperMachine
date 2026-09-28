@@ -32,6 +32,18 @@ Swift tests cover, without starting the app:
   regression (`ControlPanelDiscoverTests`) checks that Discover tiles load the
   still first, admit the animation beneath it, fade the still out only for a
   bright animation and never for a black one, and skip single-frame previews.
+- **Pixiv** — decoding of pixiv's ranking, search, page-list, status and
+  profile answers (numbers sent as strings, content types as objects or lists,
+  withheld and members-only entries), ratings including R-18 and R-18G, search
+  and ranking addresses, query sanitising without a sign-in, request pacing,
+  the session cookie reaching `https://www.pixiv.net` only, sign-in, log out,
+  a keychain refusal and a session pixiv ended against an in-memory store, the
+  download queue (concurrency, cancel, retry, shutdown) and packaging (sniffed
+  formats, scaled display copies, kept copies, staging reclaim).
+  `WebPanelPixivTests` checks the actions' validation and snapshot without a web
+  view, and the offscreen `ControlPanelPixivTests` drives the tab through the
+  real page with the sign-in window replaced by a closure. None of it reaches
+  pixiv: its signed-in answers and the real sign-in page are not covered.
 - **Downloads** — private terminals per job, transfers side by side up to the
   slot limit once the first job's sign-in is accepted and saved (siblings start
   silently while it still transfers), the queue waiting behind a job that is

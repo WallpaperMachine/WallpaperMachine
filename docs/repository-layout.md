@@ -29,6 +29,7 @@ App/                               WallpaperMachine application target sources o
   Services/Localization/           AppLanguage.swift: shipped-language registry and the language preference store
   Services/LockScreen/             lock-screen selection overrides and configuration publishing
   Services/NativeVideo/            AVFoundation video backend: admission, player and host window
+  Services/Pixiv/                  pixiv browsing, sign-in session, downloads and still-wallpaper packaging
   Services/Steam/                  SteamCMD runtime discovery and setup state
   Services/SystemMedia/            shared now-playing session (MediaRemote, Music/Spotify
                                    AppleScript fallback) and artwork for Web and Scene media integration
@@ -48,7 +49,7 @@ WebUI/                             HTML/CSS/JS control panel; bundled verbatim a
   locales/                         one panel catalog module per shipped language (zh-Hans.js), registered in i18n.js
 Resources/StarterWallpaper/        bundled sample wallpaper (Aurora.mp4, preview.jpg, project.json)
 Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Desktop, Diagnostics, GitHub,
-                                   Library, Localization, LockScreen, NativeVideo, Panel, Steam, SystemMedia,
+                                   Library, Localization, LockScreen, NativeVideo, Panel, Pixiv, Steam, SystemMedia,
                                    UserAssets, WebWallpaper, Workshop; hosted in the app binary
 Tests/UI/                          WallpaperMachineUITests; desktop-driving XCUITest suite
 docs/                              all project documentation; see docs/README.md for the index

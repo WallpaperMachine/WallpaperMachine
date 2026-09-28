@@ -6,7 +6,9 @@ import UniformTypeIdentifiers
 extension WebPanelController {
   func perform(_ action: String, body: [String: Any]) async throws {
     let request = WebPanelRequest(body)
-    // Browsing and cancellation stay usable while a native operation awaits I/O.
+    // Browsing and cancellation stay usable while a native operation awaits I/O. pixiv
+    // browsing and downloads never touch the renderer, so they are always available.
+    if try performPixiv(action, request: request) { return }
     switch action {
     case "ready":
       // A page that reports ready has recovered, so a later crash may reload again.
@@ -38,6 +40,9 @@ extension WebPanelController {
       case "discover":
         navigation.selection = .workshop
         if !workshop.hasLoaded && !workshop.isLoading { workshop.search() }
+      case "pixiv":
+        navigation.selection = .pixiv
+        if !pixiv.hasLoaded && !pixiv.isLoading { pixiv.apply(pixiv.query) }
       case "settings": navigation.selection = .settings
       default: throw WebPanelRequest.invalid
       }
@@ -988,7 +993,7 @@ extension WebPanelController {
     }
     return [
       "steamcommunity.com", "store.steampowered.com", "github.com", "www.gnu.org",
-      "support.apple.com", "space.bilibili.com", "www.bilibili.com",
+      "support.apple.com", "space.bilibili.com", "www.bilibili.com", "www.pixiv.net",
     ].contains(url.host ?? "")
   }
 }

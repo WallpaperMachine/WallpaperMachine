@@ -47,6 +47,7 @@ extension WebPanelController {
     _ = setup.selectedRuntime
     _ = setup.retainedCandidateURL
     let downloader = workshop.downloader
+    trackPixivDependencies()
     _ = updater.state
     _ = downloader.savedAccount
     _ = downloader.rememberSessionWhileRunning
@@ -69,6 +70,31 @@ extension WebPanelController {
       _ = worker.errorMessage
       _ = worker.prompt
       _ = worker.sessionWarning
+    }
+  }
+
+  private func trackPixivDependencies() {
+    _ = pixiv.query
+    _ = pixiv.committedQuery
+    _ = pixiv.works
+    _ = pixiv.hiddenCount
+    _ = pixiv.page
+    _ = pixiv.totalPages
+    _ = pixiv.totalCount
+    _ = pixiv.isLoading
+    _ = pixiv.hasLoaded
+    _ = pixiv.errorMessage
+    _ = pixiv.selectedWork
+    _ = pixiv.selectedPage
+    _ = pixiv.selectedPages
+    _ = pixiv.isSignedIn
+    _ = pixiv.isSigningIn
+    _ = pixiv.account
+    _ = pixiv.accountMessage
+    for job in pixiv.downloads.downloads {
+      _ = job.status
+      _ = job.bytesReceived
+      _ = job.bytesExpected
     }
   }
 
@@ -204,6 +230,13 @@ extension WebPanelController {
       thumbnails[item.id] = item.previewURL
     }
     assets.thumbnails = thumbnails
+    var pixivThumbnails: [String: URL] = [:]
+    let pixivWorks = pixiv.works + [pixiv.selectedWork].compactMap { $0 } + pixiv.downloads.downloads.map(\.work)
+    for work in pixivWorks { pixivThumbnails[work.id] = work.thumbnailURL }
+    if let work = pixiv.selectedWork {
+      for page in pixiv.selectedPageList ?? [] { pixivThumbnails["\(work.id)-p\(page.index)"] = page.previewURL }
+    }
+    assets.pixivThumbnails = pixivThumbnails
     var propertyImages: [String: URL] = [:]
     for property in store.wallpaperOptionsSnapshot?.properties ?? [] {
       for image in PropertyImageCache.sources(in: property.labelHtml).values {
@@ -312,6 +345,7 @@ extension WebPanelController {
     let page: String
     switch navigation.selection {
     case .workshop: page = "discover"
+    case .pixiv: page = "pixiv"
     case .settings, .display: page = "settings"
     default: page = "installed"
     }
@@ -454,6 +488,7 @@ extension WebPanelController {
       "options": options ?? null,
       "settings": settingsSnapshot,
       "workshop": workshopSnapshot,
+      "pixiv": pixivSnapshot(),
       "setup": setupSnapshot,
       "downloads": downloads, "downloadRequests": downloadRequests,
       "downloadSlots": workshop.downloader.slotLimit,

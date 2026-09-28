@@ -66,6 +66,7 @@ file; pass `rg -u` to search them deliberately.
 |---|---|
 | [features/control-panel.md](features/control-panel.md) | Window and panel UX, tabs, inspector, interaction reference |
 | [features/workshop-downloads.md](features/workshop-downloads.md) | Discover, SteamCMD setup, download queue |
+| [features/pixiv.md](features/pixiv.md) | pixiv tab: rankings and tag search, saving a page as a still wallpaper, pixiv sign-in and R-18 works |
 | [features/audio-response.md](features/audio-response.md) | Audio-responsive wallpapers |
 | [features/web-wallpapers.md](features/web-wallpapers.md) | HTML/JS wallpapers hosted in a web view, host protocol, limits |
 | [features/media-integration.md](features/media-integration.md) | Now-playing for Web and Scene wallpapers, MediaRemote and AppleScript fallback |

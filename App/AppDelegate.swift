@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var controlPanelWindow: NSWindow?
     private let controlPanelNavigation = ControlPanelNavigation()
     private lazy var workshopStore = WorkshopStore()
+    private lazy var pixivStore = PixivStore()
     private lazy var appUpdater = AppUpdateStore()
     private var automaticUpdates: Task<Void, Never>?
     /// The version the unattended check last prompted for; "Later" holds until the next launch.
@@ -66,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let created = try BridgeStore()
             store = created
             AppLog.attach(created.bridge)
+            // Reloading waits for a wallpaper being applied, so a page that lands meanwhile
+            // appears once that finishes rather than failing.
+            pixivStore.downloads.onInstalled = { [weak created] _ in try await created?.refreshLibraryAsync() }
             for line in DiagnosticEnvironment.current() { AppLog.info("environment: \(line)") }
             startupError = nil
             playbackSnapshotCurrent = false
@@ -76,10 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             startupError = error
             playbackSnapshotCurrent = false
         }
+        pixivStore.restoreSession()
         // A crash during a download leaves its staging behind, holding the whole downloaded item.
         let stagingRoot = ClientPaths.supportURL
         Task.detached(priority: .utility) {
             WorkshopDownloader.removeAbandonedStaging(in: stagingRoot)
+            PixivWallpaperPackager.removeAbandonedStaging(in: stagingRoot)
         }
 
         NSApp.setActivationPolicy(.accessory)
@@ -330,12 +336,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Nil whenever the app's energy is not one wallpaper's: playback paused or suspended
     /// (display sleep, lock, app rules, other audio, battery pause), the panel on screen
-    /// with its WebKit work, or a download running SteamCMD inside the app's coalition.
+    /// with its WebKit work, or a download running SteamCMD inside the app's coalition or
+    /// fetching a pixiv original in the app itself.
     private func wallpaperEnergyContext() -> WallpaperEnergyContext? {
         guard let store, let policy = presentationPolicy, !shutdownInProgress,
               policy.globalPresentation == .running,
               store.appSnapshot.playbackState == .playing,
-              !workshopStore.downloader.isRunning
+              !workshopStore.downloader.isRunning, !pixivStore.downloads.isRunning
         else { return nil }
         if let window = controlPanelWindow, window.isVisible, !window.isMiniaturized,
            window.occlusionState.contains(.visible) {
@@ -463,6 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             appUpdater.cancel()
             await workshopStore.steamCMDSetup.shutdown()
             await workshopStore.downloader.shutdown()
+            await pixivStore.downloads.shutdown()
             do {
                 try await store?.shutdownAsync()
                 lastError = nil
@@ -825,6 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                         store: store,
                         navigation: controlPanelNavigation,
                         workshop: workshopStore,
+                        pixiv: pixivStore,
                         updater: appUpdater
                     )
                 )

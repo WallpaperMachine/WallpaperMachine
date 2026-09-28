@@ -34,7 +34,7 @@ final class ControlPanelShellTests: ControlPanelTestCase {
         rootView:
           ControlPanelView(
             store: fixture.store, navigation: ControlPanelNavigation(), workshop: workshop,
-            updater: updater
+            pixiv: PixivStore(), updater: updater
           )
           .environment(\.locale, Locale(identifier: language))
           .defaultAppStorage(defaults)
