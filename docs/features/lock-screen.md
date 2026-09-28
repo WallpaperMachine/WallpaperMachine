@@ -102,10 +102,13 @@ macOS copies the extension's selection into the fallbacks it reloads
 feature is on, a new desktop or a full-screen app's, starts from those copies,
 so the live store has no native choice left to restore it to. Such a Space is
 taken over like any other, with originals taken from the journaled originals
-of those fallbacks, and restored to them when the feature turns off. Before
-2026-09-28 the first check after a new Space failed with "no restoration
-journal or surviving system fallback", turned the feature off and left that
-Space pointing at the extension.
+of those fallbacks, and restored to them when the feature turns off. A Space
+created after the last check, just before the feature turns off, was never
+journaled; turning off still restores its Default and the journaled displays'
+nodes the same way, and keeps the journal for a retry if nothing native is left
+to restore them to. Before 2026-09-28 the first check after a new Space failed
+with "no restoration journal or surviving system fallback", turned the feature
+off and left that Space pointing at the extension.
 
 ## Storage
 

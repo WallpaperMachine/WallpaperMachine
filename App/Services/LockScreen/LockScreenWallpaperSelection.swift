@@ -174,6 +174,32 @@ final class LockScreenWallpaperSelection {
       Self.setNode(&root, path: entry.path, value: remove ? nil : node)
       changed = true
     }
+    // Turning off: a Space created after the last check while the feature was
+    // on started from copies of this extension's selection and was never
+    // journaled. Give its Default and the journaled displays' nodes their
+    // native choices back too; nodes of other displays belong to the user.
+    if displays.isEmpty && !entries.isEmpty {
+      let journaledDisplays = entries.compactMap { entry in
+        entry.path.count == 2 && entry.path[0] == "Displays" ? entry.path[1] : nil
+      }
+      var discovered: [[String]] = []
+      for space in (root["Spaces"] as? [String: Any] ?? [:]).keys.sorted() {
+        discovered.append(["Spaces", space, "Default"])
+        discovered += journaledDisplays.sorted().map { ["Spaces", space, "Displays", $0] }
+      }
+      for path in discovered where !entries.contains(where: { $0.path == path }) {
+        guard var node = Self.node(root, path: path) else { continue }
+        let desktopOwned = Self.owns(node["Desktop"])
+        let idleOwned = Self.owns(node["Idle"])
+        guard desktopOwned || idleOwned else { continue }
+        let original = try Self.restorationOriginal(
+          node, path: path, root: root, journaled: journaledOriginal)
+        if desktopOwned { node["Desktop"] = original["Desktop"] }
+        if idleOwned { node["Idle"] = original["Idle"] }
+        Self.setNode(&root, path: path, value: node)
+        changed = true
+      }
+    }
     // macOS may copy explicit selections into fallback nodes on reload. Observe
     // every fallback before activation so those copies can be restored as well.
     let fallbackPaths =

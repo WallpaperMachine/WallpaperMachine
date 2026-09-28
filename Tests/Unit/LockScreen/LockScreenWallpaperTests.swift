@@ -315,6 +315,47 @@ final class LockScreenWallpaperTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
   }
 
+  /// A Space created after the last check while the feature was on was never
+  /// journaled. Turning the feature off must still give it back its native
+  /// choices rather than leave it pointing at the extension.
+  @MainActor
+  func testSpaceCreatedJustBeforeTurningOffIsRestoredToo() throws {
+    var original = fixture()
+    original["AllSpacesAndDisplays"] = ["Idle": choice("another-app-idle"), "Type": "idle"]
+    try write(original)
+    let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+    try selection.synchronize(displays: ["one"])
+
+    var copied = try readStore()
+    let owned = try XCTUnwrap((copied["Displays"] as? [String: [String: Any]])?["one"])
+    var system = try XCTUnwrap(copied["SystemDefault"] as? [String: Any])
+    system["Desktop"] = owned["Desktop"]
+    system["Idle"] = owned["Idle"]
+    copied["SystemDefault"] = system
+    var spaces = try XCTUnwrap(copied["Spaces"] as? [String: [String: Any]])
+    var inherited = node("new-space")
+    inherited["Desktop"] = owned["Desktop"]
+    inherited["Idle"] = owned["Idle"]
+    spaces["space-new"] = ["Default": inherited, "Displays": ["one": inherited]]
+    copied["Spaces"] = spaces
+    try write(copied)
+
+    try selection.synchronize(displays: [])
+
+    let restored = try readStore()
+    XCTAssertEqual(
+      restored["SystemDefault"] as? NSDictionary, original["SystemDefault"] as? NSDictionary)
+    let newSpace = try XCTUnwrap((restored["Spaces"] as? [String: [String: Any]])?["space-new"])
+    let newDefault = try XCTUnwrap(newSpace["Default"] as? [String: Any])
+    XCTAssertEqual(provider(newDefault, key: "Desktop"), "system-desktop")
+    XCTAssertEqual(provider(newDefault, key: "Idle"), "system-idle")
+    let newDisplay = try XCTUnwrap((newSpace["Displays"] as? [String: [String: Any]])?["one"])
+    XCTAssertEqual(provider(newDisplay, key: "Desktop"), "display-one-desktop")
+    XCTAssertEqual(provider(newDisplay, key: "Idle"), "display-one-idle")
+    XCTAssertEqual(newDisplay["Unrelated"] as? String, "new-space", "fields macOS set are kept")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+  }
+
   @MainActor
   func testOrphanWithoutNativeFallbackDoesNotChangeStore() throws {
     var original = fixture()
