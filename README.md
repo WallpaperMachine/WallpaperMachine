@@ -20,7 +20,7 @@
   <a href="#good-to-know">FAQ</a>&ensp;·&ensp;
   <a href="#open-source-free-to-build">Build it</a>&ensp;·&ensp;
   <a href="docs/README.md">Documentation</a>&ensp;·&ensp;
-  <a href="#thank-you-to-every-supporter">Sponsors</a>
+  <a href="SPONSORS.md">Sponsor</a>
 </p>
 
 <br>
@@ -139,7 +139,8 @@ new versions itself and, where it can replace its own copy, offers
 Yes. The signed download is free, and the complete source is here if you
 would rather build it yourself. Becoming a Supporter adds a sponsor place on the
 website and in this README, plus priority support. It buys no license: the app
-is the same with or without it.
+is the same with or without it. What it includes and how to become one:
+[SPONSORS.md](SPONSORS.md).
 
 </details>
 
@@ -176,14 +177,16 @@ Working on the code: [CONTRIBUTING.md](CONTRIBUTING.md).
 | [docs/release.md](docs/release.md) | Versioning, release notes and the CI release pipeline |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each published version |
 | [LICENSING.md](LICENSING.md) | License policy, Supporter model and distribution status |
+| [SPONSORS.md](SPONSORS.md) | Supporter pricing, what it includes and other ways to help |
 | [AGENTS.md](AGENTS.md) | Rules for agents working in this repository |
 
 ## Thank you. To every Supporter.
 
 Supporters who choose to be shown are listed here and on the
-[sponsor wall](https://www.wallpapermachine.app/sponsors/). Supporter is a
+[sponsor wall](https://www.wallpapermachine.app/#sponsors). Supporter is a
 one-time purchase for a sponsor place and priority support; the app and its
-source stay free for everyone.
+source stay free for everyone. If WallpaperMachine has earned a place on your
+desktop, [become a Supporter](SPONSORS.md).
 
 No one is on the list yet.
 

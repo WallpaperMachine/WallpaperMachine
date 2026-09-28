@@ -10,6 +10,7 @@ live under `testing/`.
 | Document | Purpose |
 |---|---|
 | [../README.md](../README.md) | What the app is, feature tour, FAQ, build quickstart, sponsor list; follows the website |
+| [../SPONSORS.md](../SPONSORS.md) | Supporter pricing and benefits for users; follows the website's pricing page, policy in LICENSING.md |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributor working agreement and day-to-day loop |
 | [build.md](build.md) | Toolchain, dependencies, build, package, install, troubleshooting |
 
