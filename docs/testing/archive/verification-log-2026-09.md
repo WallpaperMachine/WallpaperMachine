@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-28 — Update check via release manifest instead of GitHub API
+
+- python3 scripts/test.py: 660 passed, 0 failed, 11 skipped; AppUpdateTests 41/41 incl. 4 manifest tests; test_update_manifest.py 3/3
+- Mutation: dropping GitHubRedirectGuard fails testManifestRedirectOffGitHubIsNotFollowed (/elsewhere requested)
+- actionlint .github/workflows/build.yml: clean
+- CI publish steps simulated locally with a stub gh: manifest written beside the image, digest equals the .sha256 sidecar, uploaded with image and sidecar
+- Throwaway Swift binary (real AppUpdateModels + GitHubReleaseClient) over local HTTP: Python-written manifest decoded, arm64 dmg selected, digest parsed, API URL never requested; missing manifest fell back to the API
+- Live github.com: real releases/latest/download redirect chain followed to release-assets (0 API requests used); redirect to raw.githubusercontent.com refused as a network error; default client read v1.0.2 via API fallback at exactly 1 API request per check
+- Not run: a real release carrying the manifest (first one is the next Build run); no Release app build
+
 ## 2026-09-28 — Lock-screen exchange directory (no App Data prompt)
 
 - Cause: tccd log showed kTCCServiceSystemPolicyAppData AUTHREQ_PROMPTING on every launch; app wrote/read ~/Library/Containers/app.wallpapermachine.wallpaper-extension (ad-hoc signed, grant not persisted).

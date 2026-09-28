@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-28 — Review follow-ups: reconnected displays, held buttons, owed frames, late-created Spaces
+
+Pre-push review of perf/wallpaper-power (four reviewers, each finding checked by a skeptic): 6 confirmed, 8 rejected. Each fix has a test that fails without it.
+
+- Reconnected display: a display that disconnects while suspended and returns visible is resumed; one that returns still hidden stays suspended with no resume/suspend pair (WallpaperPresentationPolicyTests, 2 cases).
+- Pointer: button levels are adopted without edges after the monitors return (wallpaper-core 222 passed).
+- Frame clock: 18 ms draws at 60 fps deliver ≥42/s (35 without the owed-frame path, measured with a spinning draw because sleep_for(18 ms) slept ~22 ms here); requests after a long content-paced wait stay within the ceiling; timer_tests 32 passed, three consecutive runs.
+- Lock screen: turning off restores a Space created after the last check (test failed without the fix: node left on the extension).
+- `python3 scripts/test.py` — 671 passed, 0 failed, 11 skipped. `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped. Release build signed.
+- Not re-measured on hardware after these follow-ups: power figures in the earlier entry stand for the code measured then.
+
 ## 2026-09-28 — Lock screen: a Space created while active no longer turns the feature off
 
 M3 Max, macOS 27.2; AllSpacesAndDisplays held only another app's Idle choice. After activation macOS had copied the extension's selection into SystemDefault and some Space Defaults, so a new Space started from those copies and restorationOriginal found no native fallback in the live store. Space creation and toggling Animate Lock Screen were done by the user on request.
@@ -123,13 +134,3 @@ Follow-up to 4ee91e5: full reconciles (Apply, display edits, backend switch, rep
 - `python3 scripts/test.py` — exit 0; Python modules all OK; native 671: 660 passed, 11 skipped (opt-in layers)
 - `python3 scripts/check_renderer.py` — exit 0; 10 generated scenes pooled and isolated exit 0, pixels equal, 0 diagnostics; reload cycles (8 projects x2): 0
 - Not verified: a Release build or the live desktop; no manual unlock/Apply run against a real display
-
-## 2026-09-28 — Update check via release manifest instead of GitHub API
-
-- python3 scripts/test.py: 660 passed, 0 failed, 11 skipped; AppUpdateTests 41/41 incl. 4 manifest tests; test_update_manifest.py 3/3
-- Mutation: dropping GitHubRedirectGuard fails testManifestRedirectOffGitHubIsNotFollowed (/elsewhere requested)
-- actionlint .github/workflows/build.yml: clean
-- CI publish steps simulated locally with a stub gh: manifest written beside the image, digest equals the .sha256 sidecar, uploaded with image and sidecar
-- Throwaway Swift binary (real AppUpdateModels + GitHubReleaseClient) over local HTTP: Python-written manifest decoded, arm64 dmg selected, digest parsed, API URL never requested; missing manifest fell back to the API
-- Live github.com: real releases/latest/download redirect chain followed to release-assets (0 API requests used); redirect to raw.githubusercontent.com refused as a network error; default client read v1.0.2 via API fallback at exactly 1 API request per check
-- Not run: a real release carrying the manifest (first one is the next Build run); no Release app build
