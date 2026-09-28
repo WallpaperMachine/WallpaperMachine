@@ -1,11 +1,12 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import IOSurface
 
 /// Displays an immutable BGRA snapshot without allocating a second pixel buffer.
 enum LockScreenPoster {
   static func image(from surface: IOSurface) -> CGImage? {
-    guard surface.pixelFormat == 0x4247_5241, surface.bytesPerElement == 4,
+    guard surface.pixelFormat == kCVPixelFormatType_32BGRA, surface.bytesPerElement == 4,
       surface.width > 0, surface.height > 0,
       surface.lock(options: .readOnly, seed: nil) == 0
     else { return nil }

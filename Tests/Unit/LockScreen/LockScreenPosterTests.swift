@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import IOSurface
 import XCTest
 
@@ -10,7 +11,7 @@ final class LockScreenPosterTests: XCTestCase {
     var poster: CGImage?
     try autoreleasepool {
       let surface = try XCTUnwrap(IOSurface(properties: [
-        .width: 2, .height: 2, .bytesPerElement: 4, .pixelFormat: 0x4247_5241,
+        .width: 2, .height: 2, .bytesPerElement: 4, .pixelFormat: kCVPixelFormatType_32BGRA,
       ]))
       retainedSurface = surface
       XCTAssertEqual(surface.lock(options: [], seed: nil), 0)

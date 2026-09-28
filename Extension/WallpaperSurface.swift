@@ -1,4 +1,5 @@
 import AppKit
+import CoreVideo
 import IOSurface
 import Metal
 
@@ -224,7 +225,8 @@ final class WallpaperSurface {
         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: bitmap),
         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
       let surface = IOSurface(properties: [
-        .width: width, .height: height, .bytesPerElement: 4, .pixelFormat: 0x4247_5241,
+        .width: width, .height: height, .bytesPerElement: 4,
+        .pixelFormat: kCVPixelFormatType_32BGRA,
       ])
     else { throw CocoaError(.fileReadCorruptFile) }
     surface.lock(options: [], seed: nil)
