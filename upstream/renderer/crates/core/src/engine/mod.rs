@@ -337,6 +337,8 @@ impl WallpaperEngine {
         mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
         snapshots: &Arc<EngineSnapshotPublisher>,
     ) {
+        // No monitor watches the buttons until the first consumer appears.
+        mouse_buttons.lock().unwrap_or_else(|error| error.into_inner()).mark_levels_unknown();
         let slot = Arc::downgrade(slot);
         let tracker = Arc::downgrade(mouse_buttons);
         let publisher = Arc::downgrade(snapshots);
@@ -361,6 +363,9 @@ impl WallpaperEngine {
                     // Dropping removes the monitors; this is already the main thread.
                     *monitor = None;
                     snapshots.set_pointer_monitors_installed(false);
+                    // Buttons pressed or released from now on are not seen; the
+                    // first sample after a consumer returns adopts them as levels.
+                    tracker.lock().unwrap_or_else(|error| error.into_inner()).mark_levels_unknown();
                 }
             });
         })));

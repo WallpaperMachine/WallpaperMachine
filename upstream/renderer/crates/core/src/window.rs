@@ -234,6 +234,9 @@ pub(crate) struct MouseButtonTracker {
     down: u64,
     pressed: u64,
     released: u64,
+    /// Nothing watched the buttons, because the pointer monitors were not
+    /// installed, so `down` may be stale.
+    levels_unknown: bool,
 }
 
 impl MouseButtonTracker {
@@ -262,8 +265,21 @@ impl MouseButtonTracker {
         }
     }
 
+    /// The monitors are going away (or never came): the next sample's buttons
+    /// are levels to adopt, not edges.
+    pub(crate) fn mark_levels_unknown(&mut self) {
+        self.levels_unknown = true;
+    }
+
     pub(crate) fn sync_down_mask(&mut self, mask: u64) {
         let next = mask & u64::from(u32::MAX);
+        if self.levels_unknown {
+            // A button held since before the monitors came back is not a new
+            // press; edges the monitors did record meanwhile are kept.
+            self.levels_unknown = false;
+            self.down = next;
+            return;
+        }
         self.pressed |= next & !self.down;
         self.released |= self.down & !next;
         self.down = next;
@@ -1207,6 +1223,24 @@ mod tests {
                 button: 0,
                 pressed: false,
             }
+        );
+    }
+
+    #[test]
+    fn a_button_held_while_nothing_watched_is_adopted_as_a_level_not_a_press() {
+        let mut tracker = MouseButtonTracker::new();
+        tracker.mark_levels_unknown();
+        tracker.sync_down_mask(1);
+        let held = tracker.consume_edges();
+        assert_eq!(held.down().mask(), 1);
+        assert!(held.transitions().next().is_none(), "no press for a button held through the gap");
+
+        tracker.sync_down_mask(0);
+        let released = tracker.consume_edges();
+        assert_eq!(
+            released.transitions().collect::<Vec<_>>(),
+            vec![MouseButtonState { button: 0, pressed: false }],
+            "its release afterwards is a real edge"
         );
     }
 
