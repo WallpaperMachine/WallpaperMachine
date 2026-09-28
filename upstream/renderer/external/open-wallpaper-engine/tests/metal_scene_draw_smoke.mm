@@ -510,6 +510,48 @@ TEST_F(MetalSceneDraw, TranslatedAuthorShaderCompilesAndDrawsTheScene)
     }
 }
 
+TEST_F(MetalSceneDraw, UnreferencedTargetsStayUnallocatedAcrossOptimizationChanges)
+{
+    const auto project = WriteFixture(root_ / "project");
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(project, root_ / "cache", loaded, error)) << error;
+    loaded.scene->renderTargets["_rt_unused"] = SceneRenderTarget { .width = 128, .height = 128 };
+    const bool optimization_was = wallpaper::vulkan::SceneOptimizationEnabled();
+    struct Restore {
+        bool value;
+        ~Restore() { wallpaper::vulkan::SetSceneOptimizationEnabled(value); }
+    } restore { optimization_was };
+    @autoreleasepool {
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = device;
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        MetalRenderInitInfo info {
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        };
+        ASSERT_TRUE(render.init(info));
+        auto graph = sceneToRenderGraph(*loaded.scene);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+        std::vector<uint8_t> reference;
+        for (bool enabled : {true, false, true}) {
+            wallpaper::vulkan::SetSceneOptimizationEnabled(enabled);
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            std::vector<uint8_t> pixels;
+            uint32_t width = 0, height = 0;
+            EXPECT_FALSE(render.ReadRenderTargetForTests("_rt_unused", pixels, width, height));
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                loaded.scene->ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+            if (reference.empty()) reference = pixels;
+            else EXPECT_EQ(pixels, reference);
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the
@@ -3698,6 +3740,10 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
     // worth comparing without them, and this backend had no way to supply
     // either.
     const char* listed = std::getenv("WE_TEST_METAL_PROJECTS");
+    const int frame_count = std::getenv("WE_TEST_FRAMES")
+        ? std::atoi(std::getenv("WE_TEST_FRAMES")) : 120;
+    ASSERT_GE(frame_count, 2);
+    ASSERT_LE(frame_count, 3600);
     const auto  assets = LocalSceneAssetsRoot();
     if (listed == nullptr || *listed == '\0' || assets.empty() ||
         ! std::filesystem::is_directory(assets)) {
@@ -3823,7 +3869,7 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
             MetalRender::FrameEncodeCountsForTests encodes;
             double                                  draw_cpu_ms = 0.0;
             int                                     measured    = 0;
-            for (int frame = 0; frame < 120; ++frame) {
+            for (int frame = 0; frame < frame_count; ++frame) {
                 if (audio_hz != nullptr) {
                     // Synthetic PCM only, analysed by the same service the
                     // desktop tap feeds.
@@ -3866,7 +3912,7 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                 loaded.scene->PassFrameTime(1.0 / 60.0);
             }
             const auto last = ReadOutput(render, *loaded.scene);
-            std::cout << "[ LOCAL    ] " << paths.scene_id << ": Native Metal, 120 frames drawn, "
+            std::cout << "[ LOCAL    ] " << paths.scene_id << ": Native Metal, " << frame_count << " frames drawn, "
                       << DifferingBytes(first, last) << " bytes differ between the first and the last"
                       << std::endl;
             char encode_line[256];
@@ -3877,6 +3923,8 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                           double(encodes.scene_output_passes) / measured,
                           double(encodes.blit_passes) / measured, draw_cpu_ms / measured);
             std::cout << "[ LOCAL    ] " << paths.scene_id << ": " << encode_line << std::endl;
+            std::cout << "[ LOCAL    ] " << paths.scene_id << ": Metal allocated bytes="
+                      << device.currentAllocatedSize << std::endl;
 
             if (const char* output = std::getenv("WE_TEST_OUTPUT");
                 output != nullptr && *output != '\0' && ! last.empty()) {

@@ -103,7 +103,7 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_CACHE` | `text_object_runtime_test` | Disposable shader cache directory |
 | `WE_TEST_CYCLES` | `scene_reload_cycle_probe` | Reload cycles per project |
 | `WE_TEST_NO_REUSE=1` | `offscreen_scene_probe` | Isolated texture allocation (no pooling) |
-| `WE_TEST_FRAMES` | `offscreen_scene_probe` | Number of sampled frames |
+| `WE_TEST_FRAMES` | `offscreen_scene_probe`, `metal_scene_draw_smoke` | Number of sampled frames. The local-project Metal test defaults to 120 and accepts 2–3600; its output is the last frame and it also reports Metal's allocated bytes |
 | `WE_TEST_FRAME_STEP` | `offscreen_scene_probe` | Sampling interval, to look past an intro |
 | `WE_TEST_DUMP_SOURCE=1` | `offscreen_scene_probe` | Write the packaged scene JSON beneath `WE_TEST_OUTPUT`; `nodes.txt` also records per-node visibility, translate and scale, which diffs layer placement between builds without comparing pixels |
 | `WE_TEST_ASSET_PATH` | `offscreen_scene_probe` | Copy one asset from the mounted package to `asset.txt` under `WE_TEST_OUTPUT` for shader diagnosis; keep private asset output uncommitted |
@@ -120,7 +120,7 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_MEDIA_EVENTS` | `offscreen_scene_probe` | JSON array of SceneScript media event objects, dispatched in order after the warm-up ticks. Enables media integration for the run, so a wallpaper that only draws its player while something is playing can be rendered without a system media source or Automation permission |
 | `WE_TEST_MEDIA_ARTWORK` | `offscreen_scene_probe` | `<width>x<height>:<rrggbb>`; publishes one opaque cover through the same path the app uses, so `$mediaThumbnail` and `$mediaPreviousThumbnail` carry a colour that is legible in the rendered frame |
 | `WE_TEST_RANDOM_SEED` | `offscreen_scene_probe`, `metal_scene_draw_smoke` | Seeds the particle random source before the scene is parsed, so the same project simulates the same particles on both renderers and their frames can be compared. The probe only steps the particle simulation when `WE_TEST_AUDIO_HZ` is set, and only advances time when `WE_TEST_FRAME_STEP` is |
-| `WE_TEST_METAL_PROJECTS` | `metal_scene_draw_smoke` | Colon-separated `project.json` paths run through the production parser into the native backend offscreen. A fallback is printed with its reason and is not a failure; an accepted scene must prepare and draw 120 frames. Frames 1–119 are also summarised as render passes per frame (how many rendered into the scene's own image), blits per frame and thread CPU milliseconds per `drawFrame`. With `WE_TEST_OUTPUT` set, the last frame is written there. Unset, the test skips |
+| `WE_TEST_METAL_PROJECTS` | `metal_scene_draw_smoke` | Colon-separated `project.json` paths run through the production parser into the native backend offscreen. A fallback is printed with its reason and is not a failure; an accepted scene must prepare and draw every requested frame (120 by default). Frames after initialization are also summarised as render passes per frame (how many rendered into the scene's own image), blits per frame and thread CPU milliseconds per `drawFrame`. With `WE_TEST_OUTPUT` set, the last frame is written there. Unset, the test skips |
 | `WE_TEST_DUMP_TARGETS` | `offscreen_scene_probe` | Colon-separated render target names, or `*` for every target the scene declares; the last frame of each is written as `target-<name>.ppm`. Same meaning as the Metal harness's own knob, so a target can be held against its counterpart on the other backend |
 | `WE_TEST_DUMP_PASSES=1` | `offscreen_scene_probe` | Writes every pass's output on the last frame plus a `passes.txt` naming each pass's material, bound textures and folded constants. Note the image is the whole pooled allocation, which can be larger than the target, and the constants listed are the parse-time ones |
 | `WE_TEST_MEDIA_ARTWORK`, `WE_TEST_MEDIA_EVENTS` | `offscreen_scene_probe`, `metal_scene_draw_smoke` | The now-playing state the app would deliver. Both harnesses take them with the same meaning, so a wallpaper whose background is drawn from the current cover can be held against the other backend -- without one it renders flat grey on both and the comparison says nothing |
@@ -150,7 +150,7 @@ The runtime clock (timelines, camera shots, scripts) takes 40 warm-up ticks of
 about `0.667 + (N + 1) * step` seconds. The scene clock (`elapsingTime`: puppet
 poses, shader `g_Time`, effects such as Earth's spin) skips the warm-up and
 advances `step` after each frame, so frame N draws at `N * step`.
-`metal_scene_draw_smoke` ticks and advances both clocks by 1/60 s for 120 frames
+`metal_scene_draw_smoke` ticks and advances both clocks by 1/60 s for 120 frames by default
 and writes the last frame at 119/60 s on both. Comparing the two harnesses, or
 one render with a crop of another, therefore needs matched scene time: the Vulkan
 run with `WE_TEST_FRAMES=4` and `WE_TEST_FRAME_STEP=0.6611111` (119/180) draws
@@ -602,6 +602,9 @@ desktop, or modify the imported wallpaper.
 
 ### Textures, allocation and composition
 
+- Texture residency comparisons must cover the scene's full visibility/crossfade
+  cycle, including the moments when each affected image is actually visible.
+  Matching startup frames can miss large animated layers whose opacity is still zero.
 - Texture lifetime tests check 32 generated multi-version graphs against a
   last-access oracle, plus nested composites with aliases, three sizes, visible
   and hidden parents, and background-copy enabled/disabled. Alias clears and

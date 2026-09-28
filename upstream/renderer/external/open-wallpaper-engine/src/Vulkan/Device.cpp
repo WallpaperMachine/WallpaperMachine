@@ -161,7 +161,7 @@ bool Device::Create(Instance& inst, std::span<const Extension> exts, VkExtent2D 
 #if defined(__APPLE__)
         // Unified-memory devices charge unused Vulkan blocks to the app as RAM.
         // Smaller blocks limit that slack; larger resources still allocate normally.
-        allocatorInfo.preferredLargeHeapBlockSize = 32ull * 1024 * 1024;
+        allocatorInfo.preferredLargeHeapBlockSize = 8ull * 1024 * 1024;
 #endif
         allocatorInfo.vulkanApiVersion       = WP_VULKAN_VERSION;
         allocatorInfo.physicalDevice         = *device.m_gpu;

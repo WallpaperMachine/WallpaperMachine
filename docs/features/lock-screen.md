@@ -16,6 +16,8 @@ ordinary app window over the login UI. While it is active the native desktop
 remains a still frame, while the existing desktop renderer keeps playing.
 Once its first frame is ready, an unlocked lock-screen surface retains its
 captured poster and releases the renderer, textures and device allocations.
+The poster image retains the read-locked snapshot IOSurface until Core Animation
+releases the image, so it does not keep a separate copy of the same pixel buffer.
 Locking again reloads the scene behind that poster before resuming animation.
 This saves memory while unlocked; a cold lock may briefly show the still frame,
 and animation/script state starts again. Resolution, frame rate and effects

@@ -308,19 +308,7 @@ final class WallpaperSurface {
   }
 
   private func unloadKeepingPoster() -> Bool {
-    guard let surface = latestSnapshot else { return false }
-    surface.lock(options: .readOnly, seed: nil)
-    defer { surface.unlock(options: .readOnly, seed: nil) }
-    // Own the pixels: the next readiness capture replaces the IOSurface while
-    // Core Animation may still be displaying this image on its render thread.
-    let pixels = Data(bytes: surface.baseAddress, count: surface.bytesPerRow * surface.height)
-    guard let provider = CGDataProvider(data: pixels as CFData),
-      let image = CGImage(
-        width: surface.width, height: surface.height, bitsPerComponent: 8, bitsPerPixel: 32,
-        bytesPerRow: surface.bytesPerRow, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
-          | CGBitmapInfo.byteOrder32Little.rawValue), provider: provider,
-        decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    guard let surface = latestSnapshot, let image = LockScreenPoster.image(from: surface)
     else { return false }
     root.contents = image
     root.contentsGravity = .resize

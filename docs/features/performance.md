@@ -245,7 +245,7 @@ content pacing, shared video decode and direct video plane sampling.
 ## Renderer memory
 
 On Apple platforms, the Compatibility renderer grows its Vulkan allocator in
-32 MiB preferred blocks rather than the library's 256 MiB default. This reduces
+8 MiB preferred blocks rather than the library's 256 MiB default. This reduces
 unused reservations in unified memory; it is not a cap on wallpaper size, and
 larger resources still allocate normally. The offscreen probe prints allocator reserved
 and used bytes separately from process memory.
@@ -262,6 +262,14 @@ This policy uses available authored mips; a single-level image or an incomplete
 chain may remain above the limit. Loose images, videos, sprite atlases, multi-slot
 images and unknown encoded containers retain their original loading behavior.
 This is a texture-residency reduction, not a fixed ceiling on total process memory.
+
+Native Metal allocates render targets only when the compiled graph writes or
+samples them, plus the final output. Parser-provided shadow, mipmapped-frame and
+bloom buffers are metadata until a pass needs them. References from hidden passes
+and elided copies still count, so animation and live optimization toggles retain
+the targets they can use. The same filter applies when a toggle reallocates targets.
+This applies to scenes drawn with **Prefer Native Metal**; the Compatibility
+backend already requests its targets from the cache as passes prepare them.
 
 The lock-screen extension releases its renderer while unlocked after preserving
 a poster; see [lock-screen behavior and reload costs](lock-screen.md#enabling-it).
