@@ -309,11 +309,6 @@ pub(crate) struct MouseEventMonitor {
 #[cfg(test)]
 pub(crate) struct MouseEventMonitor;
 
-#[cfg(test)]
-impl MouseEventMonitor {
-    pub(crate) fn complete(&self) -> bool { false }
-}
-
 #[cfg(not(test))]
 impl MouseEventMonitor {
     /// Installs the global and local pointer monitors and the activation

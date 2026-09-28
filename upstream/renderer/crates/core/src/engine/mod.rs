@@ -79,8 +79,10 @@ pub struct WallpaperEngine {
     snapshots: Arc<EngineSnapshotPublisher>,
     audio_response_resampler: Arc<std::sync::Mutex<AudioResponseResampler>>,
     mouse_buttons: Arc<Mutex<MouseButtonTracker>>,
+    /// Installed only while a presenting scene reads the pointer, so no
+    /// system-wide pointer event reaches this process for scenes that ignore it.
     #[allow(dead_code)]
-    mouse_event_monitor: Arc<Option<crate::window::MouseEventMonitor>>,
+    mouse_event_monitor: Arc<Mutex<Option<crate::window::MouseEventMonitor>>>,
     #[allow(dead_code)]
     actor: EngineActorHandle,
     /// Owns callback registration and its target for the engine lifetime.
@@ -242,11 +244,8 @@ impl WallpaperEngine {
             actor_state,
             Arc::clone(&snapshots),
         )?;
-        let mouse_event_monitor = Self::install_mouse_event_monitor(&mouse_buttons, &snapshots);
-        snapshots.set_pointer_monitors_installed(
-            mouse_event_monitor.as_ref().is_some_and(crate::window::MouseEventMonitor::complete),
-        );
-        let mouse_event_monitor = Arc::new(mouse_event_monitor);
+        let mouse_event_monitor = Arc::new(Mutex::new(None));
+        Self::install_pointer_monitor_hook(&mouse_event_monitor, &mouse_buttons, &snapshots);
         let lifecycle = Arc::new(EngineLifecycle::new(&actor)?);
         let engine = Self {
             backend,
@@ -313,34 +312,75 @@ impl WallpaperEngine {
 
     #[cfg(test)]
     #[allow(clippy::single_call_fn)]
-    fn install_mouse_event_monitor(
+    fn install_pointer_monitor_hook(
+        slot: &Arc<Mutex<Option<crate::window::MouseEventMonitor>>>,
         mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
         snapshots: &Arc<EngineSnapshotPublisher>,
-    ) -> Option<crate::window::MouseEventMonitor> {
-        let _ = (mouse_buttons, snapshots);
-        None
+    ) {
+        let _ = (slot, mouse_buttons, snapshots);
+    }
+
+    /// Installs the OS pointer monitors while a presenting scene reads the
+    /// pointer and removes them when none does.
+    ///
+    /// The hook runs on the engine actor under the publisher's lock, and the
+    /// main thread may be waiting on that actor, so the change is scheduled
+    /// asynchronously on the main queue, where it re-reads the current
+    /// presence: a burst of changes settles on the last one. Until monitors
+    /// exist the gap stays open and the pointer poller checks the cursor
+    /// itself; the hook holds only weak references, so the monitors' own
+    /// reference to the publisher cannot keep either alive.
+    #[cfg(not(test))]
+    #[allow(clippy::single_call_fn)]
+    fn install_pointer_monitor_hook(
+        slot: &Arc<Mutex<Option<crate::window::MouseEventMonitor>>>,
+        mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
+        snapshots: &Arc<EngineSnapshotPublisher>,
+    ) {
+        let slot = Arc::downgrade(slot);
+        let tracker = Arc::downgrade(mouse_buttons);
+        let publisher = Arc::downgrade(snapshots);
+        snapshots.set_pointer_monitor_hook(Some(Arc::new(move |_| {
+            let (slot, tracker, publisher) = (slot.clone(), tracker.clone(), publisher.clone());
+            dispatch2::DispatchQueue::main().exec_async(move || {
+                let (Some(slot), Some(tracker), Some(snapshots)) =
+                    (slot.upgrade(), tracker.upgrade(), publisher.upgrade())
+                else {
+                    return;
+                };
+                let wanted = snapshots.load().has_pointer_consumers();
+                let mut monitor = slot.lock().unwrap_or_else(|error| error.into_inner());
+                if wanted == monitor.is_some() {
+                    return;
+                }
+                if wanted {
+                    let installed = Self::new_mouse_event_monitor(tracker, Arc::clone(&snapshots));
+                    snapshots.set_pointer_monitors_installed(installed.complete());
+                    *monitor = Some(installed);
+                } else {
+                    // Dropping removes the monitors; this is already the main thread.
+                    *monitor = None;
+                    snapshots.set_pointer_monitors_installed(false);
+                }
+            });
+        })));
     }
 
     #[cfg(not(test))]
-    #[allow(clippy::single_call_fn)]
-    fn install_mouse_event_monitor(
-        mouse_buttons: &Arc<Mutex<MouseButtonTracker>>,
-        snapshots: &Arc<EngineSnapshotPublisher>,
-    ) -> Option<crate::window::MouseEventMonitor> {
+    fn new_mouse_event_monitor(
+        tracker: Arc<Mutex<MouseButtonTracker>>,
+        snapshots: Arc<EngineSnapshotPublisher>,
+    ) -> crate::window::MouseEventMonitor {
         use crate::window::MouseMonitorEvent;
 
-        let tracker = Arc::clone(mouse_buttons);
-        let snapshots = Arc::clone(snapshots);
-        crate::window::run_on_main_thread(move || {
-            Some(crate::window::MouseEventMonitor::new(move |event| match event {
-                MouseMonitorEvent::Button(state) => {
-                    tracker.lock().unwrap_or_else(|error| error.into_inner())
-                        .set_button(state.button, state.pressed);
-                    snapshots.signal_pointer_input();
-                }
-                MouseMonitorEvent::Motion => snapshots.signal_pointer_input(),
-                MouseMonitorEvent::AppActive(active) => snapshots.set_pointer_app_active(active),
-            }))
+        crate::window::MouseEventMonitor::new(move |event| match event {
+            MouseMonitorEvent::Button(state) => {
+                tracker.lock().unwrap_or_else(|error| error.into_inner())
+                    .set_button(state.button, state.pressed);
+                snapshots.signal_pointer_input();
+            }
+            MouseMonitorEvent::Motion => snapshots.signal_pointer_input(),
+            MouseMonitorEvent::AppActive(active) => snapshots.set_pointer_app_active(active),
         })
     }
 
@@ -1281,7 +1321,7 @@ mod tests {
                 std::sync::Mutex::new(AudioResponseResampler::new()),
             ),
             mouse_buttons,
-            mouse_event_monitor: Arc::new(None),
+            mouse_event_monitor: Arc::new(Mutex::new(None)),
             actor,
             lifecycle,
         }

@@ -23,6 +23,9 @@ impl EngineSnapshot {
 
 struct PointerConsumerObserver {
     callback: Option<PointerConsumerCallback>,
+    /// The engine's own hook that installs the OS pointer monitors only while
+    /// a presenting scene reads the pointer.
+    monitor_hook: Option<PointerConsumerCallback>,
     has_consumers: bool,
 }
 
@@ -56,7 +59,11 @@ impl EngineSnapshotPublisher {
         let has_consumers = snapshot.has_pointer_consumers();
         Self {
             snapshot: arc_swap::ArcSwap::from_pointee(snapshot),
-            pointer_consumer: Mutex::new(PointerConsumerObserver { callback: None, has_consumers }),
+            pointer_consumer: Mutex::new(PointerConsumerObserver {
+                callback: None,
+                monitor_hook: None,
+                has_consumers,
+            }),
             user_shortcut: Mutex::new(None),
             mouse_buttons,
             pointer_activity: arc_swap::ArcSwapOption::empty(),
@@ -117,6 +124,15 @@ impl EngineSnapshotPublisher {
         if let Some(callback) = &observer.callback { callback(observer.has_consumers); }
     }
 
+    /// Installs the hook told when pointer consumers appear or go, and replays
+    /// the current presence. Runs under the observer lock like the consumer
+    /// callback, so it must only schedule work, never block or reenter.
+    pub(crate) fn set_pointer_monitor_hook(&self, hook: Option<PointerConsumerCallback>) {
+        let mut observer = self.pointer_consumer.lock().unwrap_or_else(|error| error.into_inner());
+        observer.monitor_hook = hook;
+        if let Some(hook) = &observer.monitor_hook { hook(observer.has_consumers); }
+    }
+
     /// Installs the observer for `engine.openUserShortcut` requests.
     ///
     /// Replaces rather than adds: one host, one sink. The callback runs under
@@ -153,6 +169,7 @@ impl EngineSnapshotPublisher {
         }
         if changed {
             if let Some(callback) = &observer.callback { callback(has_consumers); }
+            if let Some(hook) = &observer.monitor_hook { hook(has_consumers); }
         }
     }
 }
@@ -232,6 +249,36 @@ mod tests {
 
         assert_eq!(*seen.lock().unwrap(), vec![false, true, false, true]);
         assert!(tracker.lock().unwrap().consume_edges().transitions().next().is_none());
+    }
+
+    #[test]
+    fn the_monitor_hook_follows_pointer_consumers_beside_the_bridge_callback() {
+        let publisher = EngineSnapshotPublisher::new(
+            EngineSnapshot::default(),
+            Arc::new(Mutex::new(MouseButtonTracker::new())),
+        );
+        let hook = Arc::new(Mutex::new(Vec::new()));
+        publisher.set_pointer_monitor_hook(Some(Arc::new({
+            let hook = hook.clone();
+            move |value| hook.lock().unwrap().push(value)
+        })));
+        let bridge = Arc::new(Mutex::new(Vec::new()));
+        publisher.set_pointer_consumer_callback(Some(Arc::new({
+            let bridge = bridge.clone();
+            move |value| bridge.lock().unwrap().push(value)
+        })));
+
+        publisher.publish(interactive_snapshot());
+        publisher.publish(interactive_snapshot());
+        let mut paused = interactive_snapshot();
+        paused.displays[0].paused = true;
+        publisher.publish(paused);
+
+        // Replayed on install, then told only when presence changes: no
+        // monitors while nothing reads the pointer, including a paused scene.
+        assert_eq!(*hook.lock().unwrap(), vec![false, true, false]);
+        assert_eq!(*bridge.lock().unwrap(), vec![false, true, false],
+            "the bridge callback is not replaced by the engine's hook");
     }
 
     #[test]
