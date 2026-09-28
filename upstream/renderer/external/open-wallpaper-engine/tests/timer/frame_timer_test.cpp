@@ -10,6 +10,7 @@
 
 #define private public
 #include "Timer/FrameTimer.hpp"
+#include "Timer/ThreadTimer.hpp"
 #undef private
 
 #include <gtest/gtest.h>
@@ -911,6 +912,22 @@ TEST(FrameTimerTest, AnIdleBurstOfWakeOnceProducesOneCallback)
     EXPECT_LT(waited.count(), 400) << "the idle burst never produced its frame";
     EXPECT_EQ(draws, quiescent + 1)
         << "an idle burst produced " << (draws - quiescent) << " frames";
+}
+
+TEST(ThreadTimerTest, CadenceKeepsItsPeriodDespiteWakeSlack) {
+    // Each wait wakes a few milliseconds late. Anchoring the next deadline to
+    // the wake time added that slack to every period: a 10 ms cadence ran at
+    // about 12-14 ms and a 60 fps ceiling delivered about 50 frames a second.
+    std::atomic<int> ticks { 0 };
+    ThreadTimer timer([&]() { ticks.fetch_add(1); });
+    timer.SetInterval(10ms);
+    timer.SetMinInterval(10ms);
+    timer.Start();
+    std::this_thread::sleep_for(600ms);
+    timer.Stop();
+
+    EXPECT_GE(ticks.load(), 54) << "a 10 ms cadence produced " << ticks.load() << " ticks in 600 ms";
+    EXPECT_LE(ticks.load(), 62) << "a late wake must not burst to catch up";
 }
 
 } // namespace

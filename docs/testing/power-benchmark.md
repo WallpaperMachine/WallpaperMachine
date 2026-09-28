@@ -90,23 +90,26 @@ same-throughput power claim needs timestamped counter deltas aligned to the
 actual power window. Neither the configured ceiling nor timer-wakeup counts
 provide elapsed time or displayed-frame counts.
 
-The observed 45–52 draws/s at a configured 60 fps ceiling have a mechanism in
-the frame clock itself. `ThreadTimer` computes each deadline from the time the
-previous tick actually woke (`last_tick = steady_clock::now()` after the wait),
-not from the previous deadline, so every wait's timer slack is added to the
-period instead of being absorbed. A headless probe that drives the production
-`FrameTimer`/`ThreadTimer` sources with a zero-cost draw measured about 20.3 ms
-between ticks at a 60 fps ceiling (50.5 draws/s), about 10.4 ms at 120 (100/s)
-and about 37.5 ms at 30 (27/s): 2–4 ms of slack per wait, which timer-thread QoS
-did not change. On top of that, `FrameTimer` drops any tick that finds the
+Before 2026-09-28 the frame clock delivered 45–52 draws/s at a configured 60 fps
+ceiling. `ThreadTimer` computed each deadline from the time the previous tick
+actually woke, not from the previous deadline, so every wait's timer slack was
+added to the period instead of being absorbed: a headless probe with a
+zero-cost draw measured about 20.3 ms between ticks at a 60 fps ceiling
+(50.5 draws/s), about 10.4 ms at 120 (100/s) and about 37.5 ms at 30 (27/s). A
+cadence tick is now anchored to the deadline it was due at, and one more than a
+whole interval late restarts the cadence instead of bursting to catch up
+(`ThreadTimerTest.CadenceKeepsItsPeriodDespiteWakeSlack`: 50 ticks in 600 ms
+at 10 ms before, 54–62 required after). Measurements taken before that date at
+a given ceiling therefore describe fewer frames than the same ceiling delivers
+now. `FrameTimer` still drops any tick that finds the
 previous DRAW still running, and on Compatibility a DRAW includes the GPU frame
 (the fence wait follows the present), so a frame longer than the remaining
 interval loses a whole period (45.7/s with a 15.5 ms draw, 26.8/s with 20 ms).
 `FrameEnd` re-arms the clock only for an outstanding update request. This is
 measured delivery, not presentation: whether and when those frames were
-displayed is still not observable. Correcting the cadence would raise delivered
-work toward the configured ceiling, so a comparison across such a change has to
-report its throughput separately from any power figure. The app opens its
+displayed is still not observable. Correcting the cadence raised delivered work
+toward the configured ceiling, so a comparison across that change has to report
+its throughput separately from any power figure. The app opens its
 control panel at launch, so each such run includes it; while the library page
 is visible, installed GIF previews animate. Some runs showed WebContent at
 8–13 % CPU and higher WindowServer CPU, but the recordings did not establish
