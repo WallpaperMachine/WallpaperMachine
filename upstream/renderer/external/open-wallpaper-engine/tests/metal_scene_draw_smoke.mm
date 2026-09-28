@@ -590,6 +590,9 @@ TEST_F(MetalSceneDraw, ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOf
             SCOPED_TRACE(enabled ? "optimised" : "every copy made");
             wallpaper::vulkan::SetSceneOptimizationEnabled(enabled);
             ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            // The saving is only real if the dead copy is not made while the
+            // optimisation is on; with it off, the copy is the frame's one blit.
+            EXPECT_EQ(render.LastFrameEncodeCountsForTests().blit_passes, enabled ? 0u : 1u);
             if (enabled) continue;
             std::vector<uint8_t> drawn, copied;
             uint32_t width = 0, height = 0;

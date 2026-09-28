@@ -610,8 +610,8 @@ desktop, or modify the imported wallpaper.
 - Native Metal allocates only targets the compiled passes name.
   `metal_scene_draw_smoke` checks that a declared but unused target stays
   unallocated through optimisation off/on, and that a copy the plan drops as
-  dead gets its image back, filled, when the optimisation is turned off without
-  a recompile. Compare target residency with the harness's render-target bytes,
+  dead is not made while the optimisation is on and gets its image back,
+  filled, when it is turned off without a recompile. Compare target residency with the harness's render-target bytes,
   not the device-wide allocation.
 - Texture lifetime tests check 32 generated multi-version graphs against a
   last-access oracle, plus nested composites with aliases, three sizes, visible
