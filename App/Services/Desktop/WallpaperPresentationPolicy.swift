@@ -270,11 +270,21 @@ final class WallpaperPresentationPolicy {
         settle?.cancel()
         settle = nil
 
-        // Surfaces that no longer exist carry no state; a stale entry would keep
-        // resending a decision for a display that is gone.
-        appliedDisplays = appliedDisplays.filter { known.contains($0.key) }
+        // A display that is gone gets no decisions, but what was acknowledged
+        // for it stays: the bridge and the web and video hosts keep a suspended
+        // display suspended across a disconnect. When it returns visible it is
+        // resumed; when it returns hidden it is still suspended and stays so.
         pendingDisplays.formIntersection(known)
         suspendedDisplayIDs.formIntersection(known)
+        for displayID in known where appliedDisplays[displayID] == true
+            && !suspendedDisplayIDs.contains(displayID)
+        {
+            if hidden.contains(displayID) {
+                suspendedDisplayIDs.insert(displayID)
+            } else {
+                pendingDisplays.insert(displayID)
+            }
+        }
 
         if presentation != globalPresentation {
             commitPlayback(presentation: presentation, audio: audio)

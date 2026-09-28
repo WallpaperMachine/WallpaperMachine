@@ -278,12 +278,29 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
 
         probe.surfaces = []
         policy.evaluate()
+        XCTAssertEqual(probe.displayDecisions(for: 2), [true], "A display that is gone gets no decisions")
         probe.surfaces = [WallpaperSurfaceVisibility(displayID: 2, isVisible: true)]
         policy.evaluate()
         XCTAssertTrue(policy.suspendedDisplayIDs.isEmpty)
         XCTAssertEqual(
-            probe.displayDecisions(for: 2), [true],
-            "A hot-plugged display that comes back visible needs no new decision")
+            probe.displayDecisions(for: 2), [true, false],
+            "The renderer and hosts still hold the suspension, so a display that comes back visible is resumed")
+    }
+
+    func testReconnectedDisplayThatIsStillHiddenStaysSuspendedWithoutAResume() {
+        let probe = PolicyProbe()
+        probe.surfaces = [WallpaperSurfaceVisibility(displayID: 2, isVisible: false)]
+        let policy = makePolicy(probe, settle: .zero)
+        policy.start()
+        defer { policy.stop() }
+        XCTAssertEqual(probe.displayDecisions(for: 2), [true])
+
+        probe.surfaces = []
+        policy.evaluate()
+        probe.surfaces = [WallpaperSurfaceVisibility(displayID: 2, isVisible: false)]
+        policy.evaluate()
+        XCTAssertEqual(policy.suspendedDisplayIDs, [2])
+        XCTAssertEqual(probe.displayDecisions(for: 2), [true], "Still suspended: no resume and no second suspend")
     }
 
     func testRapidHideAndRevealSettlesOnTheLastState() async throws {
