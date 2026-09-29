@@ -41,6 +41,8 @@ struct AppReleaseHistory {
         for line in markdown.components(separatedBy: .newlines) {
             if line.hasPrefix("## ") {
                 try finish()
+                // Every ## line is a release heading. Unreleased and headings inside
+                // notes fail the whole file; release publishing rejects the same lines.
                 guard let token = line.dropFirst(3).split(separator: " ").first,
                       let parsed = SemanticVersion(String(token)) else {
                     throw InvalidHistory.invalidVersion

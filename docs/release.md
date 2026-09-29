@@ -152,12 +152,17 @@ tests, and it is how every section up to `0.5.0` was first written. It is not
 published. `--release-body` and `--changelog --apply` refuse notes that are not
 `### English` then `### 简体中文`.
 Publication validates every bundled historical section, not just the current
-release: each needs actual prose in both languages and matching bullet counts.
+release. Each `##` heading must be the `x.y.z` token `AppReleaseHistory` accepts
+(optional `v`/`V`, three 64-bit integer components, no leading zeros), and each
+section needs actual prose in both languages and matching bullet counts.
+`## Unreleased`, duplicate versions, an overflow, a prerelease suffix, a leading
+zero, or a non-version `##` line inside notes fails
+`--release-body`, `--changelog --apply` and `--rebuild-changelog --apply`. Those
+headings are not kept and not dropped. The app rejects the whole file when it
+sees one, and publishing does not invent a placeholder release for them.
 Headings and compare links do not count as translated content.
 `--rebuild-changelog --apply` also refuses to replace the file if rebuilding
 would introduce an English-only section; translate missing history before applying.
-
-
 
 | Commit type | Section |
 |---|---|
@@ -198,7 +203,10 @@ instead of being published. Then `<!-- release-notes-end -->`, the install,
 checksum and requirement footer, and every commit in the range folded into a
 `<details>` list, so whatever the notes leave out is still on the page. The
 marker is a contract: the updater shows everything above it and nothing below.
-The What's New window reads the bundled changelog, not that footer.
+The What's New window reads the bundled changelog, not that footer. A launch
+whose bundled history has no section for the installed version does not record
+that version as announced, so a later bundle can still show the window. See
+[After an update](features/control-panel.md#after-an-update).
 
 Inserting a section is idempotent — rerunning replaces the section for that
 version instead of duplicating it. `--rebuild-changelog` writes a section for every
@@ -215,7 +223,9 @@ repository; the model path against a fake gateway (what the model reads, how its
 streamed reply is parsed and rendered, each reply that must stop a release,
 including a missing language); publishing (recorded bilingual notes reused with
 no second request, generated notes stored once and used unchanged, English-only
-notes refused); and the real HTTP request against a local server (headers, the
+notes refused, and `## Unreleased`, a heading inside notes, a prerelease token
+or a leading zero refused by the publish and rebuild paths rather than kept or
+dropped); and the real HTTP request against a local server (headers, the
 gateway's refusal message, the deadline).
 
 ## Workflows

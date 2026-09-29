@@ -501,6 +501,68 @@ class PublishTests(unittest.TestCase):
             release_notes.published_notes(
                 "0.2.0", "v0.1.0", "HEAD", REPOSITORY, text, "2026-09-29", ai=True)
 
+    def test_publish_rejects_headings_the_app_cannot_parse(self):
+        unreleased = (
+            "## Unreleased\n\n### English\n\nUpcoming work.\n\n### 简体中文\n\n即将发布。\n\n"
+            + self.changelog(RECORDED)
+        )
+        internal = self.changelog(RECORDED) + (
+            "## Also see\n\n### English\n\nSee the note.\n\n### 简体中文\n\n见这条说明。\n\n"
+        )
+        cases = (
+            ("unreleased", unreleased, "Unreleased"),
+            ("internal heading", internal, "Also see"),
+            ("prerelease", "## 1.0.0-beta — 2026-01-01\n\n" + RECORDED, "1.0.0-beta"),
+            ("leading zero", "## 01.2.0 — 2026-01-01\n\n" + RECORDED, "01.2.0"),
+            ("integer overflow", "## 9223372036854775808.0.0\n\n" + RECORDED, "9223372036854775808"),
+            ("tab before heading suffix", "## 0.2.0\t—\t2026-01-01\n\n" + RECORDED, "0.2.0"),
+            ("duplicate version", self.changelog(RECORDED) + "\n## V0.2.0\n\n" + RECORDED, "0.2.0"),
+        )
+        for name, text, needle in cases:
+            with self.subTest(heading=name):
+                with self.assertRaises(release_notes.NotesError) as raised:
+                    release_notes.published_notes(
+                        "0.2.0", "v0.1.0", "HEAD", REPOSITORY, text, "2026-09-29", ai=True)
+                self.assertIn(needle, str(raised.exception))
+
+    def test_publish_reuses_prefixed_version_without_generating_a_duplicate(self):
+        recorded = "## V0.2.0 — 2026-01-01\n\n" + RECORDED
+        notes, bundled, generated = release_notes.published_notes(
+            "0.2.0", "v0.1.0", "HEAD", REPOSITORY, recorded, "2026-09-29")
+        self.assertEqual(notes.strip(), RECORDED.strip())
+        self.assertEqual(bundled, recorded)
+        self.assertFalse(generated)
+
+    def test_rebuild_rejects_unreleased_instead_of_dropping_it(self):
+        recorded = (
+            "## Unreleased\n\n### English\n\nUpcoming work.\n\n### 简体中文\n\n即将发布。\n\n"
+            + self.changelog(RECORDED)
+        )
+        with self.assertRaises(release_notes.NotesError) as raised:
+            release_notes.rebuild_changelog(REPOSITORY, recorded=recorded)
+        self.assertIn("Unreleased", str(raised.exception))
+
+    def test_cli_publish_paths_do_not_write_a_malformed_changelog(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "CHANGELOG.md"
+        malformed = "## Unreleased\n\n### English\n\nUpcoming work.\n\n### 简体中文\n\n即将发布。\n\n"
+        path.write_text(malformed, encoding="utf-8")
+        original = release_notes.CHANGELOG
+        release_notes.CHANGELOG = path
+        try:
+            for argv in (
+                ["--rebuild-changelog", "--apply"],
+                ["--tag", "0.2.0", "--changelog", "--apply"],
+                ["--tag", "0.2.0", "--release-body"],
+            ):
+                with self.subTest(argv=argv):
+                    with self.assertRaises(release_notes.NotesError) as raised:
+                        release_notes.main(argv)
+                    self.assertIn("Unreleased", str(raised.exception))
+                    self.assertEqual(path.read_text(encoding="utf-8"), malformed)
+        finally:
+            release_notes.CHANGELOG = original
 
 
 class RepositoryRangeTests(unittest.TestCase):

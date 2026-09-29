@@ -15,6 +15,18 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Playlists, Workshop updates and sources, image import, automation, playback conditions, zh-Hant and ja (Linux only)
+
+Seven features built in a Linux container without Xcode; nothing here ran on macOS. New Swift files are not yet in WallpaperMachine.xcodeproj: `xcodegen generate` (run by `scripts/test.py` and `scripts/build.py`) must regenerate it on a Mac.
+
+- `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` — OK, 215 tests, 10 skipped; includes the panel catalog check for zh-Hans, zh-Hant and ja
+- `node --check` on every changed WebUI module — OK; i18n resolution probed in Node (zh-TW, zh-HK → zh-Hant; ja-JP → ja)
+- `swiftc -parse` on every changed Swift file — OK
+- Linux SwiftPM harness with shims: PlaylistPlanner/Store/Scheduler, WorkshopUpdateStore, WorkshopTests, WorkshopSourceTests, Automation, SystemConditionMonitor and LibraryImportStore suites — pass, except SystemConditionMonitor cases that need object-filtered notifications (Linux Foundation gap, as AppRuleMonitorTests)
+- Live Steam smoke: details endpoint, collections browse with rating sampling, GetCollectionDetails, an author's page, a signed-out subscriptions read — OK
+- Not run: `python3 scripts/test.py` (needs macOS), so every native and panel suite including WebPanel*Tests, ControlPanelShellTests and AppLanguageTests; no Release build
+- Unverified at runtime: global hotkeys, App Intents and the Focus filter, the wallpapermachine:// scheme, Dock/Finder open, Steam's sign-in window, native language matching (Linux Foundation lacks Apple's rules)
+
 ## 2026-09-29 — pixiv tab, sign-in and R-18 works
 
 Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.

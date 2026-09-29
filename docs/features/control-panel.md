@@ -267,10 +267,20 @@ in the app’s preferences. Older builds did not record a version: on migration,
 users who already completed or skipped the welcome guide see only the installed
 release’s notes, without a fabricated previous-version number. The next update
 has an exact baseline; a fresh installation records one without another window.
-A missing installed-version entry is not marked as announced, so it can retry.
+A missing installed-version entry is not marked as announced. `announcement`
+returns nil without writing `WallpaperMachine.whatsNew.lastVersion`, and the
+next launch runs the same check. That retry is intentional: recording the
+version on a miss would consume the announcement, so a later bundle that
+contains the notes would never show them. A fresh installation and the
+permanent opt-out still record the version, because those launches are not
+waiting for notes. The bundled history is strict: every `##` heading must be a
+semantic version, so `## Unreleased` or a `##` line inside notes fails the
+whole file and the window does not appear. Publishing rejects that file first.
 `WhatsNewTests` covers skipped releases, migration, first launch, interrupted
-presentation, downgrade/relaunch suppression, bilingual history validation and
-the checkbox’s persisted effect across subsequent versions.
+presentation, downgrade/relaunch suppression, a missing current section that
+must not consume a later announcement, bilingual history validation, rejection
+of `## Unreleased` and headings inside notes, and the checkbox’s persisted
+effect across subsequent versions.
 
 ## Thumbnail corner marks
 

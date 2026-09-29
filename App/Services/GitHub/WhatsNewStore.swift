@@ -39,6 +39,8 @@ final class WhatsNewStore {
             entry.version <= currentVersion
                 && (previous.map { entry.version > $0 } ?? (entry.version == currentVersion))
         }
+        // Do not record this version. A bundle that lacks its notes must retry on the
+        // next launch, so a later changelog can still announce it.
         guard releases.first?.version == currentVersion else { return nil }
         return Announcement(currentVersion: currentVersion.display, previousVersion: previous?.display, releases: releases)
     }

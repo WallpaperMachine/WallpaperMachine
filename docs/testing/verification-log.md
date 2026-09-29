@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — PR 16 Claude review: topology state and bundled history
+
+- Standalone Swift smoke compiled the production lock-screen service, selection journal, asset publisher and manifest against isolated host seams and a disposable wallpaper-store fixture. No windows or real wallpaper-service reloads.
+- Before/after: unchanged topology retained the manifest in both; replacement pending readiness changed from isEnabled=false to true; a compatibility error followed by missing UUID changed from erased error/restarted monitor to preserved error/stopped monitor. Actual failure still cleared the manifest.
+- Release publisher smoke: bilingual Unreleased and internal H2 headings were accepted before and rejected after. The real release_notes.py --tag 1.1.0 --to HEAD --release-body command exported bilingual notes without changing CHANGELOG.md.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests --only WhatsNewTests: 25 passed after correcting the compatibility fixture to change the published inputs; initial targeted run was 24 passed / 1 fixture failure.
+- python3 scripts/test.py: exit 0; Python modules passed (55 release-note tests), native 828 passed / 0 failed / 11 skipped.
+- Opt-in media-device and live-network cases skipped. No renderer code or bridge API changed; check_renderer.py not rerun.
+- Documented nonopaque-layer compositor cost as unmeasured, retained-frame resize/failure behavior, and missing-notes retry. Physical lid-close/wake, host acquire-error behavior and What's New presentation remain unverified.
+- No Release app rebuild, installation or restart; the running app retains its previous behavior.
+
 ## 2026-09-29 — Eye-friendly fallback during display wake
 
 - Offscreen production-layer smoke reproduced RGBA [255,255,255,255] before the fix and [0,0,0,255] after it for initial, resized and recreated surfaces; no window or drawable was created. Retained as wallpaper_background.
@@ -116,15 +127,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Tradeoff: lock-screen scene/device memory remains resident while paused; memory and power impact not measured. Obsolete unload/reload policy and poster conversion helper removed.
 - No Release build, app installation/restart, wallpaper change or real lock/sleep desktop run. System snapshot handoff and visible wake timing remain unverified; new surfaces still require initial loading.
 - Removed the throwaway smoke harness, executable and cache with the repository cleanup helper; preserved pre-existing artifacts and built apps.
-
-## 2026-09-29 — Playlists, Workshop updates and sources, image import, automation, playback conditions, zh-Hant and ja (Linux only)
-
-Seven features built in a Linux container without Xcode; nothing here ran on macOS. New Swift files are not yet in WallpaperMachine.xcodeproj: `xcodegen generate` (run by `scripts/test.py` and `scripts/build.py`) must regenerate it on a Mac.
-
-- `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` — OK, 215 tests, 10 skipped; includes the panel catalog check for zh-Hans, zh-Hant and ja
-- `node --check` on every changed WebUI module — OK; i18n resolution probed in Node (zh-TW, zh-HK → zh-Hant; ja-JP → ja)
-- `swiftc -parse` on every changed Swift file — OK
-- Linux SwiftPM harness with shims: PlaylistPlanner/Store/Scheduler, WorkshopUpdateStore, WorkshopTests, WorkshopSourceTests, Automation, SystemConditionMonitor and LibraryImportStore suites — pass, except SystemConditionMonitor cases that need object-filtered notifications (Linux Foundation gap, as AppRuleMonitorTests)
-- Live Steam smoke: details endpoint, collections browse with rating sampling, GetCollectionDetails, an author's page, a signed-out subscriptions read — OK
-- Not run: `python3 scripts/test.py` (needs macOS), so every native and panel suite including WebPanel*Tests, ControlPanelShellTests and AppLanguageTests; no Release build
-- Unverified at runtime: global hotkeys, App Intents and the Focus filter, the wallpapermachine:// scheme, Dock/Finder open, Steam's sign-in window, native language matching (Linux Foundation lacks Apple's rules)

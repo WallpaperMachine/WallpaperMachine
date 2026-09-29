@@ -17,6 +17,9 @@ is cut. The app bundles that file. `--release-body` repeats the current section 
 the release page and adds the install footer and the full commit list. A hand-pushed
 tag with no section is written once, into the working tree, before the build, so the
 bundle and the release page are the same text. A recorded section is reused exactly.
+A `##` heading that is not `x.y.z` — `## Unreleased`, a prerelease token, or a
+heading inside the notes — stops publishing. The app rejects that whole file, so
+the heading is not kept and not dropped.
 
     python3 scripts/release_notes.py                              # English listing, not for publish
     python3 scripts/release_notes.py --ai --tag v0.6.0 --to HEAD  # bilingual notes, before the tag exists
@@ -56,7 +59,6 @@ VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 # The Version workflow's own commit; it describes the release, it is not part of it.
 BUMP_COMMIT = re.compile(r"^chore: bump version to \d+\.\d+\.\d+$")
 BREAKING_BODY = re.compile(r"^BREAKING[ -]CHANGE:", re.MULTILINE)
-CHANGELOG_HEADING = re.compile(r"^## (\d+\.\d+\.\d+)\b")
 MARKETING_VERSION = re.compile(r'MARKETING_VERSION:\s*"([^"]+)"')
 REMOTE_SLUG = re.compile(r"(?:https://github\.com/|git@github\.com:)(?P<slug>[^/]+/[^/\s]+?)(?:\.git)?/?$")
 DEPLOYMENT_TARGET = re.compile(r"MACOSX_DEPLOYMENT_TARGET:\s*\"?([\d.]+)")
@@ -681,6 +683,49 @@ def require_bilingual(text):
     return text
 
 
+def bundled_heading_version(line):
+    """The `x.y.z` `AppReleaseHistory` accepts for this `##` line, or None.
+
+    Swift takes the first token after `## ` and parses a semantic version:
+    optional `v`/`V`, three numeric components, no leading zeros. `## Unreleased`
+    and a `## ` line inside notes are not versions.
+    """
+    if not line.startswith("## "):
+        return None
+    token = line[3:].lstrip(" ").split(" ", 1)[0].strip()
+    token = token[1:] if token[:1] in "vV" else token
+    numbers = token.split(".")
+    if len(numbers) != 3 or any(
+        not number.isascii() or not number.isdigit() or (len(number) > 1 and number.startswith("0"))
+        or len(number) > 19 or int(number) > (1 << 63) - 1
+        for number in numbers
+    ):
+        return None
+    return tuple(int(number) for number in numbers)
+
+
+def require_bundled_history(text):
+    """Refuse a changelog `AppReleaseHistory` cannot parse.
+
+    Every `## ` line is a release heading. One that is not `x.y.z` fails the whole
+    file in the app, so publishing must fail here rather than keep or drop it.
+    """
+    seen = set()
+    for entry in split_sections(text or "")[1]:
+        heading, _, body = entry.partition("\n")
+        version = bundled_heading_version(heading)
+        if version is None:
+            raise NotesError(
+                f"Changelog heading {heading!r} is not a semantic version. "
+                "The app rejects every ## line that is not x.y.z, including ## Unreleased and headings inside notes."
+            )
+        if version in seen:
+            raise NotesError(f"Changelog repeats {'.'.join(str(part) for part in version)}.")
+        seen.add(version)
+        require_bilingual(body)
+    return text
+
+
 def write_with_model(version, previous, revision, repo=None, cwd=ROOT, transport=None, environ=None):
     """Notes the release-notes model writes from the commits in the range. A range with
     no commits is reported in both languages without a request."""
@@ -714,11 +759,11 @@ def published_notes(version, previous, revision, repo, changelog_text, day, ai=F
 
     A recorded bilingual section is returned unchanged and the model is not called.
     A missing section is written once, with `--ai`, and inserted so the bundle and
-    the page are that same text. English-only notes are refused.
+    the page are that same text. English-only notes are refused. A `##` heading the
+    app cannot parse is refused too: it is not kept and not dropped.
     Returns `(notes, changelog_text, generated)`.
     """
-    for entry in split_sections(changelog_text)[1]:
-        require_bilingual(entry.split("\n", 1)[1])
+    require_bundled_history(changelog_text)
     recorded = recorded_notes(changelog_text, version)
     if recorded is not None:
         require_bilingual(recorded)
@@ -731,6 +776,7 @@ def published_notes(version, previous, revision, repo, changelog_text, day, ai=F
     notes = notes_for(version, previous, revision, repo, ai=True, cwd=cwd, transport=transport, environ=environ)
     require_bilingual(notes)
     updated = insert_section(changelog_text or CHANGELOG_PREAMBLE, version, section(version, day, notes))
+    require_bundled_history(updated)
     stored = recorded_notes(updated, version)
     if stored is None or stored.strip() != notes.strip():
         raise NotesError("Generated notes were not stored unchanged in the changelog")
@@ -762,8 +808,7 @@ def split_sections(text):
 
 
 def section_version(text):
-    match = CHANGELOG_HEADING.match(text)
-    return version_key(match.group(1)) if match else None
+    return bundled_heading_version(text.partition("\n")[0])
 
 
 def recorded_notes(text, version):
@@ -789,13 +834,25 @@ def rebuild_changelog(repo=None, cwd=ROOT, recorded=""):
     """A whole changelog with a section for every version tag, newest first.
 
     A section `recorded` (the current changelog) already holds is kept word for word,
-    so the model's notes survive; the others list their commits. It never calls the
+    so the model's notes survive; the others list their commits. A recorded `##`
+    heading that is not `x.y.z` is refused, not dropped. It never calls the
     model: one request per tag would rewrite history nobody asked to change.
     """
+    kept = {}
+    for item in split_sections(recorded or "")[1]:
+        heading = item.split("\n", 1)[0]
+        version = bundled_heading_version(heading)
+        if version is None:
+            raise NotesError(
+                f"Changelog heading {heading!r} is not a semantic version. "
+                "The app rejects every ## line that is not x.y.z, including ## Unreleased and headings inside notes."
+            )
+        if version in kept:
+            raise NotesError(f"Changelog repeats {'.'.join(str(part) for part in version)}.")
+        kept[version] = item.rstrip("\n") + "\n\n"
     tags = version_tags(cwd)
     if not tags:
         raise NotesError("No vx.y.z tags to build a changelog from.")
-    kept = {section_version(item): item.rstrip("\n") + "\n\n" for item in split_sections(recorded or "")[1]}
     body = CHANGELOG_PREAMBLE
     for position in range(len(tags) - 1, -1, -1):
         tag = tags[position]
@@ -841,8 +898,7 @@ def main(argv=None):
             return 0
         recorded = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else ""
         rebuilt = rebuild_changelog(args.repository or repository(), recorded=recorded)
-        for entry in split_sections(rebuilt)[1]:
-            require_bilingual(entry.split("\n", 1)[1])
+        require_bundled_history(rebuilt)
         CHANGELOG.write_text(rebuilt, encoding="utf-8")
         print(f"{MARK.ok} Rewrote {CHANGELOG.relative_to(ROOT)} from {len(version_tags())} tags, keeping recorded sections")
         return 0
@@ -865,12 +921,15 @@ def main(argv=None):
         recorded = notes
         body = release_body(notes, version, earlier, revision, repo, args.built_from)
     else:
+        if args.changelog:
+            require_bundled_history(existing)
         notes = notes_for(version, earlier, revision, repo, ai=args.ai)
         body = notes
         updated = insert_section(existing, version, section(version, day, notes))
 
     if args.changelog and not args.release_body:
         require_bilingual(notes)
+        require_bundled_history(updated)
         if args.apply:
             CHANGELOG.write_text(updated, encoding="utf-8")
             print(f"{MARK.ok} {CHANGELOG.relative_to(ROOT)}: {version} — {day}")

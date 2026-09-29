@@ -88,6 +88,23 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(history.entries.first?.chinese.sections.first?.items, ["新增媒体库筛选功能。"], "Compare links are not release prose")
     }
 
+    func testHistoryRejectsUnreleasedAndHeadingsInsideNotes() throws {
+        XCTAssertThrowsError(try AppReleaseHistory(markdown: """
+        ## Unreleased
+        ### English
+        - Soon.
+        ### 简体中文
+        - 即将发布。
+
+        """)) { error in
+            XCTAssertEqual(error as? AppReleaseHistory.InvalidHistory, .invalidVersion)
+        }
+        XCTAssertThrowsError(try AppReleaseHistory(markdown: entry("1.0.0").replacingOccurrences(
+            of: "- Added a library filter.\n",
+            with: "- Added a library filter.\n## Also see\n"
+        )))
+    }
+
     private func store(_ version: String) -> WhatsNewStore {
         WhatsNewStore(defaults: defaults, currentVersion: version)
     }
