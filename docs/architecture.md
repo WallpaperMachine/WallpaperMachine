@@ -135,6 +135,7 @@ Services are grouped by domain under `App/Services/`.
 | `GitHub/` | `GitHubReleaseClient`, `AppUpdateModels`, `AppUpdateStore`, `AppUpdateInstaller` | GitHub Releases update check, download, in-place install |
 | `Library/` | `ClientPaths`, `WallpaperImportService`, `WallpaperDeletionService` | App-support layout, non-destructive import, guarded deletion |
 | `LockScreen/` | `LockScreenWallpaperSelection`, `LockScreenWallpaperService` | System lock-screen selection overrides and configuration publishing |
+| `Pixiv/` | `PixivService`, `PixivTransport`, `PixivStore`, `PixivSessionStore`, `PixivDownloadQueue`, `PixivWallpaperPackager` | pixiv rankings and tag search, the signed-in session (keychain, sent to `www.pixiv.net` only), downloads of originals and their packaging as still `web` wallpapers; see [features/pixiv.md](features/pixiv.md) |
 | `Steam/` | `SteamCMDRuntime`, `SteamCMDSetupStore` | SteamCMD discovery, download, validation, security approval |
 | `Workshop/` | `WorkshopService`, `WorkshopStore`, `WorkshopDownloader`, `WorkshopDownloadManager`, `WorkshopThumbnailCache` | Workshop query model, browse state, SteamCMD-driven downloads, concurrent download queue sharing one saved sign-in, one-download on-disk previews (still + animation) for Discover tiles, warmed ahead of the panel |
 | `WebWallpaper/` | `WebWallpaperHost`, `WebWallpaperWindow`, `WebWallpaperPage` | Desktop-level `WKWebView` windows for `type: "web"` projects, driven by the bridge's `webWallpapers()`; see [features/web-wallpapers.md](features/web-wallpapers.md) |

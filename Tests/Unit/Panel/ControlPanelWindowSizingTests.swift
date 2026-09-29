@@ -23,7 +23,7 @@ final class ControlPanelWindowSizingTests: XCTestCase {
       rootView: AnyView(
         ControlPanelView(
           store: store, navigation: ControlPanelNavigation(), workshop: workshop,
-          updater: updater)))
+          pixiv: PixivStore(), updater: updater)))
     controller.sizingOptions = []
     let delegate = SizingDelegate()
     let window = ControlPanelWindow.make(contentViewController: controller, delegate: delegate)

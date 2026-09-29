@@ -205,6 +205,13 @@ final class PanelFixture {
   let defaults: UserDefaults
   let previousHome: String?
   let workshop: WorkshopStore
+  /// Answers from fixtures: a three-work ranking whose works have two pages, and a one-frame
+  /// GIF for every image, so no panel test reaches pixiv. `PixivFixtures.session` signs in as
+  /// "Tester", and R-18 rankings answer that session only.
+  let pixiv: PixivStore
+  /// Stands in for the keychain; signing in never opens a window unless a test says what the
+  /// window would answer through `controller.signInToPixiv`.
+  let pixivSessions = PixivMemorySessionStore()
   let theme: AppThemeStore
   let controller: WebPanelController
   var web: WKWebView
@@ -243,12 +250,37 @@ final class PanelFixture {
     workshop = WorkshopStore(
       downloader: downloader, supportDirectory: root, defaults: defaults,
       runtimeProvider: PanelRuntime(), sceneAssetsAvailable: { false })
+    let image = try ControlPanelTestCase.gif(frames: 1, brightness: 0.6)
+    let transport = PixivFixtureTransport(respondingToSession: { url, session in
+      if url.host == "i.pximg.net" { return image }
+      if url.path.hasSuffix("/pages") {
+        return PixivFixtures.pages(workID: Int(url.pathComponents.dropLast().last ?? "") ?? 0, count: 2)
+      }
+      if url.path == "/touch/ajax/user/self/status" {
+        return PixivFixtures.status(signedIn: session == PixivFixtures.session)
+      }
+      if url.query?.contains("_r18") == true, session != PixivFixtures.session { throw PixivFixtures.forbidden }
+      return PixivFixtures.ranking([
+        PixivFixtures.rankingEntry(.init(id: 301, pages: 2), rank: 1),
+        PixivFixtures.rankingEntry(.init(id: 302, sexual: 1), rank: 2),
+        PixivFixtures.rankingEntry(.init(id: 303, pages: 2), rank: 3),
+      ])
+    })
+    pixiv = PixivStore(
+      service: PixivService(transport: transport, minimumInterval: .zero),
+      packager: PixivWallpaperPackager(library: root.appendingPathComponent("Library", isDirectory: true)),
+      sessions: pixivSessions)
     let visibility = self.visibility
     theme = AppThemeStore(defaults: defaults)
     controller = WebPanelController(
-      store: store, navigation: navigation, workshop: workshop,
+      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv,
       isPresentationVisible: { visibility.visible }, theme: theme, displayTitles: displayTitles,
-      defaults: defaults, appLanguage: .english())
+      defaults: defaults,
+      assets: WebPanelAssets(
+        pixivThumbnailCache: WorkshopThumbnailCache(
+          directory: root.appendingPathComponent("pixiv-thumbnails"), fetcher: PreviewFetcher { _ in image })),
+      appLanguage: .english())
+    controller.signInToPixiv = { nil }
     web = controller.makeWebView()
     web.setFrameSize(NSSize(width: 960, height: 640))
   }
@@ -366,6 +398,7 @@ final class PanelFixture {
     bridge.pendingOptions.removeAll()
     await workshop.downloader.shutdown()
     await workshop.steamCMDSetup.shutdown()
+    await pixiv.downloads.shutdown()
     defaults.removePersistentDomain(forName: root.lastPathComponent)
     if let previousHome { setenv("WALLPAPER_MACHINE_HOME", previousHome, 1) }
     else { unsetenv("WALLPAPER_MACHINE_HOME") }

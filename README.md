@@ -27,7 +27,7 @@
 
 ## The app
 
-One window, three tabs: Discover, Installed and Settings. The website runs that
+One window, four tabs: Discover, pixiv, Installed and Settings. The website runs that
 same interface on a demo library, so you can
 [try it in your browser](https://www.wallpapermachine.app/#app). Close the
 window and the app keeps running in the menu bar, where you can pause, resume
@@ -37,6 +37,7 @@ or skip to the next wallpaper.
 | --- | --- |
 | [**Apply**](docs/features/control-panel.md#selection-versus-apply) | Scene, video or [web](docs/features/web-wallpapers.md): press play and it becomes your desktop. Choosing a wallpaper only selects it. |
 | [**Workshop**](docs/features/workshop-downloads.md) | The live Steam Workshop, no sign-in to browse. Downloads run in the app, several at once, with a Steam account that owns Wallpaper Engine. |
+| [**pixiv**](docs/features/pixiv.md) | pixiv's illustration rankings and tag search. Save any page of a work as a still wallpaper; sign in to pixiv for members-only works and, if your account allows them, R-18. |
 | [**Settings**](docs/features/control-panel.md#properties) | Every option its artist made, saved for each wallpaper when you apply your changes. |
 | [**Music**](docs/features/audio-response.md) | Turn on Audio response and wallpapers made for sound move with what your Mac plays. Turn on [Media integration](docs/features/media-integration.md) and ones with a music display show the song that's on. |
 | [**Displays**](docs/features/control-panel.md#target-display) | Every display gets its own wallpaper, or mirrors another, with its own scaling, frame rate and volume. |

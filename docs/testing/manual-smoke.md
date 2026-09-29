@@ -18,7 +18,7 @@ when no manual or explicitly requested desktop check was performed.
 
 - [ ] One library window opens, the starter wallpaper is visible, and there are
       no blank floating panels.
-- [ ] Switch between the Discover, Installed and Settings tabs and through the
+- [ ] Switch between the Discover, pixiv, Installed and Settings tabs and through the
       six Settings categories: General, Appearance, Displays, Library & Steam,
       Storage, About.
 - [ ] Command-comma reuses the existing window.
@@ -50,7 +50,7 @@ when no manual or explicitly requested desktop check was performed.
 
 ## Layout and accessibility
 
-- [ ] Check Discover and Installed at 1240×800, 960×640 and 760×560 in light and
+- [ ] Check Discover, pixiv and Installed at 1240×800, 960×640 and 760×560 in light and
       dark mode. The inspector stays present; panes resize without losing the
       target or the primary actions.
 - [ ] Command-F, grid arrows, Return/Space, text editing and VoiceOver names
@@ -68,6 +68,25 @@ when no manual or explicitly requested desktop check was performed.
       only items matching every selected tag, and Clear filters restores the
       unfiltered query.
 - [ ] Filter changes never activate wallpapers.
+
+## pixiv
+
+- [ ] The pixiv tab opens on the daily ranking; paging, a tag search and each
+      filter group work, and Clear restores the defaults.
+- [ ] Select a work with several pages, step to another page and download it:
+      it appears in Installed as a still wallpaper, applies, and Image fit and
+      Background color change it.
+- [ ] **Sign in to pixiv…** opens pixiv's own sign-in page in its own window;
+      signing in with a pixiv ID or email closes it and the sidebar names the
+      account. Closing the window instead changes nothing.
+- [ ] Quit and reopen: the sign-in is still there, with no keychain prompt on a
+      release build.
+- [ ] With an account whose viewing restrictions allow R-18 works, tick Mature
+      (R-18): search includes works with the R-18 badge and the R-18 rankings
+      join the menu. With an account that hides them, the sidebar says so.
+- [ ] **Log out**: the Mature box unticks and disables, an R-18 ranking returns
+      to its all-ages one, and Keychain Access no longer lists
+      `app.wallpapermachine.pixiv`.
 
 ## SteamCMD setup
 

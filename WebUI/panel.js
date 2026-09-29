@@ -3,6 +3,7 @@ import { createWelcome, SIGN_IN_ID } from './welcome.js';
 import { glyphs } from './icons.js';
 import { t, applyStaticText, setLanguage, language } from './i18n.js';
 import { renderPropertyLabel } from './property-label.js';
+import { createPixivPage } from './pixiv.js';
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -159,7 +160,7 @@ async function send(action, args = {}) {
   if (!bridge) { localError = t('The native connection is unavailable. Open this panel in WallpaperMachine, then reconnect.'); renderError(); throw new Error(localError); }
   const key = actionKey(action, args);
   if (pending.has(key)) {
-    if (['property', 'wallpaperSetting', 'displayConfig', 'workshopSearch', 'navigate', 'target'].includes(action)) {
+    if (['property', 'wallpaperSetting', 'displayConfig', 'workshopSearch', 'pixivSearch', 'navigate', 'target'].includes(action)) {
       await inFlight.get(key);
       return send(action, args);
     }
@@ -224,6 +225,7 @@ function render() {
   if (!state) return;
   const discover = state.page === 'discover';
   const settings = state.page === 'settings';
+  const pixivPage = state.page === 'pixiv';
   if (!discover) retireLivePreviews(new Set());
   document.querySelectorAll('.tabs [data-page]').forEach(tab => { if (tab.dataset.page === state.page) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); tab.disabled = busy('navigate', { page: tab.dataset.page }); });
   document.documentElement.style.setProperty('--window-controls-inset', `${Math.max(0, Number(state.windowControlsInset) || 0)}px`);
@@ -239,10 +241,13 @@ function render() {
     $('library-page').classList.toggle('discover', discover);
     $('library-page').classList.toggle('filters-open', filtersOpen);
     $('filter-sidebar').hidden = !filtersOpen;
-    renderToolbar(discover);
-    if (filtersOpen) renderFilters(discover);
-    renderGrid(discover);
-    renderInspector(discover);
+    if (pixivPage) pixiv.render(state, filtersOpen);
+    else {
+      renderToolbar(discover);
+      if (filtersOpen) renderFilters(discover);
+      renderGrid(discover);
+      renderInspector(discover);
+    }
   }
   renderActivity(); renderPopover(); renderDialog(); welcome.render(state); surfaceAuthRequests();
 }
@@ -506,7 +511,10 @@ function renderInspector(discover) {
       ? `${download.prompt || download.challenge ? button(t('Finish sign-in'), 'continueSetup', { id: item.id }, { icon: 'shield', className: 'primary' }) : button(download.queued ? t('Waiting to download') : percent === null ? t('Downloading') : t('Downloading {percent}%', { percent }), 'openDownloads', {}, { icon: 'download', className: 'primary' })}${button(download.queued ? t('Remove from queue') : t('Cancel'), 'downloadCancel', { id: item.id }, { className: 'quiet' })}`
       : button(download?.error ? t('Download again') : t('Download'), 'requestDownload', { id: item.id }, { icon: 'download', className: 'primary' });
   const options = !discover && state.options?.id === item.id ? state.options : null;
-  const compatibility = { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
+  // An illustration saved from the pixiv tab is a web wallpaper only in how it is shown; its id names the artwork.
+  const pixivArtwork = !discover && /^pixiv-(\d+)-p\d+$/.exec(item.id)?.[1];
+  const compatibility = pixivArtwork ? t('A still illustration saved from pixiv. Choose how it fits the screen under Image fit.') : { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
+  const artworkLink = pixivArtwork ? button(t('View on pixiv'), 'openExternal', { url: `https://www.pixiv.net/artworks/${pixivArtwork}` }, { icon: 'external', className: 'link inspector-artwork-link' }) : '';
   const meta = [t(item.kind), bytes(item.size), discover && Number.isFinite(item.subscriptions) ? t('{count} subscribers', { count: item.subscriptions.toLocaleString() }) : ''].filter(Boolean).map(escapeHTML).join('<span aria-hidden="true"> · </span>');
   const energy = !discover ? energyRating(item.energy) : '';
   // A failure this panel saw for the wallpaper (its download, or the last attempt to apply it) is
@@ -531,7 +539,7 @@ function renderInspector(discover) {
     ${failureNotice}
     ${isInstalled && download && !download.pending && !download.error ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : ''}
     ${download || request ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : ''}
-    ${compatibility ? `<p class="inspector-compatibility muted"><small>${escapeHTML(compatibility)}</small></p>` : ''}${reportLink}
+    ${compatibility ? `<p class="inspector-compatibility muted"><small>${escapeHTML(compatibility)}</small></p>` : ''}${artworkLink}${reportLink}
     ${item.kind === 'Scene' && !state.settings.sceneAssetsReady ? `<div class="notice warning">${escapeHTML(t('Shared scene resources are required before playback.'))} ${button(t('Get shared resources'), 'requestAssets', {}, { className: 'link' })}</div>` : ''}${showInLibrary}
     </div>${discover ? (item.summary ? `<section class="inspector-section"><p>${escapeHTML(item.summary)}</p></section>` : '') : options ? renderOptions(options) : `<section class="inspector-section"><p class="muted">${escapeHTML(t('Loading wallpaper options…'))}</p></section>`}
     </div>${options ? renderInspectorSave(options) : ''}</div>`);
@@ -642,7 +650,8 @@ function assetProperty(id, property, fieldID, unavailable, name) {
 }
 function renderProperty(id, property, lock) {
   const token = property.labelHTML || property.label;
-  const engineLabel = Object.hasOwn(enginePropertyLabels, token) ? enginePropertyLabels[token] : null;
+  const engineLabel = Object.hasOwn(enginePropertyLabels, token) ? enginePropertyLabels[token]
+    : id.startsWith('pixiv-') && packagedPropertyLabels.includes(token) ? token : null;
   const presentation = engineLabel ? { ...property, label: t(engineLabel), labelHTML: '' } : property;
   const name = presentation.label || t('Unnamed option');
   const label = renderPropertyLabel(presentation);
@@ -667,6 +676,9 @@ function renderProperty(id, property, lock) {
   const restore = property.defaultValue !== undefined && property.defaultValue !== null ? button('', 'restoreProperty', { id, propertyID: property.id }, { icon: 'refresh', className: 'quiet icon-button property-reset', title: t('Restore default: {name}', { name }), disabled: unavailable }) : '';
   return `<div ${keyAttr(property.id)} class="field property-row property-${escapeHTML(property.kind)}${modified ? ' modified' : ''}"><div class="field-title"><label class="property-label" for="${escapeHTML(fieldID)}">${label || escapeHTML(name)}</label>${modified ? `<span class="field-flag">${escapeHTML(t('Modified'))}</span>` : ''}</div><div class="property-control">${control}</div>${restore}</div>`;
 }
+// The property labels this app writes into the pixiv wallpapers it packages. The manifest keeps
+// them in English, as any wallpaper's are; being ours, they are translated for those wallpapers.
+const packagedPropertyLabels = ['Image fit', 'Background color'];
 // Wallpaper Engine's built-in label tokens are UI vocabulary, not author prose.
 const enginePropertyLabels = {
   ui_browse_properties_scheme_color: 'Scheme color',
@@ -757,7 +769,16 @@ function renderActivity() {
   const showImport = state.import?.busy || (report && importReportUnseen) || (popover === 'import' && popoverTrigger.startsWith('#activity-bar '));
   const transferring = active.filter(item => !item.authenticating);
   const label = transferring.length === 1 ? t('{title} download progress', { title: transferring[0].title }) : t('{count} downloads progress', { count: transferring.length });
-  morph($('activity-bar'), `<div class="activity-left">${button('', 'playback', {}, { icon: !hasWallpaper || state.paused ? 'play' : 'pause', title: !hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Resume wallpaper playback') : t('Pause wallpaper playback'), className: 'quiet icon-button', disabled: state.busy || !hasWallpaper })}<span class="activity-copy">${escapeHTML(!hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Playback paused') : t('Playback running'))}</span></div><div class="activity-right">${showImport ? button(importSummary, 'openImport', {}, { icon: 'folder', className: 'quiet', title: importSummary }) : ''}${state.setup?.busy ? `<span class="activity-copy">${escapeHTML(t('Setting up SteamCMD…'))}</span>` : ''}${transferring.length ? `<progress class="activity-progress" max="1"${progress !== null ? ` value="${progress}"` : ''} aria-label="${escapeHTML(label)}"></progress>` : ''}${button(downloadSummary, 'openDownloads', {}, { icon: 'download', className: 'quiet', title: downloadSummary })}</div>`);
+  morph($('activity-bar'), `<div class="activity-left">${button('', 'playback', {}, { icon: !hasWallpaper || state.paused ? 'play' : 'pause', title: !hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Resume wallpaper playback') : t('Pause wallpaper playback'), className: 'quiet icon-button', disabled: state.busy || !hasWallpaper })}<span class="activity-copy">${escapeHTML(!hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Playback paused') : t('Playback running'))}</span></div><div class="activity-right">${showImport ? button(importSummary, 'openImport', {}, { icon: 'folder', className: 'quiet', title: importSummary }) : ''}${state.setup?.busy ? `<span class="activity-copy">${escapeHTML(t('Setting up SteamCMD…'))}</span>` : ''}${pixivActivity()}${transferring.length ? `<progress class="activity-progress" max="1"${progress !== null ? ` value="${progress}"` : ''} aria-label="${escapeHTML(label)}"></progress>` : ''}${button(downloadSummary, 'openDownloads', {}, { icon: 'download', className: 'quiet', title: downloadSummary })}</div>`);
+}
+// pixiv downloads are the app's own and brief, so they are not rows in the Steam downloads list;
+// while one runs, the activity bar says so on every tab and leads back to the pixiv tab.
+function pixivActivity() {
+  const jobs = (state.pixiv?.downloads || []).filter(job => job.pending);
+  if (!jobs.length) return '';
+  const percent = jobs.length === 1 && Number.isFinite(jobs[0].progress) ? Math.round(clamp(jobs[0].progress) * 100) : null;
+  const summary = jobs.length === 1 ? t('pixiv: {title}', { title: jobs[0].title || t('Untitled') }) + (percent === null ? '' : ` · ${percent}%`) : t('{count} pixiv downloads', { count: jobs.length });
+  return button(summary, 'navigate', { page: 'pixiv' }, { icon: 'download', className: 'quiet', title: summary });
 }
 function previewThumb(url) {
   const source = safeImage(url);
@@ -988,6 +1009,7 @@ async function continueDownload(includeResources) {
   await sendDialog('continueDownload', { id, account: dialogAccount.account.trim(), rememberSession: dialogAccount.rememberSession, includeResources });
 }
 async function handleAction(action, data, element) {
+  if (action.startsWith('pixiv')) return pixiv.handleAction(action, data);
   const deliver = element?.closest('#download-dialog') ? sendDialog : send;
   const id = data.id;
   switch (action) {
@@ -1171,6 +1193,7 @@ document.addEventListener('click', event => {
     if (control.closest('label.property-label')) event.preventDefault();
     // Modifier clicks on installed tiles build a selection instead of changing the inspector.
     if (control.matches('.tile-select') && state?.page === 'installed' && (selecting || event.metaKey || event.ctrlKey || event.shiftKey)) { toggleSelection(control.dataset.id, { range: event.shiftKey }); return; }
+    if (control.matches('.tile-select') && event.detail === 2 && state?.page === 'pixiv') { run(pixiv.doubleClick(control.dataset.id)); return; }
     // Apply on the second click instead of starting another selection request first.
     const action = control.matches('.tile-select') && event.detail === 2
       ? (state?.page === 'installed' ? 'activate' : tileDoubleClickAction(control.dataset.id)) : control.dataset.action;
@@ -1184,6 +1207,7 @@ document.addEventListener('input', event => {
   if (element.type === 'range') { const output = element.parentElement.querySelector('output'); if (output) output.textContent = element.dataset.setting === 'volume' ? `${element.value}%` : element.value; }
   if (element.dataset.input === 'property') { drafts.set(draftKey(element.dataset.id, element.dataset.propertyId), element.value); renderInspector(false); }
   if (element.dataset.input === 'account' && dialogAccount) { dialogAccount.account = element.value; renderDialog(); }
+  if (element.dataset.input === 'pixivSearch' && state?.page === 'pixiv') pixiv.handleInput(element);
   if (element.dataset.input === 'search') {
     if (state.page === 'discover') { workshopDraft.text = element.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => run(searchWorkshop()), 450); }
     else { installed.text = element.value; renderGrid(false); }
@@ -1195,6 +1219,7 @@ document.addEventListener('change', event => {
   const change = element.dataset.change;
   const value = element.type === 'checkbox' ? element.checked : element.type === 'number' || element.type === 'range' ? Number(element.value) : element.value;
   if (element.id === 'import-duplicates') { importDuplicates = value; renderPopover(); return; }
+  if (change?.startsWith('pixiv')) { run(pixiv.handleChange(element)); return; }
   if (change === 'target') run(send('target', { id: value }));
   else if (change === 'property') run(commitProperty(element));
   else if (change === 'wallpaperSetting' || change === 'displayConfig') {
@@ -1212,6 +1237,7 @@ document.addEventListener('submit', event => {
   const form = event.target;
   if (form.closest('#settings-content, #welcome')) return;
   event.preventDefault();
+  if (form.dataset.form?.startsWith('pixiv') && state?.page === 'pixiv') { run(pixiv.handleSubmit(form)); return; }
   if (form.dataset.form === 'search' && state.page === 'discover') run(searchWorkshop());
   if (form.dataset.form === 'workshopPage' && state.page === 'discover') {
     const input = form.elements.page;
@@ -1391,6 +1417,11 @@ const welcome = createWelcome({
   clearError: () => { localError = ''; if (state) { state.error = null; state.downloadError = null; } renderError(); run(send('dismissError')); },
   navigate: (page) => send('navigate', { page }),
   openImport: async () => { await send('navigate', { page: 'installed' }); openPopover('import', document.querySelector('#browser-toolbar [data-action="openImport"]')); },
+});
+// The pixiv tab draws into the same library page, with the same helpers, as Discover.
+const pixiv = createPixivPage({
+  $, send, run, escapeHTML, icon, button, morph, keyAttr, checked, disabled, selectOptions, safeImage, safeLink, preview, tags, bytes, tileRing, filterButton, filterGroup, filterHeading,
+  activate: (id) => handleAction('activate', { id }),
 });
 applyStaticText();
 run(send('ready'));

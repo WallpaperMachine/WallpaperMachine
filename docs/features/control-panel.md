@@ -35,10 +35,10 @@ fit together and how to add a language: [Localization](../localization.md).
 
 | Region | Contents |
 | --- | --- |
-| Top tabs | **Discover**, **Installed**, **Settings** |
+| Top tabs | **Discover**, **pixiv**, **Installed**, **Settings** |
 | Top bar | Sits in the window's title-bar strip beside the traffic lights: tabs on the left, product name, version and a GitHub button (opens the repository in the default browser) centered, target-display picker and a downloads button (only while there is download activity) on the right. The side groups never shrink below their content, so a long display name nudges the brand off-center rather than under the controls; in windows up to 840px wide the name and version hide and only the GitHub button stays. The renderer's own repository is linked from Settings → About. Its background drags the window and follows the system double-click action |
 | Browser column | Filter button, search field, sort menu, tile grid, result summary, Workshop pagination with an editable page number. On Discover a page is one Steam page of 30 square tiles (at most 1,000 pages); the grid shows as many columns as fit, never fewer than three, and scrolls the rest |
-| Left sidebar | Filters on both library pages, mirroring Wallpaper Engine's sidebar: Show only, Type, Age rating, Resolution and Tags tick boxes on Discover; the same boxes minus Resolution (plus Favorites and Active in Show only) on Installed, applied to the library in the page. Fixed width; the toolbar's Filter button opens and closes it, and that choice is remembered per page across launches |
+| Left sidebar | Filters on every library page, mirroring Wallpaper Engine's sidebar: Show only, Type, Age rating, Resolution and Tags tick boxes on Discover; the same boxes minus Resolution (plus Favorites and Active in Show only) on Installed, applied to the library in the page; the pixiv account and pixiv's own filters on pixiv. Fixed width; the toolbar's Filter button opens and closes it, and that choice is remembered per page across launches |
 | Inspector | Preview, title, kind, creator, actions, tags, and the selected wallpaper's options and properties. Its width is a function of the window width alone and cannot be dragged: 260px at the 760px minimum, `15vw + 146px` in between (290px at 960px, 386px at 1600px) and 420px from about 1830px on, the same on Discover and Installed. Nothing is stored, so a given window size always yields the same layout. Inside, the panel adapts to its own width: past 360px the insets widen and a display's scale factor and frame rate share a row |
 | Activity bar | Global pause/resume, import activity and unseen results, download progress (not a playback timeline). Playback remains available when any display has an assignment, even if the target display is empty; with no assignments it is disabled and reports **No wallpaper playing**. Long summaries truncate visually but keep their full accessible names |
 
@@ -190,6 +190,9 @@ a download.
 
 - **Discover** browses the Steam Workshop. See
   [Workshop downloads](workshop-downloads.md).
+- **pixiv** browses pixiv's illustration rankings and tag search in the same
+  grid, sidebar and inspector, and saves a page of a work as a still wallpaper.
+  See [pixiv](pixiv.md).
 - **Installed** shows the local library.
 - **Settings** replaces the browser with a sectioned native-feeling settings
   view. **Performance** is first and is the section Settings opens on, then
@@ -413,6 +416,11 @@ claimed to be represented by the sum of visible group counts.
   [workshop-downloads](workshop-downloads.md)); sort opens on Most popular this
   year and offers Highest rated, Most popular today, Trending this week, Most
   popular this month, Most popular this year, Most subscribed, Newest or Relevance.
+- pixiv: the sidebar starts with the pixiv account (sign in, or who is signed in
+  and **Log out**), then Orientation, Minimum size, Age rating and AI-generated;
+  its Mature (R-18) box waits for a sign-in. The toolbar menu lists rankings
+  while the search field is empty and search orders once it is not. See
+  [pixiv](pixiv.md#browsing).
 
 An empty result offers recovery for the actual restriction: **Clear search**,
 **Clear filters** (plus **Show filters** when hidden), or **Clear search and

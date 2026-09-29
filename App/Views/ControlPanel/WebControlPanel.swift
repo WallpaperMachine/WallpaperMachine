@@ -11,15 +11,19 @@ struct WebControlPanel: NSViewRepresentable {
   let store: BridgeStore
   let navigation: ControlPanelNavigation
   let workshop: WorkshopStore
+  let pixiv: PixivStore
   let updater: AppUpdateStore
 
   func makeCoordinator() -> WebPanelController {
     let controller = WebPanelController(
-      store: store, navigation: navigation, workshop: workshop, updater: updater)
+      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater)
     // Discover previews start caching the moment Steam's page arrives, and the following page
-    // is fetched behind the one on show, so neither waits for the web view to ask.
+    // is fetched behind the one on show, so neither waits for the web view to ask. The pixiv
+    // tab does the same with its thumbnails and its next page.
     workshop.prefetchesNextPage = true
     workshop.onPreviewsAvailable = { [cache = controller.assets.thumbnailCache] in cache.warm($0) }
+    pixiv.prefetchesNextPage = true
+    pixiv.onThumbnailsAvailable = { [cache = controller.assets.pixivThumbnailCache] in cache.warm($0) }
     return controller
   }
 
@@ -47,12 +51,16 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let store: BridgeStore
   let navigation: ControlPanelNavigation
   let workshop: WorkshopStore
+  let pixiv: PixivStore
   let updater: AppUpdateStore
   let theme: AppThemeStore
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
   /// Tests pass a closure so choosing an app does not open a panel. Nil uses the sheet.
   var chooseApplication: (@MainActor () async -> URL?)?
+  /// Tests pass a closure that answers a pixiv session, so signing in opens no window. Nil
+  /// opens pixiv's sign-in page in `PixivSignInWindowController`.
+  var signInToPixiv: (@MainActor () async -> String?)?
   let displayTitles: DisplayTitleResolver
   weak var webView: WKWebView?
   let assets: WebPanelAssets
@@ -75,8 +83,8 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   var importReport: WallpaperImportService.Report?
   var remembersSession = true
   var favoriteIDs: Set<String>
-  /// Each library page (`discover`, `installed`) hides its filter sidebar when the user
-  /// closes it with the toolbar's Filter button; the choice outlives the page.
+  /// Each library page (`discover`, `pixiv`, `installed`) hides its filter sidebar when the
+  /// user closes it with the toolbar's Filter button; the choice outlives the page.
   var filtersCollapsed: [String: Bool]
   /// Whether the first-run welcome has been dismissed. The page shows the welcome over
   /// the content while this is false and reports `welcomeSeen` once the user has read or
@@ -111,6 +119,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   /// Where each page's sidebar choice is stored; Discover keeps the key earlier builds used.
   static let filtersCollapsedKeys = [
     "discover": "WallpaperMachine.workshopFiltersCollapsed",
+    "pixiv": "WallpaperMachine.pixivFiltersCollapsed",
     "installed": "WallpaperMachine.installedFiltersCollapsed",
   ]
   static let welcomeSeenKey = "WallpaperMachine.welcomeSeen"
@@ -125,6 +134,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
 
   init(
     store: BridgeStore, navigation: ControlPanelNavigation, workshop: WorkshopStore,
+    pixiv: PixivStore? = nil,
     updater: AppUpdateStore? = nil,
     isPresentationVisible: (@MainActor () -> Bool)? = nil,
     theme: AppThemeStore? = nil,
@@ -142,6 +152,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.appLanguage = appLanguage ?? .shared
     self.navigation = navigation
     self.workshop = workshop
+    self.pixiv = pixiv ?? PixivStore()
     self.updater =
       updater ?? AppUpdateStore(currentVersion: "0.0.0", client: DisabledAppUpdateClient())
     self.displayTitles = displayTitles
@@ -571,9 +582,14 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
   /// Workshop preview URLs by item id, served as still thumbnails at `mwe-ui://thumbnail/<id>`
   /// and relayed with their animation at `mwe-ui://animated/<id>`.
   var thumbnails: [String: URL] = [:]
+  /// pixiv thumbnails by work id, and page previews by `<work id>-p<page>`, served as
+  /// `mwe-ui://pixiv-thumbnail/<key>`.
+  var pixivThumbnails: [String: URL] = [:]
   var propertyImages: [String: URL] = [:]
   private let propertyImageCache = PropertyImageCache()
   let thumbnailCache: WorkshopThumbnailCache
+  /// A cache of its own, so pixiv's images and Steam's never evict each other.
+  let pixivThumbnailCache: WorkshopThumbnailCache
   /// In-flight loads by scheme task identity. WebKit frees a stopped task, and a new one can
   /// land on the same address, so each entry carries a unique ticket: a finished job may only
   /// act when the entry for its key still belongs to it.
@@ -581,7 +597,7 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
   private var nextTicket: UInt64 = 0
   private static let files: Set<String> = [
     "index.html", "panel.js", "panel.css", "settings.js", "settings.css", "welcome.js",
-    "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js",
+    "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js", "pixiv.js",
     "app-icons/minimal.png", "app-icons/day.png", "app-icons/night.png",
   ]
   /// One catalog module per shipped language, served as `mwe-ui://app/locales/<tag>.js`.
@@ -594,11 +610,18 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
     case file(URL)
     case thumbnail(URL)
     case animated(URL)
+    case pixivThumbnail(URL)
     case propertyImage(URL)
   }
 
-  init(thumbnailCache: WorkshopThumbnailCache = WorkshopThumbnailCache()) {
+  init(
+    thumbnailCache: WorkshopThumbnailCache = WorkshopThumbnailCache(),
+    pixivThumbnailCache: WorkshopThumbnailCache = WorkshopThumbnailCache(
+      directory: ClientPaths.pixivThumbnailCacheURL, fetcher: PixivThumbnailFetcher(),
+      maxConcurrentFetches: 6, byteLimit: 256 * 1024 * 1024)
+  ) {
     self.thumbnailCache = thumbnailCache
+    self.pixivThumbnailCache = pixivThumbnailCache
     super.init()
   }
 
@@ -634,6 +657,10 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
         case .animated(let preview):
           data = try await thumbnailCache.animatedPreview(for: preview)
           headers["Content-Type"] = WorkshopThumbnailCache.mimeType(of: data)
+          headers["Cache-Control"] = "max-age=86400"
+        case .pixivThumbnail(let image):
+          data = try await pixivThumbnailCache.thumbnail(for: image)
+          headers["Content-Type"] = "image/jpeg"
           headers["Cache-Control"] = "max-age=86400"
         case .propertyImage(let source):
           let image = try await propertyImageCache.image(for: source)
@@ -681,6 +708,10 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
       url.password == nil, url.port == nil, url.query == nil, url.fragment == nil,
       let image = propertyImages[String(url.path.dropFirst())], PropertyImageCache.allowedURL(image)
     { return .propertyImage(image) }
+    if url.scheme == "mwe-ui", url.host == "pixiv-thumbnail", url.user == nil,
+      url.password == nil, url.port == nil,
+      let image = pixivThumbnails[String(url.path.dropFirst())], PixivService.isImageURL(image)
+    { return .pixivThumbnail(image) }
     guard url.scheme == "mwe-ui", let host = url.host, url.user == nil, url.password == nil,
       url.port == nil, let preview = thumbnails[String(url.path.dropFirst())],
       preview.scheme == "https"

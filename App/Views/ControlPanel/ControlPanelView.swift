@@ -3,7 +3,7 @@ import SwiftUI
 
 // Native menu commands share navigation with the bundled WebKit interface.
 enum SidebarSelection: String {
-  case wallpaper, workshop, display, settings
+  case wallpaper, workshop, pixiv, display, settings
 }
 
 enum SettingsSection: String, CaseIterable {
@@ -30,20 +30,23 @@ struct ControlPanelView: View {
   let store: BridgeStore
   @ObservedObject var navigation: ControlPanelNavigation
   let workshop: WorkshopStore
+  let pixiv: PixivStore
   let updater: AppUpdateStore
 
   init(
     store: BridgeStore, navigation: ControlPanelNavigation, workshop: WorkshopStore,
-    updater: AppUpdateStore
+    pixiv: PixivStore, updater: AppUpdateStore
   ) {
     self.store = store
     self.navigation = navigation
     self.workshop = workshop
+    self.pixiv = pixiv
     self.updater = updater
   }
 
   var body: some View {
-    WebControlPanel(store: store, navigation: navigation, workshop: workshop, updater: updater)
+    WebControlPanel(
+      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater)
       .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
       // The page owns the title-bar strip; the window only keeps the traffic lights there.
       .ignoresSafeArea()

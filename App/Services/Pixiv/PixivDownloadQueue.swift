@@ -1,0 +1,178 @@
+import Foundation
+import Observation
+
+/// One page of a pixiv work on its way into the library.
+@MainActor
+@Observable
+final class PixivDownload: Identifiable {
+    enum Status: Equatable {
+        case waiting, downloading, installing, finished, cancelled
+        case failed(String)
+    }
+
+    /// The wallpaper id the page is saved as, which also names the job.
+    let id: String
+    let work: PixivWork
+    let pageIndex: Int
+    fileprivate(set) var status = Status.waiting
+    fileprivate(set) var bytesReceived: Int64 = 0
+    fileprivate(set) var bytesExpected: Int64?
+    @ObservationIgnored fileprivate var task: Task<Void, Never>?
+    @ObservationIgnored fileprivate var lastReport: ContinuousClock.Instant?
+    /// Pages the store already fetched for this work, so the job need not ask pixiv again.
+    @ObservationIgnored fileprivate var knownPages: [PixivPage]?
+
+    fileprivate init(work: PixivWork, pageIndex: Int, knownPages: [PixivPage]?) {
+        id = work.libraryID(page: pageIndex)
+        self.work = work
+        self.pageIndex = pageIndex
+        self.knownPages = knownPages
+    }
+
+    var isPending: Bool {
+        switch status {
+        case .waiting, .downloading, .installing: true
+        case .finished, .cancelled, .failed: false
+        }
+    }
+
+    /// Received share of the announced size; nil until the server announced one.
+    var progress: Double? {
+        guard let expected = bytesExpected, expected > 0 else { return nil }
+        return min(1, Double(bytesReceived) / Double(expected))
+    }
+
+    var errorMessage: String? {
+        if case .failed(let message) = status { message } else { nil }
+    }
+
+    /// Byte counts arrive for every 64 KB; the panel redraws from a full snapshot, so they are
+    /// published at most five times a second and always once complete.
+    fileprivate func report(received: Int64, expected: Int64?) {
+        let now = ContinuousClock.now
+        let complete = expected.map { received >= $0 } ?? false
+        if !complete, let last = lastReport, now - last < .milliseconds(200) { return }
+        lastReport = now
+        bytesReceived = received
+        bytesExpected = expected
+    }
+}
+
+/// Downloads pixiv originals into the library, a couple at a time, in the order asked for.
+@MainActor
+@Observable
+final class PixivDownloadQueue {
+    static let concurrentDownloads = 2
+    private(set) var downloads: [PixivDownload] = []
+    @ObservationIgnored private let service: PixivService
+    @ObservationIgnored private let packager: PixivWallpaperPackager
+    /// Makes an installed wallpaper appear in the renderer's library; failing it fails the job,
+    /// and a retry finds the files already in place.
+    @ObservationIgnored var onInstalled: (@MainActor (String) async throws -> Void)?
+    /// The signed-in session a job asks for its work's pages with; the images need none.
+    @ObservationIgnored var session: String?
+
+    init(service: PixivService, packager: PixivWallpaperPackager = PixivWallpaperPackager()) {
+        self.service = service
+        self.packager = packager
+    }
+
+    var isRunning: Bool { downloads.contains { $0.isPending } }
+
+    func download(for id: String) -> PixivDownload? { downloads.first { $0.id == id } }
+
+    /// Queues page `page` of `work`. A job for that page that is still pending is returned as
+    /// it is; a finished, failed or cancelled one is replaced by a fresh attempt.
+    @discardableResult
+    func enqueue(_ work: PixivWork, page: Int, knownPages: [PixivPage]? = nil) -> PixivDownload {
+        let id = work.libraryID(page: page)
+        if let existing = download(for: id), existing.isPending { return existing }
+        let job = PixivDownload(work: work, pageIndex: page, knownPages: knownPages)
+        if let index = downloads.firstIndex(where: { $0.id == id }) {
+            downloads[index] = job
+        } else {
+            downloads.append(job)
+        }
+        pump()
+        return job
+    }
+
+    func cancel(_ id: String) {
+        guard let job = download(for: id), job.isPending else { return }
+        if let task = job.task {
+            task.cancel()
+        } else {
+            job.status = .cancelled
+        }
+    }
+
+    /// Starts a failed or cancelled job again; returns false when there is nothing to retry.
+    @discardableResult
+    func retry(_ id: String) -> Bool {
+        guard let job = download(for: id), !job.isPending, job.status != .finished else { return false }
+        enqueue(job.work, page: job.pageIndex, knownPages: job.knownPages)
+        return true
+    }
+
+    /// Forgets every job that is no longer running.
+    func clearFinished() {
+        downloads.removeAll { !$0.isPending }
+    }
+
+    /// Cancels every job and waits until each has removed its staging folder.
+    func shutdown() async {
+        let running = downloads.compactMap(\.task)
+        for job in downloads where job.isPending { cancel(job.id) }
+        for task in running { await task.value }
+    }
+
+    private func pump() {
+        var running = downloads.filter { $0.task != nil }.count
+        for job in downloads where job.status == .waiting && job.task == nil {
+            guard running < Self.concurrentDownloads else { return }
+            running += 1
+            job.status = .downloading
+            job.task = Task { [weak self] in
+                await self?.run(job)
+                job.task = nil
+                self?.pump()
+            }
+        }
+    }
+
+    private func run(_ job: PixivDownload) async {
+        do {
+            let pages: [PixivPage]
+            if let known = job.knownPages {
+                pages = known
+            } else {
+                pages = try await service.pages(ofWork: job.work.id, session: session)
+            }
+            guard let page = pages.first(where: { $0.index == job.pageIndex }) else {
+                throw PixivFailure(code: .unreadable)
+            }
+            job.knownPages = pages
+            let image = try await service.original(of: page) { received, expected in
+                Task { @MainActor in
+                    guard job.status == .downloading else { return }
+                    job.report(received: received, expected: expected)
+                }
+            }
+            try Task.checkCancellation()
+            job.status = .installing
+            job.bytesReceived = Int64(image.count)
+            job.bytesExpected = Int64(image.count)
+            let id = try await packager.install(image, work: job.work, page: page, pageCount: pages.count)
+            // Installed is installed: the library is refreshed even if the job was cancelled
+            // meanwhile, so the wallpaper never sits on disk unlisted.
+            try await onInstalled?(id)
+            job.status = .finished
+            AppLog.info("pixiv \(job.work.id) page \(job.pageIndex) saved as \(id)")
+        } catch is CancellationError {
+            job.status = .cancelled
+        } catch {
+            job.status = .failed(error.localizedDescription)
+            AppLog.warn("pixiv \(job.work.id) page \(job.pageIndex) failed: \(error.localizedDescription)")
+        }
+    }
+}
