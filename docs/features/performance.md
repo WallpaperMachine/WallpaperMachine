@@ -304,6 +304,10 @@ to avoid a cold reload on wake; see [lock-screen memory tradeoff](lock-screen.md
 The desktop renderer still needs the textures and render targets of the active
 wallpaper. An idle control-panel benchmark cannot establish its playback memory
 usage, and the extension must be measured separately from the app coalition.
+Its Metal layer remains nonopaque so a missing drawable reveals the retained
+frame below it. That gives up the layer's opaque-compositing guarantee; the
+WindowServer blending and energy cost has not been measured. Offscreen backing
+pixel checks establish fallback correctness, not a compositor-performance result.
 
 Closing the control panel releases its web view and allows its WebKit helpers
 to exit, rather than keeping the whole page hidden. Reopening reloads the page;

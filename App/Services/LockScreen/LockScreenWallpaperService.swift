@@ -180,8 +180,11 @@ final class LockScreenWallpaperService {
           // Core Graphics and the bridge settle independently during wake and
           // clamshell changes. This is not a failed wallpaper: keep the entire
           // committed mapping until the existing monitor gets a coherent one.
-          status = String(localized: "Waiting for committed wallpapers…")
-          errorMessage = nil
+          // A real earlier error stays. updateMonitor stops while one is set, so
+          // clearing it would restart polling without a successful explicit retry.
+          if errorMessage == nil {
+            status = String(localized: "Waiting for committed wallpapers…")
+          }
           AppLog.debug("Lock screen topology pending: display \(record.displayId) is not online")
           return
         }
@@ -227,7 +230,8 @@ final class LockScreenWallpaperService {
       // Keep the committed surfaces while staging the next complete mapping.
       // An empty intermediate manifest clears every display's renderer and
       // backing frame, including screens unaffected by an external display waking.
-      isEnabled = false
+      // A cancelled replacement must not disable the still-committed mapping.
+      // Readiness commits success; deactivate() rolls back an actual failure.
       try selection.checkCompatibility()
       status = String(localized: "Preparing committed wallpapers…")
       let root = exchange

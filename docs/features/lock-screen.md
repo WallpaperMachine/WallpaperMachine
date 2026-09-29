@@ -21,9 +21,9 @@ is acknowledged, with implicit animations disabled. It supplies real wallpaper
 pixels when a drawable is not yet available or is reclaimed across sleep;
 later drawables cover it without a timed fade or a wait for scanout. The image
 retains the snapshot IOSurface without copying its bitmap. Scene replacement
-keeps this backing until a new frame arrives; clearing the configuration drops
-it. Display sleep and host suspension pause rather than
-unload it. Locking or waking resumes that same renderer only once the display
+keeps this backing until a new frame arrives; clearing the configuration or
+failing to start the replacement drops it. Display sleep and host suspension
+pause rather than unload it. Locking or waking resumes that same renderer only once the display
 is awake, the host is active and user/power policy permits playback.
 
 This avoids replacing the live surface with an old static poster and loading
@@ -36,16 +36,27 @@ is OS-controlled and is not established by the offscreen regression checks.
 
 Display-topology refreshes stage the next complete configuration before replacing
 the previous one; they do not publish an empty manifest between a one-display
-and two-display mapping. If Core Graphics temporarily cannot resolve a display
+and two-display mapping. Staging does not clear the committed enabled state.
+That flag stays until the new mapping's first frame is acknowledged, or until
+deactivation rolls a real failure back to disabled and clears the manifest.
+If Core Graphics temporarily cannot resolve a display
 still named by the bridge during wake or a lid change, the committed manifest
-and native selection stay untouched; the existing status monitor retries once
-the topology settles instead of clearing every screen and restarting WallpaperAgent.
-Removing the last wallpaper, explicit disable and actual publication/readiness
-failure recovery still clear the manifest. If macOS reacquires the same
+and native selection stay untouched. That gap is not an error. While no earlier
+error is pending, the existing status monitor retries the same scene set once
+the topology settles; an unchanged mapping is reconciled and not republished.
+A real earlier compatibility or restoration error is left in place, and the
+monitor stays stopped until an explicit retry succeeds — the gap must not
+clear that error just to resume polling. Removing the last wallpaper, explicit
+disable and actual publication/readiness failure recovery still clear the
+manifest. If macOS reacquires the same
 WallpaperID on the same physical display at a different size or scale, the
 extension keeps its remote context and backing frame while rebuilding the
 renderer at the new pixel dimensions. Geometry stays local to that display;
 the other display's context is not reused or resized.
+The retained image fills the resized root layer, so a changed aspect ratio can
+briefly stretch the old frame. Invalid dimensions are rejected before releasing
+the existing renderer or changing its geometry. The extension leaves that context
+intact locally; whether macOS retains it after an acquire error is unverified.
 
 Lock-screen audio, audio input and media integration are disabled; see
 [Audio response](audio-response.md) and
@@ -87,6 +98,8 @@ means no answer arrived at all. The extension keeps a bounded log at
 The app and extension exchange files only there, never through the extension's
 sandbox container, so macOS does not ask the app for access to another app's
 data. Files earlier releases left in that container are removed by the extension.
+Startup and first-frame failures stop the surface and invalidate its context;
+they do not leave the last backing frame hosted as a successful replacement.
 
 Every copy of the app on disk registers the same extension identifier, and
 macOS may launch any of them — including the Debug build `scripts/test.py`
@@ -110,7 +123,9 @@ recovery is complete, shutdown has not begun, and no error is pending. Busy
 refreshes keep that timer but skip its work. An active request with no scenes
 still checks for a later wallpaper; disabling or shutting down cancels the timer
 immediately. An error stops automatic monitoring until an explicit retry or
-another existing refresh path succeeds.
+another existing refresh path succeeds. A pending display-identity lookup does
+not clear that error and does not by itself start the monitor. With no error,
+the same timer retries an unchanged scene set when the identity resolves.
 
 Recovery entries represent the last successful journal commit. Repeated checks
   do not rewrite an unchanged journal, but still read the actual system store to
