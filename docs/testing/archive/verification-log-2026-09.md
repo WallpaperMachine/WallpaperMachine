@@ -15,6 +15,18 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — pixiv tab, sign-in and R-18 works
+
+Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.
+
+- Linux SwiftPM harness (Swift 6.1.2, `App/Services/Pixiv` and `Tests/Unit/Pixiv` with Darwin stand-ins) — `swift test`: 54 passed (service 25, store 15, packager 8, queue 6), three runs after the rebase; library clean under `-strict-concurrency=complete`
+- `python3 -m unittest discover scripts/tests` — 198 ran, OK, 10 skipped; `node --check` on every `WebUI` module
+- Chromium/Playwright with a mocked native bridge (not WKWebView) — pixiv tab browse, filters, paging, inspector, downloads and the account group (signed out, signing in, signed in, log out, R-18 hidden), Mature box and R-18 rankings; en and zh-Hans at 760–1240 px, no overflow, no page errors
+- Anonymous pixiv answers (ranking, search, pages, status) decode; `daily_r18` answers 403 anonymously. Signed-in answers and the real sign-in page were not checked
+- XcodeGen 2.46.0 (Linux build) regenerated `WallpaperMachine.xcodeproj` from main's: pixiv files added, nothing else changed
+- Not run: `python3 scripts/test.py` (needs macOS and Xcode), so `WebPanelPixivTests`, `ControlPanelPixivTests` and every native suite; `PixivSignInWindow`, keychain and WKWebView behaviour; no Release build
+- `python3 scripts/check_renderer.py` — not applicable: no renderer or bridge change
+
 ## 2026-09-28 — Busy state: queue user commands instead of erroring
 
 - python3 scripts/test.py: 664 passed, 0 failed, 11 skipped (Python script tests all OK).

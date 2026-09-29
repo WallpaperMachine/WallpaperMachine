@@ -56,8 +56,8 @@ impl WallpaperDesktopWindow {
     }
 }
 
-/// Initial background color for a wallpaper window before renderer content is
-/// visible.
+/// Background exposed before the first frame or while a drawable is unavailable.
+/// Default to black so display wake and surface recreation cannot flash white.
 #[derive(Clone, Copy, Debug)]
 pub struct PlaceholderStyle {
     /// Red channel in the range AppKit accepts for sRGB colors.
@@ -77,19 +77,15 @@ pub struct PlaceholderStyle {
 impl Default for PlaceholderStyle {
     fn default() -> Self {
         Self {
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
+            red: 0.0,
+            green: 0.0,
+            blue: 0.0,
             alpha: 1.0,
         }
     }
 }
 
 /// Borderless desktop-level window that hosts a `CAMetalLayer`.
-///
-/// This type exists for focused window/surface tests and for future Rust-native
-/// rendering work. The active scene renderer currently owns its own equivalent
-/// window through the statically linked native bridge.
 pub struct WallpaperWindow {
     display: DisplayDesc,
     handle: Option<WindowHandle>,

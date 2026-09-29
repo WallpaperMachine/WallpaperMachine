@@ -34,6 +34,11 @@ dispatch2 = { version = "0.3", default-features = false, features = ["alloc"] }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt"] }
 
+# Unattached Core Animation layers are exercised on the process's main thread.
+[[test]]
+name = "wallpaper_background"
+harness = false
+
 [build-dependencies]
 cmake = "0.1.58"
 bindgen = "0.72.1"

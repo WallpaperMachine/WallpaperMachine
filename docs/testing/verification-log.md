@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Eye-friendly fallback during display wake
+
+- Offscreen production-layer smoke reproduced RGBA [255,255,255,255] before the fix and [0,0,0,255] after it for initial, resized and recreated surfaces; no window or drawable was created. Retained as wallpaper_background.
+- cargo test --release -p wallpaper-core --test wallpaper_background: exit 0; all three opaque-black pixel scenarios passed.
+- cargo test --release -p wallpaper-core --lib: exit 0; harness reported 222 passed. Opt-in AppKit window tests returned without running; not desktop evidence.
+- python3 scripts/test.py: exit 0; Python modules passed, native 824 passed / 0 failed / 11 skipped (9 media-device and 2 live-network cases).
+- python3 scripts/check_renderer.py: exit 0; ten synthetic pooled/isolated pixel comparisons matched with zero diagnostics; eight projects reloaded twice.
+- Physical external-display lid-close/wake timing remains unverified. Black replaces the app-owned white fallback; no guarantee is made about macOS-owned transitions.
+- No Release app rebuild, installation, desktop control or app restart; the running app retains its old behavior.
+
 ## 2026-09-29 — Merge origin/main and build Release
 
 - Merged origin/main 98e90a8 with six local commits; retained What's New and Dock/Finder import startup, adopted persistent import ownership, regenerated Xcode project and preserved both verification histories.
@@ -118,15 +128,3 @@ Seven features built in a Linux container without Xcode; nothing here ran on mac
 - Live Steam smoke: details endpoint, collections browse with rating sampling, GetCollectionDetails, an author's page, a signed-out subscriptions read — OK
 - Not run: `python3 scripts/test.py` (needs macOS), so every native and panel suite including WebPanel*Tests, ControlPanelShellTests and AppLanguageTests; no Release build
 - Unverified at runtime: global hotkeys, App Intents and the Focus filter, the wallpapermachine:// scheme, Dock/Finder open, Steam's sign-in window, native language matching (Linux Foundation lacks Apple's rules)
-
-## 2026-09-29 — pixiv tab, sign-in and R-18 works
-
-Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.
-
-- Linux SwiftPM harness (Swift 6.1.2, `App/Services/Pixiv` and `Tests/Unit/Pixiv` with Darwin stand-ins) — `swift test`: 54 passed (service 25, store 15, packager 8, queue 6), three runs after the rebase; library clean under `-strict-concurrency=complete`
-- `python3 -m unittest discover scripts/tests` — 198 ran, OK, 10 skipped; `node --check` on every `WebUI` module
-- Chromium/Playwright with a mocked native bridge (not WKWebView) — pixiv tab browse, filters, paging, inspector, downloads and the account group (signed out, signing in, signed in, log out, R-18 hidden), Mature box and R-18 rankings; en and zh-Hans at 760–1240 px, no overflow, no page errors
-- Anonymous pixiv answers (ranking, search, pages, status) decode; `daily_r18` answers 403 anonymously. Signed-in answers and the real sign-in page were not checked
-- XcodeGen 2.46.0 (Linux build) regenerated `WallpaperMachine.xcodeproj` from main's: pixiv files added, nothing else changed
-- Not run: `python3 scripts/test.py` (needs macOS and Xcode), so `WebPanelPixivTests`, `ControlPanelPixivTests` and every native suite; `PixivSignInWindow`, keychain and WKWebView behaviour; no Release build
-- `python3 scripts/check_renderer.py` — not applicable: no renderer or bridge change
