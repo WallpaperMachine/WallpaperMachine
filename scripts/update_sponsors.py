@@ -4,10 +4,15 @@
 The website lists every Supporter who turned the listing on in their account and
 still holds a purchase that was not refunded, earliest first, and counts the ones
 who stay private (https://www.wallpapermachine.app/#sponsors). It serves the same
-list, names and months only, at /api/sponsors. This reads it and rewrites the block
+list, names and months only, at /api/sponsors, with a version that changes whenever
+the wall does, and draws the wall as one picture at /sponsors/wall: its portraits,
+names and months on the brand wallpaper. This reads the list and rewrites the block
 between the `supporters:start` and `supporters:end` markers under README.md's
-"Thank you. To every Supporter." heading, so a Supporter who turns the listing on,
-off or renames it is followed here too. Nothing outside the markers changes.
+"Thank you. To every Supporter." heading: the picture, linked to the wall, at
+/sponsors/wall?v=<version>, so GitHub's image proxy fetches it again when the wall
+changes, with every listed name and the count in its alt text. A Supporter who
+turns the listing on, off, renames it or changes their picture is followed here
+too. Nothing outside the markers changes.
 
     python3 scripts/update_sponsors.py                       # read the live wall, rewrite the list
     python3 scripts/update_sponsors.py --check               # exit 1 when the list is out of date
@@ -21,11 +26,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import html
 from pathlib import Path
 import re
 import sys
 from typing import NamedTuple
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from lib.glyphs import markers
@@ -34,6 +42,10 @@ from lib.paths import ROOT
 MARK = markers()
 README = ROOT / "README.md"
 SOURCE = "https://www.wallpapermachine.app/api/sponsors"
+# The picture and the wall it links to, on the same site as the list.
+PICTURE_PATH = "/sponsors/wall"
+WALL_PATH = "/#sponsors"
+VERSION = re.compile(r"^[0-9A-Za-z_-]{1,64}$")
 USER_AGENT = "WallpaperMachine/1.0 (README Supporter list; scripts/update_sponsors.py)"
 TIMEOUT_SECONDS = 30
 
@@ -49,10 +61,12 @@ INVISIBLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b\u200e\u200f\u202a-\u202e\u206
 
 
 class Wall(NamedTuple):
-    """The sponsor wall: listed names, earliest first, and the private count."""
+    """The sponsor wall: listed names, earliest first, the private count and the
+    version the website gives the wall's current state."""
 
     names: tuple[str, ...]
     hidden: int
+    version: str
 
 
 def parse_wall(payload: object) -> Wall:
@@ -73,7 +87,15 @@ def parse_wall(payload: object) -> Wall:
         name = " ".join(INVISIBLE.sub("", name).split())
         if name:
             names.append(name)
-    return Wall(tuple(names), hidden)
+    version = payload.get("version")
+    if version is None:
+        # A site from before the picture: the names and the count stand in, so the
+        # picture's address still changes with them.
+        state = json.dumps([names, hidden], ensure_ascii=False).encode("utf-8")
+        version = hashlib.sha256(state).hexdigest()[:12]
+    elif not isinstance(version, str) or not VERSION.fullmatch(version):
+        raise ValueError("`version` is not a version")
+    return Wall(tuple(names), hidden, version)
 
 
 def fetch_wall(source: str) -> Wall:
@@ -91,7 +113,7 @@ def fetch_wall(source: str) -> Wall:
 
 
 def escape(name: str) -> str:
-    """A name as literal text inside README.md's HTML."""
+    """A name as literal text inside README.md's HTML, attribute values included."""
     return SIGNIFICANT.sub(lambda match: f"&#{ord(match.group())};", name)
 
 
@@ -100,42 +122,46 @@ def plural(count: int, one: str, many: str) -> str:
 
 
 def count_line(wall: Wall) -> str:
-    """The sentence under the names, worded as the website words its count."""
+    """The count, as the website words it over the wall and in the picture."""
     shown = len(wall.names)
     if shown:
-        line = f"{plural(shown, 'Supporter', 'Supporters')} on the list."
+        line = f"{plural(shown, 'Supporter', 'Supporters')} on the wall."
         if wall.hidden:
             line += f" {plural(wall.hidden, 'more supports', 'more support')} privately."
         return line
     if wall.hidden:
-        return f"No one is on the list yet. {plural(wall.hidden, 'Supporter', 'Supporters')} so far, all private."
-    return "No one is on the list yet."
+        return f"{plural(wall.hidden, 'Supporter', 'Supporters')} so far, all private."
+    return "No one is on the wall yet."
 
 
-def render(wall: Wall) -> str:
-    """The block between the markers, markers included."""
-    lines = [START]
+def alt_text(wall: Wall) -> str:
+    """What the picture shows, in words: every listed name, then the count."""
     if wall.names:
-        # One HTML block: GitHub renders its text as written, never as Markdown.
-        lines += [
-            '<p align="center">',
-            "  " + "&ensp;·&ensp;".join(escape(name) for name in wall.names),
-            "</p>",
-            "",
-            f'<p align="center"><sub>{count_line(wall)}</sub></p>',
-        ]
-    else:
-        lines.append(count_line(wall))
-    lines.append(END)
-    return "\n".join(lines)
+        return f"WallpaperMachine Supporters: {', '.join(wall.names)}. {count_line(wall)}"
+    return f"WallpaperMachine Supporters. {count_line(wall)}"
 
 
-def rewrite(text: str, wall: Wall) -> str:
+def render(wall: Wall, source: str = SOURCE) -> str:
+    """The block between the markers, markers included: the picture of the wall on
+    the site `source` belongs to, linked to the wall."""
+    picture = urllib.parse.urljoin(source, PICTURE_PATH) + "?v=" + wall.version
+    page = urllib.parse.urljoin(source, WALL_PATH)
+    # One HTML block: GitHub renders it as written, never as Markdown.
+    return "\n".join([
+        START,
+        '<p align="center">',
+        f'  <a href="{html.escape(page)}"><img src="{html.escape(picture)}" width="100%" alt="{escape(alt_text(wall))}"></a>',
+        "</p>",
+        END,
+    ])
+
+
+def rewrite(text: str, wall: Wall, source: str = SOURCE) -> str:
     """README.md's text with its Supporter list replaced; ValueError without the markers."""
     matches = BLOCK.findall(text)
     if len(matches) != 1:
         raise ValueError(f"expected one supporters:start … supporters:end block, found {len(matches)}")
-    return BLOCK.sub(lambda _: render(wall), text)
+    return BLOCK.sub(lambda _: render(wall, source), text)
 
 
 def main() -> int:
@@ -151,7 +177,7 @@ def main() -> int:
         else:
             wall = fetch_wall(args.source)
         before = README.read_text(encoding="utf-8")
-        after = rewrite(before, wall)
+        after = rewrite(before, wall, args.source)
     except (OSError, ValueError, urllib.error.URLError) as error:
         print(f"{MARK.missing} Could not update the Supporter list: {error}", file=sys.stderr)
         return 1

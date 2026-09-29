@@ -360,7 +360,12 @@ Every hour (and on demand from **Actions -> Supporters -> Run workflow**) it run
 `python3 scripts/update_sponsors.py` on `main`, which reads the wall's JSON from
 `https://www.wallpapermachine.app/api/sponsors` (the website's
 `src/worker/sponsors.ts`) and rewrites the block between the `supporters:start`
-and `supporters:end` markers. When the list changed it commits `README.md` as
+and `supporters:end` markers: the website's picture of the wall
+(`/sponsors/wall`, drawn by its `src/worker/sponsor-card.ts`), linked to the wall,
+with every listed name and the count in its alt text. The picture's address carries
+the `version` the JSON gives (`?v=`), which changes whenever the wall does, names,
+pictures and count alike, so GitHub's image proxy fetches it again then and only
+then. When the block changed it commits `README.md` as
 `docs(readme): update the Supporter list` and pushes to `main`, starting again from
 the new `main` if that moved. It skips the hour while a Version run is queued or
 running, because Version's push of its bump commit does not retry. A wall that

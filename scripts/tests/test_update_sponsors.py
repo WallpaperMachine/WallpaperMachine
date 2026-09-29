@@ -34,17 +34,29 @@ No one is on the list yet.
 
 
 class ParseWallTests(unittest.TestCase):
-    def test_reads_names_in_order_and_the_private_count(self):
+    def test_reads_names_in_order_the_private_count_and_the_version(self):
         wall = update_sponsors.parse_wall(
-            {"supporters": [{"name": "Alice", "since": "2026-09"}, {"name": "张三", "since": None}], "hidden": 2}
+            {
+                "supporters": [{"name": "Alice", "since": "2026-09"}, {"name": "张三", "since": None}],
+                "hidden": 2,
+                "version": "6b298c179c3a",
+            }
         )
-        self.assertEqual(wall, Wall(("Alice", "张三"), 2))
+        self.assertEqual(wall, Wall(("Alice", "张三"), 2, "6b298c179c3a"))
 
     def test_collapses_whitespace_and_drops_invisible_characters(self):
         wall = update_sponsors.parse_wall(
             {"supporters": [{"name": "  A\u200bl\u202eice \n\t Smith "}, {"name": "\u200b "}], "hidden": 0}
         )
         self.assertEqual(wall.names, ("Alice Smith",))
+
+    def test_a_wall_without_a_version_gets_one_from_what_it_shows(self):
+        wall = update_sponsors.parse_wall({"supporters": [{"name": "Alice"}], "hidden": 1})
+        self.assertRegex(wall.version, r"^[0-9a-f]{12}$")
+        same = update_sponsors.parse_wall({"supporters": [{"name": "Alice"}], "hidden": 1})
+        other = update_sponsors.parse_wall({"supporters": [{"name": "Alice"}], "hidden": 2})
+        self.assertEqual(same.version, wall.version)
+        self.assertNotEqual(other.version, wall.version)
 
     def test_rejects_answers_that_are_not_the_wall(self):
         for payload in (
@@ -56,43 +68,58 @@ class ParseWallTests(unittest.TestCase):
             {"supporters": [], "hidden": "1"},
             {"supporters": [{"name": 3}], "hidden": 0},
             {"supporters": ["Alice"], "hidden": 0},
+            {"supporters": [], "hidden": 0, "version": 7},
+            {"supporters": [], "hidden": 0, "version": ""},
+            {"supporters": [], "hidden": 0, "version": "abc&x=<y>"},
         ):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 update_sponsors.parse_wall(payload)
 
 
 class RenderTests(unittest.TestCase):
-    def test_empty_wall(self):
-        block = update_sponsors.render(Wall((), 0))
-        self.assertIn("No one is on the list yet.", block)
-        self.assertNotIn("<p", block)
+    def test_the_picture_of_the_wall_links_to_the_wall(self):
+        block = update_sponsors.render(Wall(("Alice",), 0, "abc123"))
+        self.assertIn('src="https://www.wallpapermachine.app/sponsors/wall?v=abc123"', block)
+        self.assertIn('href="https://www.wallpapermachine.app/#sponsors"', block)
 
-    def test_only_private_supporters_are_counted_not_named(self):
-        block = update_sponsors.render(Wall((), 3))
-        self.assertIn("3 Supporters so far, all private.", block)
+    def test_the_picture_comes_from_the_site_the_list_came_from(self):
+        block = update_sponsors.render(Wall((), 0, "v1"), "http://localhost:8787/api/sponsors")
+        self.assertIn('src="http://localhost:8787/sponsors/wall?v=v1"', block)
 
-    def test_listed_supporters_are_named_with_the_private_count(self):
-        block = update_sponsors.render(Wall(("Alice", "Bob"), 1))
-        self.assertIn("Alice&ensp;·&ensp;Bob", block)
-        self.assertIn("2 Supporters on the list. 1 more supports privately.", block)
-        self.assertEqual(update_sponsors.count_line(Wall(("Alice",), 0)), "1 Supporter on the list.")
+    def test_every_listed_name_and_the_count_are_in_the_alt_text(self):
+        block = update_sponsors.render(Wall(("Alice", "Bob"), 1, "v1"))
+        self.assertIn('alt="WallpaperMachine Supporters: Alice, Bob. 2 Supporters on the wall. 1 more supports privately."', block)
+
+    def test_counts_are_worded_as_the_website_words_them(self):
+        count = update_sponsors.count_line
+        self.assertEqual(count(Wall(("Alice",), 0, "v")), "1 Supporter on the wall.")
+        self.assertEqual(count(Wall((), 3, "v")), "3 Supporters so far, all private.")
+        self.assertEqual(count(Wall((), 0, "v")), "No one is on the wall yet.")
+
+    def test_private_supporters_are_counted_not_named(self):
+        block = update_sponsors.render(Wall((), 3, "v1"))
+        self.assertIn('alt="WallpaperMachine Supporters. 3 Supporters so far, all private."', block)
 
     def test_a_name_can_never_become_markup(self):
-        hostile = f"[x](https://evil) <img src=x> ![i](y) *b* `c` {update_sponsors.END}"
-        block = update_sponsors.render(Wall((hostile,), 0))
-        names = block.splitlines()[2]
+        hostile = f'" onerror="x [x](https://evil) <img src=x> ![i](y) *b* `c` {update_sponsors.END}'
+        block = update_sponsors.render(Wall((hostile,), 0, "v1"))
+        alt = block.splitlines()[2].split('alt="', 1)[1]
+        # The name stays inside the alt attribute: nothing in it closes the quote,
+        # opens a tag or reads as Markdown.
+        self.assertEqual(alt.count('"'), 1)
+        self.assertTrue(alt.endswith('"></a>'))
         for text in ("<", ">", "[", "]", "(", ")", "*", "`", "!"):
-            self.assertNotIn(text, names)
+            self.assertNotIn(text, alt[: -len('"></a>')])
         # The markers still delimit exactly one block, so the next run finds it.
         self.assertEqual(block.count(update_sponsors.END), 1)
         self.assertEqual(update_sponsors.BLOCK.fullmatch(block).group(), block)
-        once = update_sponsors.rewrite(README, Wall((hostile,), 0))
-        self.assertEqual(update_sponsors.rewrite(once, Wall((), 0)), README)
+        once = update_sponsors.rewrite(README, Wall((hostile,), 0, "v1"))
+        self.assertEqual(update_sponsors.rewrite(once, Wall((), 0, "v0")), update_sponsors.rewrite(README, Wall((), 0, "v0")))
 
 
 class RewriteTests(unittest.TestCase):
     def test_replaces_only_the_block(self):
-        after = update_sponsors.rewrite(README, Wall(("Alice",), 0))
+        after = update_sponsors.rewrite(README, Wall(("Alice",), 0, "v1"))
         self.assertIn("Alice", after)
         self.assertNotIn("No one is on the list yet.", after)
         before_block, after_block = README.split(update_sponsors.START)[0], README.split(update_sponsors.END)[1]
@@ -100,17 +127,18 @@ class RewriteTests(unittest.TestCase):
         self.assertTrue(after.endswith(after_block))
 
     def test_is_idempotent(self):
-        once = update_sponsors.rewrite(README, Wall(("Alice", "Bob"), 2))
-        self.assertEqual(update_sponsors.rewrite(once, Wall(("Alice", "Bob"), 2)), once)
-        self.assertEqual(update_sponsors.rewrite(once, Wall((), 0)), README)
+        wall = Wall(("Alice", "Bob"), 2, "v1")
+        once = update_sponsors.rewrite(README, wall)
+        self.assertEqual(update_sponsors.rewrite(once, wall), once)
+        self.assertNotEqual(update_sponsors.rewrite(once, Wall(("Alice", "Bob"), 2, "v2")), once)
 
     def test_refuses_a_readme_without_exactly_one_block(self):
         for text in ("# Title\n", README + README):
             with self.subTest(blocks=text.count("supporters:start")), self.assertRaises(ValueError):
-                update_sponsors.rewrite(text, Wall((), 0))
+                update_sponsors.rewrite(text, Wall((), 0, "v0"))
 
     def test_the_repository_readme_has_the_block(self):
-        update_sponsors.rewrite(update_sponsors.README.read_text(encoding="utf-8"), Wall((), 0))
+        update_sponsors.rewrite(update_sponsors.README.read_text(encoding="utf-8"), Wall((), 0, "v0"))
 
 
 class FetchTests(unittest.TestCase):
@@ -132,8 +160,8 @@ class FetchTests(unittest.TestCase):
         return f"http://127.0.0.1:{server.server_port}/api/sponsors"
 
     def test_reads_the_wall(self):
-        url = self.serve(200, json.dumps({"supporters": [{"name": "Alice"}], "hidden": 1}).encode())
-        self.assertEqual(update_sponsors.fetch_wall(url), Wall(("Alice",), 1))
+        url = self.serve(200, json.dumps({"supporters": [{"name": "Alice"}], "hidden": 1, "version": "abc"}).encode())
+        self.assertEqual(update_sponsors.fetch_wall(url), Wall(("Alice",), 1, "abc"))
 
     def test_a_page_that_is_not_json_is_an_error(self):
         url = self.serve(200, b"<!doctype html><title>Just a moment...</title>")
