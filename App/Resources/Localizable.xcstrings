@@ -1,6 +1,21 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "What’s New" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "What’s New"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "新機能"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新内容"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新內容"}}}
+    },
+    "Changes since version %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes since version %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バージョン %@ 以降の変更点"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "自 %@ 版本以来的更新"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "自 %@ 版本以來的更新"}}}
+    },
+    "Changes in this version" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes in this version"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンの変更点"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此版本的更新内容"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此版本的更新內容"}}}
+    },
+    "Release notes in English and Simplified Chinese" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes in English and Simplified Chinese"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "英語と簡体字中国語のリリースノート"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "英文和简体中文更新说明"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "英文和簡體中文更新說明"}}}
+    },
+    "Don’t show this window after updates" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Don’t show this window after updates"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "アップデート後にこのウインドウを表示しない"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "以后更新时不再显示此窗口"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "以後更新時不再顯示此視窗"}}}
+    },
     "The appearance could not update: %@" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The appearance could not update: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "外観を更新できませんでした：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "外观无法更新：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法更新外觀：%@"}}}
     },

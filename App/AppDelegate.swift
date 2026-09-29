@@ -6,6 +6,8 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private var controlPanelWindow: NSWindow?
+    private var whatsNewWindow: NSWindow?
+    private lazy var whatsNewStore = WhatsNewStore()
     private let controlPanelNavigation = ControlPanelNavigation()
     private lazy var workshopStore = WorkshopStore()
     private lazy var pixivStore = PixivStore()
@@ -350,6 +352,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         pendingOpenedFiles = []
         DispatchQueue.main.async { [weak self] in
             self?.showControlPanel(selection: .wallpaper)
+            self?.showWhatsNewAfterUpdate()
             if !opened.isEmpty { self?.importOpenedFiles(opened) }
         }
     }
@@ -555,6 +558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         shutdownInProgress = true
         desktopWallpaperSync?.suspendForNativeProvider()
         controlPanelWindow?.orderOut(nil)
+        whatsNewWindow?.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
 
         Task {
@@ -647,17 +651,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              window === controlPanelWindow
-        else {
+        guard let window = notification.object as? NSWindow else { return }
+        if window === whatsNewWindow {
+            whatsNewWindow = nil
+            window.contentViewController = nil
+            if controlPanelWindow?.isVisible != true { NSApp.setActivationPolicy(.accessory) }
             return
         }
+        guard window === controlPanelWindow else { return }
 
         controlPanelWindow = nil
         // Closing releases the page and its WebKit processes; reopening builds a
         // fresh view around the existing stores and navigation.
         window.contentViewController = nil
-        NSApp.setActivationPolicy(.accessory)
+        if whatsNewWindow == nil { NSApp.setActivationPolicy(.accessory) }
         rebuildMenu()
     }
 
@@ -709,7 +716,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // Re-assert the activation policy to force AppKit to
             // re-register the accessory-mode status item with the
             // Window Server after the SwiftUI Scene phase has settled.
-            if self.controlPanelWindow == nil { NSApp.setActivationPolicy(.accessory) }
+            if self.controlPanelWindow == nil, self.whatsNewWindow == nil { NSApp.setActivationPolicy(.accessory) }
             self.rebuildMenu()
         }
     }
@@ -866,7 +873,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         checkWorkshopUpdatesIfDue()
         let state = await appUpdater.checkAndDownloadInBackground()
         rebuildMenu()
-        guard !shutdownInProgress, !shutdownComplete,
+        guard !shutdownInProgress, !shutdownComplete, whatsNewWindow == nil,
               let version = state.availableVersion, version != promptedUpdateVersion else { return }
         switch state {
         case .ready:
@@ -929,6 +936,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func showUpdate() {
         controlPanelNavigation.revealSettingsSection(.about)
         showControlPanel(selection: .settings)
+    }
+
+    private func showWhatsNewAfterUpdate() {
+        guard !shutdownInProgress, whatsNewWindow == nil else { return }
+        do {
+            let history = try AppReleaseHistory()
+            guard let announcement = whatsNewStore.announcement(
+                history: history, existingUser: UserDefaults.standard.bool(forKey: WebPanelController.welcomeSeenKey)
+            ) else { return }
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 640, height: 660),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered, defer: false)
+            window.title = String(localized: "What’s New")
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.contentViewController = WhatsNewViewController(
+                announcement: announcement, preferences: whatsNewStore,
+                close: { [weak window] in window?.performClose(nil) })
+            window.contentMinSize = NSSize(width: 560, height: 400)
+            window.center()
+            whatsNewWindow = window
+            NSApp.setActivationPolicy(.regular)
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            whatsNewStore.didPresent(announcement)
+        } catch {
+            AppLog.error("Bundled release history could not load: \(error.localizedDescription)")
+        }
     }
 
     private func showControlPanel(selection: SidebarSelection) {

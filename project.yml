@@ -66,6 +66,8 @@ targets:
       - path: Resources/StarterWallpaper
         type: folder
         buildPhase: resources
+      - path: CHANGELOG.md
+        buildPhase: resources
       - path: upstream/mediaremote-adapter/bin/mediaremote-adapter.pl
         buildPhase: resources
       - path: upstream/mediaremote-adapter/LICENSE

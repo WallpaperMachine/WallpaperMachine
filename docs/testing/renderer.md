@@ -893,6 +893,7 @@ configure failure is not a result:
 
 ```sh
 cargo test --release -p wallpaper-core --lib
+cargo test --release -p wallpaper-core --test wallpaper_background
 cargo test --release -p wallpaper-bridge --lib
 cargo test --release -p wallpaper-core --lib audio
 cargo test -p shader --test pipeline -- --nocapture
@@ -900,6 +901,11 @@ cargo test -p shader --test pipeline -- --nocapture
 
 - `wallpaper-core` audio coverage: capture ownership and failures,
   mono/multichannel conversion, resampling including sample-rate changes.
+- `wallpaper_background`: renders unattached production Metal layers over a white
+  bitmap with no drawable, before and after a resize and after recreation. Every
+  pixel must be opaque black. Its harness runs on the process's main thread; no
+  window, GPU drawable, or desktop access is needed. It does not establish
+  physical sleep/wake compositor timing.
 - `wallpaper-bridge`: live audio toggle errors, rollback/persistence,
   nonblocking selection and mirror behavior; scene lifetime,
   presentation/manual pause precedence, failure rollback, disabled destruction,

@@ -4,25 +4,31 @@
 Two writers read the same input, the commits in the range:
 
 * `--ai` hands them to a language model (Claude Opus behind an Anthropic Messages API
-  gateway; the key comes from RELEASE_NOTES_API_KEY) that writes them up for users,
-  merging related commits and leaving internal work out. Releases always use it.
-* Without it the commits are listed, grouped by the `type(scope): subject` convention
-  the repository follows. Documentation, test and tooling commits are counted rather
-  than listed, and an unrecognised commit lands under "Other changes", so none
-  disappears silently. Offline and free: for previews and tests.
+  gateway; the key comes from RELEASE_NOTES_API_KEY) that writes the same notes in
+  English and Simplified Chinese, merging related commits and leaving internal work
+  out. Releases always use it. A reply that is missing either language is refused.
+* Without it the commits are listed in English, grouped by the `type(scope): subject`
+  convention the repository follows. That listing is a developer preview: it is not
+  published. Documentation, test and tooling commits are counted rather than listed,
+  and an unrecognised commit lands under "Other changes", so none disappears silently.
 
 A version's notes are written once, into its CHANGELOG.md section, when the version
-is cut. `--release-body` repeats that section for the release page, which the in-app
-"What's New" card reads, and adds the install, checksum and requirement footer and
-the full commit list; only a version without a section is written afresh.
+is cut. The app bundles that file. `--release-body` repeats the current section for
+the release page and adds the install footer and the full commit list. A hand-pushed
+tag with no section is written once, into the working tree, before the build, so the
+bundle and the release page are the same text. A recorded section is reused exactly.
+A `##` heading that is not `x.y.z` — `## Unreleased`, a prerelease token, or a
+heading inside the notes — stops publishing. The app rejects that whole file, so
+the heading is not kept and not dropped.
 
-    python3 scripts/release_notes.py                              # notes for project.yml's version
-    python3 scripts/release_notes.py --ai --tag v0.6.0 --to HEAD  # what the model writes
+    python3 scripts/release_notes.py                              # English listing, not for publish
+    python3 scripts/release_notes.py --ai --tag v0.6.0 --to HEAD  # bilingual notes, before the tag exists
     python3 scripts/release_notes.py --tag v0.6.0 --release-body --output notes.md
     python3 scripts/release_notes.py --ai --changelog --apply
     python3 scripts/release_notes.py --rebuild-changelog --apply
 
-`CHANGELOG.md` is only written with `--apply`; `--output` writes the file it is given.
+`CHANGELOG.md` is written with `--apply`, and also when `--release-body` has to
+generate the current section. `--output` writes the file it is given.
 """
 from __future__ import annotations
 
@@ -53,7 +59,6 @@ VERSION_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 # The Version workflow's own commit; it describes the release, it is not part of it.
 BUMP_COMMIT = re.compile(r"^chore: bump version to \d+\.\d+\.\d+$")
 BREAKING_BODY = re.compile(r"^BREAKING[ -]CHANGE:", re.MULTILINE)
-CHANGELOG_HEADING = re.compile(r"^## (\d+\.\d+\.\d+)\b")
 MARKETING_VERSION = re.compile(r'MARKETING_VERSION:\s*"([^"]+)"')
 REMOTE_SLUG = re.compile(r"(?:https://github\.com/|git@github\.com:)(?P<slug>[^/]+/[^/\s]+?)(?:\.git)?/?$")
 DEPLOYMENT_TARGET = re.compile(r"MACOSX_DEPLOYMENT_TARGET:\s*\"?([\d.]+)")
@@ -97,8 +102,9 @@ CHANGELOG_PREAMBLE = """\
 Every published version, newest first. Each section is written when its version is
 cut, by [`scripts/release_notes.py`](scripts/release_notes.py) from the commits
 between two version tags: a language model writes them up for users, where older
-sections list the commits. The GitHub Release body and the app's What's new card
-repeat the section, so the three always say the same thing. See
+sections list the commits. Each section states the same notes in English and
+Simplified Chinese. The GitHub Release body and the app's What's New window
+repeat that section, so they always say the same thing. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
 """
@@ -129,14 +135,30 @@ MODEL_SECTIONS = (
     ("improved", "Improved"),
     ("fixed", "Fixed"),
 )
+# Category headings inside a language block. Chinese names match the panel's
+# existing translations where it has them; Improved has no panel key, so 改进.
+LANGUAGE_HEADINGS = {
+    "english": {key: heading for key, heading in MODEL_SECTIONS},
+    "chinese": {
+        "breaking": "不兼容变更",
+        "new": "新增",
+        "improved": "改进",
+        "fixed": "修复",
+    },
+}
+LANGUAGE_BLOCKS = (("english", "English"), ("chinese", "简体中文"))
+CJK = re.compile(r"[\u4e00-\u9fff]")
+LATIN = re.compile(r"[A-Za-z]")
 SYSTEM_PROMPT = """\
 You are the release editor for WallpaperMachine, a native macOS app for Apple silicon \
 that plays Wallpaper Engine scene, video and web wallpapers on the desktop and, \
 experimentally, the lock screen. Its control panel manages the wallpaper library, \
-browses and downloads Steam Workshop items and holds the settings.
+browses and downloads Steam Workshop items and holds the settings. The panel ships \
+in English and Simplified Chinese (简体中文).
 
 You turn the commits of one release into the notes users read on the GitHub release \
-page, in CHANGELOG.md and in the app's What's New card.
+page, in CHANGELOG.md and in the app's What's New window. Write each note twice: \
+once in English, once in Simplified Chinese. The two say the same thing.
 
 Rules:
 - Write for people who use the app, not for its developers: what they can do now, \
@@ -146,26 +168,33 @@ names, commit hashes, test names or internal jargon.
 dates. Leave a change out when you cannot tell whether users would notice it.
 - Leave out purely internal work: documentation, tests, CI, refactoring, build \
 tooling and verification records.
-- One bullet per user-visible change. Merge commits that describe the same change. \
-Order each list by how much it matters to users.
-- Each bullet is one plain sentence in sentence case, at most 30 words, with no \
-trailing period and no Markdown, links or emoji. Name places in the app the way the \
-commits name them, for example Settings → Library & Steam.
+- One bullet per user-visible change, in both languages. Merge commits that describe \
+the same change. Order each list by how much it matters to users. The chinese string \
+of a bullet is the english string's equivalent, not a summary of a different change \
+and not a copy of the English.
+- Each string is one plain sentence, at most 30 words, with no trailing period and no \
+Markdown, links or emoji. chinese is Simplified Chinese, not Traditional, not a \
+romanization, and not English with a character added. Keep product names \
+(WallpaperMachine, Steam, Workshop, macOS) as they are.
+- Name places in the app the way the panel does: Settings 设置, General 通用, \
+Appearance 外观, Performance 性能, Playback 播放, Library & Steam 壁纸库与 Steam, \
+Discover 发现, Installed 已安装, About 关于, Lock screen 锁定屏幕.
 - breaking: changes that make users act or take away behaviour they relied on. new: \
 things users can do that they could not before. improved: faster, smoother or \
 clearer behaviour, performance included. fixed: problems that no longer happen, \
-described by what the user saw.
-- summary: one or two sentences on what the release means for users, or an empty \
-string when the lists say it all.
+described by what the user saw. A section is the same length in both languages.
+- summary: one or two sentences on what the release means for users, in both \
+languages, or empty strings in both when the lists say it all. Never fill only one.
 - Claims: never claim energy, battery or power savings, even when a commit measured \
 less work. Never call anything fully supported or fully compatible. Keep \
 "optional", "experimental" or "off by default" on opt-in features such as the \
 Native Metal renderer, native video playback, content pacing and on-demand scene \
-idle, and on the animated lock screen.
+idle, and on the animated lock screen. The Chinese keeps the same qualifier.
 
 Reply with only a JSON object, no prose and no code fence, with exactly these keys:
-{"summary": string, "breaking": [string], "new": [string], "improved": [string], "fixed": [string]}
-Use an empty list for a section with nothing in it."""
+{"summary": {"english": string, "chinese": string}, "breaking": [{"english": string, "chinese": string}], "new": [{"english": string, "chinese": string}], "improved": [{"english": string, "chinese": string}], "fixed": [{"english": string, "chinese": string}]}
+Use an empty list for a section with nothing in it. Do not write headings; the \
+script adds them."""
 
 
 class NotesError(Exception):
@@ -322,6 +351,12 @@ def compare_link(previous, tag, repo):
 def nothing_to_say(previous):
     span = f"since `{previous}`" if previous else "in this history"
     return f"No user-visible changes {span}."
+
+
+def nothing_to_say_zh(previous):
+    if previous:
+        return f"自 `{previous}` 以来没有用户能察觉的变化。"
+    return "这段历史里没有用户能察觉的变化。"
 
 
 def install_footer(version, target=None, built_from=None):
@@ -507,8 +542,46 @@ def plain_line(text):
     return line
 
 
+def language_text(value, label):
+    """One required string. A missing or non-text language stops the run."""
+    if not isinstance(value, str):
+        raise NotesError(f"The release-notes model's {label} is not text")
+    return plain_line(value)
+
+
+def require_translation(english, chinese, label):
+    """Both sides of a note must be present, and the Chinese must be Chinese."""
+    if bool(english) != bool(chinese):
+        raise NotesError(f"The release-notes model's {label} is missing a language")
+    if not chinese:
+        return
+    if not LATIN.search(english):
+        raise NotesError(f"The release-notes model's {label} English is not English: {english[:80]!r}")
+    if not CJK.search(chinese):
+        raise NotesError(f"The release-notes model's {label} is not Simplified Chinese: {chinese[:80]!r}")
+    if english == chinese:
+        raise NotesError(f"The release-notes model's {label} repeats the English as Chinese")
+
+
+def parse_pair(value, label):
+    """`{"english": str, "chinese": str}`, or None when both sides are empty."""
+    if not isinstance(value, dict) or set(value) != {"english", "chinese"}:
+        raise NotesError(f"The release-notes model's {label} must be english and chinese text")
+    english = language_text(value["english"], f"{label}.english").rstrip(".。")
+    chinese = language_text(value["chinese"], f"{label}.chinese").rstrip(".。")
+    if not english and not chinese:
+        return None
+    require_translation(english, chinese, label)
+    return english, chinese
+
+
 def parse_notes(text):
-    """The model's JSON reply as `{"summary": str, <section>: [str, ...]}`, checked."""
+    """The model's JSON reply as bilingual summary and section pairs, checked.
+
+    A section item is `(english, chinese)`. Missing sections are empty. The old
+    English-only shape, a missing language, or Chinese that is not Chinese stops
+    the run.
+    """
     reply = text.strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", reply, re.DOTALL)
     if fenced:
@@ -520,43 +593,149 @@ def parse_notes(text):
     keys = {"summary", *(key for key, _ in MODEL_SECTIONS)}
     if not isinstance(data, dict) or set(data) - keys:
         raise NotesError(f"The release-notes model replied with unexpected fields: {text.strip()[:200]!r}")
-    summary = data.get("summary") or ""
-    if not isinstance(summary, str):
-        raise NotesError("The release-notes model's summary is not text")
-    notes = {"summary": plain_line(summary)}
+    summary = data.get("summary")
+    if summary in (None, ""):
+        summary = {"english": "", "chinese": ""}
+    parsed = parse_pair(summary, "summary")
+    notes = {"summary": parsed or ("", "")}
     for key, _ in MODEL_SECTIONS:
         items = data.get(key) or []
-        if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
-            raise NotesError(f"The release-notes model's {key!r} is not a list of text")
-        notes[key] = [line.rstrip(".") for line in map(plain_line, items) if line.strip(" .")]
+        if not isinstance(items, list):
+            raise NotesError(f"The release-notes model's {key!r} is not a list of bilingual bullets")
+        bullets = []
+        for index, item in enumerate(items):
+            pair = parse_pair(item, f"{key}[{index}]")
+            if pair:
+                bullets.append(pair)
+        notes[key] = bullets
     return notes
 
 
-def render_model_notes(version, notes, previous=None, repo=None):
-    """The model's notes in the shape every reader expects: an optional summary, then
-    `###` sections in a fixed order, then the compare link."""
-    parts = [notes["summary"]] if notes["summary"] else []
-    for key, heading in MODEL_SECTIONS:
-        if notes[key]:
-            parts.append(f"### {heading}\n\n" + "\n".join(f"- {item}" for item in notes[key]))
+def empty_notes():
+    return {"summary": ("", ""), **{key: [] for key, _ in MODEL_SECTIONS}}
+
+
+def render_language(code, heading, notes, previous):
+    """One language block: optional summary, then `####` categories, or the empty line."""
+    index = 0 if code == "english" else 1
+    parts = [notes["summary"][index]] if notes["summary"][index] else []
+    for key, _ in MODEL_SECTIONS:
+        items = [item[index] for item in notes[key] if item[index]]
+        if items:
+            parts.append(f"#### {LANGUAGE_HEADINGS[code][key]}\n\n" + "\n".join(f"- {item}" for item in items))
     if not parts:
-        parts.append(nothing_to_say(previous))
+        parts.append(nothing_to_say(previous) if code == "english" else nothing_to_say_zh(previous))
+    return f"### {heading}\n\n" + "\n\n".join(parts)
+
+
+def render_model_notes(version, notes, previous=None, repo=None):
+    """Bilingual notes: `### English`, then `### 简体中文`, categories at `####`.
+
+    The compare link follows both blocks, outside either language's prose.
+    """
+    parts = [render_language(code, heading, notes, previous) for code, heading in LANGUAGE_BLOCKS]
     link = compare_link(previous, f"v{display_version(version)}", repo)
     if link:
         parts.append(link)
     return "\n\n".join(parts).strip() + "\n"
 
 
+def language_blocks(text):
+    """`(english prose, chinese prose)` from notes that use the two required headings.
+
+    A trailing compare link stays with the Chinese span; callers that only need
+    prose ignore that line. None when the headings are missing or out of order.
+    """
+    english = re.search(r"^### English[ \t]*$", text, re.MULTILINE)
+    chinese = re.search(r"^### 简体中文[ \t]*$", text, re.MULTILINE)
+    if not english or not chinese or english.start() > chinese.start():
+        return None
+    return text[english.end():chinese.start()], text[chinese.end():]
+
+
+def require_bilingual(text):
+    """Publishing contract: English, then 简体中文, categories at `####`, Chinese present.
+
+    Listed English notes, a missing language, or a `###` category heading fail.
+    The compare link may follow the Chinese block.
+    """
+    body = text.split(NOTES_END, 1)[0]
+    headings = re.findall(r"^###[ \t]+(.+?)[ \t]*$", body, re.MULTILINE)
+    if headings != ["English", "简体中文"]:
+        raise NotesError(
+            "Release notes must be ### English then ### 简体中文, with category headings at ####. "
+            "Listed English notes are a developer preview and are not published."
+        )
+    blocks = language_blocks(body)
+    if blocks is None:
+        raise NotesError("Release notes are missing a language block")
+    prose = [
+        "\n".join(line for line in block.splitlines()
+                  if not line.startswith("#") and not line.startswith("**Full changelog**")).strip()
+        for block in blocks
+    ]
+    english, chinese = prose
+    if not english or not chinese:
+        raise NotesError("Release notes are missing a language")
+    require_translation(english, chinese, "recorded notes")
+    if len(re.findall(r"^[-*] ", english, re.MULTILINE)) != len(re.findall(r"^[-*] ", chinese, re.MULTILINE)):
+        raise NotesError("Release notes have different numbers of English and Chinese changes")
+    return text
+
+
+def bundled_heading_version(line):
+    """The `x.y.z` `AppReleaseHistory` accepts for this `##` line, or None.
+
+    Swift takes the first token after `## ` and parses a semantic version:
+    optional `v`/`V`, three numeric components, no leading zeros. `## Unreleased`
+    and a `## ` line inside notes are not versions.
+    """
+    if not line.startswith("## "):
+        return None
+    token = line[3:].lstrip(" ").split(" ", 1)[0].strip()
+    token = token[1:] if token[:1] in "vV" else token
+    numbers = token.split(".")
+    if len(numbers) != 3 or any(
+        not number.isascii() or not number.isdigit() or (len(number) > 1 and number.startswith("0"))
+        or len(number) > 19 or int(number) > (1 << 63) - 1
+        for number in numbers
+    ):
+        return None
+    return tuple(int(number) for number in numbers)
+
+
+def require_bundled_history(text):
+    """Refuse a changelog `AppReleaseHistory` cannot parse.
+
+    Every `## ` line is a release heading. One that is not `x.y.z` fails the whole
+    file in the app, so publishing must fail here rather than keep or drop it.
+    """
+    seen = set()
+    for entry in split_sections(text or "")[1]:
+        heading, _, body = entry.partition("\n")
+        version = bundled_heading_version(heading)
+        if version is None:
+            raise NotesError(
+                f"Changelog heading {heading!r} is not a semantic version. "
+                "The app rejects every ## line that is not x.y.z, including ## Unreleased and headings inside notes."
+            )
+        if version in seen:
+            raise NotesError(f"Changelog repeats {'.'.join(str(part) for part in version)}.")
+        seen.add(version)
+        require_bilingual(body)
+    return text
+
+
 def write_with_model(version, previous, revision, repo=None, cwd=ROOT, transport=None, environ=None):
     """Notes the release-notes model writes from the commits in the range. A range with
-    no commits is reported as such without a request."""
+    no commits is reported in both languages without a request."""
     entries = []
     for sha, subject, body in commits(previous, revision, cwd):
         change = classify(sha, subject, body)
         if change is not None:
             entries.append((sha, " ".join(subject.split()), body, change.group == "internal"))
     if not entries:
-        return render(version, [], previous, repo)
+        return render_model_notes(version, empty_notes(), previous, repo)
     url, model, key = model_settings(environ)
     payload = {
         "model": model,
@@ -569,10 +748,39 @@ def write_with_model(version, previous, revision, repo=None, cwd=ROOT, transport
     return render_model_notes(version, parse_notes(text), previous, repo)
 
 
-def notes_for(version, previous, revision, repo=None, ai=False, cwd=ROOT, transport=None):
+def notes_for(version, previous, revision, repo=None, ai=False, cwd=ROOT, transport=None, environ=None):
     if ai:
-        return write_with_model(version, previous, revision, repo, cwd, transport)
+        return write_with_model(version, previous, revision, repo, cwd, transport, environ)
     return render(version, changes(previous, revision, cwd), previous, repo)
+
+
+def published_notes(version, previous, revision, repo, changelog_text, day, ai=False, cwd=ROOT, transport=None, environ=None):
+    """Notes for the release page, and the changelog text the build must bundle.
+
+    A recorded bilingual section is returned unchanged and the model is not called.
+    A missing section is written once, with `--ai`, and inserted so the bundle and
+    the page are that same text. English-only notes are refused. A `##` heading the
+    app cannot parse is refused too: it is not kept and not dropped.
+    Returns `(notes, changelog_text, generated)`.
+    """
+    require_bundled_history(changelog_text)
+    recorded = recorded_notes(changelog_text, version)
+    if recorded is not None:
+        require_bilingual(recorded)
+        return recorded, changelog_text, False
+    if not ai:
+        raise NotesError(
+            "Publishing needs bilingual notes. Listed notes are a developer preview; "
+            "pass --ai, or record a ### English / ### 简体中文 section first."
+        )
+    notes = notes_for(version, previous, revision, repo, ai=True, cwd=cwd, transport=transport, environ=environ)
+    require_bilingual(notes)
+    updated = insert_section(changelog_text or CHANGELOG_PREAMBLE, version, section(version, day, notes))
+    require_bundled_history(updated)
+    stored = recorded_notes(updated, version)
+    if stored is None or stored.strip() != notes.strip():
+        raise NotesError("Generated notes were not stored unchanged in the changelog")
+    return stored, updated, True
 
 
 # --- CHANGELOG.md -------------------------------------------------------------------
@@ -600,8 +808,7 @@ def split_sections(text):
 
 
 def section_version(text):
-    match = CHANGELOG_HEADING.match(text)
-    return version_key(match.group(1)) if match else None
+    return bundled_heading_version(text.partition("\n")[0])
 
 
 def recorded_notes(text, version):
@@ -627,13 +834,25 @@ def rebuild_changelog(repo=None, cwd=ROOT, recorded=""):
     """A whole changelog with a section for every version tag, newest first.
 
     A section `recorded` (the current changelog) already holds is kept word for word,
-    so the model's notes survive; the others list their commits. It never calls the
+    so the model's notes survive; the others list their commits. A recorded `##`
+    heading that is not `x.y.z` is refused, not dropped. It never calls the
     model: one request per tag would rewrite history nobody asked to change.
     """
+    kept = {}
+    for item in split_sections(recorded or "")[1]:
+        heading = item.split("\n", 1)[0]
+        version = bundled_heading_version(heading)
+        if version is None:
+            raise NotesError(
+                f"Changelog heading {heading!r} is not a semantic version. "
+                "The app rejects every ## line that is not x.y.z, including ## Unreleased and headings inside notes."
+            )
+        if version in kept:
+            raise NotesError(f"Changelog repeats {'.'.join(str(part) for part in version)}.")
+        kept[version] = item.rstrip("\n") + "\n\n"
     tags = version_tags(cwd)
     if not tags:
         raise NotesError("No vx.y.z tags to build a changelog from.")
-    kept = {section_version(item): item.rstrip("\n") + "\n\n" for item in split_sections(recorded or "")[1]}
     body = CHANGELOG_PREAMBLE
     for position in range(len(tags) - 1, -1, -1):
         tag = tags[position]
@@ -661,13 +880,13 @@ def main(argv=None):
     parser.add_argument("--previous", help="Tag the range starts after; empty string means the whole history.")
     parser.add_argument("--repository", help="owner/repo for commit and compare links; defaults to the origin remote.")
     parser.add_argument("--ai", action="store_true",
-                        help=f"Have the release-notes model write the notes (needs {API_KEY_VARIABLE}); otherwise the commits are listed.")
+                        help=f"Have the release-notes model write English and Simplified Chinese (needs {API_KEY_VARIABLE}). Without it, commits are listed in English and are not published.")
     parser.add_argument("--release-body", action="store_true",
-                        help="The release page: the version's CHANGELOG.md section (written afresh without one), the install footer and the commit list.")
+                        help="The release page: the version's bilingual CHANGELOG.md section (generated once and written into the file when missing), the install footer and the commit list.")
     parser.add_argument("--built-from", help="Revision the disk image was built from; recorded in the footer.")
     parser.add_argument("--output", help="Write the notes here instead of stdout.")
-    parser.add_argument("--changelog", action="store_true", help="Write this version's section into CHANGELOG.md.")
-    parser.add_argument("--rebuild-changelog", action="store_true", help="Rewrite every section of CHANGELOG.md from the version tags.")
+    parser.add_argument("--changelog", action="store_true", help="Write this version's bilingual section into CHANGELOG.md.")
+    parser.add_argument("--rebuild-changelog", action="store_true", help="Rewrite every section of CHANGELOG.md from the version tags, keeping recorded sections.")
     parser.add_argument("--apply", action="store_true", help="Write CHANGELOG.md; without it the planned change is only described.")
     args = parser.parse_args(argv)
 
@@ -678,7 +897,9 @@ def main(argv=None):
             print(f"{MARK.step} Would rewrite {CHANGELOG.relative_to(ROOT)} from {len(version_tags())} tags; --apply writes it")
             return 0
         recorded = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else ""
-        CHANGELOG.write_text(rebuild_changelog(args.repository or repository(), recorded=recorded), encoding="utf-8")
+        rebuilt = rebuild_changelog(args.repository or repository(), recorded=recorded)
+        require_bundled_history(rebuilt)
+        CHANGELOG.write_text(rebuilt, encoding="utf-8")
         print(f"{MARK.ok} Rewrote {CHANGELOG.relative_to(ROOT)} from {len(version_tags())} tags, keeping recorded sections")
         return 0
 
@@ -689,13 +910,28 @@ def main(argv=None):
         return 0
 
     existing = CHANGELOG.read_text(encoding="utf-8") if CHANGELOG.exists() else CHANGELOG_PREAMBLE
-    recorded = recorded_notes(existing, version) if args.release_body and not args.changelog else None
-    notes = recorded if recorded is not None else notes_for(version, earlier, revision, repo, ai=args.ai)
-    body = release_body(notes, version, earlier, revision, repo, args.built_from) if args.release_body else notes
+    generated = False
+    recorded = None
+    if args.release_body:
+        notes, updated, generated = published_notes(
+            version, earlier, revision, repo, existing, day, ai=args.ai)
+        if generated:
+            CHANGELOG.write_text(updated, encoding="utf-8")
+            print(f"{MARK.ok} Wrote bilingual notes for {version} into {CHANGELOG.relative_to(ROOT)} before publish", file=sys.stderr)
+        recorded = notes
+        body = release_body(notes, version, earlier, revision, repo, args.built_from)
+    else:
+        if args.changelog:
+            require_bundled_history(existing)
+        notes = notes_for(version, earlier, revision, repo, ai=args.ai)
+        body = notes
+        updated = insert_section(existing, version, section(version, day, notes))
 
-    if args.changelog:
+    if args.changelog and not args.release_body:
+        require_bilingual(notes)
+        require_bundled_history(updated)
         if args.apply:
-            CHANGELOG.write_text(insert_section(existing, version, section(version, day, notes)), encoding="utf-8")
+            CHANGELOG.write_text(updated, encoding="utf-8")
             print(f"{MARK.ok} {CHANGELOG.relative_to(ROOT)}: {version} — {day}")
         else:
             print(f"{MARK.step} Would write {CHANGELOG.relative_to(ROOT)}: {version} — {day}; --apply writes it")
@@ -704,8 +940,13 @@ def main(argv=None):
         destination = Path(args.output)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(body, encoding="utf-8")
-        source = "its CHANGELOG.md section" if recorded is not None else f"{earlier or 'first release'}..{revision}"
-        writer = ", written by the release-notes model" if recorded is None and args.ai else ""
+        source = "its CHANGELOG.md section" if recorded is not None and not generated else f"{earlier or 'first release'}..{revision}"
+        if generated:
+            writer = ", written once into CHANGELOG.md"
+        elif recorded is not None:
+            writer = ", reused from CHANGELOG.md"
+        else:
+            writer = ", written by the release-notes model" if args.ai else ""
         print(f"{MARK.ok} Notes for {version} ({source}{writer}): {destination}")
     elif not args.changelog:
         sys.stdout.write(body)

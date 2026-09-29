@@ -84,6 +84,18 @@ Cargo and CMake commands need the Homebrew environment that `scripts/build.py`
 assembles; run the Rust commands from `upstream/renderer`. Build prerequisites
 are in [../build.md](../build.md).
 
+An `IDELaunchServicesLauncher` assertion `childPID > 0` (exit 250) can abort
+Xcode before the native test host starts, even after successful compilation
+and bundle-signature verification. A missing verdict is not zero failing tests:
+inspect the named log and report the native gate as blocked. Check
+`launchctl managername`: the observed macOS 26.6.2 / Xcode 27A266a failure
+occurred in a detached `Background` bootstrap session. Serial execution and
+clearing environment variables did not fix it; running the unchanged gate in
+the logged-in user's `Aqua` session did. Run from that login session, not a
+detached background service. A temporary same-user launch job can run the
+non-desktop gate there without opening a Terminal window; remove the job
+afterwards. Standalone isolated checks do not replace the app-hosted gate.
+
 `Tests/Unit/` is grouped by domain: Appearance, Desktop, Diagnostics, GitHub,
 Library, Localization, LockScreen, NativeVideo, Panel, Steam, SystemMedia,
 UserAssets, WebWallpaper, Workshop; shared fixtures live in `Support/`.

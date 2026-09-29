@@ -10,7 +10,7 @@ use objc2_app_kit::{
 use objc2_app_kit::{NSEvent, NSEventMask, NSEventType};
 use objc2_core_graphics::{CGWindowLevelForKey, CGWindowLevelKey};
 use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSThread};
-use objc2_quartz_core::CAMetalLayer;
+use objc2_quartz_core::{CAMetalLayer, CATransaction};
 
 use crate::{DisplayDesc, EngineError};
 
@@ -56,8 +56,8 @@ impl WallpaperDesktopWindow {
     }
 }
 
-/// Initial background color for a wallpaper window before renderer content is
-/// visible.
+/// Background exposed before the first frame or while a drawable is unavailable.
+/// Default to black so display wake and surface recreation cannot flash white.
 #[derive(Clone, Copy, Debug)]
 pub struct PlaceholderStyle {
     /// Red channel in the range AppKit accepts for sRGB colors.
@@ -77,19 +77,15 @@ pub struct PlaceholderStyle {
 impl Default for PlaceholderStyle {
     fn default() -> Self {
         Self {
-            red: 1.0,
-            green: 1.0,
-            blue: 1.0,
+            red: 0.0,
+            green: 0.0,
+            blue: 0.0,
             alpha: 1.0,
         }
     }
 }
 
 /// Borderless desktop-level window that hosts a `CAMetalLayer`.
-///
-/// This type exists for focused window/surface tests and for future Rust-native
-/// rendering work. The active scene renderer currently owns its own equivalent
-/// window through the statically linked native bridge.
 pub struct WallpaperWindow {
     display: DisplayDesc,
     handle: Option<WindowHandle>,
@@ -964,11 +960,27 @@ impl WindowHandleRef {
         let content_view = unsafe { &*(self.content_view.cast::<NSView>()) };
         let metal_layer = unsafe { &*(self.metal_layer.cast::<CAMetalLayer>()) };
 
-        window.setFrame_display(frame, true);
-        content_view.setFrame(content_frame);
-        metal_layer.setFrame(content_frame);
-        metal_layer.setContentsScale(scale_factor);
-        metal_layer.setDrawableSize(drawable_size);
+        // A primary-display or origin change is not a new render surface.
+        // Redrawing the window or resetting its drawable during wake exposes
+        // the placeholder before the suspended renderer can present again.
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        if window.frame() != frame {
+            window.setFrame_display(frame, false);
+        }
+        if content_view.frame() != content_frame {
+            content_view.setFrame(content_frame);
+        }
+        if metal_layer.frame() != content_frame {
+            metal_layer.setFrame(content_frame);
+        }
+        if metal_layer.contentsScale() != scale_factor {
+            metal_layer.setContentsScale(scale_factor);
+        }
+        if metal_layer.drawableSize() != drawable_size {
+            metal_layer.setDrawableSize(drawable_size);
+        }
+        CATransaction::commit();
     }
 
     #[allow(clippy::unnecessary_wraps)]

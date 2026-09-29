@@ -208,7 +208,16 @@ Swift tests cover, without starting the app:
   Space cleanup, system-copied fallback restoration, global linked conflicts,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
-  after suspension. No test selects a real wallpaper.
+  after suspension. `WallpaperPresentationAuthorityTests` covers both display/
+  host wake orders and preserves user pause across sleep/wake.
+  `LockScreenFrameBackingTests` composites real snapshot pixels under a Metal
+  layer without a drawable and checks snapshot ownership across replacement.
+  `LockScreenWallpaperServiceTests.testDisplayTopologyChangesDoNotClearSurvivingLockScreens`
+  records every published manifest for synthetic display IDs through disconnect,
+  reconnect and primary ordering changes, then checks that explicit disable
+  still clears all scenes. It does not depend on a second physical monitor.
+  These tests do not establish real lock-screen visual timing or private XPC
+  snapshot transport. No test selects a real wallpaper.
 - **Diagnostics** — `AppLogRouterTests`: lines logged before the bridge keep
   their time and order and are written when it attaches, overflow is reported
   rather than silent, loads start only once the log is open, and concurrent

@@ -127,22 +127,6 @@ enum WallpaperPresentationAuthority {
     suspensionReasons(for: request).isEmpty
   }
 
-  enum RendererAction: Equatable {
-    case unload, reload, updatePlayback
-  }
-
-  /// A captured poster can stand in for an unlocked lock-screen renderer. Failed
-  /// reloads wait for a new unlock/lock cycle instead of retrying on every update.
-  static func rendererAction(
-    for request: Request, hasRenderer: Bool, hasSnapshot: Bool, reloadFailed: Bool
-  ) -> RendererAction {
-    guard request.role == .lockScreen else { return .updatePlayback }
-    let reasons = suspensionReasons(for: request)
-    if hasSnapshot, reasons.contains(.noConsumer) { return .unload }
-    if !hasRenderer, hasSnapshot, reasons.isEmpty, !reloadFailed { return .reload }
-    return .updatePlayback
-  }
-
   /// When the decision for this surface will change on its own, so the caller
   /// can re-evaluate then instead of polling. Only a preview has such a moment.
   static func nextReevaluation(for request: Request) -> Duration? {

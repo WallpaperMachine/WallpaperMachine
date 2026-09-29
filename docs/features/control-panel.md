@@ -246,6 +246,42 @@ Discover's live-preview luminance sampler
 and a ready animated preview is on screen; leaving Discover, hiding the
 document, or running out of ready tiles stops it.
 
+### After an update
+
+On the first launch of a newer version, a separate, nonmodal **What’s New**
+window shows the installed version and every release since the last announced
+version, newest first. Each release includes **English and Simplified Chinese**
+together, regardless of the interface language. Notes come from the bundled
+`CHANGELOG.md`, so they work offline and cannot accidentally describe a newer
+remote release. Release generation and translation are owned by
+[the release pipeline](../release.md#release-notes-and-the-changelog).
+
+**Don’t show this window after updates** saves immediately and suppresses all
+future automatic post-update windows. It does not disable update checks or hide
+the release notes in Settings → About. Closing the window, including Command-W,
+leaves WallpaperMachine running. Ordinary relaunches, fresh installs, downgrades
+and returning to an already announced version do not show the window.
+
+`WhatsNewStore` persists the highest announced/launched version and the opt-out
+in the app’s preferences. Older builds did not record a version: on migration,
+users who already completed or skipped the welcome guide see only the installed
+release’s notes, without a fabricated previous-version number. The next update
+has an exact baseline; a fresh installation records one without another window.
+A missing installed-version entry is not marked as announced. `announcement`
+returns nil without writing `WallpaperMachine.whatsNew.lastVersion`, and the
+next launch runs the same check. That retry is intentional: recording the
+version on a miss would consume the announcement, so a later bundle that
+contains the notes would never show them. A fresh installation and the
+permanent opt-out still record the version, because those launches are not
+waiting for notes. The bundled history is strict: every `##` heading must be a
+semantic version, so `## Unreleased` or a `##` line inside notes fails the
+whole file and the window does not appear. Publishing rejects that file first.
+`WhatsNewTests` covers skipped releases, migration, first launch, interrupted
+presentation, downgrade/relaunch suppression, a missing current section that
+must not consume a later announcement, bilingual history validation, rejection
+of `## Unreleased` and headings inside notes, and the checkbox’s persisted
+effect across subsequent versions.
+
 ## Thumbnail corner marks
 
 Installed and Discover show status marks at the thumbnail's upper-left corner:

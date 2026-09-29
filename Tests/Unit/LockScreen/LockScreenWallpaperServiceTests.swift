@@ -239,6 +239,123 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testDisplayTopologyChangesDoNotClearSurvivingLockScreens() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var external = builtIn
+    external.displayId = 2
+    // The external display is first (primary); display identity is not array order.
+    var records = [external, builtIn]
+    var publications: [LockScreenConfiguration] = []
+    let service = LockScreenWallpaperService(
+      scenes: { records },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { [1: "one", 2: "two"][$0] },
+      persistConfiguration: { url, bytes in
+        try bytes.write(to: url, options: .atomic)
+        publications.append(try JSONDecoder().decode(
+          LockScreenConfiguration.self, from: Data(contentsOf: url)))
+      })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("both lock screens ready") { service.isEnabled && !service.isBusy }
+
+    for next in [[builtIn], [external, builtIn], [external]] {
+      publications.removeAll()
+      records = next
+      service.refresh()
+      await waitFor("display topology publication") { service.isEnabled && !service.isBusy }
+      let expected = Set(next.map(\.displayId))
+      XCTAssertEqual(Set(try XCTUnwrap(publications.last).scenes.map(\.displayID)), expected)
+      for publication in publications {
+        XCTAssertTrue(expected.isSubset(of: Set(publication.scenes.map(\.displayID))),
+          "A surviving display must never receive an empty manifest while another display changes")
+      }
+    }
+
+    publications.removeAll()
+    records = [builtIn, external]
+    service.refresh()
+    await waitFor("both displays return") { service.isEnabled && !service.isBusy }
+    let stable = try XCTUnwrap(publications.last)
+    publications.removeAll()
+    records = [external, builtIn]
+    service.refresh()
+    await waitFor("primary ordering change") { !service.isBusy }
+    XCTAssertTrue(publications.isEmpty, "Reordering displays must not republish their wallpapers")
+    let onDisk = try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: exchange.appendingPathComponent(LockScreenConfiguration.fileName)))
+    XCTAssertEqual(onDisk, stable)
+
+    service.setEnabled(false)
+    await waitFor("explicit disable clears every display") { !service.isBusy }
+    XCTAssertEqual(try XCTUnwrap(publications.last).scenes, [])
+    XCTAssertFalse(service.ownsDesktopProvider)
+  }
+
+  @MainActor
+  func testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var external = builtIn
+    external.displayId = 2
+    var records = [external, builtIn]
+    var online: Set<UInt32> = [1, 2]
+    var reloads = 0
+    let service = LockScreenWallpaperService(
+      scenes: { records },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: { reloads += 1 }),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { online.contains($0) ? [1: "one", 2: "two"][$0] : nil })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("external-primary lock screens ready") { service.isEnabled && !service.isBusy }
+    let manifest = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+    let committed = try Data(contentsOf: manifest)
+    let selected = try Data(contentsOf: store)
+    let initialReloads = reloads
+
+    // Core Graphics can temporarily report either or both screens offline
+    // before the bridge publishes the settled topology.
+    for visible: Set<UInt32> in [[2], [], [1, 2]] {
+      online = visible
+      service.refresh()
+      await waitFor("wake lookup settles") { !service.isBusy }
+      XCTAssertTrue(service.isEnabled)
+      XCTAssertTrue(service.ownsDesktopProvider)
+      XCTAssertNil(service.errorMessage)
+      XCTAssertEqual(try Data(contentsOf: manifest), committed)
+      XCTAssertEqual(try Data(contentsOf: store), selected)
+      XCTAssertEqual(reloads, initialReloads, "A lookup gap must not restart WallpaperAgent")
+      XCTAssertTrue(timers.last?.isValid == true, "The existing monitor must keep checking topology")
+    }
+
+    online = [2]
+    records = [external]
+    service.refresh()
+    await waitFor("settled external-only topology") { service.isEnabled && !service.isBusy }
+    let configuration = try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: manifest))
+    XCTAssertEqual(configuration.scenes.map(\.displayID), [2])
+
+    // A real removal, unlike an offline lookup, must still release ownership.
+    records = []
+    service.refresh()
+    await waitFor("last wallpaper removed") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertEqual(try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: manifest)).scenes, [])
+  }
+
+  @MainActor
   func testMonitorExistsOnlyWhileRequestedAndDoesNotRescheduleWhileBusy() async throws {
     var calls = 0
     var pending: CheckedContinuation<[BridgeLockScreenScene], Never>?
@@ -439,6 +556,172 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertTrue(timers.allSatisfy { !$0.isValid })
   }
 
+  /// An unchanged monitor tick must not disable or republish. After a lookup gap,
+  /// that same timer — not another scene or preference change — retries the
+  /// committed mapping once the display UUID resolves.
+  @MainActor
+  func testUnchangedMonitorTickDoesNotRepublishAndResolvedUUIDRecovers() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var online: Set<UInt32> = [1]
+    var publications = 0
+    var reloads = 0
+    var sceneReads = 0
+    let service = LockScreenWallpaperService(
+      scenes: {
+        sceneReads += 1
+        return [builtIn]
+      },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: { reloads += 1 }),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { online.contains($0) ? [1: "one"][$0] : nil },
+      persistConfiguration: { url, bytes in
+        try bytes.write(to: url, options: .atomic)
+        publications += 1
+      })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("lock screen ready") { service.isEnabled && !service.isBusy }
+    let manifest = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+    let committed = try Data(contentsOf: manifest)
+    let publishedCount = publications
+    let reloadCount = reloads
+    let timer = try XCTUnwrap(timers.last)
+    XCTAssertTrue(timer.isValid)
+
+    let unchangedReads = sceneReads
+    timer.fire()
+    await waitFor("unchanged monitor tick") { sceneReads > unchangedReads && !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertTrue(service.ownsDesktopProvider)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertEqual(publications, publishedCount)
+    XCTAssertEqual(reloads, reloadCount)
+    XCTAssertEqual(try Data(contentsOf: manifest), committed)
+    let enabledStatus = service.status
+    let selected = try Data(contentsOf: store)
+
+    online = []
+    timer.fire()
+    await waitFor("pending topology") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertEqual(publications, publishedCount)
+    XCTAssertEqual(try Data(contentsOf: manifest), committed)
+    XCTAssertEqual(try Data(contentsOf: store), selected)
+    XCTAssertTrue(timer.isValid)
+
+    online = [1]
+    timer.fire()
+    await waitFor("monitor recovery") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertTrue(service.ownsDesktopProvider)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertEqual(publications, publishedCount, "Resolving the same mapping must not republish")
+    XCTAssertEqual(reloads, reloadCount, "Recovery must not restart WallpaperAgent")
+    XCTAssertEqual(try Data(contentsOf: manifest), committed)
+    XCTAssertEqual(try Data(contentsOf: store), selected)
+    XCTAssertEqual(service.status, enabledStatus)
+    XCTAssertEqual(timers.count, 1)
+  }
+
+  /// A compatibility failure still rolls back to disabled. A later lookup gap must
+  /// not erase that error or restart the monitor, and must not touch the selection.
+  @MainActor
+  func testPendingTopologyKeepsEarlierCompatibilityError() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var online: Set<UInt32> = [1]
+    let service = LockScreenWallpaperService(
+      scenes: { [builtIn] },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { online.contains($0) ? [1: "one"][$0] : nil })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("lock screen ready") { service.isEnabled && !service.isBusy }
+    try setGlobalWallpaperLinked()
+    builtIn.fps = 24
+    service.refresh()
+    await waitFor("compatibility rollback") { !service.isBusy }
+    let manifest = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+    let error = try XCTUnwrap(service.errorMessage)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    let errorStatus = service.status
+    XCTAssertEqual(
+      try JSONDecoder().decode(LockScreenConfiguration.self, from: Data(contentsOf: manifest)).scenes,
+      [])
+    let timer = try XCTUnwrap(timers.last)
+    XCTAssertFalse(timer.isValid)
+    let failedStore = try Data(contentsOf: store)
+    let failedManifest = try Data(contentsOf: manifest)
+    let timerCount = timers.count
+
+    online = []
+    service.refresh()
+    await waitFor("pending retry") { !service.isBusy }
+    XCTAssertEqual(service.errorMessage, error)
+    XCTAssertEqual(service.status, errorStatus)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertEqual(try Data(contentsOf: store), failedStore)
+    XCTAssertEqual(try Data(contentsOf: manifest), failedManifest)
+    XCTAssertEqual(timers.count, timerCount)
+    XCTAssertFalse(timer.isValid, "A preserved error must not restart the monitor")
+  }
+
+  /// Replacing a committed mapping keeps isEnabled until the new frame is
+  /// acknowledged. A readiness failure still rolls back to disabled.
+  @MainActor
+  func testReplacementStagingKeepsEnabledUntilReadinessFailureRollsBack() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var external = builtIn
+    external.displayId = 2
+    var records = [builtIn]
+    let service = LockScreenWallpaperService(
+      scenes: { records },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { [1: "one", 2: "two"][$0] })
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("first publication") {
+      service.ownsDesktopProvider && FileManager.default.fileExists(atPath: self.journal.path)
+    }
+    try answerPublishedReadiness()
+    await waitFor("first mapping enabled") { service.isEnabled && !service.isBusy }
+    let manifest = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+
+    records = [builtIn, external]
+    service.refresh()
+    await waitFor("replacement published") {
+      guard service.isBusy else { return false }
+      guard let data = try? Data(contentsOf: manifest),
+        let configuration = try? JSONDecoder().decode(LockScreenConfiguration.self, from: data)
+      else { return false }
+      return configuration.scenes.count == 2
+    }
+    XCTAssertTrue(service.isEnabled, "Staging must not clear the committed enabled state")
+    XCTAssertTrue(service.ownsDesktopProvider)
+    try failPublishedReadiness("renderer failed")
+    await waitFor("readiness rollback") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertEqual(
+      try JSONDecoder().decode(LockScreenConfiguration.self, from: Data(contentsOf: manifest)).scenes,
+      [])
+    XCTAssertTrue(service.errorMessage?.contains("renderer failed") == true)
+  }
+
   // MARK: - Managed user assets
 
   /// The extension can only read the exchange directory, so a property pointing at the
@@ -592,5 +875,27 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
       try JSONEncoder().encode(readiness).write(
         to: exchange.appendingPathComponent("ready-\(scene.displayID).json"), options: .atomic)
     }
+  }
+
+  private func failPublishedReadiness(_ message: String) throws {
+    let configuration = try JSONDecoder().decode(
+      LockScreenConfiguration.self,
+      from: Data(contentsOf: exchange.appendingPathComponent(LockScreenConfiguration.fileName)))
+    for scene in configuration.scenes {
+      let readiness = LockScreenReadiness(
+        revision: configuration.revision, displayID: scene.displayID, error: message)
+      try JSONEncoder().encode(readiness).write(
+        to: exchange.appendingPathComponent("ready-\(scene.displayID).json"), options: .atomic)
+    }
+  }
+
+  private func setGlobalWallpaperLinked() throws {
+    let data = try Data(contentsOf: store)
+    var root = try XCTUnwrap(
+      PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+    var global = try XCTUnwrap(root["AllSpacesAndDisplays"] as? [String: Any])
+    global["Type"] = "linked"
+    root["AllSpacesAndDisplays"] = global
+    try write(root)
   }
 }
