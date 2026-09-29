@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Release notes read squash merges per listed commit; CI serial cost corrected
+
+- Change: scripts/release_notes.py model_prompt splits a squash merge's body at its '* type(scope): subject' lines; each listed commit gets its own 1,500-character cut, internal ones only their subject line; Co-authored-by/Signed-off-by/Reviewed-by/Claude-Session trailers and GitHub's --- rule are dropped. Budget unchanged (120,000).
+- Why: 1.2.0's generated notes missed Workshop updates, automation, Workshop sources, the What's New window and the black wake placeholder, all past the first 1,500 characters of #15 and #16.
+- New test ModelRangeTests.test_a_squash_merge_brings_the_body_of_every_commit_it_lists fails on the old code (later commits missing) and passes now; test_release_notes.py 56/56.
+- Preview of the real v1.1.0..7d3afcf range (no model request): 12,804-character prompt, every #15/#16 feature body present, no trailers, nothing cut.
+- build.yml Test comment and docs/testing/README.md now say serial costs the CI runner almost nothing (300 s against 278 s parallel for the 1.2.0 gate), not four times as long.
+- Gate: python3 scripts/test.py - 828 passed, 0 failed, 11 skipped of 839. No --ai run against the gateway; no Release build (none needed for scripts/CI/docs).
+
 ## 2026-09-30 — PR 16 Claude review: topology state and bundled history
 
 - Standalone Swift smoke compiled the production lock-screen service, selection journal, asset publisher and manifest against isolated host seams and a disposable wallpaper-store fixture. No windows or real wallpaper-service reloads.
@@ -115,15 +124,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Scene replacement retains backing until new pixels arrive; explicit clear releases it. The image shares the immutable snapshot storage without another bitmap copy; compositor memory and power impact not measured.
 - Recurring host reacquisition was observed in the existing extension log, but its cause is unproven. A third-party snapshot-encoding hypothesis was not verified on this OS; no private-method swizzle, snapshot-freshness change or retry logic added.
 - Real lock/wake visual timing and private XPC transport remain unverified. No desktop manipulation, Release rebuild, app installation or restart. Removed this task's standalone smoke files only; existing artifacts retained.
-
-## 2026-09-29 — Resume the retained lock-screen renderer on wake
-
-- Extension log identified the poster-only lifecycle: unlock destroyed the renderer; one wake took about three seconds from active host update to first-frame readiness.
-- Throwaway offscreen Swift smoke compiled the production WallpaperSurface against the real renderer and bundled silent video, with isolated storage/host adapters and an unhosted CAContext. Before: failed because unlock replaced the Metal layer with a poster. After: passed with the same Metal layer, changing video pixels and exactly one readiness frame across both display-first and host-first wake sequences; user pause remained effective.
-- python3 scripts/test.py --only WallpaperPresentationAuthorityTests: 13 passed, covering suspension precedence, both wake orders and user pause.
-- Two initial full gates failed on obsolete whole-dictionary sidebar assertions that omitted the existing Pixiv page. Removed default/schema and forwarding assertions; retained sidebar interaction, layout and per-page persistence checks. No panel product code changed.
-- python3 scripts/test.py --only ControlPanelLibraryTests/testFilterSidebarTogglesFromTheToolbarPerPageAndInspectorFollowsWindowWidth: 1 passed.
-- Final python3 scripts/test.py: 215 Python passed; 735 native passed, 0 failed, 11 skipped of 746. Skips: nine opt-in native-media cases and two live Workshop network cases.
-- Tradeoff: lock-screen scene/device memory remains resident while paused; memory and power impact not measured. Obsolete unload/reload policy and poster conversion helper removed.
-- No Release build, app installation/restart, wallpaper change or real lock/sleep desktop run. System snapshot handoff and visible wake timing remain unverified; new surfaces still require initial loading.
-- Removed the throwaway smoke harness, executable and cache with the repository cleanup helper; preserved pre-existing artifacts and built apps.

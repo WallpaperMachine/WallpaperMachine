@@ -15,6 +15,18 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Resume the retained lock-screen renderer on wake
+
+- Extension log identified the poster-only lifecycle: unlock destroyed the renderer; one wake took about three seconds from active host update to first-frame readiness.
+- Throwaway offscreen Swift smoke compiled the production WallpaperSurface against the real renderer and bundled silent video, with isolated storage/host adapters and an unhosted CAContext. Before: failed because unlock replaced the Metal layer with a poster. After: passed with the same Metal layer, changing video pixels and exactly one readiness frame across both display-first and host-first wake sequences; user pause remained effective.
+- python3 scripts/test.py --only WallpaperPresentationAuthorityTests: 13 passed, covering suspension precedence, both wake orders and user pause.
+- Two initial full gates failed on obsolete whole-dictionary sidebar assertions that omitted the existing Pixiv page. Removed default/schema and forwarding assertions; retained sidebar interaction, layout and per-page persistence checks. No panel product code changed.
+- python3 scripts/test.py --only ControlPanelLibraryTests/testFilterSidebarTogglesFromTheToolbarPerPageAndInspectorFollowsWindowWidth: 1 passed.
+- Final python3 scripts/test.py: 215 Python passed; 735 native passed, 0 failed, 11 skipped of 746. Skips: nine opt-in native-media cases and two live Workshop network cases.
+- Tradeoff: lock-screen scene/device memory remains resident while paused; memory and power impact not measured. Obsolete unload/reload policy and poster conversion helper removed.
+- No Release build, app installation/restart, wallpaper change or real lock/sleep desktop run. System snapshot handoff and visible wake timing remain unverified; new surfaces still require initial loading.
+- Removed the throwaway smoke harness, executable and cache with the repository cleanup helper; preserved pre-existing artifacts and built apps.
+
 ## 2026-09-29 — Playlists, Workshop updates and sources, image import, automation, playback conditions, zh-Hant and ja (Linux only)
 
 Seven features built in a Linux container without Xcode; nothing here ran on macOS. New Swift files are not yet in WallpaperMachine.xcodeproj: `xcodegen generate` (run by `scripts/test.py` and `scripts/build.py`) must regenerate it on a Mac.

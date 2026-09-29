@@ -386,6 +386,27 @@ class ModelRangeTests(unittest.TestCase):
         self.assertNotIn("Internal verification notes", prompt)
         self.assertNotIn("bump version", prompt)
 
+    def test_a_squash_merge_brings_the_body_of_every_commit_it_lists(self):
+        long = "Rotate moves through all wallpapers in order or shuffled. " * 40
+        commit(self.root, "\n".join([
+            "feat: playlists and Workshop updates (#15)", "",
+            "* feat(playlists): rotate each display's wallpaper", "", long, "",
+            "Co-Authored-By: Claude <noreply@anthropic.com>", "",
+            "* docs(testing): record the run", "", "Squashed verification notes nobody should read.", "",
+            "* feat(workshop): find and install updates", "", "Update all downloads the new versions.", "",
+            "---------", "", "Co-authored-by: Claude <noreply@anthropic.com>",
+        ]))
+        self.write()
+        prompt = self.reply.requests[0][2]["messages"][0]["content"]
+        self.assertIn("\n    * feat(playlists): rotate each display's wallpaper\n", prompt)
+        self.assertIn("\n    * feat(workshop): find and install updates\n      Update all downloads the new versions.\n",
+                      prompt)
+        self.assertIn("\n    * docs(testing): record the run\n", prompt)
+        self.assertNotIn("Squashed verification notes", prompt)
+        self.assertLess(prompt.count("Rotate moves through"), 40)
+        self.assertNotIn("noreply@anthropic.com", prompt)
+        self.assertNotIn("---", prompt)
+
     def test_a_range_without_commits_needs_no_request(self):
         git("tag", "v0.2.0", cwd=self.root)
         body = release_notes.write_with_model("0.3.0", "v0.2.0", "HEAD", REPOSITORY, self.root, self.reply, KEY)

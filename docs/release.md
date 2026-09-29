@@ -114,7 +114,12 @@ The model reads every commit in the range, newest first, except CI's own
 `chore: bump version to x.y.z`. Commits of the user-visible types below bring
 their body, cut at 1,500 characters, until 120,000 characters of bodies are
 spent; `docs`, `test`, `chore`, `ci`, `build` and `style` commits bring only their
-subject. Commit messages are therefore the source of the notes: write them for
+subject. A squash merge's body is read per commit it lists (`* type(scope): subject`
+lines): each brings its own body under the same rules. When a merge's whole body
+shared one cut, 1.2.0's notes lost every commit past the first 1,500 characters.
+`Co-authored-by`, `Signed-off-by`, `Reviewed-by` and `Claude-Session` trailers,
+and GitHub's `---` rule before them, are dropped first: they only spend the budget.
+Commit messages are therefore the source of the notes: write them for
 the reader [conventions.md](conventions.md#commits-and-pull-requests) describes.
 The instructions also carry the project's rules on claims, because CI commits the
 notes without review: no energy, battery or power-saving claims, nothing called

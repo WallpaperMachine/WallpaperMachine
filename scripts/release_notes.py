@@ -127,8 +127,14 @@ READ_TIMEOUT = 120
 DEADLINE = 600
 # What the model reads of each commit: user-visible commits bring their body, cut at
 # BODY_LIMIT, until BODIES_BUDGET characters are spent; the rest bring their subject.
+# A squash merge's body is read per commit it lists, each with its own BODY_LIMIT.
 BODY_LIMIT = 1500
 BODIES_BUDGET = 120_000
+# A squash merge lists each of its commits as `* type(scope): subject`, then its body.
+SQUASHED = re.compile(r"^\* (?=[a-z]+(?:\([^)]*\))?!?:)", re.MULTILINE)
+# Trailers and the rule GitHub puts before a squash merge's own; they only spend the budget.
+TRAILER = re.compile(r"^(?:(?:co-authored-by|signed-off-by|reviewed-by|claude-session):.*|-{3,}[ \t]*)$",
+                     re.IGNORECASE | re.MULTILINE)
 MODEL_SECTIONS = (
     ("breaking", "Breaking changes"),
     ("new", "New"),
@@ -454,25 +460,56 @@ def model_settings(environ=None):
     return url, environ.get(MODEL_VARIABLE, "").strip() or MODEL, key
 
 
+def body_parts(body):
+    """`(text, [(subject, body, internal), ...])`: a commit body without its trailers.
+
+    A squash merge's body lists the commits it merged, each as a `* type(scope): subject`
+    line followed by that commit's body; those come back one by one, and `text` is what
+    precedes the first. Any other body is all `text`.
+    """
+    def tidy(text):
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    text, *squashed = SQUASHED.split(TRAILER.sub("", body))
+    parts = []
+    for part in squashed:
+        subject, _, rest = part.partition("\n")
+        subject = " ".join(subject.split())
+        match = CONVENTIONAL.match(subject)
+        parts.append((subject, tidy(rest), bool(match) and GROUPS.get(match.group("type")) == "internal"))
+    return tidy(text), parts
+
+
 def model_prompt(version, previous, entries):
     """The user turn: the release, then its commits newest first.
 
     `entries` holds `(sha, subject, body, internal)`. Internal commits bring only their
     subject, which is enough to leave them out; the others bring their body too, cut
-    at BODY_LIMIT, until BODIES_BUDGET characters of bodies are spent.
+    at BODY_LIMIT, until BODIES_BUDGET characters of bodies are spent. A squash merge
+    brings every commit it lists the same way, so a long one loses none of them.
     """
     since = f"since {previous}" if previous else "from the start of the history"
     noun = "commit" if len(entries) == 1 else "commits"
     lines = [f"WallpaperMachine {display_version(version)}: {len(entries)} {noun} {since}, newest first.", ""]
     budget = BODIES_BUDGET
-    for sha, subject, body, internal in entries:
-        lines.append(f"* {sha} {subject}")
-        text = body.strip()
-        if text and not internal and budget > 0:
+
+    def add(text, indent):
+        nonlocal budget
+        if text and budget > 0:
             if len(text) > BODY_LIMIT:
                 text = text[:BODY_LIMIT].rstrip() + "…"
             budget -= len(text)
-            lines.extend(f"    {row}".rstrip() for row in text.splitlines())
+            lines.extend(f"{indent}{row}".rstrip() for row in text.splitlines())
+
+    for sha, subject, body, internal in entries:
+        lines.append(f"* {sha} {subject}")
+        if not internal:
+            text, squashed = body_parts(body)
+            add(text, "    ")
+            for part_subject, part_body, part_internal in squashed:
+                lines.append(f"    * {part_subject}")
+                if not part_internal:
+                    add(part_body, "      ")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
