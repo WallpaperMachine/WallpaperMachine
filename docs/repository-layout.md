@@ -12,7 +12,7 @@ CHANGELOG.md                       published versions, newest first; written by 
 CONTRIBUTING.md                    contributor working agreement
 LICENSE                            GNU GPL version 2 text; the license of this repository's source (verbatim copy of upstream/renderer/LICENSE)
 LICENSING.md                       GPL-2.0-only policy, Supporter model, component licenses and distribution blockers
-README.md                          product overview after the website, build quickstart, FAQ, sponsor list, documentation index
+README.md                          product overview after the website, build quickstart, FAQ, sponsor list (written by scripts/update_sponsors.py), documentation index
 SPONSORS.md                        Supporter pricing, benefits and other ways to help; follows the website's pricing page
 project.yml                        XcodeGen spec: the only source of truth for targets/settings/versions
 WallpaperMachine.xcodeproj/    generated from project.yml by xcodegen; committed, never hand-edited
@@ -71,7 +71,7 @@ build/                             Git-ignored: Xcode derived data and built pro
 .agents/ .claude/ .commandcode/    Git-ignored: machine-local agent harness state, rules and skills;
 .conductor/ .omo/ .omp/ .pi/       never committed (see AGENTS.md)
 .github/FUNDING.yml                the repository's Sponsor button; links the website's pricing page
-.github/workflows/                 CI: build.yml, release.yml, version.yml, warm-caches.yml
+.github/workflows/                 CI: build.yml, release.yml, version.yml, warm-caches.yml, supporters.yml
 .github/actions/prepare-build/     composite action: Xcode, Homebrew packages, LGPL FFmpeg and the build caches
 ```
 

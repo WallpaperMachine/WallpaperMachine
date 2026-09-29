@@ -161,12 +161,14 @@ server (headers, the gateway's refusal message, the deadline).
 
 ## Workflows
 
-Four workflows in `.github/workflows/`. Version, Build and Release grant
+Five workflows in `.github/workflows/`. Version, Build and Release grant
 `contents: write`; Build's publish job also needs `id-token: write` and
 `attestations: write` for its provenance attestation, and both callers pass those
 through, together with the repository's secrets (`secrets: inherit`). Warm caches
-only reads. The macOS setup Build and Warm caches share lives in one composite
-action, [`.github/actions/prepare-build`](../.github/actions/prepare-build/action.yml).
+only reads. Supporters writes only `README.md`, with `contents: write`, and reads
+Version's runs with `actions: read`. The macOS setup Build and Warm caches share
+lives in one composite action,
+[`.github/actions/prepare-build`](../.github/actions/prepare-build/action.yml).
 
 **The one secret.** `RELEASE_NOTES_API_KEY` is a repository secret, which only a
 repository administrator can set or replace: `gh secret set RELEASE_NOTES_API_KEY`
@@ -349,6 +351,22 @@ once on `macos-26`, which reads every entry Build uses and saves a fresh C++ obj
 cache for each, so a release after a quiet week still starts warm. Caches saved on
 `main` are readable from every ref, including the tags Release builds. It
 publishes nothing.
+
+### Supporters (`supporters.yml`)
+
+Keeps the [README's Supporter list](../README.md#thank-you-to-every-supporter) in
+step with the website's [sponsor wall](https://www.wallpapermachine.app/#sponsors).
+Every hour (and on demand from **Actions -> Supporters -> Run workflow**) it runs
+`python3 scripts/update_sponsors.py` on `main`, which reads the wall's JSON from
+`https://www.wallpapermachine.app/api/sponsors` (the website's
+`src/worker/sponsors.ts`) and rewrites the block between the `supporters:start`
+and `supporters:end` markers. When the list changed it commits `README.md` as
+`docs(readme): update the Supporter list` and pushes to `main`, starting again from
+the new `main` if that moved. It skips the hour while a Version run is queued or
+running, because Version's push of its bump commit does not retry. A wall that
+can't be read fails the run and leaves `README.md` as it was. Names are escaped, so
+a Supporter's chosen name never becomes a link, an image or markup; edit the list's
+wording in the script, not between the markers, where edits are overwritten.
 
 ### Release (`release.yml`)
 

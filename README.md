@@ -189,7 +189,9 @@ one-time purchase for a sponsor place and priority support; the app and its
 source stay free for everyone. If WallpaperMachine has earned a place on your
 desktop, [become a Supporter](SPONSORS.md).
 
+<!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
 No one is on the list yet.
+<!-- supporters:end -->
 
 ## License
 

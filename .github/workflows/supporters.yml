@@ -1,0 +1,63 @@
+# Keep README.md's Supporter list in step with the website's sponsor wall.
+#
+# Every hour, and on demand from Actions -> Supporters -> Run workflow, this reads the
+# wall (https://www.wallpapermachine.app/api/sponsors) with scripts/update_sponsors.py
+# and, when the list changed, commits README.md to main as
+# `docs(readme): update the Supporter list`. A push made with GITHUB_TOKEN starts no
+# other workflow, so the commit never runs Version. A wall that can't be read fails
+# the run and leaves README.md as it was.
+name: Supporters
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  # To see whether Version is running (below).
+  actions: read
+
+concurrency:
+  group: supporters
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update and commit the list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            # Version pushes its bump commit to main without retrying, so a commit
+            # landing while it runs would fail the release. The list waits an hour.
+            busy=$(gh run list --workflow version.yml --branch main --limit 20 \
+              --json status --jq '[.[] | select(.status != "completed")] | length')
+            if [ "$busy" != "0" ]; then
+              echo "Version is running on main; the Supporter list waits for the next run."
+              exit 0
+            fi
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            python3 scripts/update_sponsors.py
+            if git diff --quiet -- README.md; then
+              exit 0
+            fi
+            git commit --quiet -m "docs(readme): update the Supporter list" -- README.md
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "main moved while the list was written; starting again from the new main."
+            sleep $((attempt * 10))
+          done
+          exit 1
