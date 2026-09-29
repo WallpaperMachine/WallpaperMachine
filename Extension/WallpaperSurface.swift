@@ -10,8 +10,8 @@ final class WallpaperSurface {
   let root: CALayer
   private(set) var scene: LockScreenScene
   let displayID: UInt32?
-  let size: CGSize
-  let scale: CGFloat
+  private(set) var size: CGSize
+  private(set) var scale: CGFloat
   let preview: Bool
   var presentation = "active"
   var activity = "active"
@@ -47,13 +47,7 @@ final class WallpaperSurface {
     scene: LockScreenScene, displayID: UInt32?, size: CGSize, scale: CGFloat, preview: Bool,
     generation: UInt64 = 0, counters: RuntimeCounters? = nil
   ) throws {
-    guard size.width.isFinite, size.height.isFinite, scale.isFinite,
-      size.width > 0, size.height > 0, scale > 0,
-      size.width * scale <= 16_384, size.height * scale <= 16_384,
-      size.width * size.height * scale * scale <= 32 * 1024 * 1024
-    else {
-      throw WallpaperRuntime.failure("Invalid wallpaper surface dimensions.")
-    }
+    try Self.validate(size: size, scale: scale)
     self.scene = scene
     self.displayID = displayID
     self.size = size
@@ -67,6 +61,14 @@ final class WallpaperSurface {
     root.contentsScale = scale
     context.layer = root
     CATransaction.flush()
+  }
+
+  private static func validate(size: CGSize, scale: CGFloat) throws {
+    guard size.width.isFinite, size.height.isFinite, scale.isFinite,
+      size.width > 0, size.height > 0, scale > 0,
+      size.width * scale <= 16_384, size.height * scale <= 16_384,
+      size.width * size.height * scale * scale <= 32 * 1024 * 1024
+    else { throw WallpaperRuntime.failure("Invalid wallpaper surface dimensions.") }
   }
 
   func start(completion: @escaping (Error?) -> Void) {
@@ -344,13 +346,27 @@ final class WallpaperSurface {
     }
   }
 
-  func replace(scene: LockScreenScene, completion: @escaping (Error?) -> Void) {
+  func replace(
+    scene: LockScreenScene, size: CGSize, scale: CGFloat,
+    completion: @escaping (Error?) -> Void
+  ) {
     guard !stopped else {
       completion(CancellationError())
       return
     }
+    do { try Self.validate(size: size, scale: scale) } catch {
+      completion(error)
+      return
+    }
     releaseRenderer(keepingFrame: true)
     self.scene = scene
+    self.size = size
+    self.scale = scale
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    root.frame = CGRect(origin: .zero, size: size)
+    root.contentsScale = scale
+    CATransaction.commit()
     rendererPaused = false
     start(completion: completion)
   }

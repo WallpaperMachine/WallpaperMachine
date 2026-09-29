@@ -65,7 +65,7 @@ final class WallpaperController {
           acknowledge(surface: surface)
         } else {
           // The hosted CAContext remains the same; only its child renderer changes.
-          surface.replace(scene: scene) { [weak self, weak surface] error in
+          surface.replace(scene: scene, size: surface.size, scale: surface.scale) { [weak self, weak surface] error in
             guard let self, let surface else { return }
             self.acknowledge(surface: surface, error: error)
             if let error {
@@ -140,15 +140,26 @@ final class WallpaperController {
         )
       }
       if !preview { acquiring = scene }
-      if let existing = surfaces[id], existing.scene == scene, existing.size == size,
-        existing.scale == scale
-      {
-        // Repeated acquires must wait for GPU-ready pixels too.
-        existing.whenReady { error in
+      if let existing = surfaces[id], existing.displayID == displayID, existing.preview == preview {
+        if let mode = WallpaperRuntime.field("presentationMode", in: request) {
+          existing.presentation = WallpaperRuntime.enumCase(mode)
+        }
+        if let activity = WallpaperRuntime.field("activityState", in: request) {
+          existing.activity = WallpaperRuntime.enumCase(activity)
+        }
+        let ready: (Error?) -> Void = { error in
           do {
             if let error { throw error }
             reply(try WallpaperRuntime.contextReply(existing.context.contextId), nil)
           } catch { reply(nil, error) }
+        }
+        if existing.scene == scene, existing.size == size, existing.scale == scale {
+          existing.applyPolicy()
+          existing.whenReady(ready)
+        } else {
+          // The host is still showing this context until the acquire reply.
+          // Reframe its backing locally instead of invalidating it during wake.
+          existing.replace(scene: scene, size: size, scale: scale, completion: ready)
         }
         return
       }

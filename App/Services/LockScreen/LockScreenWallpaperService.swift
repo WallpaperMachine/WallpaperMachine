@@ -24,6 +24,8 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private let exchange: URL
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let scheduleMonitor: (@escaping @MainActor () -> Void) -> Timer
+  @ObservationIgnored private let displayUUID: (UInt32) -> String?
+  @ObservationIgnored private let persistConfiguration: (URL, Data) throws -> Void
   @ObservationIgnored private var work: Task<Void, Never>?
   @ObservationIgnored private var monitor: Timer?
   @ObservationIgnored private var generation: UInt64 = 0
@@ -48,7 +50,11 @@ final class LockScreenWallpaperService {
     selection: LockScreenWallpaperSelection, exchange: URL,
     defaults: UserDefaults = .standard,
     scheduleMonitor: @escaping (@escaping @MainActor () -> Void) -> Timer =
-      LockScreenWallpaperService.scheduleMonitorTimer
+      LockScreenWallpaperService.scheduleMonitorTimer,
+    displayUUID: @escaping (UInt32) -> String? = LockScreenWallpaperService.onlineDisplayUUID,
+    persistConfiguration: @escaping (URL, Data) throws -> Void = { url, data in
+      try data.write(to: url, options: .atomic)
+    }
   ) {
     self.scenes = scenes
     self.webWallpapersApplied = webWallpapersApplied
@@ -56,6 +62,15 @@ final class LockScreenWallpaperService {
     self.exchange = exchange
     self.defaults = defaults
     self.scheduleMonitor = scheduleMonitor
+    self.displayUUID = displayUUID
+    self.persistConfiguration = persistConfiguration
+  }
+
+  nonisolated private static func onlineDisplayUUID(_ displayID: UInt32) -> String? {
+    guard CGDisplayIsOnline(displayID) != 0,
+      let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue()
+    else { return nil }
+    return CFUUIDCreateString(nil, uuid) as String
   }
 
   /// Always recover before either native or PNG providers are allowed to start.
@@ -161,9 +176,7 @@ final class LockScreenWallpaperService {
       try Task.checkCancellation()
       guard generation == revision else { return }
       let inputs = try records.map { record -> LockScreenPublishInput in
-        guard CGDisplayIsOnline(record.displayId) != 0,
-          let uuid = CGDisplayCreateUUIDFromDisplayID(record.displayId)?.takeRetainedValue()
-        else {
+        guard let uuid = displayUUID(record.displayId) else {
           throw LockScreenWallpaperFailure(
             message:
               String(localized: "An active wallpaper display is no longer connected. Refresh displays before retrying.")
@@ -178,7 +191,7 @@ final class LockScreenWallpaperService {
         }
         return LockScreenPublishInput(
           displayID: record.displayId,
-          displayUUID: CFUUIDCreateString(nil, uuid) as String,
+          displayUUID: uuid,
           wallpaperID: record.wallpaperId, title: record.title,
           projectPath: record.projectPath, assetsPath: record.assetsPath, fps: record.fps,
           scalingMode: mode, scalingFactor: record.scalingFactor,
@@ -207,13 +220,10 @@ final class LockScreenWallpaperService {
         errorMessage = nil
         return
       }
-      let mappingChanged =
-        inputs.map { "\($0.displayID):\($0.projectPath):\($0.assetsPath)" }
-        != lastInputs?.map { "\($0.displayID):\($0.projectPath):\($0.assetsPath)" }
-      if mappingChanged {
-        try clearManifest()
-        isEnabled = false
-      }
+      // Keep the committed surfaces while staging the next complete mapping.
+      // An empty intermediate manifest clears every display's renderer and
+      // backing frame, including screens unaffected by an external display waking.
+      isEnabled = false
       try selection.checkCompatibility()
       let root = exchange
       let userAssets = UserAssetStorage.managedRootURL
@@ -337,8 +347,8 @@ final class LockScreenWallpaperService {
     try FileManager.default.createDirectory(at: exchange, withIntermediateDirectories: true)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    try encoder.encode(configuration).write(
-      to: exchange.appendingPathComponent(LockScreenConfiguration.fileName), options: .atomic)
+    try persistConfiguration(
+      exchange.appendingPathComponent(LockScreenConfiguration.fileName), encoder.encode(configuration))
     published = configuration
     CFNotificationCenterPostNotification(
       CFNotificationCenterGetDarwinNotifyCenter(),

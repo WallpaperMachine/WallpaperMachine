@@ -15,6 +15,27 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-28 — Lock screen: a Space created while active no longer turns the feature off
+
+M3 Max, macOS 27.2; AllSpacesAndDisplays held only another app's Idle choice. After activation macOS had copied the extension's selection into SystemDefault and some Space Defaults, so a new Space started from those copies and restorationOriginal found no native fallback in the live store. Space creation and toggling Animate Lock Screen were done by the user on request.
+
+- Reproduced on the unfixed build: adding a desktop in Mission Control logged the missing-restoration error at the next check, deactivated the feature and left the new Space's Default and display nodes pointing at the extension.
+- Fixed build: a second new desktop was journaled (70 → 72 entries, originals = system image desktop and the other app's idle, from SystemDefault's journaled original), no error; turning the feature off left no store node pointing at the extension, both new Spaces restored, journal removed.
+- `python3 scripts/test.py --only LockScreenWallpaperTests --only LockScreenWallpaperServiceTests` — 31 passed; the new test failed with the same error before the fix.
+- `python3 scripts/test.py` — 669 passed, 0 failed, 11 skipped.
+
+## 2026-09-28 — Power: covered-desktop pause, 60 fps default, frame-clock slack, WindowServer attribution
+
+M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coalition energy without root over 40–45 s windows run in alternation, other apps hidden (NSRunningApplication.hide) for the exposed-desktop runs; desktop A/B, probe window and xctrace authorised by the user. Baseline B0 = local Release build of 78ebc9c; candidate B1 = this change.
+
+- Attribution, Lucy (3521337568) exposed: B0 at ~89 fps app 5.0–5.2 W, WindowServer 0.51 W, system 31–32 W; B1 default (60 fps delivered) app 3.0–3.3 W, WindowServer 0.22–0.33 W, system 22–24 W. Probe WindowServer 31–39 mW idle, 197–213 at 30 fps, 268–364 at 60, 495–571 at 120.
+- Covered-desktop pause (smoke_i1, B1): exposed keeps rendering (app GPU 2.3–3.3 W); a zoomed-size window pauses display 1 after the settle (app GPU 0, WindowServer 365 → 23 mW); removing it resumes at once; a window leaving desktop visible does not pause; desktop clicks hit Finder's desktop window. User-driven Space switch, full-screen app and Mission Control: pause/resume pairs as expected, no stuck state.
+- Measured, not adopted: present pacing (plain / afterMinimumDuration / CAMetalDisplayLink equal at 60 fps), drawable at panel or half size (no difference), layer colour space (probe −33 % WindowServer, Lucy 12–75 mW inside spread). Unverified: ProMotion panel dropping below 120 Hz (traces disagreed); sudo powermetrics not run.
+- `python3 scripts/test.py` — 668 passed, 0 failed, 11 skipped; Python script tests all OK (test_power_benchmark 28).
+- `cargo test --release -p wallpaper-core --lib` 221 passed; `-p wallpaper-bridge --lib` 360 passed (first run hit the documented CMake configure retry). timer_tests 30 passed; the new cadence test fails without the fix (50 ticks).
+- `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped (metal_scene_draw_smoke 1, text_object_runtime_test 2).
+- Pointer monitors installed only while a scene reads the pointer: with the final build, Lucy (camera parallax) followed the mouse with the panel frontmost, after switching to another app and after a covered pause and resume (checked by the user). Untested for the covered-desktop pause: multiple displays, Stage Manager, tiled windows with gaps.
+
 ## 2026-09-28 — Display-sized packaged texture residency
 
 - scripts/test.py with CPython 3.12.14: 190 Python passed; 663 native passed, 11 skipped. Full gate run once for this feature.

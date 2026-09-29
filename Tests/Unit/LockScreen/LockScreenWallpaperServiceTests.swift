@@ -239,6 +239,65 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testDisplayTopologyChangesDoNotClearSurvivingLockScreens() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var external = builtIn
+    external.displayId = 2
+    // The external display is first (primary); display identity is not array order.
+    var records = [external, builtIn]
+    var publications: [LockScreenConfiguration] = []
+    let service = LockScreenWallpaperService(
+      scenes: { records },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { [1: "one", 2: "two"][$0] },
+      persistConfiguration: { url, bytes in
+        try bytes.write(to: url, options: .atomic)
+        publications.append(try JSONDecoder().decode(
+          LockScreenConfiguration.self, from: Data(contentsOf: url)))
+      })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("both lock screens ready") { service.isEnabled && !service.isBusy }
+
+    for next in [[builtIn], [external, builtIn], [external]] {
+      publications.removeAll()
+      records = next
+      service.refresh()
+      await waitFor("display topology publication") { service.isEnabled && !service.isBusy }
+      let expected = Set(next.map(\.displayId))
+      XCTAssertEqual(Set(try XCTUnwrap(publications.last).scenes.map(\.displayID)), expected)
+      for publication in publications {
+        XCTAssertTrue(expected.isSubset(of: Set(publication.scenes.map(\.displayID))),
+          "A surviving display must never receive an empty manifest while another display changes")
+      }
+    }
+
+    publications.removeAll()
+    records = [builtIn, external]
+    service.refresh()
+    await waitFor("both displays return") { service.isEnabled && !service.isBusy }
+    let stable = try XCTUnwrap(publications.last)
+    publications.removeAll()
+    records = [external, builtIn]
+    service.refresh()
+    await waitFor("primary ordering change") { !service.isBusy }
+    XCTAssertTrue(publications.isEmpty, "Reordering displays must not republish their wallpapers")
+    let onDisk = try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: exchange.appendingPathComponent(LockScreenConfiguration.fileName)))
+    XCTAssertEqual(onDisk, stable)
+
+    service.setEnabled(false)
+    await waitFor("explicit disable clears every display") { !service.isBusy }
+    XCTAssertEqual(try XCTUnwrap(publications.last).scenes, [])
+    XCTAssertFalse(service.ownsDesktopProvider)
+  }
+
+  @MainActor
   func testMonitorExistsOnlyWhileRequestedAndDoesNotRescheduleWhileBusy() async throws {
     var calls = 0
     var pending: CheckedContinuation<[BridgeLockScreenScene], Never>?

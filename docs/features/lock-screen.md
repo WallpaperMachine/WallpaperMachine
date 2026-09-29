@@ -34,6 +34,15 @@ surface or a changed wallpaper still needs an initial load; macOS can display
 its own cached snapshot before it presents the extension. Real lock/wake timing
 is OS-controlled and is not established by the offscreen regression checks.
 
+Display-topology refreshes stage the next complete configuration before replacing
+the previous one; they do not publish an empty manifest between a one-display
+and two-display mapping. Removing the last wallpaper, explicit disable and
+failure recovery still clear the manifest. If macOS reacquires the same
+WallpaperID on the same physical display at a different size or scale, the
+extension keeps its remote context and backing frame while rebuilding the
+renderer at the new pixel dimensions. Geometry stays local to that display;
+the other display's context is not reused or resized.
+
 Lock-screen audio, audio input and media integration are disabled; see
 [Audio response](audio-response.md) and
 [Media integration](media-integration.md). The extension turns media off again
