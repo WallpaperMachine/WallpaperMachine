@@ -15,6 +15,8 @@ struct AppLanguage: Equatable, Sendable {
   static let supported: [AppLanguage] = [
     english,
     AppLanguage(tag: "zh-Hans", name: "简体中文"),
+    AppLanguage(tag: "zh-Hant", name: "繁體中文"),
+    AppLanguage(tag: "ja", name: "日本語"),
   ]
 
   static func named(_ tag: String) -> AppLanguage? {
@@ -22,7 +24,7 @@ struct AppLanguage: Equatable, Sendable {
   }
 
   /// The shipped language that best serves a preference list, or English. Uses the
-  /// bundle matching rules, so `zh-CN` reaches Simplified Chinese and `zh-TW` does not.
+  /// bundle matching rules, so `zh-CN` reaches Simplified Chinese and `zh-TW` Traditional.
   static func match(_ preferences: [String]) -> AppLanguage {
     let tags = supported.map(\.tag)
     let best = Bundle.preferredLocalizations(from: tags, forPreferences: preferences).first

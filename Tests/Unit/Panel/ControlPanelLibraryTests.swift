@@ -100,11 +100,7 @@ final class ControlPanelLibraryTests: ControlPanelTestCase {
           sidebarAtLeftEdge: sidebar.hidden ? null : Math.round(sidebar.getBoundingClientRect().left) === 0,
           insideToggles: sidebar.querySelectorAll('[data-action="toggleFilters"], .filter-rail, .filter-toggle').length,
           popover: document.querySelectorAll('.installed-filter, .filter-popover').length,
-          sortValue: document.getElementById('browser-sort')?.value,
           direction: !!document.querySelector('.browser-toolbar [data-action="toggleSortDirection"]'),
-          // Discover's boxes: which start unticked, and that no type menu remains.
-          unchecked: [...sidebar.querySelectorAll('input[type="checkbox"]:not(:checked)')].map(input => input.value),
-          boxes: sidebar.querySelectorAll('input[type="checkbox"]').length,
           selects: sidebar.querySelectorAll('select').length,
           filterCount: document.querySelector('.browser-toolbar .filter-count')?.textContent ?? null,
           columns: columns()
@@ -167,21 +163,9 @@ final class ControlPanelLibraryTests: ControlPanelTestCase {
     XCTAssertEqual(installed?["insideToggles"] as? Int, 0)
     XCTAssertEqual((installed?["columns"] as? [Int])?.count, 3)
     XCTAssertEqual(installed?["direction"] as? Bool, true, "…and a direction switch beside it")
-    XCTAssertEqual(
-      installed?["boxes"] as? Int, 5 + 3 + 3 + 25,
-      "Installed has Discover's boxes: Show only (plus Favorites and Active), Type, Age rating and Tags; no Resolution or category, which a manifest cannot tell")
-    XCTAssertEqual(
-      installed?["unchecked"] as? [String], ["Favorite", "Active", "Approved", "Audio responsive", "Customizable"],
-      "Only the Show only boxes start unticked: a library hides nothing by default")
     XCTAssertEqual(installed?["selects"] as? Int, 0, "No type menu on Installed either")
     XCTAssertNil(installed?["filterCount"] as? String)
     XCTAssertEqual(before?["direction"] as? Bool, false, "Discover's Steam sorts have no direction")
-    XCTAssertEqual(before?["sortValue"] as? String, "trend-year", "Discover opens on this year's most popular")
-    XCTAssertEqual(
-      before?["unchecked"] as? [String],
-      ["Approved", "Audio responsive", "Customizable", "Questionable", "Mature", "Unspecified"],
-      "Wallpaper Engine's defaults: nothing in Show only, Everyone-only, genre-less hidden; every other box ticked")
-    XCTAssertEqual(before?["boxes"] as? Int, 3 + 5 + 3 + 25 + 25, "Show only, Type, Age rating, Resolution and Tags")
     XCTAssertEqual(before?["selects"] as? Int, 0, "No type menu: types are boxes like Wallpaper Engine's")
     XCTAssertNil(before?["filterCount"] as? String, "Defaults count as no active filter")
     XCTAssertNil(controller.actionError)

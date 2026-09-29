@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Merge origin/main and build Release
+
+- Merged origin/main 98e90a8 with six local commits; retained What's New and Dock/Finder import startup, adopted persistent import ownership, regenerated Xcode project and preserved both verification histories.
+- Completed Japanese and Traditional Chinese translations for five What's New strings exposed by the merged localization gate.
+- Removed obsolete sidebar checkbox-count and default-list assertions; retained interaction, layout and persistence coverage. Targeted ControlPanelLibraryTests: 9 passed.
+- python3 scripts/test.py: all 17 Python suites passed; native 824 passed, 0 failed, 11 skipped of 835. Earlier attempts exposed missing translations and stale sidebar assertions, corrected before the passing gate.
+- python3 scripts/build.py --swift-only --configuration Release: passed; existing renderer and bindings reused, no incoming renderer changes.
+- codesign --verify --deep --strict: passed. diff -qr WebUI versus Release bundled WebUI and cmp bundled CHANGELOG.md: byte-identical.
+- No app launch, restart, installation or desktop visual verification; opt-in native-media and live Workshop checks remain skipped.
+
 ## 2026-09-29 — Bilingual What's New Release build
 
 - python3 scripts/test.py via a temporary same-user Aqua launch job: exit 0; all 17 Python suites passed, including 51 release-note tests; native 746 passed, 0 failed, 11 skipped of 757. The previous lock-screen recovery blocker now passes.
@@ -97,6 +107,18 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - No Release build, app installation/restart, wallpaper change or real lock/sleep desktop run. System snapshot handoff and visible wake timing remain unverified; new surfaces still require initial loading.
 - Removed the throwaway smoke harness, executable and cache with the repository cleanup helper; preserved pre-existing artifacts and built apps.
 
+## 2026-09-29 — Playlists, Workshop updates and sources, image import, automation, playback conditions, zh-Hant and ja (Linux only)
+
+Seven features built in a Linux container without Xcode; nothing here ran on macOS. New Swift files are not yet in WallpaperMachine.xcodeproj: `xcodegen generate` (run by `scripts/test.py` and `scripts/build.py`) must regenerate it on a Mac.
+
+- `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` — OK, 215 tests, 10 skipped; includes the panel catalog check for zh-Hans, zh-Hant and ja
+- `node --check` on every changed WebUI module — OK; i18n resolution probed in Node (zh-TW, zh-HK → zh-Hant; ja-JP → ja)
+- `swiftc -parse` on every changed Swift file — OK
+- Linux SwiftPM harness with shims: PlaylistPlanner/Store/Scheduler, WorkshopUpdateStore, WorkshopTests, WorkshopSourceTests, Automation, SystemConditionMonitor and LibraryImportStore suites — pass, except SystemConditionMonitor cases that need object-filtered notifications (Linux Foundation gap, as AppRuleMonitorTests)
+- Live Steam smoke: details endpoint, collections browse with rating sampling, GetCollectionDetails, an author's page, a signed-out subscriptions read — OK
+- Not run: `python3 scripts/test.py` (needs macOS), so every native and panel suite including WebPanel*Tests, ControlPanelShellTests and AppLanguageTests; no Release build
+- Unverified at runtime: global hotkeys, App Intents and the Focus filter, the wallpapermachine:// scheme, Dock/Finder open, Steam's sign-in window, native language matching (Linux Foundation lacks Apple's rules)
+
 ## 2026-09-29 — pixiv tab, sign-in and R-18 works
 
 Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.
@@ -108,21 +130,3 @@ Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (com
 - XcodeGen 2.46.0 (Linux build) regenerated `WallpaperMachine.xcodeproj` from main's: pixiv files added, nothing else changed
 - Not run: `python3 scripts/test.py` (needs macOS and Xcode), so `WebPanelPixivTests`, `ControlPanelPixivTests` and every native suite; `PixivSignInWindow`, keychain and WKWebView behaviour; no Release build
 - `python3 scripts/check_renderer.py` — not applicable: no renderer or bridge change
-
-## 2026-09-28 — Busy state: queue user commands instead of erroring
-
-- python3 scripts/test.py: 664 passed, 0 failed, 11 skipped (Python script tests all OK).
-- Targeted: UserCommandQueueTests, WallpaperActivationRecoveryTests, ControlPanelLibraryTests, ControlPanelShellTests passed.
-- Throwaway offscreen panel smoke (deleted): queued 'target' waited behind a held command with no error; tile ring showed Applying/queued, pointer-events none, error banner hidden.
-- Not checked: live desktop switching and visual look of the rings (no desktop run authorized); Release app not rebuilt.
-
-## 2026-09-29 — Review fixes on native Metal target pruning and the lock-screen poster
-
-- Follow-up to #9 (squash-merged as 5567aab without these fixes); commits rebuilt on that main, tree identical to the gated one below.
-- New ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOff failed when ReferencedRenderTargets skipped Copy target keys (the other 5 optimisation/target tests still passed) and passes as committed; full metal_scene_draw_smoke: 39 passed, 1 skipped (no local project).
-- WE_TEST_METAL_FRAMES: WE_TEST_FRAMES=1 now skips instead of failing without projects; "abc" fails with a range message; one local scene drew 30 frames with WE_TEST_FRAMES=4 set and printed render-target bytes (240254976) beside device bytes (325681152).
-- python3 scripts/test.py --only LockScreenPosterTests: 1 passed (extension target built with kCVPixelFormatType_32BGRA).
-- python3 scripts/test.py: 198 Python passed; 672 native passed, 0 failed, 11 skipped of 683.
-- python3 scripts/check_renderer.py: 24 binaries passed, 10 generated pixel comparisons equal, 8 projects x2 reloads 0 failures; three asset-dependent tests skipped.
-- Not changed: the poster still wraps the IOSurface in a CGImage (IOSurface as layer contents needs a colour-tag decision and a real lock/unlock check); the 8 MiB Vulkan block size is unmeasured for allocation count and load or frame time (generated fixtures are too small).
-- Not run: desktop lock/unlock, Release build.

@@ -18,6 +18,10 @@ extension WebPanelController {
     _ = store.commands.waiting
     _ = store.latestBridgeErrorMessage
     _ = store.latestBridgeErrorRevision
+    _ = imports.isBusy
+    _ = imports.status
+    _ = imports.report
+    _ = imports.failure
     let lock = store.lockScreenWallpaper
     _ = lock?.isRequested
     _ = lock?.isBusy
@@ -41,6 +45,12 @@ extension WebPanelController {
     _ = workshop.downloadRequests
     _ = workshop.username
     _ = workshop.suggestedAccount
+    let updates = workshop.updates
+    _ = updates.available
+    _ = updates.isChecking
+    _ = updates.lastChecked
+    _ = updates.errorMessage
+    _ = updates.checksAutomatically
     let setup = workshop.steamCMDSetup
     _ = setup.state
     _ = setup.isBusy
@@ -199,6 +209,7 @@ extension WebPanelController {
     var previews: [String: URL] = [:]
     let metrics = libraryMetrics.metrics(
       for: store.librarySnapshot.wallpapers.map(\.id), revision: store.libraryRefreshRevision)
+    let updates = workshop.updates.available
     let wallpapers: [[String: Any]] = store.librarySnapshot.wallpapers.map { entry in
       var preview: Any = null
       if let path = entry.previewPath {
@@ -221,6 +232,9 @@ extension WebPanelController {
         "addedAt": metrics[entry.id]?.addedAt.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
         // Measured in the background while the wallpaper played alone; null until rated.
         "energy": store.wallpaperEnergyRatings?.snapshot(for: entry.id) as Any? ?? null,
+        // When the Workshop has a newer version: when its author last changed it.
+        "updateAvailable": updates[entry.id] != nil,
+        "updatedAt": updates[entry.id]?.timeUpdated.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
       ]
     }
     assets.previews = previews
@@ -378,6 +392,17 @@ extension WebPanelController {
         "optimizationApplied": report.optimizationApplied as Any? ?? null,
       ]
     }
+    // Each global shortcut the user can record, with why macOS refused it if it did.
+    let hotKeyRows: [[String: Any]] = HotKeyAction.allCases.map { action in
+      [
+        "id": action.rawValue, "shortcut": hotKeys.bindings[action]?.label as Any? ?? null,
+        "error": hotKeys.failures[action] as Any? ?? null,
+      ]
+    }
+    // What Playback shows as in effect right now, beside the saved choices.
+    let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+    let thermalState = Self.thermalState(ProcessInfo.processInfo.thermalState)
+    let focusAction = FocusFilterState.shared.action?.rawValue ?? "keepRunning"
     // The sections are built separately: as one literal, the Swift compiler on the
     // macOS 15 release runner gives up type-checking it in reasonable time.
     let settingsSnapshot: [String: Any] = [
@@ -406,6 +431,9 @@ extension WebPanelController {
       "displaySleepAction": playback.displaySleepAction.rawValue,
       "otherAudioAction": playback.otherAudioAction.rawValue,
       "desktopCoveredAction": playback.desktopCoveredAction.rawValue,
+      "lowPowerModeAction": playback.lowPowerModeAction.rawValue,
+      "thermalAction": playback.thermalAction.rawValue,
+      "lowPowerMode": lowPowerMode, "thermalState": thermalState, "focusAction": focusAction,
       "appRules": playback.appRules.map { rule in
         [
           "id": rule.id.uuidString,
@@ -416,6 +444,7 @@ extension WebPanelController {
         ]
       },
       "keepWindowsOnWallpaperClick": !DesktopClickRevealPreference.isEnabled,
+      "hotkeys": hotKeyRows,
       "hideAfterActivating": hidesAfterActivating,
       "lockScreenEnabled": lock?.isRequested ?? false, "lockScreenAvailable": lock != nil,
       "lockScreenBusy": lock?.isBusy ?? false, "lockScreenStatus": lock?.status
@@ -434,6 +463,13 @@ extension WebPanelController {
       "bridgeVersion": settings.bridgeVersion, "coreVersion": settings.coreVersion,
       "shaderVersion": settings.shaderPipelineVersion, "gitSha": settings.gitSha,
     ]
+    // The source on show, named as Steam named it once its first page arrived.
+    let shownSource = workshop.source
+    let sourceName = (workshop.committedQuery?.source == shownSource ? workshop.sourceTitle : nil) ?? shownSource.name
+    let workshopSource: [String: Any] = [
+      "key": shownSource.key, "id": shownSource.id as Any? ?? null, "name": sourceName as Any? ?? null,
+      "searchable": shownSource.isSearchable, "canGoBack": !workshop.sourceHistory.isEmpty,
+    ]
     let workshopSnapshot: [String: Any] = [
       "text": workshop.searchText, "kind": workshop.kind.rawValue, "sort": workshop.sort.rawValue,
       "tags": workshop.tags, "excludedTags": workshop.excludedTags,
@@ -444,6 +480,27 @@ extension WebPanelController {
       "maxPages": WorkshopStore.maxPages,
       "loading": workshop.isLoading, "loaded": workshop.hasLoaded,
       "error": workshop.errorMessage as Any? ?? null,
+      "source": workshopSource,
+      "steamSignedIn": workshop.steamWebSession != nil, "steamSigningIn": workshop.isSigningInToSteamWeb,
+    ]
+    // Every configured display's playlist, with when it next changes on its own.
+    var playlistSnapshot: [String: Any] = [:]
+    for (display, playlist) in playlists.playlists {
+      let next = playlists.nextChange[display].map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null
+      playlistSnapshot[display] = [
+        "mode": playlist.mode.rawValue, "source": playlist.source.rawValue,
+        "order": playlist.order.rawValue, "interval": playlist.interval,
+        "wallpaperIDs": playlist.wallpaperIDs,
+        "dayWallpaperID": playlist.dayWallpaperID as Any? ?? null,
+        "nightWallpaperID": playlist.nightWallpaperID as Any? ?? null,
+        "dayStart": playlist.dayStart, "nightStart": playlist.nightStart, "nextChange": next,
+      ] as [String: Any]
+    }
+    let updateCheck = workshop.updates
+    let updatesSnapshot: [String: Any] = [
+      "checking": updateCheck.isChecking, "count": updateCheck.available.count,
+      "lastChecked": updateCheck.lastChecked.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
+      "error": updateCheck.errorMessage as Any? ?? null, "automatic": updateCheck.checksAutomatically,
     ]
     let setupSnapshot: [String: Any] = [
       "status": setupStatus, "busy": setup.isBusy, "ready": setup.selectedRuntime != nil,
@@ -452,7 +509,8 @@ extension WebPanelController {
       "canCancel": setup.isBusy && setup.state != .committing,
       "progress": setupProgress as Any? ?? null,
     ]
-    let error: String? = actionError ?? (libraryError == dismissedLibraryError ? nil : libraryError)
+    let error: String? = actionError ?? imports.failure
+      ?? (libraryError == dismissedLibraryError ? nil : libraryError)
       ?? (store.latestBridgeErrorRevision > dismissedErrorRevision
         ? store.latestBridgeErrorMessage : nil)
     let options: Any? = store.wallpaperOptionsSnapshot.map {
@@ -485,9 +543,10 @@ extension WebPanelController {
       "welcomeSeen": welcomeSeen,
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
+      "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
       "options": options ?? null,
       "settings": settingsSnapshot,
-      "workshop": workshopSnapshot,
+      "workshop": workshopSnapshot, "workshopUpdates": updatesSnapshot,
       "pixiv": pixivSnapshot(),
       "setup": setupSnapshot,
       "downloads": downloads, "downloadRequests": downloadRequests,
@@ -498,8 +557,8 @@ extension WebPanelController {
       "downloadError": downloadError as Any? ?? null,
       "update": Self.update(updater.state, notes: updater.releaseNotes, rateLimitedUntil: updater.rateLimitedUntil),
       "import": [
-        "busy": importTask != nil, "status": importStatus,
-        "report": importReport.map { report -> [String: Any] in
+        "busy": imports.isBusy, "status": imports.status,
+        "report": imports.report.map { report -> [String: Any] in
           [
             "imported": report.importedIDs.count, "skipped": report.skipped.count,
             "failures": report.failures, "cancelled": report.cancelled,
@@ -646,6 +705,16 @@ extension WebPanelController {
     case .video: "Video"
     case .webpage: "Web"
     case .unknown: "Unknown"
+    }
+  }
+
+  static func thermalState(_ state: ProcessInfo.ThermalState) -> String {
+    switch state {
+    case .nominal: "nominal"
+    case .fair: "fair"
+    case .serious: "serious"
+    case .critical: "critical"
+    @unknown default: "nominal"
     }
   }
 
@@ -818,6 +887,8 @@ extension WebPanelController {
       // Steam lists staff-approved wallpapers under the `Approved` tag; the tile marks them.
       "approved": value.tags.contains { $0.caseInsensitiveCompare("Approved") == .orderedSame },
       "size": value.size, "subscriptions": value.subscriptions, "kind": value.kind.rawValue,
+      "creatorID": value.creatorID as Any? ?? NSNull(),
+      "collection": value.collectionSize != nil, "collectionSize": value.collectionSize ?? 0,
     ]
   }
 

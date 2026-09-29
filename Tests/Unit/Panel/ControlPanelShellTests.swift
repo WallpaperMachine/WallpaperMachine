@@ -29,12 +29,12 @@ final class ControlPanelShellTests: ControlPanelTestCase {
       supportDirectory: session, defaults: defaults)
     let updater = AppUpdateStore(currentVersion: "0.1.0", client: DisabledAppUpdateClient())
 
-    for language in ["en", "zh-Hans"] {
+    for language in AppLanguage.supported.map(\.tag) {
       let controller = NSHostingController(
         rootView:
           ControlPanelView(
             store: fixture.store, navigation: ControlPanelNavigation(), workshop: workshop,
-            pixiv: PixivStore(), updater: updater
+            pixiv: PixivStore(), updater: updater, imports: LibraryImportStore()
           )
           .environment(\.locale, Locale(identifier: language))
           .defaultAppStorage(defaults)
@@ -164,7 +164,7 @@ final class ControlPanelShellTests: ControlPanelTestCase {
       downloader: WorkshopDownloadManager(sessionDirectory: root), supportDirectory: root,
       defaults: defaults)
     var rendered: [String: [String: Any]] = [:]
-    for language in ["en", "zh-Hans"] {
+    for language in AppLanguage.supported.map(\.tag) {
       let controller = WebPanelController(
         store: fixture.store, navigation: ControlPanelNavigation(), workshop: workshop,
         defaults: defaults,
@@ -197,7 +197,8 @@ final class ControlPanelShellTests: ControlPanelTestCase {
         """
         const {t, setLanguage} = await import('./i18n.js');
         const cases = [['zh-CN','zh-Hans'], ['zh-Hans-TW','zh-Hans'], ['zh','zh-Hans'],
-          ['zh-TW','en'], ['zh-Hant','en'], ['zh-Hant-CN','en'], ['en-CN','en'], ['en-GB','en'],
+          ['zh-TW','zh-Hant'], ['zh-Hant','zh-Hant'], ['zh-Hant-CN','zh-Hant'], ['zh-HK','zh-Hant'],
+          ['ja','ja'], ['ja-JP','ja'], ['en-CN','en'], ['en-GB','en'],
           ['fr','en'], ['zhgarbage','en'], ['','en'], [undefined,'en']];
         const resolved = cases.every(([tag, expected]) => setLanguage(tag) === expected);
         setLanguage('zh-Hans');
@@ -213,17 +214,20 @@ final class ControlPanelShellTests: ControlPanelTestCase {
       XCTAssertNil(web.window, "This regression must not open a desktop window")
     }
     let english = try XCTUnwrap(rendered["en"])
-    let chinese = try XCTUnwrap(rendered["zh-Hans"])
     XCTAssertEqual(english["lang"] as? String, "en")
-    XCTAssertEqual(chinese["lang"] as? String, "zh-Hans")
-    for key in ["tab", "navLabel", "section", "summary"] {
-      let en = try XCTUnwrap(english[key] as? String, key)
-      let zh = try XCTUnwrap(chinese[key] as? String, key)
-      XCTAssertFalse(en.isEmpty, key)
-      XCTAssertNotEqual(en, zh, "\(key): the page must render the controller's language, not English")
-      XCTAssertTrue(
-        zh.unicodeScalars.contains { $0.properties.isIdeographic },
-        "\(key): expected Han text, got \(zh)")
+    for language in AppLanguage.supported.map(\.tag) where language != "en" {
+      let translated = try XCTUnwrap(rendered[language], language)
+      XCTAssertEqual(translated["lang"] as? String, language)
+      for key in ["tab", "navLabel", "section", "summary"] {
+        let en = try XCTUnwrap(english[key] as? String, key)
+        let text = try XCTUnwrap(translated[key] as? String, "\(language) \(key)")
+        XCTAssertFalse(en.isEmpty, key)
+        XCTAssertNotEqual(en, text, "\(language) \(key): the page must render the controller's language, not English")
+        // Han characters for Chinese; Han or kana for Japanese.
+        XCTAssertTrue(
+          text.unicodeScalars.contains { $0.properties.isIdeographic || (0x3040...0x30FF).contains($0.value) },
+          "\(language) \(key): expected CJK text, got \(text)")
+      }
     }
     await workshop.steamCMDSetup.shutdown()
   }

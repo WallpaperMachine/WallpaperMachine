@@ -2,7 +2,8 @@
 
 How the app chooses a language, where each layer's strings live, and the exact
 steps for shipping another language. English is the source language; Simplified
-Chinese (`zh-Hans`) is the first translation. The user-facing behaviour is in
+Chinese (`zh-Hans`), Traditional Chinese (`zh-Hant`) and Japanese (`ja`) are
+translations. The user-facing behaviour is in
 [Control panel → Language](features/control-panel.md#language).
 
 ## Which language the app shows
@@ -15,7 +16,8 @@ shipped language. The effective language is
 2. otherwise the best match of the user's macOS language list against
    `AppLanguage.supported`, using `Bundle.preferredLocalizations(from:forPreferences:)`
    so the rules are the ones macOS applies to the bundle (`zh-CN`, `zh`,
-   `zh-Hans-TW` → `zh-Hans`; `zh-TW`, `zh-Hant`, `en-GB`, `fr` → English).
+   `zh-Hans-TW` → `zh-Hans`; `zh-TW`, `zh-HK`, `zh-Hant` → `zh-Hant`; `ja-JP` → `ja`;
+   `en-GB`, `fr` → English).
 
 The macOS list is read from the global defaults domain, not from
 `Locale.preferredLanguages`, because the store also writes the user's choice into
@@ -52,7 +54,8 @@ are translated: the Wallpaper Engine editor's own token for the scheme colour it
 adds to every scene, and the **Unnamed option** stand-in for a control whose
 label was pure decoration. The property labels the app itself writes into the
 wallpapers it saves from pixiv (Image fit, its options and Background color) are
-translated too, and only on wallpapers whose id starts with `pixiv-`; pixiv's
+translated too, and only on wallpapers whose id starts with `pixiv-` or
+`image-` (pictures imported from disk carry the same two properties); pixiv's
 titles, tags and names never are.
 
 ## Keeping the native catalogs in sync

@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, language } from './i18n.js';
 
 const views = new WeakMap();
 let liveView = null;
@@ -14,6 +14,37 @@ const batteryModes = [['keepRunning', 'Keep running'], ['reducedQuality', 'Reduc
 const otherAudioActions = [['keepRunning', 'Keep running'], ['mute', 'Mute'], ['pause', 'Pause']];
 const displaySleepActions = [['pause', 'Pause'], ['stop', 'Stop (free memory)']];
 const desktopCoveredActions = [['pause', 'Pause'], ['keepRunning', 'Keep running']];
+const systemConditionActions = [['keepRunning', 'Keep running'], ['pause', 'Pause'], ['stop', 'Stop (free memory)']];
+const focusActions = { keepRunning: 'Keep running', mute: 'Mute', pause: 'Pause', stop: 'Stop (free memory)' };
+const thermalStates = { nominal: 'normal', fair: 'warm', serious: 'hot', critical: 'very hot' };
+const hotkeyTitles = { togglePlayback: 'Play or pause wallpapers', nextWallpaper: 'Next wallpaper', openControlPanel: 'Open the control panel' };
+// What the Shortcuts app and wallpapermachine:// links can do; the ellipsis stands for an id.
+const automationLinks = ['wallpapermachine://toggle', 'wallpapermachine://play', 'wallpapermachine://pause', 'wallpapermachine://next', 'wallpapermachine://apply?id=…', 'wallpapermachine://open?page=settings'];
+const playlistModes = [['off', 'Off'], ['rotate', 'Rotate wallpapers'], ['dayNight', 'Day and night']];
+const playlistOrders = [['sequential', 'In order'], ['shuffle', 'Shuffle']];
+
+// Minutes as the interval menu names them.
+function intervalLabel(minutes) {
+  if (minutes === 60) return t('Every hour');
+  if (minutes === 1440) return t('Every day');
+  return minutes % 60 === 0 ? t('Every {count} hours', { count: minutes / 60 }) : t('Every {count} minutes', { count: minutes });
+}
+
+// A minute of the day as an <input type="time"> value, and back.
+const clockValue = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+function clockMinute(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value));
+  if (!match) return null;
+  const minute = Number(match[1]) * 60 + Number(match[2]);
+  return minute >= 0 && minute < 1440 ? minute : null;
+}
+
+// When a playlist changes next: the time alone today, with the weekday otherwise.
+function changeTime(milliseconds) {
+  const date = new Date(milliseconds);
+  const today = new Date().toDateString() === date.toDateString();
+  return date.toLocaleString(language(), today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
 const appRuleConditions = [['running', 'Running'], ['frontmost', 'In front']];
 const appRuleActions = [['pause', 'Pause'], ['mute', 'Mute'], ['stop', 'Stop']];
 const compactNavigation = window.matchMedia('(max-width: 560px)');
@@ -213,12 +244,25 @@ export function showEnergyUsage(reading) {
 export function renderSettings(container, state, helpers) {
   let view = views.get(container);
   if (!view) {
-    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '' };
+    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '', recording: null };
     views.set(container, view);
     container.addEventListener('click', event => onClick(view, event));
     container.addEventListener('input', event => onInput(view, event));
     container.addEventListener('change', event => onChange(view, event));
     compactNavigation.addEventListener('change', () => draw(view));
+    // Recording a keyboard shortcut takes the next key press made in its row, before anything
+    // else reads it; pressing Escape alone, or moving focus away, gives up.
+    container.addEventListener('keydown', event => {
+      if (!view.recording) return;
+      if (!event.target.closest(`[data-key="hotkey-${view.recording}"]`)) { view.recording = null; draw(view); return; }
+      if (['Meta', 'Control', 'Alt', 'Shift', 'CapsLock', 'Fn', 'FnLock'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = view.recording;
+      view.recording = null;
+      if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey) { draw(view); return; }
+      perform(view, `hotkey-${id}`, 'hotkeySet', { id, code: event.code, command: event.metaKey, option: event.altKey, control: event.ctrlKey, shift: event.shiftKey });
+    }, true);
     container.addEventListener('keydown', event => {
       const target = event.target.closest('[data-section]');
       const previous = compactNavigation.matches ? 'ArrowLeft' : 'ArrowUp';
@@ -282,6 +326,15 @@ function draw(view) {
     + group('general-behavior', t('Startup & desktop'), settingToggle('launchAtLogin', 'Launch at login', !settings.launchAtLoginAvailable, !settings.launchAtLoginAvailable ? t('Move the app to Applications to enable.') : '')
       + settingToggle('hideAfterActivating', 'Hide window after applying a wallpaper')
       + settingToggle('keepWindowsOnWallpaperClick', 'Keep windows in place when clicking the wallpaper', false, t('Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.')))
+    + group('general-shortcuts', t('Keyboard shortcuts'), (settings.hotkeys || []).map(hotkey => {
+      const id = String(hotkey.id);
+      const recording = view.recording === id;
+      const control = recording
+        ? `<span class="settings-status" role="status">${e(t('Press the new shortcut…'))}</span>${button(t('Cancel'), 'hotkeyCancel', { id })}`
+        : `<kbd class="settings-shortcut">${e(hotkey.shortcut || t('Not set'))}</kbd>${button(hotkey.shortcut ? t('Change…') : t('Record…'), 'hotkeyRecord', { id }, busy)}${hotkey.shortcut ? button(t('Clear'), 'hotkeyClear', { id }, busy) : ''}`;
+      return row(`hotkey-${id}`, t(hotkeyTitles[id] || id), control) + error(`hotkey-error-${id}`, hotkey.error);
+    }).join('') + `<p class="settings-note" data-key="hotkeys-note">${e(t('They work whichever app is in front. Hold ⌘, ⌥ or ⌃ with the key; F13 to F20 work alone. No permission is needed.'))}</p>`)
+      + disclosure('general-automation', t('Shortcuts app and links'), paragraphs(t('The Shortcuts app offers WallpaperMachine’s actions: play or pause wallpapers, change to the next wallpaper, apply a wallpaper you choose and open this window. Siri and Spotlight can run them too.'), t('A wallpapermachine:// link does the same from a browser, a script or another app. Next and Apply act on the target display, or on the one a display= value names; an id is the wallpaper’s folder name in your library.')) + `<ul class="settings-list" data-key="automation-links">${automationLinks.map(link => `<li><code>${e(link)}</code></li>`).join('')}</ul>`)
     + group('general-lock', t('Lock screen'), settingToggle('lockScreenEnabled', 'Animate lock screen', lockUnavailable || settings.lockScreenBusy, t('Experimental'))
       + row('lock-status', t('Lock screen status'), `<span class="settings-status" role="status">${e(lockUnavailable ? (settings.lockScreenAvailable === false && settings.lockScreenStatus) || t('Unavailable') : settings.lockScreenBusy ? `${settings.lockScreenStatus || t('Updating')}…` : settings.lockScreenStatus)}</span>${settings.lockScreenError ? button(t('Retry'), 'lockScreenRetry', {}, busy || settings.lockScreenBusy) : ''}`, '', 'settings-readout')
       + error('lock-error', settings.lockScreenError)
@@ -378,6 +431,9 @@ function draw(view) {
     + (batteryReduced ? row('battery-scale', t('Render scale on battery'), select('batteryRenderScale', t('Render scale on battery'), draft('batteryRenderScale', batteryScale), scaleOptions(batteryScale), 'data-setting="batteryRenderScale" data-number', busy || unavailable))
       + row('battery-fps', t('Frame rate on battery'), `<input class="settings-number" data-key="batteryTargetFps" type="number" inputmode="numeric" aria-label="${e(t('Frame rate on battery'))}" min="1" max="240" step="1" value="${e(draft('batteryTargetFps', settings.batteryTargetFps))}" data-setting="batteryTargetFps"${disabled(busy || unavailable)}><span class="settings-unit">fps</span>`)
       + row('battery-state', t('Power source'), `<span class="settings-status" role="status">${e(batteryActive ? t('On battery. Reduced quality is in use.') : settings.onBatteryPower ? t('On battery') : t('Plugged in. Your usual quality settings are in use.'))}</span>`, '', 'settings-readout') : '')
+    + row('low-power', t('In Low Power Mode'), select('lowPowerModeAction', t('In Low Power Mode'), draft('lowPowerModeAction', settings.lowPowerModeAction || 'keepRunning'), localizedOptions(systemConditionActions), 'data-setting="lowPowerModeAction"', busy || unavailable), settings.lowPowerMode ? t('Low Power Mode is on now.') : t('Low Power Mode is off now.'))
+    + row('thermal', t('When the Mac is hot'), select('thermalAction', t('When the Mac is hot'), draft('thermalAction', settings.thermalAction || 'keepRunning'), localizedOptions(systemConditionActions), 'data-setting="thermalAction"', busy || unavailable), t('Applies while macOS reports the Mac as hot or very hot, which is when it starts slowing itself down. Right now it is {state}.', { state: t(thermalStates[settings.thermalState] || 'normal') }))
+    + row('focus', t('Focus'), button(t('Open Focus Settings…'), 'openFocusSettings', {}, busy), settings.focusAction && settings.focusAction !== 'keepRunning' ? t('A Focus filter is in effect now: {action}.', { action: t(focusActions[settings.focusAction] || settings.focusAction) }) : t('In System Settings → Focus, add the WallpaperMachine filter to a Focus to pause, mute or stop wallpapers while it is on. No Focus filter is in effect now.'))
     + row('app-rules', t('App rules'), '', t('Pause, mute or stop wallpapers while a chosen app is running or in front.')) + disclosure('app-rules-editor', t('Edit…'), rulesEditor));
   const quality = group('performance-quality', t('Quality'),
     row('quality-preset', t('Preset'), `<div class="settings-segment" role="group" aria-label="${e(t('Quality preset'))}">${presetButtons}</div>`, t('Low, Medium and High set the frame-rate limit and render scale together. Custom means the current values match none of those.'))
@@ -407,6 +463,7 @@ function draw(view) {
       t('When displays sleep, Pause keeps wallpapers loaded. Stop frees renderer memory and reloads them when the display wakes.'),
       t('On battery, Keep running leaves quality alone, Reduced quality uses the battery scale and frame rate, and Pause stops wallpapers until you plug in. None of these promises a measured power saving.'),
       t('App rules pause, mute or stop wallpapers while a chosen app is running or in front. Your own Play and Pause are not changed.'),
+      t('Low Power Mode, a hot Mac and a Focus filter work the same way: while they hold, wallpapers pause, mute or stop as you chose, and resume when they end. Stop frees renderer memory and reloads wallpapers afterwards.'),
       t('A quality preset sets the frame-rate limit and render scale together. The frame-rate limit caps every display without rewriting the frame rate saved for each wallpaper. Internal render scale sets how many pixels are rendered before the image is scaled to fit.'),
       t('Video playback picks a backend for each wallpaper. Native is used only for videos it supports; the rest play in Compatibility.'),
       t('Scene render optimisation reuses work inside a scene and produces the same picture. It only affects scene wallpapers.'),
@@ -442,10 +499,33 @@ function draw(view) {
     const wallpaper = (state.wallpapers || []).find(item => item.id === display.wallpaperID);
     const limited = performanceLimitedFps(playback.fps, settings);
     const number = (field, label, min, max, step, suffix = '') => `<input class="settings-number" data-key="${e(key(field))}" type="number" inputmode="decimal" aria-label="${e(name(label))}" min="${min}"${max == null ? '' : ` max="${max}"`} step="${step}" value="${e(draft(key(field), playback[field]))}" ${data(field)}${disabled(playbackOff)}>${suffix ? `<span class="settings-unit">${e(suffix)}</span>` : ''}`;
+    // The display's playlist: off, a rotation, or a day and a night wallpaper.
+    const playlist = { mode: 'off', source: 'all', order: 'sequential', interval: 30, wallpaperIDs: [], dayWallpaperID: null, nightWallpaperID: null, dayStart: 420, nightStart: 1140, nextChange: null, ...((state.playlists || {})[id] || {}) };
+    const playlistData = field => `data-playlist="${e(id)}" data-playlist-key="${field}"`;
+    const listed = (playlist.wallpaperIDs || []).map(wallpaperID => (state.wallpapers || []).find(item => item.id === wallpaperID)).filter(Boolean);
+    const playable = (state.wallpapers || []).filter(item => item.supported).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
+    const nextChange = playlist.nextChange != null && Number.isFinite(Number(playlist.nextChange)) ? changeTime(Number(playlist.nextChange)) : '';
+    const clockInput = (field, label, minute) => `<input type="time" data-key="${e(key(`playlist-${field}`))}" aria-label="${e(name(label))}" value="${e(draft(key(`playlist-${field}`), clockValue(minute)))}" ${playlistData(field)}${disabled(off)}>`;
+    const rotateRows = row(key('playlist-source-row'), t('Wallpapers'), select(key('playlist-source'), name(t('Wallpapers')), draft(key('playlist-source'), playlist.source), [['all', t('All wallpapers')], ['favorites', t('Favorites')], ['list', t('This display’s list ({count})', { count: listed.length })]], playlistData('source'), off))
+      + row(key('playlist-order-row'), t('Order'), select(key('playlist-order'), name(t('Order')), draft(key('playlist-order'), playlist.order), localizedOptions(playlistOrders), playlistData('order'), off))
+      + row(key('playlist-interval-row'), t('How often'), select(key('playlist-interval'), name(t('How often')), draft(key('playlist-interval'), playlist.interval), (state.playlistIntervals || []).map(minutes => [minutes, intervalLabel(minutes)]), `${playlistData('interval')} data-number`, off))
+      + (playlist.source === 'list' ? `<div class="settings-playlist" data-key="${e(key('playlist-list'))}">${listed.length ? listed.map(item => `<div class="settings-rule" data-key="${e(key(`playlist-item-${item.id}`))}"><span class="settings-rule-name">${e(item.title)}</span>${button(t('Remove'), 'playlistRemove', { id: item.id, displayID: id }, off)}</div>`).join('') : `<p class="settings-empty">${e(t('The list is empty. In Installed, select wallpapers and choose Add to playlist, or use the list button in a wallpaper’s details.'))}</p>`}</div>` : '')
+      + row(key('playlist-next-row'), t('Next change'), button(t('Change now'), 'playlistSkip', { displayID: id }, off), nextChange ? t('Around {time}, if wallpapers are playing then.', { time: nextChange }) : t('Starts counting once wallpapers play.'));
+    const wallpaperChoices = [['', t('Leave as it is')], ...playable.map(item => [item.id, item.title])];
+    const dayNightRows = row(key('playlist-day-row'), t('Day wallpaper'), select(key('playlist-day'), name(t('Day wallpaper')), draft(key('playlist-day'), playlist.dayWallpaperID || ''), wallpaperChoices, playlistData('dayWallpaper'), off))
+      + row(key('playlist-day-start-row'), t('Day starts at'), clockInput('dayStart', t('Day starts at'), playlist.dayStart))
+      + row(key('playlist-night-row'), t('Night wallpaper'), select(key('playlist-night'), name(t('Night wallpaper')), draft(key('playlist-night'), playlist.nightWallpaperID || ''), wallpaperChoices, playlistData('nightWallpaper'), off))
+      + row(key('playlist-night-start-row'), t('Night starts at'), clockInput('nightStart', t('Night starts at'), playlist.nightStart))
+      + (nextChange ? row(key('playlist-switch-row'), t('Next switch'), `<span class="settings-status" role="status">${e(t('Around {time}.', { time: nextChange }))}</span>`, '', 'settings-readout') : '');
+    const playlistMode = playlistModes.find(([mode]) => mode === playlist.mode) || playlistModes[0];
+    const playlistRows = mirror ? '' : disclosure(key('playlist'), playlist.mode === 'off' ? t('Playlist') : t('Playlist: {mode}', { mode: t(playlistMode[1]) }),
+      row(key('playlist-mode-row'), t('Changes on its own'), select(key('playlist-mode'), name(t('Changes on its own')), draft(key('playlist-mode'), playlist.mode), localizedOptions(playlistModes), playlistData('mode'), off), t('Only while wallpapers play. A change that falls due while they are paused, the screen is locked or the displays sleep happens once they play again.'))
+      + (playlist.mode === 'rotate' ? rotateRows : playlist.mode === 'dayNight' ? dayNightRows : ''), 'settings-disclosure-rows');
     return `<section class="settings-display settings-group" data-key="display-${e(id)}" aria-labelledby="settings-group-display-${e(id)}"><h3 id="settings-group-display-${e(id)}">${e(display.title)}${primary ? `<span class="settings-note">${e(t('Primary display'))}</span>` : ''}</h3>`
       + row(key('enabled-row'), t('Enable wallpaper'), toggle(key('enabled'), name(t('Enable wallpaper')), draft(key('enabled'), display.enabled), data('enabled'), busy || primary))
       + row(key('mode-row'), t('Display mode'), select(key('mode'), name(t('Display mode')), draft(key('mode'), display.mode), localizedOptions([['standalone', 'Independent'], ['mirror', 'Mirror another display']]), data('mode'), off || primary))
       + (mirror ? row(key('target-row'), t('Mirror source'), select(key('mirrorTarget'), name(t('Mirror source')), draft(key('mirrorTarget'), display.mirrorTarget), [['', t('Choose display')], ...(display.mirrorTargets || []).map(target => [target.id, target.title])], data('mirrorTarget'), off || !display.mirrorTargets?.length), !display.mirrorTargets?.length ? t('No compatible display available.') : '') : row(key('wallpaper-row'), t('Wallpaper'), button(t('Choose…'), 'chooseDisplayWallpaper', { displayID: id }, off) + button(t('Eject'), 'eject', { id: display.wallpaperID, displayID: id }, off || !display.wallpaperID), wallpaper?.title || (display.wallpaperID ? display.wallpaperID : t('None selected'))))
+      + playlistRows
       + disclosure(key('advanced'), t('Playback & scaling'), (!mirror && !display.wallpaperID ? `<div class="settings-note">${e(t('Choose a wallpaper to adjust playback.'))}</div>` : '') + row(key('scaling-row'), t('Scaling'), select(key('scalingMode'), name(t('Scaling')), draft(key('scalingMode'), playback.scalingMode), localizedOptions([['none', 'No scaling'], ['stretch', 'Stretch'], ['match', 'Match'], ['fill', 'Fill']]), data('scalingMode'), playbackOff))
         + row(key('factor-row'), t('Scale factor'), number('scalingFactor', t('Scale factor'), Number.MIN_VALUE, null, 'any', '×'))
         + row(key('fps-row'), t('Frame rate'), number('fps', t('Frame rate'), 1, playback.maxFps || 60, 1, 'fps'))
@@ -481,6 +561,7 @@ function draw(view) {
   const slots = Number(settings.concurrentDownloads) || 1;
   const slotChoices = Array.from({ length: Math.max(slots, Number(settings.concurrentDownloadsMax) || 1) }, (_, index) => [index + 1, String(index + 1)]);
   const serialNow = slots > 1 && Number(state.downloadSlots) === 1;
+  const updates = state.workshopUpdates || {};
   const library = group('library-folder', '', row('library-path', t('Wallpaper library'), button(t('Show in Finder'), 'showLibrary', {}, busy), settings.libraryPath || t('Unavailable')))
     + group('library-steamcmd', 'SteamCMD', row('steam-status', t('Installation'), `<span class="settings-status" role="status">${e(setup.status || (setup.ready ? t('Ready') : t('Not installed')))}</span>`, '', 'settings-readout')
     + progress
@@ -488,6 +569,9 @@ function draw(view) {
     + candidate + error('setup-error', setup.error)
     + (anyDownload && !setup.busy ? `<div class="settings-note">${e(t('Installation changes are unavailable while downloads are running.'))}</div>` : ''))
     + sceneSummary
+    + group('library-updates', t('Workshop updates'), row('workshop-update-checks', t('Check once a day'), toggle('workshopUpdateChecks', t('Check once a day'), draft('workshopUpdateChecks', updates.automatic !== false), 'data-setting="workshopUpdateChecks" aria-describedby="settings-note-workshop-update-checks"', busy), t('Asks Steam which of your installed Workshop wallpapers have changed since you got them. Only their ids are sent, and no sign-in is needed.'), '', 'workshopUpdateChecks')
+      + row('workshop-update-status', t('Last check'), button(updates.checking ? t('Checking…') : t('Check Now'), 'workshopCheckUpdates', {}, busy || updates.checking), updates.lastChecked != null ? (Number(updates.count) ? t('{time}: {count} wallpapers have updates. Update them from Installed.', { time: changeTime(Number(updates.lastChecked)), count: Number(updates.count) }) : t('{time}: everything is up to date.', { time: changeTime(Number(updates.lastChecked)) })) : t('Not checked yet.'))
+      + error('workshop-update-error', updates.error))
     + group('library-downloads', t('Downloads'), row('concurrent-downloads', t('Downloads at once'), select('concurrentDownloads', t('Downloads at once'), draft('concurrentDownloads', slots), slotChoices, 'data-setting="concurrentDownloads" data-number aria-describedby="settings-note-concurrent-downloads"', busy || unavailable), serialNow ? t('Steam ended one of the sessions, so downloads run one at a time until you reopen the app.') : t('Each download signs in to Steam on its own. More at once mostly helps batches of small wallpapers; large ones share your connection.')))
     + group('library-account', '', row('steam-account', t('Steam account'), state.savedAccount ? button(t('Log out…'), 'logOutSteam', {}, anyDownload || busy, 'settings-destructive') : `<span class="settings-note">${e(t('Not signed in'))}</span>`, state.savedAccount ? `${t('Signed in as {account}', { account: state.savedAccount })}${anyDownload ? t(' · log out once downloads finish') : ''}` : t('You sign in when a download starts.'))
     + row('welcome-guide', t('Welcome guide'), button(t('Show again'), 'openWelcome'), t('Shown on first launch: language and appearance, Steam sign-in, preferences and tips.'))
@@ -624,6 +708,21 @@ async function onChange(view, event) {
     draw(view);
     return;
   }
+  if (input.dataset.playlist !== undefined) {
+    const field = input.dataset.playlistKey;
+    let value = input.value;
+    if (field === 'interval') value = Number(value);
+    if (field === 'dayStart' || field === 'nightStart') {
+      value = clockMinute(value);
+      if (value === null) { input.reportValidity(); return; }
+    }
+    const draftKey = input.dataset.key;
+    view.drafts.set(draftKey, input.value);
+    await perform(view, draftKey, 'playlistSetting', { displayID: input.dataset.playlist, key: field, value }, () => view.drafts.delete(draftKey));
+    view.drafts.delete(draftKey);
+    draw(view);
+    return;
+  }
   if (!input.dataset.setting && !input.dataset.displaySetting) return;
   let value = input.type === 'checkbox' ? input.checked : input.value;
   if (input.type === 'number' || input.type === 'range') {
@@ -677,6 +776,14 @@ async function onClick(view, event) {
     });
     return;
   }
+  if (action === 'hotkeyRecord') {
+    view.recording = String(args.id);
+    draw(view);
+    view.container.querySelector(`[data-key="hotkey-${view.recording}"] button`)?.focus();
+    return;
+  }
+  if (action === 'hotkeyCancel') { view.recording = null; draw(view); return; }
+  view.recording = null;
   if (action === 'requestSceneAssets') { await view.helpers.requestAssets(button); return; }
   if (action === 'openSceneDialog') { view.helpers.openDownloadDialog('scene-assets', button); return; }
   if (action === 'openWelcome') { view.helpers.openWelcome(); return; }

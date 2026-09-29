@@ -104,4 +104,40 @@ final class WorkshopTests: XCTestCase {
         let plainValues = URLComponents(url: plain, resolvingAgainstBaseURL: false)?.queryItems ?? []
         XCTAssertTrue(plainValues.allSatisfy { $0.name != "excludedtags[]" && $0.name != "requiredtags[]" })
     }
+
+    func testDetailsRequestSendsOnlyNumericIDsAsAForm() throws {
+        let request = WorkshopService.detailsRequest(ids: ["3632513108", "image-photo.png", "12"])
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.host, "api.steampowered.com")
+        let body = try XCTUnwrap(request.httpBody.flatMap { String(data: $0, encoding: .utf8) })
+        XCTAssertEqual(body, "itemcount=2&publishedfileids[0]=3632513108&publishedfileids[1]=12")
+    }
+
+    /// The shape of Steam's answer, trimmed from a recorded one: a served item, one Steam no
+    /// longer serves, and one belonging to another app.
+    func testDetailsKeepOnlyServedWallpaperEngineItems() throws {
+        let answer = #"""
+        {"response":{"result":1,"resultcount":3,"publishedfiledetails":[
+          {"publishedfileid":"3632513108","result":1,"creator":"76561199211352973","consumer_app_id":431960,
+           "file_size":"161966295","preview_url":"https://images.steamusercontent.com/ugc/1/2/",
+           "title":"千咲","description":"[b]Dynamic[/b] production\nSecond line","time_updated":1766849991,
+           "subscriptions":190023,"tags":[{"tag":"Scene"},{"tag":"Everyone"}]},
+          {"publishedfileid":"1","result":9},
+          {"publishedfileid":"2","result":1,"consumer_app_id":440,"title":"Hat","time_updated":1}
+        ]}}
+        """#
+        let items = try WorkshopService.decodeDetails(Data(answer.utf8))
+        XCTAssertEqual(items.map(\.id), ["3632513108"])
+        let item = try XCTUnwrap(items.first)
+        XCTAssertEqual(item.title, "千咲")
+        XCTAssertEqual(item.creatorID, "76561199211352973")
+        XCTAssertEqual(item.timeUpdated, Date(timeIntervalSince1970: 1_766_849_991))
+        XCTAssertEqual(item.size, 161_966_295)
+        XCTAssertEqual(item.kind, .scene)
+        XCTAssertEqual(item.summary, "Dynamic production", "BBCode is dropped and only the first paragraph kept")
+    }
+
+    func testDetailsInAnUnexpectedShapeReportFailure() {
+        XCTAssertThrowsError(try WorkshopService.decodeDetails(Data("<html>".utf8)))
+    }
 }

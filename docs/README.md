@@ -66,6 +66,8 @@ file; pass `rg -u` to search them deliberately.
 |---|---|
 | [features/control-panel.md](features/control-panel.md) | Window and panel UX, tabs, inspector, interaction reference |
 | [features/workshop-downloads.md](features/workshop-downloads.md) | Discover, SteamCMD setup, download queue |
+| [features/automation.md](features/automation.md) | Global keyboard shortcuts, Shortcuts app actions (Siri, Spotlight) and `wallpapermachine://` links, and the commands they share |
+| [features/playlists.md](features/playlists.md) | Per-display rotation (all, favorites or a list; in order or shuffled) and day and night wallpapers, when changes happen, storage |
 | [features/pixiv.md](features/pixiv.md) | pixiv tab: rankings and tag search, saving a page as a still wallpaper, pixiv sign-in and R-18 works |
 | [features/audio-response.md](features/audio-response.md) | Audio-responsive wallpapers |
 | [features/web-wallpapers.md](features/web-wallpapers.md) | HTML/JS wallpapers hosted in a web view, host protocol, limits |

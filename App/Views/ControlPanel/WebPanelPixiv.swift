@@ -100,9 +100,9 @@ extension WebPanelController {
       pixiv.downloads.clearFinished()
     case "pixivSignIn":
       if pixiv.isSigningIn {
-        PixivSignInWindowController.bringToFront()
+        WebSignInWindowController.bringToFront(.pixiv)
       } else if !pixiv.isSignedIn {
-        pixiv.signIn(obtainingSessionWith: signInToPixiv ?? PixivSignInWindowController.obtainSession)
+        pixiv.signIn(obtainingSessionWith: signInToPixiv ?? { await WebSignInWindowController.obtainCookie(for: .pixiv) })
       }
     case "pixivSignOut":
       pixiv.signOut()

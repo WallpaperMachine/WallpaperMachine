@@ -289,6 +289,11 @@ small, .muted { color: var(--muted); }
    between any two characters, so a shrinkable button ends up one glyph wide and two lines tall. */
 .search-form button { margin-left: 6px; flex: none; white-space: nowrap; }
 .browser-toolbar select { max-width: 180px; }
+/* An opened author or collection replaces the source picker and search with the way back and
+   what is on show; the title gives up width first. */
+.source-bar { flex: 1 1 200px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.source-title { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-creator .inspector-author { margin-left: 8px; }
 .browser-summary { min-height: 19px; padding: 0 14px; color: var(--muted); font-size: 12px; }
 .selection-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 27px; }
 .selection-bar .selection-count { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -349,6 +354,7 @@ small, .muted { color: var(--muted); }
 .tile-mark.approved { color: var(--media-approved); }
 .tile-mark.favorite { color: var(--media-heart); }
 .tile-mark.favorite svg { fill: currentColor; }
+.tile-mark.update { background: var(--primary); color: var(--on-primary); }
 .wallpaper-grid.selecting .tile-check:not([aria-pressed="true"]) { color: transparent; box-shadow: inset 0 0 0 1.5px var(--media-ink); }
 .wallpaper-grid.selecting .tile-check:not([aria-pressed="true"]):hover { color: var(--media-ink); }
 .browser-toolbar button[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
@@ -365,6 +371,7 @@ small, .muted { color: var(--muted); }
 .tile-favorite:hover:not(:disabled), .tile-check:hover:not(:disabled) { background: var(--media-chip); color: var(--media-ink); }
 .tile-favorite[aria-pressed="true"] { color: var(--media-heart); }
 .actions .favorite-selected { color: var(--heart); }
+.actions .playlist-selected { color: var(--accent); }
 .tile-favorite[aria-pressed="true"] svg, .actions .favorite-selected svg { fill: currentColor; }
 .tile-check[aria-pressed="true"], .tile-check[aria-pressed="true"]:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .wallpaper-tile.checked .tile-select { box-shadow: inset 0 0 0 2px var(--primary); border-color: var(--primary); }

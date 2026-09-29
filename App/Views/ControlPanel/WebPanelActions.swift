@@ -30,6 +30,7 @@ extension WebPanelController {
       return
     case "dismissError":
       actionError = nil
+      imports.dismissFailure()
       dismissedErrorRevision = store.latestBridgeErrorRevision
       dismissedLibraryError = libraryFailureMessage
       dismissedDownloadError = workshop.downloader.errorMessage
@@ -62,6 +63,50 @@ extension WebPanelController {
       workshop.excludedTags = excludedTags
       workshop.search()
       return
+    // Where Discover looks. An author or a collection is opened from a tile, so Back returns.
+    case "workshopSource":
+      switch try request.string("source") {
+      case "browse": workshop.open(.browse)
+      case "collections": workshop.open(.collections)
+      case "subscriptions": workshop.open(.subscriptions)
+      default: throw WebPanelRequest.invalid
+      }
+      return
+    case "workshopCreator":
+      let id = try request.string("id")
+      let name = try request.string("name")
+      guard SteamWebSession.isSteamID(id), name.count <= 256 else { throw WebPanelRequest.invalid }
+      workshop.open(.creator(id: id, name: name))
+      return
+    case "workshopCollection":
+      let id = try request.string("id")
+      let title = try request.string("title")
+      guard !id.isEmpty, id.count <= 20, UInt64(id) != nil, title.count <= 512 else { throw WebPanelRequest.invalid }
+      workshop.open(.collection(id: id, title: title))
+      return
+    case "workshopBack":
+      workshop.back()
+      return
+    // Steam's own page in a window of its own; the panel learns the outcome from its snapshot.
+    case "steamWebSignIn":
+      if workshop.isSigningInToSteamWeb {
+        WebSignInWindowController.bringToFront(.steam)
+      } else if workshop.steamWebSession == nil {
+        let obtain = signInToSteamWeb ?? { await WebSignInWindowController.obtainCookie(for: .steam) }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            try await self.workshop.signInToSteamWeb(obtainCookie: obtain)
+          } catch {
+            self.actionError = error.localizedDescription
+          }
+          self.scheduleUpdate()
+        }
+      }
+      return
+    case "steamWebSignOut":
+      workshop.signOutOfSteamWeb()
+      return
     case "workshopPage":
       workshop.loadPage(
         Int(try request.number("page", range: 1...Double(WorkshopStore.maxPages))))
@@ -93,8 +138,7 @@ extension WebPanelController {
       workshop.selectedItem = item
       return
     case "importCancel":
-      importTask?.cancel()
-      importStatus = "Cancelling…"
+      imports.cancel()
       return
     case "downloadCancel":
       workshop.downloader.cancel(try download(request))
@@ -121,6 +165,41 @@ extension WebPanelController {
       return
     case "revealDownloadedUpdate":
       updater.revealDownloadedUpdate()
+      return
+    // Playlists are preferences; only Change now reaches the renderer, through the scheduler's
+    // own command.
+    case "playlistSetting":
+      try playlistSetting(request)
+      return
+    // Recorded in Settings → General: the page sends the key's position and the modifiers held.
+    case "hotkeySet":
+      guard let action = HotKeyAction(rawValue: try request.string("id")) else { throw WebPanelRequest.invalid }
+      let hotKey = try GlobalHotKeys.hotKey(
+        code: try request.string("code"), command: try request.boolean("command"),
+        option: try request.boolean("option"), control: try request.boolean("control"),
+        shift: try request.boolean("shift"))
+      try hotKeys.set(hotKey, for: action)
+      return
+    case "hotkeyClear":
+      guard let action = HotKeyAction(rawValue: try request.string("id")) else { throw WebPanelRequest.invalid }
+      try hotKeys.set(nil, for: action)
+      return
+    case "workshopCheckUpdates":
+      workshop.updates.check(
+        installed: store.librarySnapshot.wallpapers.map(\.id), library: ClientPaths.libraryURL)
+      return
+    case "playlistAdd":
+      playlists.add(try wallpaperIDs(request), to: try playlistDisplay(request))
+      return
+    case "playlistRemove":
+      playlists.remove(try request.string("id"), from: try playlistDisplay(request))
+      return
+    case "playlistSkip":
+      let display = try playlistDisplay(request)
+      guard playlists.skipHandler?(display) == true else {
+        throw WallpaperActionError(
+          message: String(localized: "This display has no rotating playlist to move along."))
+      }
       return
     default: break
     }
@@ -171,6 +250,8 @@ extension WebPanelController {
       try await store.commands.run {
         try await store.deleteWallpaperAsync(id: id)
         try forgetFavorites([id])
+        playlists.forget([id])
+        workshop.updates.forget([id])
       }
     case "deleteMany":
       let ids = try wallpaperIDs(request)
@@ -192,6 +273,8 @@ extension WebPanelController {
       try await store.commands.run {
         let report = try await store.deleteWallpapersAsync(ids: ids)
         try forgetFavorites(report.deleted)
+        playlists.forget(report.deleted)
+        workshop.updates.forget(report.deleted)
         if !report.failures.isEmpty {
           let titles = Dictionary(
             store.librarySnapshot.wallpapers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
@@ -202,6 +285,22 @@ extension WebPanelController {
                 "Moved \(report.deleted.count) of \(ids.count) wallpapers to Trash. Couldn’t move \(details.joined(separator: "; "))"
             )
           )
+        }
+      }
+    // Every subscribed wallpaper the library lacks. Steam is asked outside the queue, which
+    // only the downloads, queued like a single one, wait in.
+    case "workshopDownloadSubscribed":
+      let installed = Set(store.librarySnapshot.wallpapers.map(\.id))
+      let missing = try await workshop.missingSubscriptions(installed: installed)
+        .filter { $0.kind != .application }
+      guard !missing.isEmpty else {
+        throw WallpaperActionError(
+          message: String(localized: "Every wallpaper you subscribe to is already in your library."))
+      }
+      try await store.commands.run {
+        for item in missing where workshop.downloader.download(for: item.id)?.isPending != true {
+          workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+          try checkDownloadError()
         }
       }
     default:
@@ -288,12 +387,23 @@ extension WebPanelController {
           throw WebPanelRequest.invalid
         }
         playback.desktopCoveredAction = action
+      case "lowPowerModeAction", "thermalAction":
+        guard let action = SystemConditionAction(rawValue: try request.string("value")) else {
+          throw WebPanelRequest.invalid
+        }
+        if key == "lowPowerModeAction" {
+          playback.lowPowerModeAction = action
+        } else {
+          playback.thermalAction = action
+        }
       case "verboseLogging":
         try await store.setVerboseLoggingAsync(enabled: try request.boolean("value"))
       case "keepWindowsOnWallpaperClick":
         try DesktopClickRevealPreference.setEnabled(!(try request.boolean("value")))
       case "hideAfterActivating":
         defaults.set(try request.boolean("value"), forKey: Self.hideAfterActivatingKey)
+      case "workshopUpdateChecks":
+        workshop.updates.checksAutomatically = try request.boolean("value")
       case "concurrentDownloads":
         let range = WorkshopDownloadManager.concurrentDownloadRange
         let value = try request.number(
@@ -349,6 +459,9 @@ extension WebPanelController {
       guard let id = UUID(uuidString: try request.string("id")) else { throw WebPanelRequest.invalid }
       playback.removeRule(id: id)
     case "lockScreenRetry": store.lockScreenWallpaper?.refresh()
+    case "openFocusSettings":
+      // Focus filters are added to a Focus there; the app cannot add its own.
+      NSWorkspace.shared.open(Self.focusSettingsURL)
     case "displaySetting": try await displaySetting(request)
     case "eject":
       try await store.ejectWallpaperFromDisplayAsync(
@@ -462,12 +575,32 @@ extension WebPanelController {
       let item: WorkshopItem?
       if let id = body["id"] as? String, id != WorkshopStore.sceneAssetsRequestID {
         guard let found = workshop.workshopItem(id: id) else { throw WebPanelRequest.invalid }
+        // A collection is a list on Steam, not a wallpaper: it is opened, and its wallpapers
+        // downloaded one by one.
+        guard found.collectionSize == nil else {
+          throw WallpaperActionError(
+            message: String(localized: "A collection can’t be downloaded as one. Open it to download its wallpapers."))
+        }
         item = found
       } else {
         item = nil
       }
       workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
       try checkDownloadError()
+    // An update downloads through the same queue and prerequisites as any Workshop item, and
+    // replaces the installed copy once it has arrived whole.
+    case "workshopUpdate":
+      guard let item = workshop.updates.available[try wallpaperID(request)] else {
+        throw WebPanelRequest.invalid
+      }
+      workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+      try checkDownloadError()
+    case "workshopUpdateAll":
+      for item in workshop.updates.available.values.sorted(by: { $0.title < $1.title })
+      where workshop.downloader.download(for: item.id)?.isPending != true {
+        workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+        try checkDownloadError()
+      }
     case "continueDownload":
       let account = try request.string("account")
       remembersSession = try request.boolean("rememberSession")
@@ -560,6 +693,56 @@ extension WebPanelController {
     favoriteIDs.subtract(ids)
     UserDefaults.standard.set(
       try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
+  }
+
+  /// The display a playlist action names, or the target display when it names none. Only an
+  /// enabled display that shows its own wallpaper has a playlist.
+  func playlistDisplay(_ request: WebPanelRequest) throws -> String {
+    let id = request.body["displayID"] == nil ? navigation.targetDisplayID : try request.string("displayID")
+    guard
+      store.settingsSnapshot.displays.contains(where: {
+        $0.displayId == id && $0.enabled && $0.mode == .standalone
+      })
+    else { throw WebPanelRequest.invalid }
+    return id
+  }
+
+  func playlistSetting(_ request: WebPanelRequest) throws {
+    let display = try playlistDisplay(request)
+    switch try request.string("key") {
+    case "mode":
+      guard let mode = PlaylistMode(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.mode = mode }
+    case "source":
+      guard let source = PlaylistSource(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.source = source }
+    case "order":
+      guard let order = PlaylistOrder(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.order = order }
+    case "interval":
+      let minutes = Int(try request.number("value", range: 1...Double(DisplayPlaylist.minutesPerDay)))
+      guard DisplayPlaylist.intervals.contains(minutes) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.interval = minutes }
+    case "dayWallpaper", "nightWallpaper":
+      // Empty clears the choice; anything else must be a wallpaper that can play.
+      let value = try request.string("value")
+      guard value.isEmpty || store.librarySnapshot.wallpapers.contains(where: { $0.id == value && $0.supported })
+      else { throw WebPanelRequest.invalid }
+      let id = value.isEmpty ? nil : value
+      if request.body["key"] as? String == "dayWallpaper" {
+        playlists.update(display) { $0.dayWallpaperID = id }
+      } else {
+        playlists.update(display) { $0.nightWallpaperID = id }
+      }
+    case "dayStart", "nightStart":
+      let minute = Int(try request.number("value", range: 0...Double(DisplayPlaylist.minutesPerDay - 1)))
+      if request.body["key"] as? String == "dayStart" {
+        playlists.update(display) { $0.dayStart = minute }
+      } else {
+        playlists.update(display) { $0.nightStart = minute }
+      }
+    default: throw WebPanelRequest.invalid
+    }
   }
 
   func download(_ request: WebPanelRequest) throws -> WorkshopDownload {
@@ -773,7 +956,7 @@ extension WebPanelController {
   }
 
   func beginImport(_ request: WebPanelRequest) async throws {
-    guard importTask == nil else {
+    guard !imports.isBusy else {
       throw WallpaperActionError(message: String(localized: "An import is already running."))
     }
     let policy =
@@ -782,45 +965,18 @@ extension WebPanelController {
     let panel = NSOpenPanel()
     panel.title = String(localized: "Import Wallpapers")
     panel.message = String(
-      localized: "Choose videos, HTML files, project folders or a Steam library. Your original files are kept.")
+      localized: "Choose videos, images, HTML files, project folders or a Steam library. Your original files are kept.")
     panel.canChooseDirectories = true
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = true
     panel.resolvesAliases = false
     panel.allowedContentTypes =
       [.folder]
-      + WallpaperImportService.videoExtensions.union(WallpaperImportService.webExtensions).sorted()
+      + WallpaperImportService.videoExtensions.union(WallpaperImportService.webExtensions)
+      .union(WallpaperImportService.imageExtensions).sorted()
       .compactMap { UTType(filenameExtension: $0) }
     guard await choose(panel) else { return }
-    let urls = panel.urls
-    importStatus = String(localized: "Preparing import…")
-    importReport = nil
-    importTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      defer {
-        self.importTask = nil
-        self.scheduleUpdate()
-      }
-      do {
-        self.importReport = try await WallpaperImportService().importItems(
-          urls, into: ClientPaths.libraryURL, duplicates: policy
-        ) { [weak self] status in
-          guard let self else { return }
-          await MainActor.run {
-            self.importStatus = status
-            self.scheduleUpdate()
-          }
-        }
-        let refresh = Task { @MainActor in try await self.store.refreshLibraryAsync() }
-        try await refresh.value
-        self.importStatus =
-          self.importReport?.cancelled == true
-          ? String(localized: "Import cancelled") : String(localized: "Import complete")
-      } catch {
-        self.actionError = error.localizedDescription
-        self.importStatus = String(localized: "Import could not finish")
-      }
-    }
+    try imports.start(panel.urls, duplicates: policy)
   }
 
   func choose(_ panel: NSSavePanel) async -> Bool {
@@ -864,6 +1020,7 @@ extension WebPanelController {
       """)
   }
 
+  static let focusSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Focus-Settings.extension")!
   static let videoBackendModes = ["compatibility", "native_preferred"]
   /// The only two scene renderer names. Must stay identical to the Rust
   /// `set_scene_renderer` match arms: a name accepted here and rejected there

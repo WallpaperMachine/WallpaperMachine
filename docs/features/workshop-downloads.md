@@ -119,6 +119,65 @@ therefore never shows black where its still was bright. Leaving the page or
 flipping to another one drops the pending animation requests. The inspector
 keeps the full-size preview for the selected item.
 
+## Collections, authors and subscriptions
+
+The toolbar's first menu chooses what Discover lists: **Wallpapers** (the browse
+page above), **Collections** or **Your subscriptions**. An author's wallpapers
+and a collection's items are opened from a tile instead, and replace the menu and
+the search field with a back button and what is on show; back returns to the
+list, page 1, they were opened from (`WorkshopStore.open`, `back` and
+`sourceHistory`). Choosing from the menu starts a new history. Only Wallpapers and
+Collections are searched and sorted by Steam; the others come in their own order,
+so the panel hides the search field and the sort menu for them. The filter sidebar
+applies everywhere: Steam applies it to the two lists, and `WorkshopService.matching`
+applies the same rules to the other sources' pages, which can therefore show fewer
+than 30 tiles. The sources are `WorkshopSource` in
+`App/Services/Workshop/WorkshopSource.swift`.
+
+### Collections
+
+**Collections** is Steam's browse page with `section=collections`. A collection
+is a list, not a download: its tile says Collection and has no download ring,
+double-clicking it or **Open collection** in its details opens it, and native
+refuses a `requestDownload` for it. Opening one asks Steam's public
+`ISteamRemoteStorage/GetCollectionDetails` for its items in the collection's
+own order, then shows them 30 at a time through the details endpoint.
+
+Collections rarely carry tags, and an age rating is a tag. So while Questionable
+or Mature is unticked, a collection is shown only when it has a wallpaper among
+its first three (`WorkshopService.collectionSample`) and neither it nor any of
+those wallpapers carries an unticked tag; the three come from the browse page's
+own list of each collection's children, and one details request covers the whole
+page. A collection inside a collection is dropped for the same reason, as nothing
+vouches for what it holds. Ticking both ratings shows every collection unsampled.
+
+### Authors
+
+A Discover tile's details offer **More by this author** when Steam named the
+author's SteamID64. The author's public Workshop page
+(`steamcommunity.com/profiles/<id>/myworkshopfiles/?appid=431960`) lists 30 ids a
+page with the total and the author's name, and the details endpoint fills them
+in. A profile that is private or has nothing to show is simply empty.
+
+### Subscriptions
+
+Steam shows an account's subscriptions only to that account, so **Your
+subscriptions** needs a Steam Community sign-in. This is a different sign-in from
+SteamCMD's (see [Steam sign-in](#steam-sign-in)), and the app never sees the
+password: **Sign in to Steam…** opens Steam's own sign-in page in a window
+(`WebSignInWindowController` with its `.steam` site, the same one pixiv uses) and
+takes the `steamLoginSecure` cookie Steam sets. The cookie is kept in memory
+only (`WorkshopStore.steamWebSession`): it is never written to disk or the
+keychain, ends when the app quits or on **Sign out of Steam**, and is sent only to
+`steamcommunity.com`, to read the subscriptions list (the author page with
+`browsefilter=mysubscriptions`). When Steam answers with its sign-in page instead,
+the session is forgotten and the panel offers to sign in again.
+
+**Download the ones not in your library** reads every page of subscriptions (at
+most 1,000 pages of 30), drops what is installed, collections and Application items, and
+queues the rest as ordinary downloads, which need SteamCMD's own sign-in as any
+download does. Nothing is subscribed or unsubscribed on Steam.
+
 ## One decision per download
 
 Double-click a Discover tile, or choose **Download** in the inspector, once.
@@ -407,6 +466,40 @@ remain non-destructive copies.
 
 A download interrupted by a crash leaves staging behind. The app reclaims only
 staging directories it can prove nothing is writing to.
+
+## Updates
+
+`WorkshopUpdateStore` finds installed Workshop wallpapers (numeric ids) whose
+authors changed them since they were installed. It sends their ids to Steam's
+public details endpoint (`ISteamRemoteStorage/GetPublishedFileDetails`, POST,
+no key and no sign-in, up to 100 ids a request) and compares each item's
+`time_updated` with when it was installed here: the moment this app finished
+downloading it, or, for an item it did not download (an import, or a download
+from before installs were recorded), when its `project.json` was last written.
+An import copies files, so an item that was already out of date when imported is
+not caught. A difference of a minute or less counts as the same version.
+
+It checks at most once a day on its own, after the library loads and from the
+same six-hourly loop as app updates, unless **Settings → Library & Steam →
+Workshop updates → Check once a day** is off; **Check Now** checks at once. The
+result is kept across launches, and a failed check keeps what was known and says
+why beneath the row.
+
+An installed wallpaper with an update wears a download mark on its tile,
+matches **Show only → Update available** in Installed's filters, and says in its
+details when its author changed it, with **Update**. Installed's summary offers
+**Update N wallpapers** while any have updates. An update is an ordinary
+Workshop download (same queue, sign-in and prerequisites); once it has arrived
+whole, the importer swaps the new folder in and the old one out in one step
+(`renamex_np` with `RENAME_SWAP`), so the library never lacks the wallpaper and
+a failure leaves the old version in place; the old folder is removed with the
+download's staging. Only a folder that holds an installed wallpaper is replaced:
+anything else under the item's id is left alone and the download says so. An
+update check still running when the download finishes does not mark it outdated
+again. The item's saved options belong to its id and are kept. A
+display showing it then loads it again: applying alone would find nothing changed,
+so it is removed and applied again through the display's command slot. Moving a
+wallpaper to Trash forgets its update and install record.
 
 ## Verification
 

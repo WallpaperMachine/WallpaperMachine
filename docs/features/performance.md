@@ -123,6 +123,8 @@ There is no control for that part.
 | When another app plays sound | **Keep running**, **Mute**, **Pause** | Keep running |
 | When displays sleep | **Pause**, **Stop (free memory)** | Pause |
 | On battery | **Keep running**, **Reduced quality**, **Pause** | Keep running |
+| In Low Power Mode | **Keep running**, **Pause**, **Stop (free memory)** | Keep running |
+| When the Mac is hot | **Keep running**, **Pause**, **Stop (free memory)** | Keep running |
 
 **When windows cover the desktop** handles the case AppKit never reports as
 hidden. A zoomed (not full-screen) window leaves the strip under the translucent
@@ -162,6 +164,32 @@ reports it. Reduced quality is in force only while that mode is selected and
 the Mac is on battery. A configuration saved before this choice existed keeps
 its behavior: the old pause-on-battery switch becomes **Pause**, otherwise the
 old battery profile switch becomes **Reduced quality**.
+
+### Low Power Mode, heat and Focus
+
+**In Low Power Mode** applies while macOS reports Low Power Mode
+(`ProcessInfo.isLowPowerModeEnabled`), and **When the Mac is hot** while it
+reports the thermal state as serious or critical, the states in which macOS
+starts throttling itself. Both are off until chosen. Each row's note says whether
+the condition holds right now.
+
+A Focus can act on wallpapers through a Focus filter (`WallpaperFocusFilter`, an
+App Intents `SetFocusFilterIntent`): in System Settings → Focus → a Focus →
+Focus Filters, add WallpaperMachine and choose **Keep running**, **Mute**,
+**Pause** or **Stop (free memory)**. macOS performs the filter with that value
+when the Focus turns on and with the default, Keep running, when it turns off;
+`FocusFilterState` keeps the last value across launches, and the app reads the
+filter in force again at launch. **Open Focus Settings…** on the Focus row opens
+that pane; the app cannot add a filter itself. Adding the filter needs no
+permission.
+
+`SystemConditionMonitor` turns the three into rule actions that join the app
+rules' in `WallpaperPresentationPolicy`, so they pause, mute or stop wallpapers
+exactly as an app rule does and never change the user's own Play/Pause. It only
+observes notifications (`NSProcessInfoPowerStateDidChange`,
+`ProcessInfo.thermalStateDidChangeNotification`, the preferences and the Focus
+filter); nothing is polled. Mute has the same limit as above: web wallpapers have
+no mute channel.
 
 ### App rules
 
