@@ -331,7 +331,18 @@ final class PanelFixture {
 
   func js(_ script: String) async throws -> Any? {
     XCTAssertNil(web.window, "Every panel behavior check must remain offscreen")
-    return try await web.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+    let generation = controller.pageGeneration
+    do {
+      return try await web.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+    } catch {
+      // On CI, WebKit has dropped calls unanswered ("InvalidTransition … failed(deinit)").
+      // Say whether the page reloaded or the view changed meanwhile, so a failure names it.
+      let webView = controller.webView === web ? "current" : "replaced"
+      throw WorkshopFailure(
+        message: "JavaScript call failed: \(error) (page generation \(generation) → "
+          + "\(controller.pageGeneration), ready \(controller.isReady), web view \(webView), "
+          + "visible \(visibility.visible))")
+    }
   }
 
   func expectJS<T: Equatable>(

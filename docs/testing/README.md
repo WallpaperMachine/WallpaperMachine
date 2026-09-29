@@ -135,6 +135,15 @@ path. A test that passes alone but fails in the gate is the symptom; reproduce
 it with `python3 scripts/test.py --serial` and fix the shared state rather than
 the scheduling. UI runs are always serial: they drive one desktop.
 
+CI's `test` job is serial too. On the `macos-26` runner, parallel gates for 1.2.0
+failed one or two offscreen control-panel tests per run, a different one each
+time, with `InvalidTransition { phase: idle targetPhase: failed(deinit) }`:
+WebKit dropped a `callAsyncJavaScript` call unanswered. The same tests pass
+locally, in parallel and under CPU load, and a panel left idle for 25 seconds
+still answers. When it recurs, the panel fixture's error says whether the page
+reloaded meanwhile, and `test-logs-<tag>` carries the run's WebKit and jetsam
+reports.
+
 The per-test `UserDefaults` suite is not only a parallelism concern: the unit
 bundle runs inside the real app as its test host, so `UserDefaults.standard`
 *is* `app.wallpapermachine`, the preferences of the installed app. Any

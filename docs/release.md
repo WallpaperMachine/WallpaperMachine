@@ -333,11 +333,14 @@ target, and hands `Assets.car`, `AppIcon.icns` and the partial Info.plist to
    `release-<tag>` artifact.
 
 **`test`** runs `prepare-build`, `python3 scripts/build.py --renderer-only` for the
-renderer and the generated bridge, then `python3 scripts/test.py`, which builds the
-Debug app, icon included, and its tests itself.
+renderer and the generated bridge, then `python3 scripts/test.py --serial`, which
+builds the Debug app, icon included, and its tests itself. It runs one test class
+at a time: see [Parallel execution](testing/README.md#parallel-execution) for the
+failure parallel runs had there.
 
 When either macOS job fails it uploads its full tool logs (`artifacts/build/`, and
-for `test` also `artifacts/tests/*.log`) as `build-logs-<tag>` or `test-logs-<tag>`,
+for `test` also `artifacts/tests/*.log` and any WebKit, app or jetsam reports from
+the run in `artifacts/tests/reports/`) as `build-logs-<tag>` or `test-logs-<tag>`,
 kept 14 days: the job output is only the scripts' filtered summary.
 
 **`publish`**

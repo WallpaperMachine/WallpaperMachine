@@ -201,11 +201,25 @@ jobs:
         run: python3 scripts/build.py --renderer-only
 
       - name: Test
-        run: python3 scripts/test.py
+        # One test class at a time. In parallel, offscreen control-panel suites failed here
+        # (never locally) with "InvalidTransition … failed(deinit)": WebKit dropped a
+        # JavaScript call unanswered. Serial takes about four times as long (locally 220 s
+        # against 50 s), which delays publishing but stays far inside the job's timeout.
+        run: python3 scripts/test.py --serial
 
       - name: Report the C++ object cache
         if: always()
         run: ccache --show-stats
+
+      - name: Collect crash and jetsam reports of a failed test run
+        # Says whether a web content process crashed or was killed for memory.
+        if: failure()
+        run: |
+          mkdir -p artifacts/tests/reports
+          find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -maxdepth 1 -type f \
+            \( -name '*WebContent*' -o -name '*WebKit*' -o -name 'WallpaperMachine*' -o -name 'JetsamEvent*' \) \
+            -mmin -180 -exec cp {} artifacts/tests/reports/ \; 2>/dev/null || true
+          ls -l artifacts/tests/reports
 
       - name: Keep the logs of a failed test run
         if: failure()
@@ -215,6 +229,7 @@ jobs:
           path: |
             artifacts/build/
             artifacts/tests/*.log
+            artifacts/tests/reports/
           if-no-files-found: ignore
           retention-days: 14
 
