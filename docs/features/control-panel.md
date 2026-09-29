@@ -8,14 +8,16 @@ a system dialog and renderer content is never loaded into the web view.
 
 ## Language
 
-The app ships in English and Simplified Chinese (简体中文), including navigation,
+The app ships in English, Simplified Chinese (简体中文), Traditional Chinese
+(繁體中文) and Japanese (日本語), including navigation,
 filters, wallpaper options, download/sign-in guidance, settings, accessibility
 labels, menus and dialogs. **Settings → General → Language** offers **System
 (Auto)** and every shipped language, each listed under its own name:
 
 - **System (Auto)** (default) follows the macOS language list as macOS matches
   it to the app: `zh-CN`, `zh` and `zh-Hans-TW` reach Simplified Chinese;
-  Traditional Chinese and any other language fall back to English. A per-app
+  `zh-TW`, `zh-HK` and `zh-Hant` reach Traditional Chinese; `ja` reaches
+  Japanese; any other language falls back to English. A per-app
   choice made in **System Settings → General → Language & Region →
   Applications** is honoured the same way.
 - Choosing a language switches the panel immediately, without a reload, and is

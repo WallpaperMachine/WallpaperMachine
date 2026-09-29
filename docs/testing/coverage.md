@@ -121,11 +121,11 @@ Swift tests cover, without starting the app:
   `ControlPanelDiscoverTests` (pagination, grid, download rings, previews) and
   `ControlPanelSyncTests` (hidden-panel pushes, option fetches, display titles).
   Offscreen `NSHostingController` layout proposals at 760×560,
-  960×640, and 1240×800 in English and Chinese, asserting the root accepts each
+  960×640, and 1240×800 in every shipped language, asserting the root accepts each
   window width without forcing a taller window; an offscreen `WKWebView`
   regression that loads the bundled interface under its custom scheme, waits for
   the native reply bridge, routes a `navigate` message to Settings, and rejects
-  a non-allowlisted external URL; an English/Simplified Chinese regression that
+  a non-allowlisted external URL; a regression in every shipped language that
   checks the injected language, rendered navigation/accessibility labels, settings
   and result summary, plus locale fallback and literal placeholder substitution;
   a language-switch regression that sends `languageSetting` and confirms the
@@ -134,8 +134,8 @@ Swift tests cover, without starting the app:
   labels must pass `appLanguage: .english()` (`Tests/Unit/Support/TestAppLanguage.swift`)
   or a store built with explicit `systemLanguages`: the default
   `AppLanguageStore.shared` follows the developer's in-app language choice, so an
-  implicit store renders Chinese on a Mac where the app was switched to 简体中文
-  and English-wording assertions fail. `Tests/Unit/Localization/` covers
+  implicit store renders another language on a Mac where the app was switched to
+  one and English-wording assertions fail. `Tests/Unit/Localization/` covers
   the preference store: system matching, persistence, the `AppleLanguages`
   mirror and rejected tags. Python catalog checks
   (`scripts/tests/test_panel_localization.py`) require the Swift registry, the

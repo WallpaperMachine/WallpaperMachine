@@ -50,7 +50,7 @@ Extension/                         WallpaperMachineExtension sources, Info.plist
 Shared/                            contracts compiled into both targets: LockScreenConfiguration,
                                    RuntimeCounters, WallpaperPresentationAuthority
 WebUI/                             HTML/CSS/JS control panel; bundled verbatim as the app resource folder WebUI
-  locales/                         one panel catalog module per shipped language (zh-Hans.js), registered in i18n.js
+  locales/                         one panel catalog module per shipped language (zh-Hans.js, zh-Hant.js, ja.js), registered in i18n.js
 Resources/StarterWallpaper/        bundled sample wallpaper (Aurora.mp4, preview.jpg, project.json)
 Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Automation, Desktop, Diagnostics, GitHub,
                                    Library, Localization, LockScreen, NativeVideo, Panel, Pixiv, Playlist, Steam, SystemMedia,
