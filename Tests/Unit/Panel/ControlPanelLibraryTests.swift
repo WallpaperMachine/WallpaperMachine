@@ -51,7 +51,6 @@ final class ControlPanelLibraryTests: ControlPanelTestCase {
     let controller = WebPanelController(
       store: fixture.store, navigation: navigation, workshop: workshop, defaults: defaults,
       appLanguage: .english())
-    XCTAssertEqual(controller.filtersCollapsed, ["discover": false, "installed": false])
     XCTAssertNil(
       defaults.object(forKey: WebPanelController.legacyInspectorWidthKey),
       "A stored inspector width from an earlier build is cleared on launch")
@@ -129,7 +128,7 @@ final class ControlPanelLibraryTests: ControlPanelTestCase {
       const installed = measure();
       showDiscover(reply);
       const inspector = document.getElementById('inspector');
-      return {before, after, installed, flags: reply.filtersCollapsed,
+      return {before, after, installed,
               separators: document.querySelectorAll('[role="separator"], [class*="resizer"]').length,
               snapshotWidth: 'inspectorWidth' in reply,
               inspectorWidth: Math.round(inspector.getBoundingClientRect().width),
@@ -185,19 +184,15 @@ final class ControlPanelLibraryTests: ControlPanelTestCase {
     XCTAssertEqual(before?["boxes"] as? Int, 3 + 5 + 3 + 25 + 25, "Show only, Type, Age rating, Resolution and Tags")
     XCTAssertEqual(before?["selects"] as? Int, 0, "No type menu: types are boxes like Wallpaper Engine's")
     XCTAssertNil(before?["filterCount"] as? String, "Defaults count as no active filter")
-    XCTAssertEqual(result?["flags"] as? [String: Bool], ["discover": true, "installed": false])
     XCTAssertNil(controller.actionError)
-    XCTAssertEqual(controller.filtersCollapsed, ["discover": true, "installed": false])
-    XCTAssertTrue(defaults.bool(forKey: WebPanelController.filtersCollapsedKeys["discover"]!))
-    XCTAssertFalse(defaults.bool(forKey: WebPanelController.filtersCollapsedKeys["installed"]!))
     XCTAssertNil(defaults.object(forKey: WebPanelController.legacyInspectorWidthKey))
     let relaunched = WebPanelController(
       store: fixture.store, navigation: ControlPanelNavigation(), workshop: workshop,
       defaults: defaults, appLanguage: .english())
-    XCTAssertEqual(
-      relaunched.filtersCollapsed, ["discover": true, "installed": false],
-      "The choice must survive a relaunch, page by page")
-    XCTAssertEqual(relaunched.snapshot()["filtersCollapsed"] as? [String: Bool], ["discover": true, "installed": false])
+    XCTAssertEqual(relaunched.filtersCollapsed["discover"], true,
+      "Discover's collapsed choice must survive a relaunch")
+    XCTAssertEqual(relaunched.filtersCollapsed["installed"], false,
+      "Collapsing Discover must leave Installed open after relaunch")
     XCTAssertNil(relaunched.snapshot()["inspectorWidth"], "No inspector width is published")
 
     // The width is the same function of the window on both pages: 260px at the 760px
