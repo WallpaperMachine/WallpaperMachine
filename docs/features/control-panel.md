@@ -8,14 +8,16 @@ a system dialog and renderer content is never loaded into the web view.
 
 ## Language
 
-The app ships in English and Simplified Chinese (简体中文), including navigation,
+The app ships in English, Simplified Chinese (简体中文), Traditional Chinese
+(繁體中文) and Japanese (日本語), including navigation,
 filters, wallpaper options, download/sign-in guidance, settings, accessibility
 labels, menus and dialogs. **Settings → General → Language** offers **System
 (Auto)** and every shipped language, each listed under its own name:
 
 - **System (Auto)** (default) follows the macOS language list as macOS matches
   it to the app: `zh-CN`, `zh` and `zh-Hans-TW` reach Simplified Chinese;
-  Traditional Chinese and any other language fall back to English. A per-app
+  `zh-TW`, `zh-HK` and `zh-Hant` reach Traditional Chinese; `ja` reaches
+  Japanese; any other language falls back to English. A per-app
   choice made in **System Settings → General → Language & Region →
   Applications** is honoured the same way.
 - Choosing a language switches the panel immediately, without a reload, and is
@@ -199,7 +201,8 @@ a download.
   General, Appearance, Displays, Library & Steam, Storage and About. Everyday
   categories lead the navigation; library, storage and product information are
   visually separated. **General** starts with the
-  [Language](#language) picker, then startup/desktop and lock-screen groups.
+  [Language](#language) picker, then startup/desktop, keyboard shortcuts (see
+  [automation](automation.md)) and lock-screen groups.
   It no longer has a pause-on-battery toggle; battery is one choice on
   Performance. **Performance** opens with a live energy readout for the app
   (grade, total, CPU and GPU, battery share, and the figure before and after
@@ -343,7 +346,8 @@ playing on a display is ejected first.
 The top bar picker chooses which display Apply acts on. Disabled and mirrored
 displays are listed but not selectable, annotated `(disabled)` or `(mirrored)`.
 Per-display enablement, independent/mirror mode, mirror source, scaling, scale
-factor, frame rate, mute and volume live in **Settings -> Displays**. When a
+factor, frame rate, mute and volume live in **Settings -> Displays**, beside
+each independent display's **Playlist** (see [playlists](playlists.md)). When a
 Performance cap, or the battery frame rate while reduced quality is in force,
 is below the saved frame rate, the field notes `Limited to {fps} fps by
 Performance settings` and can open Settings → Performance. The inspector's
@@ -506,8 +510,24 @@ downloads button while downloads exist, and from **Show in downloads** in the
 inspector. The import
 popover opens from **Import** in the Installed toolbar; imports copy source
 files into the library and leave the originals untouched, with a duplicate
-policy of **Skip duplicates** or **Keep both copies**. Closing a popover never
-cancels work. The Steam sign-in dialog uses a guide card (glyph plus numbered
+policy of **Skip duplicates** or **Keep both copies**. Closing a popover, or the
+window, never cancels work: `LibraryImportStore` runs the import for the app, not
+for the page.
+
+An import takes Wallpaper Engine project folders, a Steam library, videos
+(`mp4`, `m4v`, `mov`, `webm`, `mkv`, `avi`), HTML files and pictures (`jpg`,
+`jpeg`, `png`, `gif`, `webp`, `heic`, `heif`, `tif`, `tiff`, `bmp`, `avif`, at
+most 512 MB). A picture becomes a still `web` wallpaper with the id
+`image-<file name>`, packaged the way pixiv pages are (`StillImageWallpaper`; see
+[pixiv](pixiv.md#saving-a-page)): the original kept as `image.<ext>`, a 512 px
+`preview.jpg`, and a `display.jpg` shown instead when the format is not one a
+web view shows as it is (`jpg`, `png`, `gif`, `webp`) or the long side exceeds
+8,192 px. Its **Image fit** and **Background color** labels are translated like
+pixiv's. A picture ImageIO cannot measure or scale is reported and not imported.
+Files dropped on the Dock icon, or opened with WallpaperMachine from Finder
+(`CFBundleDocumentTypes` in `Info.plist`, rank Alternate, so the app never
+becomes a default), are imported the same way with **Skip duplicates**, and the
+window opens on Installed with the import in the activity bar. The Steam sign-in dialog uses a guide card (glyph plus numbered
 steps) for Steam Guard stages; account and password prompts are just the
 labelled field. Once Steam accepts the sign-in, it confirms that the download
 is running before it closes; see

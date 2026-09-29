@@ -17,6 +17,23 @@ enum DesktopCoveredAction: String, Codable, CaseIterable, Sendable {
     case keepRunning
 }
 
+/// What wallpapers do while a condition of the whole Mac holds: Low Power Mode, or macOS
+/// reporting it hot.
+enum SystemConditionAction: String, Codable, CaseIterable, Sendable {
+    case keepRunning
+    case pause
+    case stop
+
+    /// The rule action it contributes, the same way an app rule's does; nil while it keeps running.
+    var ruleAction: AppRuleAction? {
+        switch self {
+        case .keepRunning: nil
+        case .pause: .pause
+        case .stop: .stop
+        }
+    }
+}
+
 enum AppRuleCondition: String, Codable, CaseIterable, Sendable {
     case running
     case frontmost
@@ -37,7 +54,8 @@ struct AppRule: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// UserDefaults-backed playback rules for display sleep, other-app audio, a
-/// covered desktop and per-app pause, mute and stop. Mutations post `didChangeNotification` once.
+/// covered desktop, Low Power Mode, a hot Mac and per-app pause, mute and stop. Mutations post
+/// `didChangeNotification` once.
 @MainActor
 final class PlaybackPreferences {
     static let didChangeNotification = Notification.Name("WallpaperMachine.playbackPreferencesDidChange")
@@ -53,6 +71,8 @@ final class PlaybackPreferences {
     private static let otherAudioKey = "WallpaperMachine.otherAudioAction"
     private static let desktopCoveredKey = "WallpaperMachine.desktopCoveredAction"
     private static let appRulesKey = "WallpaperMachine.appRules"
+    private static let lowPowerModeKey = "WallpaperMachine.lowPowerModeAction"
+    private static let thermalKey = "WallpaperMachine.thermalAction"
 
     private let defaults: UserDefaults
 
@@ -74,6 +94,18 @@ final class PlaybackPreferences {
     var desktopCoveredAction: DesktopCoveredAction {
         get { storedEnum(Self.desktopCoveredKey, default: .pause) }
         set { store(newValue.rawValue, forKey: Self.desktopCoveredKey) }
+    }
+
+    /// Off until chosen, like battery: Low Power Mode alone never changes playback.
+    var lowPowerModeAction: SystemConditionAction {
+        get { storedEnum(Self.lowPowerModeKey, default: .keepRunning) }
+        set { store(newValue.rawValue, forKey: Self.lowPowerModeKey) }
+    }
+
+    /// Applies while macOS reports the thermal state as serious or critical.
+    var thermalAction: SystemConditionAction {
+        get { storedEnum(Self.thermalKey, default: .keepRunning) }
+        set { store(newValue.rawValue, forKey: Self.thermalKey) }
     }
 
     private(set) var appRules: [AppRule]

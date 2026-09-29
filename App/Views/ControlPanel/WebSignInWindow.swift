@@ -1,46 +1,75 @@
 import AppKit
 import WebKit
 
-/// pixiv's own sign-in page in a window of its own. The page runs in a private website data
+/// A site whose own sign-in page `WebSignInWindowController` shows, and the one cookie the app
+/// takes from it once someone has signed in.
+struct WebSignInSite: Sendable {
+    let title: String
+    let signInURL: URL
+    let cookieName: String
+    let cookieDomains: Set<String>
+    /// Whether a cookie value is a real session rather than a placeholder the page sets early.
+    let accepts: @Sendable (String) -> Bool
+
+    static var pixiv: WebSignInSite {
+        WebSignInSite(
+            title: String(localized: "Sign in to pixiv"),
+            signInURL: URL(
+                string: "https://accounts.pixiv.net/login?return_to=https%3A%2F%2Fwww.pixiv.net%2F&source=pc&view_type=page")!,
+            cookieName: "PHPSESSID", cookieDomains: ["pixiv.net", ".pixiv.net", "www.pixiv.net"],
+            accepts: PixivService.isSessionValue)
+    }
+
+    static var steam: WebSignInSite {
+        WebSignInSite(
+            title: String(localized: "Sign in to Steam"),
+            signInURL: URL(string: "https://steamcommunity.com/login/home/?goto=")!,
+            cookieName: "steamLoginSecure", cookieDomains: ["steamcommunity.com", ".steamcommunity.com"],
+            accepts: { SteamWebSession(cookie: $0) != nil })
+    }
+}
+
+/// A site's own sign-in page in a window of its own. The page runs in a private website data
 /// store that disappears with the window, and the app reads exactly one thing from it: the
-/// `PHPSESSID` cookie pixiv sets on `.pixiv.net` once someone has signed in. The password,
-/// and anything else typed into the page, stays between the page and pixiv.
+/// site's session cookie, once someone has signed in. The password, and anything else typed
+/// into the page, stays between the page and the site.
 @MainActor
-final class PixivSignInWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
+final class WebSignInWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     WKHTTPCookieStoreObserver
 {
-    static let signInURL = URL(
-        string: "https://accounts.pixiv.net/login?return_to=https%3A%2F%2Fwww.pixiv.net%2F&source=pc&view_type=page")!
-    private static var current: PixivSignInWindowController?
+    /// The open window of each site, by cookie name.
+    private static var current: [String: WebSignInWindowController] = [:]
 
+    private let site: WebSignInSite
     private let webView: WKWebView
     private var continuation: CheckedContinuation<String?, Never>?
 
-    /// Opens the window and answers the session pixiv set, or nil once the window closes
-    /// without one. While a window is open, another call only brings it forward and answers
-    /// nil at once, so a caller must not start a second sign-in; `PixivStore.signIn` never does.
-    static func obtainSession() async -> String? {
-        if let current {
-            current.showWindow(nil)
+    /// Opens the window and answers the session cookie the site set, or nil once the window
+    /// closes without one. While the site's window is open, another call only brings it forward
+    /// and answers nil at once, so a caller must not start a second sign-in.
+    static func obtainCookie(for site: WebSignInSite) async -> String? {
+        if let open = current[site.cookieName] {
+            open.showWindow(nil)
             return nil
         }
-        let controller = PixivSignInWindowController()
-        current = controller
+        let controller = WebSignInWindowController(site: site)
+        current[site.cookieName] = controller
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 controller.continuation = continuation
                 controller.showWindow(nil)
-                controller.webView.load(URLRequest(url: signInURL))
+                controller.webView.load(URLRequest(url: site.signInURL))
             }
         } onCancel: {
             Task { @MainActor in controller.finish(nil) }
         }
     }
 
-    /// Brings an open sign-in window forward; does nothing when none is open.
-    static func bringToFront() { current?.showWindow(nil) }
+    /// Brings the site's open sign-in window forward; does nothing when none is open.
+    static func bringToFront(_ site: WebSignInSite) { current[site.cookieName]?.showWindow(nil) }
 
-    private init() {
+    private init(site: WebSignInSite) {
+        self.site = site
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -49,7 +78,7 @@ final class PixivSignInWindowController: NSWindowController, NSWindowDelegate, W
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = String(localized: "Sign in to pixiv")
+        window.title = site.title
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 380, height: 520)
         window.contentView = webView
@@ -68,7 +97,7 @@ final class PixivSignInWindowController: NSWindowController, NSWindowDelegate, W
     private func finish(_ session: String?) {
         guard let continuation else { return }
         self.continuation = nil
-        if Self.current === self { Self.current = nil }
+        if Self.current[site.cookieName] === self { Self.current[site.cookieName] = nil }
         webView.configuration.websiteDataStore.httpCookieStore.remove(self)
         webView.stopLoading()
         window?.delegate = nil
@@ -80,8 +109,7 @@ final class PixivSignInWindowController: NSWindowController, NSWindowDelegate, W
         let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
         guard continuation != nil,
             let session = cookies.first(where: {
-                $0.name == "PHPSESSID" && ["pixiv.net", ".pixiv.net", "www.pixiv.net"].contains($0.domain)
-                    && PixivService.isSessionValue($0.value)
+                $0.name == site.cookieName && site.cookieDomains.contains($0.domain) && site.accepts($0.value)
             })?.value
         else { return }
         finish(session)

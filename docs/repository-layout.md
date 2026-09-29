@@ -22,7 +22,10 @@ App/                               WallpaperMachine application target sources o
   Bridge/                          BridgeEnvironment.swift (Vulkan ICD) and Generated/ (uniffi output; not hand-edited)
   Logging/                         AppLog.swift; the only Swift logging entry point
   Services/Appearance/             AppTheme.swift: theme preference model and store
-  Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy
+  Services/Automation/             commands from outside the window: keyboard shortcuts, App Intents (Shortcuts app,
+                                   Focus filter) and wallpapermachine:// links
+  Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy,
+                                   playback rules and the system conditions (Low Power Mode, heat, Focus) that feed it
   Services/Diagnostics/            runtime diagnostics session and counter sampling; per-coalition energy readout
   Services/GitHub/                 GitHub release client, update models, update store, installer
   Services/Library/                ClientPaths and library import/deletion; owns the app-support layout
@@ -30,6 +33,7 @@ App/                               WallpaperMachine application target sources o
   Services/LockScreen/             lock-screen selection overrides and configuration publishing
   Services/NativeVideo/            AVFoundation video backend: admission, player and host window
   Services/Pixiv/                  pixiv browsing, sign-in session, downloads and still-wallpaper packaging
+  Services/Playlist/               per-display playlists: model, planner, store and the scheduler that switches wallpapers
   Services/Steam/                  SteamCMD runtime discovery and setup state
   Services/SystemMedia/            shared now-playing session (MediaRemote, Music/Spotify
                                    AppleScript fallback) and artwork for Web and Scene media integration
@@ -37,7 +41,7 @@ App/                               WallpaperMachine application target sources o
                                    owns the app's copies under <support>/UserAssets/ and the derived,
                                    regenerable <project>/.mwe-user-assets/ bridge a page can read
   Services/WebWallpaper/           WKWebView host windows and page protocol for web wallpapers
-  Services/Workshop/               Workshop query model, browse store, downloader and queue
+  Services/Workshop/               Workshop query model and sources, browse store, downloader and queue
   ViewModels/                      BridgeStore and editor draft state; observable, no view code
   Views/ControlPanel/              SwiftUI container, WKWebView host, snapshot builder, action handlers
   Resources/                       Info.plist, string catalogs, Assets.xcassets; app resources only
@@ -46,10 +50,10 @@ Extension/                         WallpaperMachineExtension sources, Info.plist
 Shared/                            contracts compiled into both targets: LockScreenConfiguration,
                                    RuntimeCounters, WallpaperPresentationAuthority
 WebUI/                             HTML/CSS/JS control panel; bundled verbatim as the app resource folder WebUI
-  locales/                         one panel catalog module per shipped language (zh-Hans.js), registered in i18n.js
+  locales/                         one panel catalog module per shipped language (zh-Hans.js, zh-Hant.js, ja.js), registered in i18n.js
 Resources/StarterWallpaper/        bundled sample wallpaper (Aurora.mp4, preview.jpg, project.json)
-Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Desktop, Diagnostics, GitHub,
-                                   Library, Localization, LockScreen, NativeVideo, Panel, Pixiv, Steam, SystemMedia,
+Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Automation, Desktop, Diagnostics, GitHub,
+                                   Library, Localization, LockScreen, NativeVideo, Panel, Pixiv, Playlist, Steam, SystemMedia,
                                    UserAssets, WebWallpaper, Workshop; hosted in the app binary
 Tests/UI/                          WallpaperMachineUITests; desktop-driving XCUITest suite
 docs/                              all project documentation; see docs/README.md for the index

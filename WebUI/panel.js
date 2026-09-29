@@ -42,6 +42,9 @@ let searchTimer;
 // user's own, so every box starts ticked.
 const installed = { text: '', sort: 'title', descending: false, tags: [], excludedTags: [] };
 // Workshop sort keys mirror `WorkshopSort` raw values; Swift maps them to Steam's browse query.
+// What Discover lists. An author's wallpapers and a collection's items are opened from a tile
+// rather than chosen here, and come back to the list they were opened from.
+const workshopSources = [['browse', 'Wallpapers'], ['collections', 'Collections'], ['subscriptions', 'Your subscriptions']];
 const workshopSorts = [['toprated', 'Highest rated'], ['trend-today', 'Most popular today'], ['trend', 'Trending this week'], ['trend-month', 'Most popular this month'], ['trend-year', 'Most popular this year'], ['totaluniquesubscribers', 'Most subscribed'], ['mostrecent', 'Newest'], ['textsearch', 'Relevance']];
 // Installed sort keys with the direction each one starts in: names read A→Z, while favorites,
 // size and date are asked for to see the biggest / newest / starred first.
@@ -61,10 +64,10 @@ let swallowClick = false;
 // unchecked by default. Application and Asset are never offered, so they are always excluded.
 const showOnlyTags = ['Approved', 'Audio responsive', 'Customizable'];
 // Installed leads with the two facts only a library has, then Discover's three.
-const installedShowOnlyTags = ['Favorite', 'Active', ...showOnlyTags];
-const showOnlyLabels = { Favorite: 'Favorites', Active: 'Active on target display' };
+const installedShowOnlyTags = ['Favorite', 'Active', 'Update', ...showOnlyTags];
+const showOnlyLabels = { Favorite: 'Favorites', Active: 'Active on target display', Update: 'Update available' };
 // Approved keeps Wallpaper Engine's green trophy so the mark matches what users know from Workshop.
-const showOnlyIcons = { Approved: 'trophy', 'Audio responsive': 'audioLines', Customizable: 'slidersVertical', Favorite: 'heart', Active: 'play' };
+const showOnlyIcons = { Approved: 'trophy', 'Audio responsive': 'audioLines', Customizable: 'slidersVertical', Favorite: 'heart', Active: 'play', Update: 'download' };
 const hiddenExcludedTags = ['Application', 'Asset'];
 const resolutionSection = (key, title, prefix, sizes) => ({ key, title, quick: true, tags: [[`${prefix}Standard Definition`, prefix ? `${title} (standard)` : 'Standard definition'], ...sizes.map(size => [`${prefix}${size}`, size])] });
 // `discoverOnly` marks what Steam knows but a wallpaper's manifest does not carry (its
@@ -266,10 +269,25 @@ function filterButton(count) {
   const open = !filtersCollapsed();
   return `<button type="button" data-action="toggleFilters" class="filter-button" aria-expanded="${open}" aria-controls="filter-sidebar" title="${escapeHTML(open ? t('Hide filters') : t('Show filters'))}"${disabled(busy('toggleFilters'))}>${icon('filter')}<span class="button-label">${escapeHTML(t('Filter'))}</span>${filterCountPill(count)}</button>`;
 }
+// Discover's source: a list to choose, or the author or collection opened from a tile with the
+// way back to where it was opened. Only Steam's own lists are searched and sorted.
+const workshopSource = () => state.workshop?.source || { key: 'browse', searchable: true, canGoBack: false };
+const openedSource = (source) => ['creator', 'collection'].includes(source.key);
+function sourceHeading(source) {
+  if (source.key === 'creator') return source.name ? t('Wallpapers by {name}', { name: source.name }) : t('This author’s wallpapers');
+  return source.name ? t('Collection: {title}', { title: source.name }) : t('Collection');
+}
+function sourceControls(source) {
+  if (openedSource(source)) return `<div class="source-bar">${button('', 'workshopBack', {}, { icon: 'chevronLeft', title: t('Go back'), className: 'quiet icon-button', disabled: !source.canGoBack || state.workshop.loading })}<h2 class="source-title" title="${escapeHTML(sourceHeading(source))}">${escapeHTML(sourceHeading(source))}</h2></div>`;
+  return `<label class="sr-only" for="workshop-source">${escapeHTML(t('Show'))}</label><select id="workshop-source" class="source-picker" data-change="workshopSource">${selectOptions(workshopSources.map(([key, label]) => [key, t(label)]), source.key)}</select>`;
+}
 function renderToolbar(discover) {
   const search = discover ? workshopDraft.text : installed.text;
   const sortLabel = t(installedSorts.find(([key]) => key === installed.sort)?.[1] || 'Name');
-  morph($('browser-toolbar'), `${filterButton(filterCount(discover))}<form class="search-form" data-form="search" ${keyAttr(discover ? 'workshop-search' : 'installed-search')}>${icon('search')}<label class="sr-only" for="wallpaper-search">${escapeHTML(discover ? t('Search Steam Workshop') : t('Search installed wallpapers'))}</label><input id="wallpaper-search" type="search" autocomplete="off" placeholder="${escapeHTML(discover ? t('Search Workshop') : t('Search wallpapers'))}" value="${escapeHTML(search)}" data-input="search">${discover ? `<button type="submit" title="${escapeHTML(t('Search Workshop'))}">${escapeHTML(t('Search'))}</button>` : ''}</form><div class="toolbar-tools"><label class="sr-only" for="browser-sort">${escapeHTML(t('Sort wallpapers'))}</label><select id="browser-sort" data-change="sort">${selectOptions((discover ? workshopSorts : installedSorts).map(([key, label]) => [key, t(label)]), discover ? workshopDraft.sort : installed.sort)}</select>${discover ? `${button('', 'refreshWorkshop', {}, { icon: 'refresh', title: t('Refresh Workshop'), disabled: state.workshop.loading })}` : `${button('', 'toggleSortDirection', {}, { icon: installed.descending ? 'sortDescending' : 'sortAscending', title: installed.descending ? t('{sort}, descending. Click to sort ascending', { sort: sortLabel }) : t('{sort}, ascending. Click to sort descending', { sort: sortLabel }), className: 'icon-button sort-direction' })}${button(selecting ? t('Done') : t('Select'), 'toggleSelecting', {}, { icon: selecting ? 'close' : 'check', title: selecting ? t('Leave selection mode') : t('Select wallpapers to move to Trash. Holding a tile and dragging across others selects them too.'), className: selecting ? 'selecting' : '' })}${button('', 'refresh', {}, { icon: 'refresh', title: t('Refresh library'), disabled: state.libraryLoading })}${button(t('Import'), 'openImport', {}, { icon: 'plus', className: 'import-button', title: t('Import wallpapers'), disabled: state.import?.busy })}`}</div>`);
+  const source = discover ? workshopSource() : null;
+  const searchable = !discover || source.searchable !== false;
+  const sortPicker = searchable ? `<label class="sr-only" for="browser-sort">${escapeHTML(t('Sort wallpapers'))}</label><select id="browser-sort" data-change="sort">${selectOptions((discover ? workshopSorts : installedSorts).map(([key, label]) => [key, t(label)]), discover ? workshopDraft.sort : installed.sort)}</select>` : '';
+  morph($('browser-toolbar'), `${filterButton(filterCount(discover))}${discover ? sourceControls(source) : ''}${searchable ? `<form class="search-form" data-form="search" ${keyAttr(discover ? 'workshop-search' : 'installed-search')}>${icon('search')}<label class="sr-only" for="wallpaper-search">${escapeHTML(discover ? t('Search Steam Workshop') : t('Search installed wallpapers'))}</label><input id="wallpaper-search" type="search" autocomplete="off" placeholder="${escapeHTML(discover ? t('Search Workshop') : t('Search wallpapers'))}" value="${escapeHTML(search)}" data-input="search">${discover ? `<button type="submit" title="${escapeHTML(t('Search Workshop'))}">${escapeHTML(t('Search'))}</button>` : ''}</form>` : ''}<div class="toolbar-tools">${sortPicker}${discover ? `${button('', 'refreshWorkshop', {}, { icon: 'refresh', title: t('Refresh Workshop'), disabled: state.workshop.loading })}` : `${button('', 'toggleSortDirection', {}, { icon: installed.descending ? 'sortDescending' : 'sortAscending', title: installed.descending ? t('{sort}, descending. Click to sort ascending', { sort: sortLabel }) : t('{sort}, ascending. Click to sort descending', { sort: sortLabel }), className: 'icon-button sort-direction' })}${button(selecting ? t('Done') : t('Select'), 'toggleSelecting', {}, { icon: selecting ? 'close' : 'check', title: selecting ? t('Leave selection mode') : t('Select wallpapers to move to Trash. Holding a tile and dragging across others selects them too.'), className: selecting ? 'selecting' : '' })}${button('', 'refresh', {}, { icon: 'refresh', title: t('Refresh library'), disabled: state.libraryLoading })}${button(t('Import'), 'openImport', {}, { icon: 'plus', className: 'import-button', title: t('Import wallpapers'), disabled: state.import?.busy })}`}</div>`);
 }
 const filterGroup = (key, title, body, open, count = 0) => `<details class="filter-group"${open ? ' open' : ''} ${keyAttr(key)}><summary><span class="filter-group-title">${escapeHTML(t(title))}${filterCountPill(count)}</span>${icon('chevronRight', 13)}</summary><div class="filter-options">${body}</div></details>`;
 const filterHeading = (count, clearAction) => `<div class="filter-heading"><h3>${escapeHTML(t('Filters'))}${filterCountPill(count)}</h3>${button(t('Clear'), clearAction, {}, { className: 'link', disabled: !count })}</div>`;
@@ -309,6 +327,7 @@ function installedTags(item, target) {
   if (item.approved) tags.push('approved');
   if (state.favorites.includes(item.id)) tags.push('favorite');
   if (target?.wallpaperID === item.id) tags.push('active');
+  if (item.updateAvailable) tags.push('update');
   if (!tags.some(tag => genreTags.includes(tag))) tags.push('unspecified');
   return new Set(tags);
 }
@@ -340,7 +359,8 @@ function visibleWallpapers() {
   return (state.wallpapers || []).filter(item => (!installed.text || `${item.title} ${(item.tags || []).join(' ')}`.toLocaleLowerCase().includes(installed.text.toLocaleLowerCase())) && matchesInstalledFilters(item, target)).sort(compareInstalled);
 }
 function emptyRecovery(discover) {
-  const draft = filterDraft(discover);
+  // A source Steam does not search ignores the search text, so only filters can hide its items.
+  const draft = discover && workshopSource().searchable === false ? { ...filterDraft(discover), text: '' } : filterDraft(discover);
   const count = filterCount(discover);
   if (!discover && !state.wallpapers.length) return {
     description: t('Import a wallpaper folder or find something on the Workshop.'),
@@ -371,16 +391,23 @@ function renderGrid(discover) {
   // Drag-selecting is taught where selecting happens: until the user has swept once or said
   // "Got it", every selection context carries the tip; afterwards a short reminder remains in
   // selection mode only.
+  const updateCount = Number(state.workshopUpdates?.count) || 0;
+  const updateAll = !discover && updateCount ? button(updateCount === 1 ? t('Update 1 wallpaper') : t('Update {count} wallpapers', { count: updateCount.toLocaleString() }), 'workshopUpdateAll', {}, { icon: 'download', className: 'link', title: t('Download the new versions the Workshop has of your wallpapers'), disabled: busy('workshopUpdateAll') }) : '';
   const sweepTip = !discover && items.length > 1 && !state.dragSelectLearned ? `<span class="selection-tip" role="note">${icon('mousePointerClick', 14)}<span>${escapeHTML(t('Tip: hold a tile, then drag across others to select them all at once.'))}</span>${button(t('Got it'), 'dragSelectLearned', {}, { className: 'link' })}</span>` : '';
-  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop')) : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
+  // Subscriptions offer to download what the library lacks, and the way to sign out again.
+  const subscriptionTools = discover && workshopSource().key === 'subscriptions' && workshop.steamSignedIn ? `${button(t('Download the ones not in your library'), 'workshopDownloadSubscribed', {}, { icon: 'download', className: 'link', title: t('Downloads every wallpaper you subscribe to that isn’t in your library yet'), disabled: busy('workshopDownloadSubscribed') })}${button(t('Sign out of Steam'), 'steamWebSignOut', {}, { className: 'link', title: t('Forgets the Steam session this app read your subscriptions with') })}` : '';
+  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? `<div class="selection-bar"><span>${escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop'))}</span>${subscriptionTools}</div>` : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Add to playlist') : t('Add {count} to playlist', { count: selection.size.toLocaleString() }), 'addSelectedToPlaylist', {}, { icon: 'listPlus', title: t('Adds them to the list of the target display’s playlist'), disabled: !target?.enabled || target.mode === 'mirror' || busy('playlistAdd') })}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${updateAll}${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
   $('wallpaper-grid').classList.toggle('selecting', !discover && (selecting || selection.size > 0));
   // Animations belong to Discover. An installed wallpaper keeps its Workshop id, so a live entry
   // left over from Discover would mark its Installed tile as playing and hide that tile's still.
   retireLivePreviews(new Set(discover ? items.map(item => item.id) : []));
-  morph($('wallpaper-grid'), items.map(item => `<article class="wallpaper-tile${selection.has(item.id) ? ' checked' : ''}${!discover && sweepArmingID() === item.id ? ' arming' : ''}${live.get(item.id)?.playing ? ' playing' : ''}" ${keyAttr(item.id)}><button type="button" class="tile-select" data-action="${discover ? 'workshopSelect' : 'select'}" data-id="${escapeHTML(item.id)}" aria-pressed="${item.id === selectedID}" aria-label="${escapeHTML(item.title)}, ${escapeHTML(t(item.kind))}${tileMarkNames(item, discover).map(name => `, ${escapeHTML(t(tileMarkGlyphs[name][1]))}`).join('')}${item.id === selectedID ? `, ${escapeHTML(t('selected'))}` : ''}"><span class="tile-placeholder">${icon('image', 28)}</span>${discover && ['loading', 'ready'].includes(live.get(item.id)?.status) ? `<img ${keyAttr(`live-${item.id}`)} class="tile-live" src="${escapeHTML(safeImage(item.animated))}" alt="" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">` : ''}${safeImage(item.thumbnail || item.preview) ? `<img ${keyAttr(item.thumbnail || item.preview)} class="tile-still" src="${escapeHTML(safeImage(item.thumbnail || item.preview))}" alt=""${discover ? '' : ' loading="lazy"'} decoding="async"${safeImage(item.thumbnail || item.preview).startsWith('mwe-ui:') ? ' crossorigin="anonymous"' : ''} referrerpolicy="no-referrer">` : ''}<span class="tile-caption"><span class="tile-title">${escapeHTML(item.title)}</span><span class="tile-kind">${escapeHTML(t(item.kind))}</span></span></button>${tileMarksMarkup(item, discover)}${discover ? tileDownloadMarkup(item) : tileApplyMarkup(item)}${!discover ? `<button type="button" class="tile-check" data-action="toggleSelect" data-id="${escapeHTML(item.id)}" aria-pressed="${selection.has(item.id)}" aria-label="${escapeHTML(selection.has(item.id) ? t('Deselect: {title}', { title: item.title }) : t('Select: {title}', { title: item.title }))}" title="${escapeHTML(t('Click to select, or drag from here across other tiles to select them too.'))}">${icon('check', 14)}</button><button type="button" class="tile-favorite" data-action="favorite" data-id="${escapeHTML(item.id)}" aria-pressed="${state.favorites.includes(item.id)}" aria-label="${escapeHTML(state.favorites.includes(item.id) ? t('Remove favorite: {title}', { title: item.title }) : t('Add favorite: {title}', { title: item.title }))}"${disabled(busy('favorite', { id: item.id }))}>${icon('heart', 14)}</button>${target?.wallpaperID === item.id ? `<span class="active-badge">${escapeHTML(t('Active'))}</span>` : item.active ? `<span class="active-badge">${escapeHTML(t('Other display'))}</span>` : ''}` : ''}</article>`).join(''));
+  morph($('wallpaper-grid'), items.map(item => `<article class="wallpaper-tile${selection.has(item.id) ? ' checked' : ''}${!discover && sweepArmingID() === item.id ? ' arming' : ''}${live.get(item.id)?.playing ? ' playing' : ''}" ${keyAttr(item.id)}><button type="button" class="tile-select" data-action="${discover ? 'workshopSelect' : 'select'}" data-id="${escapeHTML(item.id)}" aria-pressed="${item.id === selectedID}" aria-label="${escapeHTML(item.title)}, ${escapeHTML(kindLabel(item))}${tileMarkNames(item, discover).map(name => `, ${escapeHTML(t(tileMarkGlyphs[name][1]))}`).join('')}${item.id === selectedID ? `, ${escapeHTML(t('selected'))}` : ''}"><span class="tile-placeholder">${icon('image', 28)}</span>${discover && ['loading', 'ready'].includes(live.get(item.id)?.status) ? `<img ${keyAttr(`live-${item.id}`)} class="tile-live" src="${escapeHTML(safeImage(item.animated))}" alt="" decoding="async" crossorigin="anonymous" referrerpolicy="no-referrer">` : ''}${safeImage(item.thumbnail || item.preview) ? `<img ${keyAttr(item.thumbnail || item.preview)} class="tile-still" src="${escapeHTML(safeImage(item.thumbnail || item.preview))}" alt=""${discover ? '' : ' loading="lazy"'} decoding="async"${safeImage(item.thumbnail || item.preview).startsWith('mwe-ui:') ? ' crossorigin="anonymous"' : ''} referrerpolicy="no-referrer">` : ''}<span class="tile-caption"><span class="tile-title">${escapeHTML(item.title)}</span><span class="tile-kind">${escapeHTML(kindLabel(item))}</span></span></button>${tileMarksMarkup(item, discover)}${discover ? (item.collection ? '' : tileDownloadMarkup(item)) : tileApplyMarkup(item)}${!discover ? `<button type="button" class="tile-check" data-action="toggleSelect" data-id="${escapeHTML(item.id)}" aria-pressed="${selection.has(item.id)}" aria-label="${escapeHTML(selection.has(item.id) ? t('Deselect: {title}', { title: item.title }) : t('Select: {title}', { title: item.title }))}" title="${escapeHTML(t('Click to select, or drag from here across other tiles to select them too.'))}">${icon('check', 14)}</button><button type="button" class="tile-favorite" data-action="favorite" data-id="${escapeHTML(item.id)}" aria-pressed="${state.favorites.includes(item.id)}" aria-label="${escapeHTML(state.favorites.includes(item.id) ? t('Remove favorite: {title}', { title: item.title }) : t('Add favorite: {title}', { title: item.title }))}"${disabled(busy('favorite', { id: item.id }))}>${icon('heart', 14)}</button>${target?.wallpaperID === item.id ? `<span class="active-badge">${escapeHTML(t('Active'))}</span>` : item.active ? `<span class="active-badge">${escapeHTML(t('Other display'))}</span>` : ''}` : ''}</article>`).join(''));
   const empty = $('browser-empty'); empty.hidden = items.length > 0;
   $('wallpaper-grid').hidden = !items.length;
-  if (!items.length) {
+  const signInFirst = discover && workshopSource().key === 'subscriptions' && !workshop.steamSignedIn;
+  if (!items.length && signInFirst && !loading) {
+    morph(empty, `<h1>${escapeHTML(t('Sign in to see your subscriptions'))}</h1><p>${escapeHTML(t('Steam shows the wallpapers you subscribe to only to you. You sign in on Steam’s own page; WallpaperMachine keeps the session only until it quits, and uses it only to read this list.'))}</p><div class="actions">${workshop.steamSigningIn ? button(t('Show sign-in window'), 'steamWebSignIn', {}, { icon: 'logIn' }) : button(t('Sign in to Steam…'), 'steamWebSignIn', {}, { icon: 'logIn', className: 'primary' })}</div>`);
+  } else if (!items.length) {
     const recovery = emptyRecovery(discover);
     morph(empty, loading ? `<h1>${escapeHTML(discover ? t('Loading Workshop') : t('Loading wallpapers'))}</h1><p>${escapeHTML(discover ? t('Fetching wallpapers from Steam.') : t('Reading your wallpaper library.'))}</p>` : workshop.error && discover ? `<h1>${escapeHTML(t('Workshop unavailable'))}</h1><p>${escapeHTML(workshop.error)}</p>${button(t('Try again'), 'workshopRetry', {}, { icon: 'refresh' })}` : `<h1>${escapeHTML(discover ? t('No wallpapers found') : state.wallpapers.length ? t('No matching wallpapers') : t('Your wallpaper library is empty'))}</h1><p>${escapeHTML(recovery.description)}</p><div class="actions">${recovery.actions}</div>`);
   }
@@ -395,12 +422,13 @@ function renderGrid(discover) {
 // Wallpaper Engine staff approved, and a heart for one of the user's favorites. Approval comes
 // from Steam's tag on Discover and from project.json in the library; favorites are the user's
 // own list, so a Discover tile shows the heart too once its wallpaper is installed and loved.
-const tileMarkGlyphs = { installed: ['check', 'In your library'], approved: ['trophy', 'Approved by Wallpaper Engine'], favorite: ['heart', 'Favorite'] };
+const tileMarkGlyphs = { installed: ['check', 'In your library'], approved: ['trophy', 'Approved by Wallpaper Engine'], favorite: ['heart', 'Favorite'], update: ['download', 'Update available'] };
 function tileMarkNames(item, discover) {
   const names = [];
   if (discover && state.wallpapers.some(wallpaper => wallpaper.id === item.id)) names.push('installed');
   if (item.approved) names.push('approved');
   if (state.favorites.includes(item.id)) names.push('favorite');
+  if (!discover && item.updateAvailable) names.push('update');
   return names;
 }
 function tileMarksMarkup(item, discover) {
@@ -455,8 +483,12 @@ function tileRing({ kind, glyph = '', hoverGlyph = '', progress = null, text = '
 // tooltip, the inspector and the downloads list.
 const phaseWords = { preparing: 'Preparing', connecting: 'Connecting', updating: 'Updating', signingIn: 'Signing in', requesting: 'Requesting', transferring: 'Downloading', finishing: 'Finishing' };
 const phaseWord = (phase) => phaseWords[phase] ? t(phaseWords[phase]) : '';
+// A Discover collection is named as one; everything else by its wallpaper type.
+const kindLabel = (item) => item.collection ? t('Collection') : t(item.kind);
 // Double-clicking a Discover tile downloads it; once it is in the library the same gesture applies it.
+// A collection is opened instead.
 function tileDoubleClickAction(id) {
+  if (state.workshop.items.find(item => item.id === id)?.collection) return 'workshopCollection';
   if (state.wallpapers.some(item => item.id === id)) {
     const target = state.displays.find(display => display.id === state.targetDisplayID);
     const kind = state.wallpapers.find(item => item.id === id)?.kind;
@@ -496,6 +528,12 @@ function energyRating(energy) {
   return t('{level}, about {power}. Measured while it played alone on {displays} at {rate}, {scale} render scale, with this window closed.', { level, power: milliwatts(energy.milliwatts), displays, rate, scale });
 }
 
+// The author's other wallpapers, unless they are what is on show already.
+function moreByAuthor(item) {
+  const source = workshopSource();
+  if (!/^\d{17}$/.test(item.creatorID || '') || (source.key === 'creator' && source.id === item.creatorID)) return '';
+  return button(t('More by this author'), 'workshopCreator', { id: item.creatorID, name: item.creator }, { className: 'link inspector-author' });
+}
 function renderInspector(discover) {
   const item = discover ? state.workshop.items.find(item => item.id === state.workshop.selectedID) : state.wallpapers.find(item => item.id === state.selectedID);
   if (!item) { morph($('inspector'), `<div class="inspector-empty"><h2>${escapeHTML(t('Select a wallpaper'))}</h2><p>${escapeHTML(t('Preview, details and options appear here.'))}</p></div>`); return; }
@@ -505,7 +543,9 @@ function renderInspector(discover) {
   const download = state.downloads.find(download => download.id === item.id);
   const request = requestByID(item.id);
   const percent = Number.isFinite(download?.progress) ? Math.round(clamp(download.progress) * 100) : null;
-  const downloadAction = request
+  const downloadAction = discover && item.collection
+    ? button(t('Open collection'), 'workshopCollection', { id: item.id, title: item.title }, { icon: 'layers', className: 'primary' })
+    : request
     ? button(t('Continue setup'), 'continueSetup', { id: request.id }, { icon: 'shield', className: 'primary' })
     : download?.pending
       ? `${download.prompt || download.challenge ? button(t('Finish sign-in'), 'continueSetup', { id: item.id }, { icon: 'shield', className: 'primary' }) : button(download.queued ? t('Waiting to download') : percent === null ? t('Downloading') : t('Downloading {percent}%', { percent }), 'openDownloads', {}, { icon: 'download', className: 'primary' })}${button(download.queued ? t('Remove from queue') : t('Cancel'), 'downloadCancel', { id: item.id }, { className: 'quiet' })}`
@@ -513,9 +553,9 @@ function renderInspector(discover) {
   const options = !discover && state.options?.id === item.id ? state.options : null;
   // An illustration saved from the pixiv tab is a web wallpaper only in how it is shown; its id names the artwork.
   const pixivArtwork = !discover && /^pixiv-(\d+)-p\d+$/.exec(item.id)?.[1];
-  const compatibility = pixivArtwork ? t('A still illustration saved from pixiv. Choose how it fits the screen under Image fit.') : { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
+  const compatibility = discover && item.collection ? t('A collection is a list of Workshop items put together by its author. Open it to see and download them.') : pixivArtwork ? t('A still illustration saved from pixiv. Choose how it fits the screen under Image fit.') : !discover && item.id.startsWith('image-') ? t('A still image imported from your Mac. Choose how it fits the screen under Image fit.') : { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
   const artworkLink = pixivArtwork ? button(t('View on pixiv'), 'openExternal', { url: `https://www.pixiv.net/artworks/${pixivArtwork}` }, { icon: 'external', className: 'link inspector-artwork-link' }) : '';
-  const meta = [t(item.kind), bytes(item.size), discover && Number.isFinite(item.subscriptions) ? t('{count} subscribers', { count: item.subscriptions.toLocaleString() }) : ''].filter(Boolean).map(escapeHTML).join('<span aria-hidden="true"> · </span>');
+  const meta = [kindLabel(item), item.collection && item.collectionSize ? t(item.collectionSize === 1 ? '1 item' : '{count} items', { count: item.collectionSize.toLocaleString() }) : bytes(item.size), discover && Number.isFinite(item.subscriptions) ? t('{count} subscribers', { count: item.subscriptions.toLocaleString() }) : ''].filter(Boolean).map(escapeHTML).join('<span aria-hidden="true"> · </span>');
   const energy = !discover ? energyRating(item.energy) : '';
   // A failure this panel saw for the wallpaper (its download, or the last attempt to apply it) is
   // shown with a report prefilled with it; otherwise an installed wallpaper that can run offers a
@@ -525,17 +565,26 @@ function renderInspector(discover) {
   const failureNotice = failure ? `<div class="notice error inspector-failure"><p>${escapeHTML(failure)}</p>${failureReport ? button(t('Report this problem on GitHub'), 'openExternal', { url: failureReport }, { icon: 'github', className: 'link' }) : ''}</div>` : '';
   const report = !failure && isInstalled && item.kind !== 'Application' ? issueLink(item) : '';
   const reportLink = report ? button(t('Not working? Report on GitHub'), 'openExternal', { url: report }, { icon: 'github', className: 'link inspector-report' }) : '';
-  const secondary = `${discover ? button(t('View on Steam Workshop'), 'openExternal', { url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(item.id)}` }, { icon: 'external', className: 'wide', title: t('View on Steam Workshop') }) : isInstalled ? button(t('Show in Finder'), 'reveal', { id: item.id }, { icon: 'folder', className: 'wide', title: t('Show in Finder') }) : ''}${!discover && isInstalled ? button('', 'favorite', { id: item.id }, { icon: 'heart', title: state.favorites.includes(item.id) ? t('Remove from favorites') : t('Add to favorites'), className: `icon-button${state.favorites.includes(item.id) ? ' favorite-selected' : ''}` }) : ''}${!discover && isInstalled ? button('', 'delete', { id: item.id }, { icon: 'trash', className: 'icon-button danger', title: t('Move wallpaper to Trash') }) : ''}`;
+  // The list button adds to or removes from the target display's own playlist list.
+  const playlistIDs = state.playlists?.[state.targetDisplayID]?.wallpaperIDs || [];
+  const inPlaylist = playlistIDs.includes(item.id);
+  const playlistToggle = !discover && isInstalled && item.supported !== false ? button('', inPlaylist ? 'playlistRemove' : 'playlistAdd', { id: item.id }, { icon: inPlaylist ? 'listMinus' : 'listPlus', title: inPlaylist ? t('Remove from this display’s playlist') : t('Add to this display’s playlist'), className: `icon-button${inPlaylist ? ' playlist-selected' : ''}`, disabled: !target?.enabled || target.mode === 'mirror' }) : '';
+  const secondary = `${discover ? button(t('View on Steam Workshop'), 'openExternal', { url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(item.id)}` }, { icon: 'external', className: 'wide', title: t('View on Steam Workshop') }) : isInstalled ? button(t('Show in Finder'), 'reveal', { id: item.id }, { icon: 'folder', className: 'wide', title: t('Show in Finder') }) : ''}${!discover && isInstalled ? button('', 'favorite', { id: item.id }, { icon: 'heart', title: state.favorites.includes(item.id) ? t('Remove from favorites') : t('Add to favorites'), className: `icon-button${state.favorites.includes(item.id) ? ' favorite-selected' : ''}` }) : ''}${playlistToggle}${!discover && isInstalled ? button('', 'delete', { id: item.id }, { icon: 'trash', className: 'icon-button danger', title: t('Move wallpaper to Trash') }) : ''}`;
+  // An installed Workshop wallpaper whose author has changed it since: one click downloads the
+  // new version, which replaces this one once it has arrived whole.
+  const updating = isInstalled && download?.pending;
+  const updateNotice = !discover && isInstalled && (item.updateAvailable || updating) ? `<div class="notice inspector-update" role="status"><p>${escapeHTML(updating ? (download.queued ? t('The update is waiting to download.') : percent === null ? t('Downloading the update…') : t('Downloading the update… {percent}%', { percent })) : Number.isFinite(item.updatedAt) ? t('Its author updated it on the Workshop on {date}.', { date: new Date(item.updatedAt).toLocaleDateString(language()) }) : t('Its author updated it on the Workshop.'))}</p><div class="actions">${updating ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : request ? button(t('Continue setup'), 'continueSetup', { id: request.id }, { icon: 'shield', className: 'primary' }) : button(t('Update'), 'workshopUpdate', { id: item.id }, { icon: 'download', className: 'primary', disabled: busy('workshopUpdate', { id: item.id }) })}</div></div>` : '';
   const showInLibrary = discover && isInstalled && !(download && !download.pending && !download.error) ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : '';
   const activateLabel = target?.wallpaperID === item.id ? t('Reapply wallpaper') : t('Apply wallpaper');
   const activation = isInstalled ? button('', 'activate', { id: item.id }, { icon: 'play', title: activateLabel, className: 'primary inspector-play', disabled: !canActivate }) : '';
   morph($('inspector'), `<div class="inspector-layout" ${keyAttr(`inspector-${item.id}-${discover}`)}><div class="inspector-scroll"><div class="inspector-heading">
     <div class="inspector-artwork"><div class="inspector-preview">${preview(item.preview)}</div>${activation}</div>
-    <h2>${escapeHTML(item.title)}</h2>${discover && item.creator ? `<p class="inspector-creator">${escapeHTML(item.creator)}</p>` : ''}
+    <h2>${escapeHTML(item.title)}</h2>${discover && item.creator ? `<p class="inspector-creator">${escapeHTML(item.creator)}${moreByAuthor(item)}</p>` : ''}
     <p class="inspector-meta">${meta}</p>${energy ? `<p class="inspector-energy muted"><small>${escapeHTML(energy)}</small></p>` : ''}
     <div class="actions inspector-actions">${!isInstalled ? downloadAction : ''}${secondary}</div>${tags(item.tags)}
     ${!isInstalled && download?.pending && !download.queued ? `<progress class="inspector-progress" max="1"${Number.isFinite(download.progress) ? ` value="${clamp(download.progress)}"` : ''} aria-label="${escapeHTML(t('{title} download progress', { title: item.title }))}"></progress><p class="muted"><small>${escapeHTML(download.status)}${transfer(download, { includePercent: false }) ? ` · ${transfer(download, { includePercent: false })}` : ''}</small></p>` : ''}
     ${request ? `<p class="muted"><small>${escapeHTML(stageHint(request.stage))}</small></p>` : ''}
+    ${updateNotice}
     ${failureNotice}
     ${isInstalled && download && !download.pending && !download.error ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : ''}
     ${download || request ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : ''}
@@ -651,7 +700,7 @@ function assetProperty(id, property, fieldID, unavailable, name) {
 function renderProperty(id, property, lock) {
   const token = property.labelHTML || property.label;
   const engineLabel = Object.hasOwn(enginePropertyLabels, token) ? enginePropertyLabels[token]
-    : id.startsWith('pixiv-') && packagedPropertyLabels.includes(token) ? token : null;
+    : packagedStill(id) && packagedPropertyLabels.includes(token) ? token : null;
   const presentation = engineLabel ? { ...property, label: t(engineLabel), labelHTML: '' } : property;
   const name = presentation.label || t('Unnamed option');
   const label = renderPropertyLabel(presentation);
@@ -676,9 +725,11 @@ function renderProperty(id, property, lock) {
   const restore = property.defaultValue !== undefined && property.defaultValue !== null ? button('', 'restoreProperty', { id, propertyID: property.id }, { icon: 'refresh', className: 'quiet icon-button property-reset', title: t('Restore default: {name}', { name }), disabled: unavailable }) : '';
   return `<div ${keyAttr(property.id)} class="field property-row property-${escapeHTML(property.kind)}${modified ? ' modified' : ''}"><div class="field-title"><label class="property-label" for="${escapeHTML(fieldID)}">${label || escapeHTML(name)}</label>${modified ? `<span class="field-flag">${escapeHTML(t('Modified'))}</span>` : ''}</div><div class="property-control">${control}</div>${restore}</div>`;
 }
-// The property labels this app writes into the pixiv wallpapers it packages. The manifest keeps
-// them in English, as any wallpaper's are; being ours, they are translated for those wallpapers.
+// The property labels this app writes into the still images it packages, saved from pixiv or
+// imported from disk. The manifest keeps them in English, as any wallpaper's are; being ours, they
+// are translated for those wallpapers, which the library knows by their id.
 const packagedPropertyLabels = ['Image fit', 'Background color'];
+const packagedStill = (id) => /^(pixiv|image)-/.test(id);
 // Wallpaper Engine's built-in label tokens are UI vocabulary, not author prose.
 const enginePropertyLabels = {
   ui_browse_properties_scheme_color: 'Scheme color',
@@ -822,7 +873,7 @@ function queueJobRow(item) {
 function importMarkup() {
   const status = state.import || {};
   const report = status.report;
-  return `<div class="popover-heading"><h2 id="import-popover-title">${escapeHTML(t('Import wallpapers'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close import'), className: 'quiet icon-button' })}</div><div class="popover-body"><p class="muted">${escapeHTML(t('Choose wallpaper folders or files. Imports copy the source files into your library and leave the originals untouched.'))}</p><label class="field">${escapeHTML(t('If a wallpaper already exists'))}<select id="import-duplicates"${disabled(status.busy)}>${selectOptions([['skip', t('Skip duplicates')], ['keepBoth', t('Keep both copies')]], importDuplicates)}</select></label><div class="actions">${button(t('Choose wallpapers'), 'import', { duplicates: importDuplicates }, { icon: 'folder', className: 'primary', disabled: status.busy })}${status.busy ? button(t('Cancel import'), 'importCancel') : ''}</div>${status.busy ? `<progress aria-label="${escapeHTML(t('Importing…'))}"></progress>` : ''}${status.status ? `<p class="muted" role="status">${escapeHTML(status.status)}</p>` : ''}${report ? `<div class="import-controls" role="status"><p>${escapeHTML(t('{imported} imported · {skipped} skipped', { imported: Number(report.imported), skipped: Number(report.skipped) }))}${report.cancelled ? escapeHTML(t(' · Cancelled')) : ''}</p>${(report.failures || []).map(failure => `<p class="notice error">${escapeHTML(failure)}</p>`).join('')}</div>` : ''}</div>`;
+  return `<div class="popover-heading"><h2 id="import-popover-title">${escapeHTML(t('Import wallpapers'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close import'), className: 'quiet icon-button' })}</div><div class="popover-body"><p class="muted">${escapeHTML(t('Choose wallpaper folders, videos, images or web pages. Imports copy the source files into your library and leave the originals untouched.'))}</p><p class="muted"><small>${escapeHTML(t('You can also drop them on WallpaperMachine in the Dock.'))}</small></p><label class="field">${escapeHTML(t('If a wallpaper already exists'))}<select id="import-duplicates"${disabled(status.busy)}>${selectOptions([['skip', t('Skip duplicates')], ['keepBoth', t('Keep both copies')]], importDuplicates)}</select></label><div class="actions">${button(t('Choose wallpapers'), 'import', { duplicates: importDuplicates }, { icon: 'folder', className: 'primary', disabled: status.busy })}${status.busy ? button(t('Cancel import'), 'importCancel') : ''}</div>${status.busy ? `<progress aria-label="${escapeHTML(t('Importing…'))}"></progress>` : ''}${status.status ? `<p class="muted" role="status">${escapeHTML(status.status)}</p>` : ''}${report ? `<div class="import-controls" role="status"><p>${escapeHTML(t('{imported} imported · {skipped} skipped', { imported: Number(report.imported), skipped: Number(report.skipped) }))}${report.cancelled ? escapeHTML(t(' · Cancelled')) : ''}</p>${(report.failures || []).map(failure => `<p class="notice error">${escapeHTML(failure)}</p>`).join('')}</div>` : ''}</div>`;
 }
 function placePopover(node) {
   const trigger = popoverTrigger ? document.querySelector(popoverTrigger) : null;
@@ -1041,6 +1092,8 @@ async function handleAction(action, data, element) {
     case 'clearSelection': selection.clear(); selectionAnchor = null; renderGrid(false); return;
     case 'dragSelectLearned': learnSweep(); return;
     case 'deleteSelected': if (selection.size) await deliver('deleteMany', { ids: [...selection] }); return;
+    case 'addSelectedToPlaylist': if (selection.size) await deliver('playlistAdd', { ids: [...selection] }); return;
+    case 'playlistAdd': await deliver(action, { ids: [id] }); return;
     case 'clearWorkshopSearch': workshopDraft.text = ''; // falls through to reset filters
     case 'clearWorkshop': workshopDraft.tags = []; workshopDraft.excludedTags = [...defaultExcludedTags]; render(); await searchWorkshop(); return;
     case 'includeSection': case 'excludeSection': setExcluded(filterDraft(state.page === 'discover'), excludeSections.find(section => section.key === data.section)?.tags.map(entry => tagEntry(entry).tag) || [], action === 'excludeSection'); await applyFilterChange(); return;
@@ -1056,6 +1109,9 @@ async function handleAction(action, data, element) {
       await deliver(action, { id }); return;
     case 'navigate': await deliver(action, { page: data.page }); return;
     case 'refreshWorkshop': await searchWorkshop(); return;
+    case 'workshopCreator': await deliver(action, { id, name: data.name || '' }); $('wallpaper-grid').scrollTop = 0; return;
+    case 'workshopCollection': await deliver(action, { id, title: data.title ?? state.workshop.items.find(item => item.id === id)?.title ?? '' }); $('wallpaper-grid').scrollTop = 0; return;
+    case 'workshopBack': await deliver(action); $('wallpaper-grid').scrollTop = 0; return;
     case 'toggleFilters': await deliver('filters', { page: state.page, collapsed: !filtersCollapsed() }); return;
     case 'toggleSortDirection': installed.descending = !installed.descending; render(); return;
     case 'workshopPage': await deliver(action, { page: Math.min(workshopMaxPages(), Math.max(1, Number(data.workshopPage) || 1)) }); $('wallpaper-grid').scrollTop = 0; return;
@@ -1221,6 +1277,7 @@ document.addEventListener('change', event => {
   if (element.id === 'import-duplicates') { importDuplicates = value; renderPopover(); return; }
   if (change?.startsWith('pixiv')) { run(pixiv.handleChange(element)); return; }
   if (change === 'target') run(send('target', { id: value }));
+  else if (change === 'workshopSource') { run(send('workshopSource', { source: value })); $('wallpaper-grid').scrollTop = 0; }
   else if (change === 'property') run(commitProperty(element));
   else if (change === 'wallpaperSetting' || change === 'displayConfig') {
     if (element.validity && !element.validity.valid) { element.reportValidity(); return; }

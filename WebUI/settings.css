@@ -171,6 +171,7 @@ label.settings-label { cursor: pointer; }
 #settings-content input[type="color"] { width: 46px; height: 26px; padding: 2px; border: 1px solid var(--line); border-radius: 5px; background: var(--raised); cursor: pointer; }
 #settings-content input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 #settings-content input[type="color"]::-webkit-color-swatch { border: 1px solid var(--line-strong); border-radius: 3px; }
+.settings-shortcut { min-width: 56px; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--sunken); color: var(--text); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
 .settings-hex { min-width: 62px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; text-align: right; user-select: text; }
 .settings-icon-picker { margin: 20px 0 12px; padding: 0; border: 0; min-width: 0; }
 .settings-icon-picker legend { padding: 0; font-weight: 600; }

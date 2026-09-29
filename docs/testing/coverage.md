@@ -13,7 +13,12 @@ Swift tests cover, without starting the app:
 
 - **Library** — complete atomic adoption, concurrent destinations, duplicates,
   cancellation, and rejection of linked, special, or incomplete content;
-  deletion; scene-asset installation.
+  deletion; scene-asset installation. `ImageImportTests` imports real ImageIO
+  pictures: the still `web` project, the original's bytes kept, the file name
+  kept out of the page, the fit chosen from the shape, a JPEG display copy for a
+  TIFF, an undecodable file refused, **Keep both** keeping the `image-` prefix,
+  and `LibraryImportStore` refusing a second import and rescanning once. The
+  Finder/Dock hand-off in `AppDelegate` is not covered (it needs a running app).
 - **Workshop** — search and pagination beneath the UI, committed-query
   pagination, window-sized pages cut from cached Steam pages (including a size
   change while a page loads), superseded requests, cancellation, and exact
@@ -32,6 +37,24 @@ Swift tests cover, without starting the app:
   regression (`ControlPanelDiscoverTests`) checks that Discover tiles load the
   still first, admit the animation beneath it, fade the still out only for a
   bright animation and never for a black one, and skip single-frame previews.
+  Updates: `WorkshopTests` decodes a recorded details answer (served item,
+  withdrawn item, another app's) and checks the request form;
+  `WorkshopUpdateStoreTests` covers what counts as outdated, recorded downloads
+  against `project.json` dates, non-Workshop ids never sent, results kept across
+  a relaunch, a download making an item current, the daily limit and its switch,
+  a failed check keeping what was known, and forgetting deleted items;
+  `ImportTests` covers the swap that replaces an installed tree. The reload of a
+  wallpaper on screen after its update needs a renderer and is not covered.
+  Other sources: `WorkshopSourceTests` covers reading Steam's session cookie,
+  author pages (ids, total, name, and only Steam's sign-in page meaning signed
+  out), a collection's order, collections marked on browse pages over a
+  megabyte, the sidebar's rules on unfiltered pages, the age-rating sampling of
+  collections, a collection's pages, every page of subscriptions sent with the
+  session, and the store's back history, sign-in, a session Steam ended and
+  sign-out, all against a fixture protocol. `WebPanelWorkshopSourceTests`
+  covers the panel's source actions, their validation, sign-in through an
+  injected window and refusing to download a collection. Steam's real sign-in
+  window is not covered.
 - **Pixiv** — decoding of pixiv's ranking, search, page-list, status and
   profile answers (numbers sent as strings, content types as objects or lists,
   withheld and members-only entries), ratings including R-18 and R-18G, search
@@ -98,11 +121,11 @@ Swift tests cover, without starting the app:
   `ControlPanelDiscoverTests` (pagination, grid, download rings, previews) and
   `ControlPanelSyncTests` (hidden-panel pushes, option fetches, display titles).
   Offscreen `NSHostingController` layout proposals at 760×560,
-  960×640, and 1240×800 in English and Chinese, asserting the root accepts each
+  960×640, and 1240×800 in every shipped language, asserting the root accepts each
   window width without forcing a taller window; an offscreen `WKWebView`
   regression that loads the bundled interface under its custom scheme, waits for
   the native reply bridge, routes a `navigate` message to Settings, and rejects
-  a non-allowlisted external URL; an English/Simplified Chinese regression that
+  a non-allowlisted external URL; a regression in every shipped language that
   checks the injected language, rendered navigation/accessibility labels, settings
   and result summary, plus locale fallback and literal placeholder substitution;
   a language-switch regression that sends `languageSetting` and confirms the
@@ -111,8 +134,8 @@ Swift tests cover, without starting the app:
   labels must pass `appLanguage: .english()` (`Tests/Unit/Support/TestAppLanguage.swift`)
   or a store built with explicit `systemLanguages`: the default
   `AppLanguageStore.shared` follows the developer's in-app language choice, so an
-  implicit store renders Chinese on a Mac where the app was switched to 简体中文
-  and English-wording assertions fail. `Tests/Unit/Localization/` covers
+  implicit store renders another language on a Mac where the app was switched to
+  one and English-wording assertions fail. `Tests/Unit/Localization/` covers
   the preference store: system matching, persistence, the `AppleLanguages`
   mirror and rejected tags. Python catalog checks
   (`scripts/tests/test_panel_localization.py`) require the Swift registry, the
@@ -165,6 +188,21 @@ Swift tests cover, without starting the app:
   an older build and an unjournaled poster restore the display's (else any
   display's) real original. Coordinator tests use unattached
   `CAMetalLayer`s and injected notification/encoding services.
+- **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
+  Mode and thermal readings and a private notification center: Low Power Mode
+  acting only once an action is chosen, only serious and critical heat counting
+  (and staying hot not re-announcing), a Focus filter joining the other
+  conditions, its state surviving a new instance, and `stop()` releasing every
+  action. `WallpaperFocusFilterTests` pins the filter's default to the choice
+  that lets wallpapers run, since macOS performs it with defaults when a Focus
+  ends. The real Focus Settings pane and a real Low Power Mode are not exercised.
+- **Automation** — `AutomationCommandTests`, `AppAutomationTests`,
+  `HotKeyPreferencesTests` and `GlobalHotKeysTests`; what each covers, and what
+  needs the running app, is in [automation](../features/automation.md#verification).
+- **Playlists** — `PlaylistPlannerTests`, `PlaylistStoreTests`,
+  `PlaylistSchedulerTests` (fake clock, library and activation; no renderer) and
+  `WebPanelPlaylistTests`; what each covers is listed in
+  [playlists](../features/playlists.md#verification).
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,

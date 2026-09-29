@@ -95,7 +95,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                  rememberSession: rememberSession, expectedBytes: item.size > 0 ? item.size : nil) { staging in
             self.phase = .finishing
             self.status = String(localized: "Validating and adding to your library…")
-            try await WallpaperImportService().importDownloadedItem(item.id, from: staging, into: library)
+            // A download of a wallpaper already in the library is its update, and replaces it.
+            try await WallpaperImportService().importDownloadedItem(item.id, from: staging, into: library, replacing: true)
             self.downloadedID = item.id
             self.status = String(localized: "Downloaded to your library")
             do { try await onImported() }

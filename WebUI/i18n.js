@@ -10,10 +10,14 @@
    WebPanelAssets and list the tag in AppLanguage.supported; see docs/localization.md. */
 
 import zhHans from './locales/zh-Hans.js';
+import zhHant from './locales/zh-Hant.js';
+import ja from './locales/ja.js';
 
 // Tags are BCP 47 and must match the Swift registry and the .xcstrings locale.
 const catalogs = {
   'zh-Hans': zhHans,
+  'zh-Hant': zhHant,
+  'ja': ja,
 };
 
 const supported = Object.keys(catalogs);
@@ -26,8 +30,8 @@ const maximized = new Map(supported.map(tag => [tag, maximize(tag)]));
 
 // An exact tag wins; otherwise the first catalog whose language and script agree with
 // the request once both are maximized. That keeps the region loose (zh-Hans-TW is still
-// Simplified, en-GB would still be an English catalog) while never crossing scripts, so
-// Traditional Chinese falls back to English until it ships its own catalog.
+// Simplified, zh-TW and zh-HK are Traditional, en-GB would still be an English catalog)
+// while never crossing scripts.
 // Unsupported or malformed tags resolve to '' and render English.
 function resolve(tag) {
   const value = String(tag || '').trim();

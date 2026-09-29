@@ -2,82 +2,82 @@
   "sourceLanguage" : "en",
   "strings" : {
     "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这台显示器没有已应用的壁纸。请在 WallpaperMachine 中开启“锁定屏幕动态壁纸”。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このディスプレイに適用済みの壁紙はありません。WallpaperMachineで「ロック画面をアニメーション表示」をオンにしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这台显示器没有已应用的壁纸。请在 WallpaperMachine 中开启“锁定屏幕动态壁纸”。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此顯示器沒有可用的已套用桌布。請在 WallpaperMachine 中開啟「鎖定畫面動態桌布」。"}}}
     },
     "Unsupported native wallpaper creation request." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported native wallpaper creation request."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的墙纸创建请求。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported native wallpaper creation request."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "対応していないシステム壁紙の作成リクエストです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的墙纸创建请求。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援的原生桌布建立請求。"}}}
     },
     "Unknown wallpaper surface." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unknown wallpaper surface."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未知的墙纸画面。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unknown wallpaper surface."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "不明な壁紙サーフェスです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未知的墙纸画面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "未知的桌布畫面。"}}}
     },
     "Invalid wallpaper surface dimensions." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid wallpaper surface dimensions."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面尺寸无效。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid wallpaper surface dimensions."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙サーフェスのサイズが無効です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面尺寸无效。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布畫面尺寸無效。"}}}
     },
     "Metal rendering is unavailable." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Metal rendering is unavailable."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Metal 渲染不可用。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Metal rendering is unavailable."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Metalレンダリングを利用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Metal 渲染不可用。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法使用 Metal 渲染。"}}}
     },
     "Invalid lock-screen playback configuration." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid lock-screen playback configuration."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕播放配置无效。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid lock-screen playback configuration."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面の再生構成が無効です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕播放配置无效。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "鎖定畫面播放設定無效。"}}}
     },
     "Wallpaper surface is not available." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper surface is not available."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面不可用。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper surface is not available."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙サーフェスを利用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面不可用。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法使用桌布畫面。"}}}
     },
     "The lock-screen renderer did not produce a frame within 30 seconds." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The lock-screen renderer did not produce a frame within 30 seconds."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕渲染器在 30 秒内没有输出画面。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The lock-screen renderer did not produce a frame within 30 seconds."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面のレンダラが30秒以内にフレームを生成しませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕渲染器在 30 秒内没有输出画面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "鎖定畫面渲染器未在 30 秒內產生影格。"}}}
     },
     "Unknown native rendering error." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unknown native rendering error."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未知的渲染错误。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unknown native rendering error."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "不明なネイティブレンダリングエラーです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未知的渲染错误。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "未知的原生渲染錯誤。"}}}
     },
     "Wallpaper snapshot is unavailable." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper snapshot is unavailable."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸快照不可用。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper snapshot is unavailable."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙のスナップショットを利用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸快照不可用。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法使用桌布快照。"}}}
     },
     "Wallpaper frame is not ready." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper frame is not ready."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面尚未就绪。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper frame is not ready."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙のフレームの準備ができていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸画面尚未就绪。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布影格尚未就緒。"}}}
     },
     "Wallpaper snapshot timed out." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper snapshot timed out."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸快照超时。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper snapshot timed out."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙のスナップショットがタイムアウトしました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸快照超时。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布快照逾時。"}}}
     },
     "Applied wallpaper, animated on the lock screen" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applied wallpaper, animated on the lock screen"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "当前壁纸，在锁定屏幕上动态显示"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applied wallpaper, animated on the lock screen"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "適用中の壁紙をロック画面でアニメーション表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "当前壁纸，在锁定屏幕上动态显示"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "目前套用的桌布，在鎖定畫面上以動態顯示"}}}
     },
     "macOS rejected the wallpaper provider description." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS rejected the wallpaper provider description."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒绝了墙纸提供程序的描述。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS rejected the wallpaper provider description."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSが壁紙プロバイダの説明を拒否しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒绝了墙纸提供程序的描述。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒絕了桌布提供者描述。"}}}
     },
     "Wallpaper provider preview is missing." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper provider preview is missing."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "缺少墙纸提供程序的预览图。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper provider preview is missing."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙プロバイダのプレビューがありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "缺少墙纸提供程序的预览图。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "缺少桌布提供者預覽。"}}}
     },
     "This macOS version does not provide WallpaperExtensionKit." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This macOS version does not provide WallpaperExtensionKit."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个 macOS 版本没有提供 WallpaperExtensionKit。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This macOS version does not provide WallpaperExtensionKit."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンのmacOSにはWallpaperExtensionKitがありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个 macOS 版本没有提供 WallpaperExtensionKit。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此 macOS 版本未提供 WallpaperExtensionKit。"}}}
     },
     "Missing macOS wallpaper type: %@" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Missing macOS wallpaper type: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "缺少 macOS 墙纸类型：%@"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Missing macOS wallpaper type: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSの壁紙タイプが見つかりません：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "缺少 macOS 墙纸类型：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "缺少 macOS 桌布類型：%@"}}}
     },
     "Unsupported macOS wallpaper payload size: %@" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported macOS wallpaper payload size: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的 macOS 墙纸数据大小：%@"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported macOS wallpaper payload size: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSの壁紙ペイロードのサイズに対応していません：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的 macOS 墙纸数据大小：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援的 macOS 桌布資料大小：%@"}}}
     },
     "Unsupported macOS wallpaper layout: %@.%@" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported macOS wallpaper layout: %@.%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的 macOS 墙纸结构：%1$@.%2$@"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported macOS wallpaper layout: %@.%@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSの壁紙のレイアウトに対応していません：%@.%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的 macOS 墙纸结构：%1$@.%2$@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援的 macOS 桌布結構：%@.%@"}}}
     },
     "Cannot allocate wallpaper context reply." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Cannot allocate wallpaper context reply."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法分配墙纸上下文响应。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Cannot allocate wallpaper context reply."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙コンテキストの応答を割り当てられません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法分配墙纸上下文响应。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法配置桌布情境回應。"}}}
     },
     "Cannot allocate wallpaper snapshot reply." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Cannot allocate wallpaper snapshot reply."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法分配墙纸快照响应。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Cannot allocate wallpaper snapshot reply."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙スナップショットの応答を割り当てられません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法分配墙纸快照响应。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法配置桌布快照回應。"}}}
     },
     "macOS refused to create a remote wallpaper surface." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS refused to create a remote wallpaper surface."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒绝创建远程墙纸画面。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS refused to create a remote wallpaper surface."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSがリモート壁紙サーフェスの作成を拒否しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒绝创建远程墙纸画面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒絕建立遠端桌布畫面。"}}}
     },
     "Remote wallpaper composition is unavailable on this macOS version." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Remote wallpaper composition is unavailable on this macOS version."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个 macOS 版本不支持远程墙纸合成。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Remote wallpaper composition is unavailable on this macOS version."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンのmacOSではリモート壁紙の合成を利用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个 macOS 版本不支持远程墙纸合成。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此 macOS 版本無法使用遠端桌布合成。"}}}
     },
     "Unsupported lock-screen configuration version." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported lock-screen configuration version."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的锁定屏幕配置版本。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported lock-screen configuration version."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "対応していないロック画面構成のバージョンです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的锁定屏幕配置版本。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援的鎖定畫面設定版本。"}}}
     },
     "Lock-screen asset is unavailable: %@" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Lock-screen asset is unavailable: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕文件不可用：%@"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Lock-screen asset is unavailable: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面のアセットを利用できません：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕文件不可用：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法使用鎖定畫面資源：%@"}}}
     },
     "Invalid lock-screen asset path." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid lock-screen asset path."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕文件路径无效。"}}}
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Invalid lock-screen asset path."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面のアセットのパスが無効です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕文件路径无效。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "鎖定畫面資源路徑無效。"}}}
     }
   },
   "version" : "1.0"

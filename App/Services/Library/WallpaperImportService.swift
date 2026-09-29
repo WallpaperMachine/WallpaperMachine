@@ -23,6 +23,29 @@ actor WallpaperImportService {
 
     static let videoExtensions: Set<String> = ["mp4", "m4v", "mov", "webm", "mkv", "avi"]
     static let webExtensions: Set<String> = ["html", "htm"]
+    static let imageExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "tif", "tiff", "bmp", "avif",
+    ]
+    /// Pictures a web view shows as they are. Any other format is shown from a JPEG copy, so a
+    /// wallpaper never depends on which formats this macOS release's WebKit happens to decode.
+    static let webImageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp"]
+    /// A picture is read into memory whole to measure and scale it.
+    static let maximumImageBytes = 512 * 1024 * 1024
+    /// Library ids of imported pictures start with this, so the panel can tell a still image
+    /// it packaged from a web wallpaper someone wrote.
+    static let imageIDPrefix = "image-"
+
+    private let downscale: @Sendable (Data, Int) throws -> Data
+
+    /// `downscale` re-encodes an image as a JPEG no larger than the given pixel size; the app
+    /// uses the thumbnail cache's ImageIO encoder, which also proves the bytes decode.
+    init(
+        downscale: @escaping @Sendable (Data, Int) throws -> Data = {
+            try WorkshopThumbnailCache.encodeThumbnail($0, maxPixelSize: $1)
+        }
+    ) {
+        self.downscale = downscale
+    }
 
     func importItems(
         _ sources: [URL], into library: URL, duplicates: DuplicatePolicy,
@@ -55,7 +78,10 @@ actor WallpaperImportService {
                             throw ImportError(message: String(localized: "Choose a source outside WallpaperMachine’s managed library."))
                         }
                         let isDirectory = try candidate.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
-                        let preferredID = isDirectory ? candidate.lastPathComponent : "local-" + candidate.lastPathComponent
+                        let ext = candidate.pathExtension.lowercased()
+                        let isImage = !isDirectory && Self.imageExtensions.contains(ext)
+                        let preferredID = isDirectory ? candidate.lastPathComponent
+                            : (isImage ? Self.imageIDPrefix : "local-") + candidate.lastPathComponent
                         guard isSafeRelativePath(preferredID), !preferredID.contains("/") else {
                             throw ImportError(message: String(localized: "The folder name cannot be used as a library identifier."))
                         }
@@ -75,10 +101,11 @@ actor WallpaperImportService {
                         if isDirectory {
                             try validateProject(at: candidate)
                             try copySafely(candidate, to: staged)
+                        } else if isImage {
+                            try packageImage(candidate, extension: ext, into: staged)
                         } else {
-                            let ext = candidate.pathExtension.lowercased()
                             guard Self.videoExtensions.contains(ext) || Self.webExtensions.contains(ext) else {
-                                throw ImportError(message: String(localized: "Choose a video, HTML file, or Wallpaper Engine project folder. Standalone images are not supported by this renderer."))
+                                throw ImportError(message: String(localized: "Choose a video, image, HTML file, or Wallpaper Engine project folder."))
                             }
                             try fm.createDirectory(at: staged, withIntermediateDirectories: false)
                             try copySafely(candidate, to: staged.appendingPathComponent(candidate.lastPathComponent))
@@ -112,9 +139,54 @@ actor WallpaperImportService {
         return report
     }
 
+    /// Packages one picture as a `StillImageWallpaper` in `staged`. The original keeps its bytes
+    /// under a fixed name, so no file name from disk reaches the page's markup, and the title
+    /// is the file's name.
+    private func packageImage(_ source: URL, extension ext: String, into staged: URL) throws {
+        let values = try source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= Self.maximumImageBytes else {
+            throw ImportError(message: String(localized: "Images must be regular files between 1 byte and 512 MB."))
+        }
+        let image = try Data(contentsOf: source, options: .mappedIfSafe)
+        let unreadable = ImportError(message: String(localized: "This image could not be read. Choose a picture that opens in Preview."))
+        guard let pixels = StillImageWallpaper.pixelSize(of: image) else { throw unreadable }
+        let longest = max(pixels.width, pixels.height)
+        let preview: Data
+        var display: Data?
+        do {
+            preview = try downscale(image, StillImageWallpaper.previewPixels)
+            if !Self.webImageExtensions.contains(ext) || longest > StillImageWallpaper.displayPixels {
+                display = try downscale(image, min(longest, StillImageWallpaper.displayPixels))
+            }
+        } catch {
+            throw unreadable
+        }
+        try Task.checkCancellation()
+        let fm = FileManager.default
+        try fm.createDirectory(at: staged, withIntermediateDirectories: false)
+        let imageFile = "image.\(ext)"
+        try image.write(to: staged.appendingPathComponent(imageFile))
+        try preview.write(to: staged.appendingPathComponent(StillImageWallpaper.previewFile))
+        if let display { try display.write(to: staged.appendingPathComponent(StillImageWallpaper.displayFile)) }
+        let fit = StillImageWallpaper.Fit.preferred(width: pixels.width, height: pixels.height)
+        try Data(StillImageWallpaper.page(showing: display == nil ? imageFile : StillImageWallpaper.displayFile, fit: fit).utf8)
+            .write(to: staged.appendingPathComponent(StillImageWallpaper.entryFile))
+        let manifest: [String: Any] = [
+            "title": source.deletingPathExtension().lastPathComponent,
+            "type": "web",
+            "file": StillImageWallpaper.entryFile,
+            "preview": StillImageWallpaper.previewFile,
+            "general": ["properties": StillImageWallpaper.properties(fit: fit)],
+            "image": ["file": imageFile, "width": pixels.width, "height": pixels.height],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: staged.appendingPathComponent("project.json"), options: .atomic)
+    }
+
     /// Consumes a complete item from disposable Steam staging without copying payload bytes.
-    /// A valid existing item is left untouched; the caller remains responsible for staging cleanup.
-    func importDownloadedItem(_ itemID: String, from staging: URL, into library: URL) throws {
+    /// A valid existing item is left untouched unless `replacing`, when the new tree takes its
+    /// place; the caller remains responsible for staging cleanup.
+    func importDownloadedItem(_ itemID: String, from staging: URL, into library: URL, replacing: Bool = false) throws {
         try Task.checkCancellation()
         guard !itemID.isEmpty, itemID.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
               let numericID = UInt64(itemID), numericID > 0 else {
@@ -146,6 +218,30 @@ actor WallpaperImportService {
         }
         let destination = managedRoot.appendingPathComponent(itemID, isDirectory: true)
         try Task.checkCancellation()
+        if replacing, let installed = try? downloadMetadata(at: destination), installed.st_mode & S_IFMT == S_IFDIR {
+            // Only an installed wallpaper is replaced: the old tree ends up in staging, which the
+            // caller clears, so a folder that is not one is left where it is.
+            do {
+                try validateProject(at: destination)
+            } catch {
+                throw ImportError(message: String(localized: "The library’s folder for Workshop item \(itemID) is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again."))
+            }
+            // An update swaps the new tree in and the old one out in one step, so the library never
+            // lacks the wallpaper and a failure leaves the old version where it was.
+            let result = source.path.withCString { sourcePath in
+                destination.path.withCString { destinationPath in
+                    renamex_np(sourcePath, destinationPath, UInt32(RENAME_SWAP))
+                }
+            }
+            guard result == 0 else {
+                let code = errno
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
+                    NSFilePathErrorKey: destination.path,
+                    NSLocalizedDescriptionKey: String(localized: "Could not replace Workshop item \(itemID) with its update: \(String(cString: strerror(code))). The installed version is unchanged.")
+                ])
+            }
+            return
+        }
         // Unlike moveItem, this cannot fall back to a cross-volume copy. RENAME_EXCL
         // atomically refuses even a destination created after our validation.
         let result = source.path.withCString { sourcePath in

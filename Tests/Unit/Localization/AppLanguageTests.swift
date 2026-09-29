@@ -21,7 +21,8 @@ final class AppLanguageTests: XCTestCase {
     defer { suite.tearDown() }
     let cases: [([String], String)] = [
       (["zh-CN"], "zh-Hans"), (["zh"], "zh-Hans"), (["zh-Hans-TW"], "zh-Hans"),
-      (["fr", "zh-CN", "en"], "zh-Hans"), (["zh-TW"], "en"), (["zh-Hant-HK"], "en"),
+      (["fr", "zh-CN", "en"], "zh-Hans"), (["zh-TW"], "zh-Hant"), (["zh-Hant-HK"], "zh-Hant"),
+      (["ja-JP"], "ja"), (["fr", "ja", "zh-CN"], "ja"),
       (["en-GB"], "en"), (["fr"], "en"), ([], "en"), (["zhgarbage"], "en"),
     ]
     for (system, expected) in cases {

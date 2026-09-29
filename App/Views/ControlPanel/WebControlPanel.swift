@@ -13,10 +13,12 @@ struct WebControlPanel: NSViewRepresentable {
   let workshop: WorkshopStore
   let pixiv: PixivStore
   let updater: AppUpdateStore
+  let imports: LibraryImportStore
 
   func makeCoordinator() -> WebPanelController {
     let controller = WebPanelController(
-      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater)
+      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater,
+      imports: imports)
     // Discover previews start caching the moment Steam's page arrives, and the following page
     // is fetched behind the one on show, so neither waits for the web view to ask. The pixiv
     // tab does the same with its thumbnails and its next page.
@@ -53,14 +55,20 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let workshop: WorkshopStore
   let pixiv: PixivStore
   let updater: AppUpdateStore
+  /// Library imports, owned by the app so one outlives this page.
+  let imports: LibraryImportStore
   let theme: AppThemeStore
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
+  let playlists: PlaylistStore
+  let hotKeys: HotKeyPreferences
   /// Tests pass a closure so choosing an app does not open a panel. Nil uses the sheet.
   var chooseApplication: (@MainActor () async -> URL?)?
   /// Tests pass a closure that answers a pixiv session, so signing in opens no window. Nil
-  /// opens pixiv's sign-in page in `PixivSignInWindowController`.
+  /// opens pixiv's sign-in page in `WebSignInWindowController`.
   var signInToPixiv: (@MainActor () async -> String?)?
+  /// The same for Steam Community, whose session lets Discover list subscriptions.
+  var signInToSteamWeb: (@MainActor () async -> String?)?
   let displayTitles: DisplayTitleResolver
   weak var webView: WKWebView?
   let assets: WebPanelAssets
@@ -76,11 +84,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let isPresentationVisible: (@MainActor () -> Bool)?
   var observationInstalled = false
   var actionError: String?
-  var importTask: Task<Void, Never>? {
-    didSet { navigation.isImporting = importTask != nil }
-  }
-  var importStatus = ""
-  var importReport: WallpaperImportService.Report?
   var remembersSession = true
   var favoriteIDs: Set<String>
   /// Each library page (`discover`, `pixiv`, `installed`) hides its filter sidebar when the
@@ -136,6 +139,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     store: BridgeStore, navigation: ControlPanelNavigation, workshop: WorkshopStore,
     pixiv: PixivStore? = nil,
     updater: AppUpdateStore? = nil,
+    imports: LibraryImportStore? = nil,
     isPresentationVisible: (@MainActor () -> Bool)? = nil,
     theme: AppThemeStore? = nil,
     displayTitles: DisplayTitleResolver = .system,
@@ -145,6 +149,8 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     energyUsage: EnergyUsageMonitor? = nil,
     appLanguage: AppLanguageStore? = nil,
     playback: PlaybackPreferences? = nil,
+    playlists: PlaylistStore? = nil,
+    hotKeys: HotKeyPreferences? = nil,
     chooseApplication: (@MainActor () async -> URL?)? = nil
   ) {
     self.store = store
@@ -155,11 +161,14 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.pixiv = pixiv ?? PixivStore()
     self.updater =
       updater ?? AppUpdateStore(currentVersion: "0.0.0", client: DisabledAppUpdateClient())
+    self.imports = imports ?? LibraryImportStore()
     self.displayTitles = displayTitles
     self.isPresentationVisible = isPresentationVisible
     self.theme = theme ?? .shared
     self.defaults = defaults
     self.playback = playback ?? .shared
+    self.playlists = playlists ?? .shared
+    self.hotKeys = hotKeys ?? .shared
     self.chooseApplication = chooseApplication
     filtersCollapsed = Self.filtersCollapsedKeys.mapValues { defaults.bool(forKey: $0) }
     welcomeSeen = defaults.bool(forKey: Self.welcomeSeenKey)
@@ -220,6 +229,27 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
         Task { @MainActor [weak self] in self?.scheduleUpdate() }
       }
       .store(in: &subscriptions)
+    NotificationCenter.default.publisher(for: HotKeyPreferences.didChangeNotification, object: hotKeys)
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in self?.scheduleUpdate() }
+      }
+      .store(in: &subscriptions)
+    NotificationCenter.default.publisher(for: PlaylistStore.didChangeNotification, object: playlists)
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in self?.scheduleUpdate() }
+      }
+      .store(in: &subscriptions)
+    // Playback shows whether Low Power Mode, heat or a Focus filter is in effect right now.
+    for name in [
+      Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification,
+      FocusFilterState.didChangeNotification,
+    ] {
+      NotificationCenter.default.publisher(for: name)
+        .sink { [weak self] _ in
+          Task { @MainActor [weak self] in self?.scheduleUpdate() }
+        }
+        .store(in: &subscriptions)
+    }
     navigation.objectWillChange.sink { [weak self] _ in
       Task { @MainActor [weak self] in self?.scheduleUpdate() }
     }.store(in: &subscriptions)
@@ -282,7 +312,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     updatePending = false
     cancelDisplayOptions()
     subscriptions.removeAll()
-    importTask?.cancel()
     webView?.configuration.userContentController.removeScriptMessageHandler(
       forName: "native", contentWorld: .page)
     webView?.navigationDelegate = nil

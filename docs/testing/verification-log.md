@@ -25,6 +25,18 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Playlists, Workshop updates and sources, image import, automation, playback conditions, zh-Hant and ja (Linux only)
+
+Seven features built in a Linux container without Xcode; nothing here ran on macOS. New Swift files are not yet in WallpaperMachine.xcodeproj: `xcodegen generate` (run by `scripts/test.py` and `scripts/build.py`) must regenerate it on a Mac.
+
+- `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` — OK, 215 tests, 10 skipped; includes the panel catalog check for zh-Hans, zh-Hant and ja
+- `node --check` on every changed WebUI module — OK; i18n resolution probed in Node (zh-TW, zh-HK → zh-Hant; ja-JP → ja)
+- `swiftc -parse` on every changed Swift file — OK
+- Linux SwiftPM harness with shims: PlaylistPlanner/Store/Scheduler, WorkshopUpdateStore, WorkshopTests, WorkshopSourceTests, Automation, SystemConditionMonitor and LibraryImportStore suites — pass, except SystemConditionMonitor cases that need object-filtered notifications (Linux Foundation gap, as AppRuleMonitorTests)
+- Live Steam smoke: details endpoint, collections browse with rating sampling, GetCollectionDetails, an author's page, a signed-out subscriptions read — OK
+- Not run: `python3 scripts/test.py` (needs macOS), so every native and panel suite including WebPanel*Tests, ControlPanelShellTests and AppLanguageTests; no Release build
+- Unverified at runtime: global hotkeys, App Intents and the Focus filter, the wallpapermachine:// scheme, Dock/Finder open, Steam's sign-in window, native language matching (Linux Foundation lacks Apple's rules)
+
 ## 2026-09-29 — pixiv tab, sign-in and R-18 works
 
 Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (command queue): the Foundation-only pixiv services ran under SwiftPM, the panel page under Chromium; nothing macOS-specific was built or run.
@@ -122,14 +134,3 @@ M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coali
 - Live closed-panel samples, 3 per build 10 seconds apart: main median 735.5 to 458.9 MiB; whole app coalition plus separate extension median 786.3 to 509.4 MiB (after range 413.9–509.4). GPU accounting and settling samples fluctuate; no universal ceiling or CPU saving claimed.
 - Renderer/bindings and Release builds passed. Signed app installed into /Applications with backup, launched using Codex computer use, same wallpaper playing and first frame ready. Saved configuration identical; only installed extension registered.
 - Policy may reduce source detail under zoom and only limits available authored mip chains. Actual lock/unlock and the local-import close exception remain unexercised; private scene assets/images stay in artifacts.
-
-## 2026-09-28 — Release the closed control panel to reduce memory
-
-- Panel lifecycle follow-up: CPython 3.12.14 scripts/test.py --only ControlPanelWindowSizingTests --only ControlPanelShellTests --only ControlPanelSyncTests passed 30/30. Earlier full gate is recorded separately; not repeated.
-- scripts/build.py --swift-only --configuration Release passed; installed signed result into /Applications/WallpaperMachine.app with the previous bundle backed up.
-- Codex computer use confirmed original scene playback, close/reopen, Settings navigation and restoration of the last native section. No quality, audio, power or renderer settings changed.
-- Old installed build retained 121.6 MiB across WebKit GPU/WebContent/Networking after closing. Updated build released WebContent/Networking immediately and GPU after its idle timeout.
-- Same updated main PID 88547: total app coalition plus separate installed extension 904.6 MiB with panel open, 790.0 MiB after close and helper exit; main 734.8 to 734.7 MiB. This isolates panel residency, not a build-to-build benchmark.
-- Fresh startup remained above 1 GiB before freed decode allocations were reclaimed; closing the panel does not solve the remaining scene texture/renderer memory.
-- Existing native Metal local-scene harness drew 120 frames at 3840x2160; no demonstrated memory win and no live backend switch. Raw-mip copy experiment did not apply to this scene’s embedded PNGs and was removed.
-- Local imports retain the hidden page until the next close to avoid cancellation. This exception was reviewed but not exercised with a real file picker; real lock/unlock remains pending user operation.
