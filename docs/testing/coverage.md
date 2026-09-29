@@ -178,6 +178,10 @@ Swift tests cover, without starting the app:
   action. `WallpaperFocusFilterTests` pins the filter's default to the choice
   that lets wallpapers run, since macOS performs it with defaults when a Focus
   ends. The real Focus Settings pane and a real Low Power Mode are not exercised.
+- **Playlists** — `PlaylistPlannerTests`, `PlaylistStoreTests`,
+  `PlaylistSchedulerTests` (fake clock, library and activation; no renderer) and
+  `WebPanelPlaylistTests`; what each covers is listed in
+  [playlists](../features/playlists.md#verification).
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,

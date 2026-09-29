@@ -1610,6 +1610,9 @@
     },
     "Stop (free memory)" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Stop (free memory)"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "停止（释放内存）"}}}
+    },
+    "This display has no rotating playlist to move along." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This display has no rotating playlist to move along."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此显示器没有可轮换的播放列表。"}}}
     }
   },
   "version" : "1.0"

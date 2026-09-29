@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var appRuleMonitor: AppRuleMonitor?
     private var otherAudioMonitor: OtherAudioMonitor?
     private var systemConditionMonitor: SystemConditionMonitor?
+    private var playlistScheduler: PlaylistScheduler?
     private var playbackPreferencesObserver: NSObjectProtocol?
     private var wallpaperEnergy: WallpaperEnergyRecorder?
     /// Last presentation the bridge accepted, so leaving unloaded clears that flag first.
@@ -192,6 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 self.sceneMediaSink?.reconcile()
                 self.nativeVideoHost?.reconcile()
                 self.presentationPolicy?.evaluate()
+                // Play, pause and a changed library or display set are when a waiting playlist
+                // change can happen.
+                self.playlistScheduler?.evaluate()
                 if let lockScreen, lockScreen.isRequested, lockScreen.errorMessage == nil {
                     lockScreen.refresh()
                 } else if lockScreen?.ownsDesktopProvider != true {
@@ -254,6 +258,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                                 try await store.setPresentationUnloadedAsync(true)
                             }
                             self.appliedGlobalPresentation = presentation
+                            // A playlist change that fell due while presentation was suspended
+                            // happens now that it runs again.
+                            self.playlistScheduler?.evaluate()
                             // Presentation suspend commits without producing a
                             // snapshot, so nothing else would recompute who is
                             // still consuming system media. Without this the
@@ -315,6 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             syncPlaybackMonitors()
             conditions.start()
             policy.start()
+            startPlaylistScheduler(store: store)
             Task { await WallpaperFocusFilter.refreshState() }
             startWallpaperEnergyRecorder(store: store)
             do {
@@ -360,6 +368,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             rebuildMenu()
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// Changes wallpapers on displays whose playlist rotates or follows the day. A switch goes
+    /// through the display's command slot, like the panel's and the menu bar's, and picks its
+    /// wallpaper when its turn comes.
+    private func startPlaylistScheduler(store: BridgeStore) {
+        let playlists = PlaylistStore.shared
+        let scheduler = PlaylistScheduler(
+            store: playlists,
+            displays: {
+                store.settingsSnapshot.displays.filter { $0.enabled && $0.mode == .standalone }.map(\.displayId)
+            },
+            library: { store.librarySnapshot.wallpapers.filter(\.supported).map(\.id) },
+            favorites: { Self.favoriteWallpaperIDs() },
+            current: { display in
+                store.monitorInformationSnapshot.rows.first {
+                    $0.displayId == display && $0.mirrorTargetDisplayId == nil && !$0.wallpaperId.isEmpty
+                }?.wallpaperId
+            },
+            isRunning: { [weak self] in
+                store.appSnapshot.playbackState == .playing
+                    && self?.presentationPolicy?.globalPresentation == .running
+            },
+            activate: { display, choose in
+                var applied: String?
+                try await store.commands.run(slot: BridgeStore.activationSlot(displayId: display)) {
+                    guard let id = choose() else { return }
+                    try await store.activateWallpaperAsync(id: id, displayId: display)
+                    applied = id
+                }
+                return applied
+            })
+        playlistScheduler = scheduler
+        playlists.skipHandler = { [weak scheduler] display in scheduler?.skip(display) ?? false }
+        scheduler.start()
+    }
+
+    /// The panel's favorites, which a playlist can rotate through.
+    private static func favoriteWallpaperIDs() -> Set<String> {
+        guard let data = UserDefaults.standard.data(forKey: WebPanelController.favoriteKey),
+              let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(ids)
     }
 
     /// Rates each wallpaper's energy use from background samples while it plays alone.
@@ -453,6 +503,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        playlistScheduler?.stop()
         stopPlaybackMonitoring()
         wallpaperEnergy?.stop()
         wallpaperEnergy = nil
@@ -490,6 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Task {
             do {
                 try await store?.lockScreenWallpaper?.shutdown()
+                playlistScheduler?.stop()
                 stopPlaybackMonitoring()
                 wallpaperEnergy?.stop()
                 wallpaperEnergy = nil
@@ -712,7 +764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             actions.append(menuItem(playbackTitle, action: #selector(togglePlayback)))
         }
         if let store, !shutdownInProgress, !shutdownComplete,
-           store.nextWallpaperID(displayId: controlPanelNavigation.targetDisplayID) != nil
+           canActivateNextWallpaper(store: store, displayId: controlPanelNavigation.targetDisplayID)
         {
             actions.append(menuItem("Next Wallpaper", action: #selector(activateNextWallpaper)))
         }
@@ -923,11 +975,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    /// A display whose playlist rotates moves along the playlist; any other display takes the
+    /// next wallpaper in library order.
+    private func canActivateNextWallpaper(store: BridgeStore, displayId: String) -> Bool {
+        if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
+            return playlistScheduler?.canSkip(displayId) ?? false
+        }
+        return store.nextWallpaperID(displayId: displayId) != nil
+    }
+
     @objc private func activateNextWallpaper() {
         let displayId = controlPanelNavigation.targetDisplayID
         guard let store, !shutdownInProgress, !shutdownComplete,
-              store.nextWallpaperID(displayId: displayId) != nil
+              canActivateNextWallpaper(store: store, displayId: displayId)
         else {
+            return
+        }
+        // The playlist's own next, with a fresh interval after it; a switch it is already making
+        // counts as the answer rather than falling back to the library order.
+        if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
+            playlistScheduler?.skip(displayId)
             return
         }
 

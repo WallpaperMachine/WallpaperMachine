@@ -365,6 +365,7 @@ small, .muted { color: var(--muted); }
 .tile-favorite:hover:not(:disabled), .tile-check:hover:not(:disabled) { background: var(--media-chip); color: var(--media-ink); }
 .tile-favorite[aria-pressed="true"] { color: var(--media-heart); }
 .actions .favorite-selected { color: var(--heart); }
+.actions .playlist-selected { color: var(--accent); }
 .tile-favorite[aria-pressed="true"] svg, .actions .favorite-selected svg { fill: currentColor; }
 .tile-check[aria-pressed="true"], .tile-check[aria-pressed="true"]:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
 .wallpaper-tile.checked .tile-select { box-shadow: inset 0 0 0 2px var(--primary); border-color: var(--primary); }

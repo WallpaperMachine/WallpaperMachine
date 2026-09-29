@@ -122,6 +122,24 @@ extension WebPanelController {
     case "revealDownloadedUpdate":
       updater.revealDownloadedUpdate()
       return
+    // Playlists are preferences; only Change now reaches the renderer, through the scheduler's
+    // own command.
+    case "playlistSetting":
+      try playlistSetting(request)
+      return
+    case "playlistAdd":
+      playlists.add(try wallpaperIDs(request), to: try playlistDisplay(request))
+      return
+    case "playlistRemove":
+      playlists.remove(try request.string("id"), from: try playlistDisplay(request))
+      return
+    case "playlistSkip":
+      let display = try playlistDisplay(request)
+      guard playlists.skipHandler?(display) == true else {
+        throw WallpaperActionError(
+          message: String(localized: "This display has no rotating playlist to move along."))
+      }
+      return
     default: break
     }
     actionError = nil
@@ -171,6 +189,7 @@ extension WebPanelController {
       try await store.commands.run {
         try await store.deleteWallpaperAsync(id: id)
         try forgetFavorites([id])
+        playlists.forget([id])
       }
     case "deleteMany":
       let ids = try wallpaperIDs(request)
@@ -192,6 +211,7 @@ extension WebPanelController {
       try await store.commands.run {
         let report = try await store.deleteWallpapersAsync(ids: ids)
         try forgetFavorites(report.deleted)
+        playlists.forget(report.deleted)
         if !report.failures.isEmpty {
           let titles = Dictionary(
             store.librarySnapshot.wallpapers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
@@ -572,6 +592,56 @@ extension WebPanelController {
     favoriteIDs.subtract(ids)
     UserDefaults.standard.set(
       try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
+  }
+
+  /// The display a playlist action names, or the target display when it names none. Only an
+  /// enabled display that shows its own wallpaper has a playlist.
+  func playlistDisplay(_ request: WebPanelRequest) throws -> String {
+    let id = request.body["displayID"] == nil ? navigation.targetDisplayID : try request.string("displayID")
+    guard
+      store.settingsSnapshot.displays.contains(where: {
+        $0.displayId == id && $0.enabled && $0.mode == .standalone
+      })
+    else { throw WebPanelRequest.invalid }
+    return id
+  }
+
+  func playlistSetting(_ request: WebPanelRequest) throws {
+    let display = try playlistDisplay(request)
+    switch try request.string("key") {
+    case "mode":
+      guard let mode = PlaylistMode(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.mode = mode }
+    case "source":
+      guard let source = PlaylistSource(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.source = source }
+    case "order":
+      guard let order = PlaylistOrder(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.order = order }
+    case "interval":
+      let minutes = Int(try request.number("value", range: 1...Double(DisplayPlaylist.minutesPerDay)))
+      guard DisplayPlaylist.intervals.contains(minutes) else { throw WebPanelRequest.invalid }
+      playlists.update(display) { $0.interval = minutes }
+    case "dayWallpaper", "nightWallpaper":
+      // Empty clears the choice; anything else must be a wallpaper that can play.
+      let value = try request.string("value")
+      guard value.isEmpty || store.librarySnapshot.wallpapers.contains(where: { $0.id == value && $0.supported })
+      else { throw WebPanelRequest.invalid }
+      let id = value.isEmpty ? nil : value
+      if request.body["key"] as? String == "dayWallpaper" {
+        playlists.update(display) { $0.dayWallpaperID = id }
+      } else {
+        playlists.update(display) { $0.nightWallpaperID = id }
+      }
+    case "dayStart", "nightStart":
+      let minute = Int(try request.number("value", range: 0...Double(DisplayPlaylist.minutesPerDay - 1)))
+      if request.body["key"] as? String == "dayStart" {
+        playlists.update(display) { $0.dayStart = minute }
+      } else {
+        playlists.update(display) { $0.nightStart = minute }
+      }
+    default: throw WebPanelRequest.invalid
+    }
   }
 
   func download(_ request: WebPanelRequest) throws -> WorkshopDownload {

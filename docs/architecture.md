@@ -43,8 +43,9 @@ rather than the whole file:
 drives an ordered asynchronous shutdown (lock screen, desktop poster sync, SteamCMD setup,
 downloader, then the renderer bridge). The app runs in `.accessory` activation policy while no
 control-panel window is visible and switches to `.regular` when one is. The status item's menu
-offers Control Panel, Play/Pause while something is active, **Next Wallpaper** (the next playable
-library wallpaper, in library order, on the panel's target display; `BridgeStore.nextWallpaperID`),
+offers Control Panel, Play/Pause while something is active, **Next Wallpaper** (on the panel's target
+display: the playlist's next when that display rotates, otherwise the next playable library wallpaper in
+library order; `PlaylistScheduler.skip`, `BridgeStore.nextWallpaperID`),
 **Lock Screen** (the private `SACLockScreenImmediate` in login.framework, resolved with `dlsym` and
 left out when missing; `App/Services/Desktop/ScreenLock.swift`) and Exit. The application menu
 bar holds the app menu (Settings…, Check for Updates…, Quit), **File → Close** (Command-W, which
@@ -133,6 +134,7 @@ Services are grouped by domain under `App/Services/`.
 | `Appearance/` | `AppTheme` (`AppThemePreferences`, `AppThemeStore`) | Mode/accent/tone preferences shared by AppKit and the page |
 | `Desktop/` | `DesktopSpaceWallpaperAPI`, `DesktopWallpaperLedger`, `DesktopWallpaperSync`, `PlaybackPreferences`, `AppRuleMonitor`, `OtherAudioMonitor`, `SystemConditionMonitor`, `FocusFilterState`, `WallpaperPresentationPolicy`, `WallpaperCoverageProbes` | Per-Space desktop picture control, original-wallpaper journal, still-poster sync, playback rules (apps, other audio, Low Power Mode, heat, Focus filter), per-display renderer suspension |
 | `Automation/` | `WallpaperFocusFilter` | App Intents the system runs in the app: the Focus filter that pauses, mutes or stops wallpapers during a Focus |
+| `Playlist/` | `WallpaperPlaylist`, `PlaylistPlanner`, `PlaylistStore`, `PlaylistScheduler` | Per-display rotation and day and night wallpapers, switched through the display's command slot while playback runs; see [features/playlists.md](features/playlists.md) |
 | `GitHub/` | `GitHubReleaseClient`, `AppUpdateModels`, `AppUpdateStore`, `AppUpdateInstaller` | GitHub Releases update check, download, in-place install |
 | `Library/` | `ClientPaths`, `WallpaperImportService`, `LibraryImportStore`, `StillImageWallpaper`, `WallpaperDeletionService` | App-support layout, non-destructive import (run for the app, not the panel page, so Finder and Dock drops import too), still pictures packaged as `web` wallpapers, guarded deletion |
 | `LockScreen/` | `LockScreenWallpaperSelection`, `LockScreenWallpaperService` | System lock-screen selection overrides and configuration publishing |

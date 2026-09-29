@@ -456,6 +456,19 @@ extension WebPanelController {
       "loading": workshop.isLoading, "loaded": workshop.hasLoaded,
       "error": workshop.errorMessage as Any? ?? null,
     ]
+    // Every configured display's playlist, with when it next changes on its own.
+    var playlistSnapshot: [String: Any] = [:]
+    for (display, playlist) in playlists.playlists {
+      let next = playlists.nextChange[display].map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null
+      playlistSnapshot[display] = [
+        "mode": playlist.mode.rawValue, "source": playlist.source.rawValue,
+        "order": playlist.order.rawValue, "interval": playlist.interval,
+        "wallpaperIDs": playlist.wallpaperIDs,
+        "dayWallpaperID": playlist.dayWallpaperID as Any? ?? null,
+        "nightWallpaperID": playlist.nightWallpaperID as Any? ?? null,
+        "dayStart": playlist.dayStart, "nightStart": playlist.nightStart, "nextChange": next,
+      ] as [String: Any]
+    }
     let setupSnapshot: [String: Any] = [
       "status": setupStatus, "busy": setup.isBusy, "ready": setup.selectedRuntime != nil,
       "error": setupError as Any? ?? null, "canApprove": canApprove,
@@ -497,6 +510,7 @@ extension WebPanelController {
       "welcomeSeen": welcomeSeen,
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
+      "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
       "options": options ?? null,
       "settings": settingsSnapshot,
       "workshop": workshopSnapshot,

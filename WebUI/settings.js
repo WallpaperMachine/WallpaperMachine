@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, language } from './i18n.js';
 
 const views = new WeakMap();
 let liveView = null;
@@ -17,6 +17,31 @@ const desktopCoveredActions = [['pause', 'Pause'], ['keepRunning', 'Keep running
 const systemConditionActions = [['keepRunning', 'Keep running'], ['pause', 'Pause'], ['stop', 'Stop (free memory)']];
 const focusActions = { keepRunning: 'Keep running', mute: 'Mute', pause: 'Pause', stop: 'Stop (free memory)' };
 const thermalStates = { nominal: 'normal', fair: 'warm', serious: 'hot', critical: 'very hot' };
+const playlistModes = [['off', 'Off'], ['rotate', 'Rotate wallpapers'], ['dayNight', 'Day and night']];
+const playlistOrders = [['sequential', 'In order'], ['shuffle', 'Shuffle']];
+
+// Minutes as the interval menu names them.
+function intervalLabel(minutes) {
+  if (minutes === 60) return t('Every hour');
+  if (minutes === 1440) return t('Every day');
+  return minutes % 60 === 0 ? t('Every {count} hours', { count: minutes / 60 }) : t('Every {count} minutes', { count: minutes });
+}
+
+// A minute of the day as an <input type="time"> value, and back.
+const clockValue = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+function clockMinute(value) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value));
+  if (!match) return null;
+  const minute = Number(match[1]) * 60 + Number(match[2]);
+  return minute >= 0 && minute < 1440 ? minute : null;
+}
+
+// When a playlist changes next: the time alone today, with the weekday otherwise.
+function changeTime(milliseconds) {
+  const date = new Date(milliseconds);
+  const today = new Date().toDateString() === date.toDateString();
+  return date.toLocaleString(language(), today ? { hour: 'numeric', minute: '2-digit' } : { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
 const appRuleConditions = [['running', 'Running'], ['frontmost', 'In front']];
 const appRuleActions = [['pause', 'Pause'], ['mute', 'Mute'], ['stop', 'Stop']];
 const compactNavigation = window.matchMedia('(max-width: 560px)');
@@ -449,10 +474,33 @@ function draw(view) {
     const wallpaper = (state.wallpapers || []).find(item => item.id === display.wallpaperID);
     const limited = performanceLimitedFps(playback.fps, settings);
     const number = (field, label, min, max, step, suffix = '') => `<input class="settings-number" data-key="${e(key(field))}" type="number" inputmode="decimal" aria-label="${e(name(label))}" min="${min}"${max == null ? '' : ` max="${max}"`} step="${step}" value="${e(draft(key(field), playback[field]))}" ${data(field)}${disabled(playbackOff)}>${suffix ? `<span class="settings-unit">${e(suffix)}</span>` : ''}`;
+    // The display's playlist: off, a rotation, or a day and a night wallpaper.
+    const playlist = { mode: 'off', source: 'all', order: 'sequential', interval: 30, wallpaperIDs: [], dayWallpaperID: null, nightWallpaperID: null, dayStart: 420, nightStart: 1140, nextChange: null, ...((state.playlists || {})[id] || {}) };
+    const playlistData = field => `data-playlist="${e(id)}" data-playlist-key="${field}"`;
+    const listed = (playlist.wallpaperIDs || []).map(wallpaperID => (state.wallpapers || []).find(item => item.id === wallpaperID)).filter(Boolean);
+    const playable = (state.wallpapers || []).filter(item => item.supported).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
+    const nextChange = playlist.nextChange != null && Number.isFinite(Number(playlist.nextChange)) ? changeTime(Number(playlist.nextChange)) : '';
+    const clockInput = (field, label, minute) => `<input type="time" data-key="${e(key(`playlist-${field}`))}" aria-label="${e(name(label))}" value="${e(draft(key(`playlist-${field}`), clockValue(minute)))}" ${playlistData(field)}${disabled(off)}>`;
+    const rotateRows = row(key('playlist-source-row'), t('Wallpapers'), select(key('playlist-source'), name(t('Wallpapers')), draft(key('playlist-source'), playlist.source), [['all', t('All wallpapers')], ['favorites', t('Favorites')], ['list', t('This display’s list ({count})', { count: listed.length })]], playlistData('source'), off))
+      + row(key('playlist-order-row'), t('Order'), select(key('playlist-order'), name(t('Order')), draft(key('playlist-order'), playlist.order), localizedOptions(playlistOrders), playlistData('order'), off))
+      + row(key('playlist-interval-row'), t('How often'), select(key('playlist-interval'), name(t('How often')), draft(key('playlist-interval'), playlist.interval), (state.playlistIntervals || []).map(minutes => [minutes, intervalLabel(minutes)]), `${playlistData('interval')} data-number`, off))
+      + (playlist.source === 'list' ? `<div class="settings-playlist" data-key="${e(key('playlist-list'))}">${listed.length ? listed.map(item => `<div class="settings-rule" data-key="${e(key(`playlist-item-${item.id}`))}"><span class="settings-rule-name">${e(item.title)}</span>${button(t('Remove'), 'playlistRemove', { id: item.id, displayID: id }, off)}</div>`).join('') : `<p class="settings-empty">${e(t('The list is empty. In Installed, select wallpapers and choose Add to playlist, or use the list button in a wallpaper’s details.'))}</p>`}</div>` : '')
+      + row(key('playlist-next-row'), t('Next change'), button(t('Change now'), 'playlistSkip', { displayID: id }, off), nextChange ? t('Around {time}, if wallpapers are playing then.', { time: nextChange }) : t('Starts counting once wallpapers play.'));
+    const wallpaperChoices = [['', t('Leave as it is')], ...playable.map(item => [item.id, item.title])];
+    const dayNightRows = row(key('playlist-day-row'), t('Day wallpaper'), select(key('playlist-day'), name(t('Day wallpaper')), draft(key('playlist-day'), playlist.dayWallpaperID || ''), wallpaperChoices, playlistData('dayWallpaper'), off))
+      + row(key('playlist-day-start-row'), t('Day starts at'), clockInput('dayStart', t('Day starts at'), playlist.dayStart))
+      + row(key('playlist-night-row'), t('Night wallpaper'), select(key('playlist-night'), name(t('Night wallpaper')), draft(key('playlist-night'), playlist.nightWallpaperID || ''), wallpaperChoices, playlistData('nightWallpaper'), off))
+      + row(key('playlist-night-start-row'), t('Night starts at'), clockInput('nightStart', t('Night starts at'), playlist.nightStart))
+      + (nextChange ? row(key('playlist-switch-row'), t('Next switch'), `<span class="settings-status" role="status">${e(t('Around {time}.', { time: nextChange }))}</span>`, '', 'settings-readout') : '');
+    const playlistMode = playlistModes.find(([mode]) => mode === playlist.mode) || playlistModes[0];
+    const playlistRows = mirror ? '' : disclosure(key('playlist'), playlist.mode === 'off' ? t('Playlist') : t('Playlist: {mode}', { mode: t(playlistMode[1]) }),
+      row(key('playlist-mode-row'), t('Changes on its own'), select(key('playlist-mode'), name(t('Changes on its own')), draft(key('playlist-mode'), playlist.mode), localizedOptions(playlistModes), playlistData('mode'), off), t('Only while wallpapers play. A change that falls due while they are paused, the screen is locked or the displays sleep happens once they play again.'))
+      + (playlist.mode === 'rotate' ? rotateRows : playlist.mode === 'dayNight' ? dayNightRows : ''), 'settings-disclosure-rows');
     return `<section class="settings-display settings-group" data-key="display-${e(id)}" aria-labelledby="settings-group-display-${e(id)}"><h3 id="settings-group-display-${e(id)}">${e(display.title)}${primary ? `<span class="settings-note">${e(t('Primary display'))}</span>` : ''}</h3>`
       + row(key('enabled-row'), t('Enable wallpaper'), toggle(key('enabled'), name(t('Enable wallpaper')), draft(key('enabled'), display.enabled), data('enabled'), busy || primary))
       + row(key('mode-row'), t('Display mode'), select(key('mode'), name(t('Display mode')), draft(key('mode'), display.mode), localizedOptions([['standalone', 'Independent'], ['mirror', 'Mirror another display']]), data('mode'), off || primary))
       + (mirror ? row(key('target-row'), t('Mirror source'), select(key('mirrorTarget'), name(t('Mirror source')), draft(key('mirrorTarget'), display.mirrorTarget), [['', t('Choose display')], ...(display.mirrorTargets || []).map(target => [target.id, target.title])], data('mirrorTarget'), off || !display.mirrorTargets?.length), !display.mirrorTargets?.length ? t('No compatible display available.') : '') : row(key('wallpaper-row'), t('Wallpaper'), button(t('Choose…'), 'chooseDisplayWallpaper', { displayID: id }, off) + button(t('Eject'), 'eject', { id: display.wallpaperID, displayID: id }, off || !display.wallpaperID), wallpaper?.title || (display.wallpaperID ? display.wallpaperID : t('None selected'))))
+      + playlistRows
       + disclosure(key('advanced'), t('Playback & scaling'), (!mirror && !display.wallpaperID ? `<div class="settings-note">${e(t('Choose a wallpaper to adjust playback.'))}</div>` : '') + row(key('scaling-row'), t('Scaling'), select(key('scalingMode'), name(t('Scaling')), draft(key('scalingMode'), playback.scalingMode), localizedOptions([['none', 'No scaling'], ['stretch', 'Stretch'], ['match', 'Match'], ['fill', 'Fill']]), data('scalingMode'), playbackOff))
         + row(key('factor-row'), t('Scale factor'), number('scalingFactor', t('Scale factor'), Number.MIN_VALUE, null, 'any', '×'))
         + row(key('fps-row'), t('Frame rate'), number('fps', t('Frame rate'), 1, playback.maxFps || 60, 1, 'fps'))
@@ -627,6 +675,21 @@ async function onChange(view, event) {
     const draftKey = input.dataset.key;
     view.drafts.set(draftKey, input.value);
     await perform(view, draftKey, 'appRuleUpdate', { id, key: ruleKey, value: input.value }, () => view.drafts.delete(draftKey));
+    view.drafts.delete(draftKey);
+    draw(view);
+    return;
+  }
+  if (input.dataset.playlist !== undefined) {
+    const field = input.dataset.playlistKey;
+    let value = input.value;
+    if (field === 'interval') value = Number(value);
+    if (field === 'dayStart' || field === 'nightStart') {
+      value = clockMinute(value);
+      if (value === null) { input.reportValidity(); return; }
+    }
+    const draftKey = input.dataset.key;
+    view.drafts.set(draftKey, input.value);
+    await perform(view, draftKey, 'playlistSetting', { displayID: input.dataset.playlist, key: field, value }, () => view.drafts.delete(draftKey));
     view.drafts.delete(draftKey);
     draw(view);
     return;

@@ -343,7 +343,8 @@ playing on a display is ejected first.
 The top bar picker chooses which display Apply acts on. Disabled and mirrored
 displays are listed but not selectable, annotated `(disabled)` or `(mirrored)`.
 Per-display enablement, independent/mirror mode, mirror source, scaling, scale
-factor, frame rate, mute and volume live in **Settings -> Displays**. When a
+factor, frame rate, mute and volume live in **Settings -> Displays**, beside
+each independent display's **Playlist** (see [playlists](playlists.md)). When a
 Performance cap, or the battery frame rate while reduced quality is in force,
 is below the saved frame rate, the field notes `Limited to {fps} fps by
 Performance settings` and can open Settings → Performance. The inspector's
