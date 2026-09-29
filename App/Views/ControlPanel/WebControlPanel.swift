@@ -65,8 +65,10 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   /// Tests pass a closure so choosing an app does not open a panel. Nil uses the sheet.
   var chooseApplication: (@MainActor () async -> URL?)?
   /// Tests pass a closure that answers a pixiv session, so signing in opens no window. Nil
-  /// opens pixiv's sign-in page in `PixivSignInWindowController`.
+  /// opens pixiv's sign-in page in `WebSignInWindowController`.
   var signInToPixiv: (@MainActor () async -> String?)?
+  /// The same for Steam Community, whose session lets Discover list subscriptions.
+  var signInToSteamWeb: (@MainActor () async -> String?)?
   let displayTitles: DisplayTitleResolver
   weak var webView: WKWebView?
   let assets: WebPanelAssets

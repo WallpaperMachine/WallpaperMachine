@@ -9,6 +9,8 @@ struct WorkshopQuery: Equatable, Sendable {
   var tags: [String] = []
   /// Steam `excludedtags[]`: an item carrying any of them is dropped.
   var excludedTags: [String] = []
+  /// Where the tiles come from; only the browse and collections lists read `text` and `sort`.
+  var source: WorkshopSource = .browse
 }
 
 struct WorkshopRequest: Equatable, Sendable {
@@ -50,6 +52,16 @@ final class WorkshopStore {
   /// rated in, genre-less items are hidden, and Application / Asset are never offered.
   static let defaultExcludedTags = ["Application", "Asset", "Questionable", "Mature", "Unspecified"]
   var selectedItem: WorkshopItem?
+  /// Where the next search looks. Opening an author or a collection remembers the source it
+  /// was opened from, so Back returns to it.
+  var source: WorkshopSource = .browse
+  private(set) var sourceHistory: [WorkshopSource] = []
+  /// The shown source's own name when it has one Steam gave, such as an author's.
+  private(set) var sourceTitle: String?
+  /// The Steam Community session subscriptions are read with. Memory only: it ends with the
+  /// app, or on Sign Out.
+  private(set) var steamWebSession: SteamWebSession?
+  private(set) var isSigningInToSteamWeb = false
   private(set) var sceneAssetsReady: Bool
   @ObservationIgnored private let sceneAssetsAvailable: @MainActor () -> Bool
 
@@ -381,20 +393,96 @@ final class WorkshopStore {
   private var draftQuery: WorkshopQuery {
     WorkshopQuery(
       text: searchText.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, sort: sort,
-      tags: tags, excludedTags: excludedTags)
+      tags: tags, excludedTags: excludedTags, source: source)
   }
 
   /// The Steam page showing the current page's tiles.
   var browseURL: URL {
     let query = committedQuery ?? draftQuery
-    return WorkshopService.browseURL(
-      search: query.text, kind: query.kind, sort: query.sort, page: page, tags: query.tags,
-      excludedTags: query.excludedTags)
+    switch query.source {
+    case .browse, .collections:
+      return WorkshopService.browseURL(
+        search: query.text, kind: query.source == .browse ? query.kind : .all, sort: query.sort,
+        page: page, tags: query.tags, excludedTags: query.excludedTags,
+        section: query.source == .browse ? "readytouseitems" : "collections")
+    case .collection(let id, _):
+      return URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
+    case .creator(let id, _):
+      return WorkshopService.profileURL(steamID: id, subscriptions: false, page: page)
+    case .subscriptions:
+      return steamWebSession.map { WorkshopService.profileURL(steamID: $0.steamID, subscriptions: true, page: page) }
+        ?? URL(string: "https://steamcommunity.com/app/\(WorkshopApp.id)/workshop/")!
+    }
   }
 
   func search() {
     resetCache(for: draftQuery)
     load(WorkshopRequest(query: draftQuery, page: 1))
+  }
+
+  /// Shows another source from its first page. An author or a collection is opened from what
+  /// is on show, so Back can return there; choosing a list afresh starts a new history.
+  func open(_ next: WorkshopSource) {
+    switch next {
+    case .creator, .collection:
+      let current = committedQuery?.source ?? source
+      if current != next { sourceHistory.append(current) }
+    case .browse, .collections, .subscriptions:
+      sourceHistory = []
+    }
+    source = next
+    selectedItem = nil
+    search()
+  }
+
+  /// Returns to the source the shown one was opened from, from its first page.
+  func back() {
+    guard let previous = sourceHistory.popLast() else { return }
+    source = previous
+    selectedItem = nil
+    search()
+  }
+
+  /// Signs in to Steam Community through Steam's own page, so subscriptions can be read. The
+  /// app never sees the password: `obtainCookie` answers the session cookie Steam set, or nil
+  /// when the window was closed first.
+  func signInToSteamWeb(obtainCookie: @MainActor () async -> String?) async throws {
+    guard !isSigningInToSteamWeb else { return }
+    isSigningInToSteamWeb = true
+    defer { isSigningInToSteamWeb = false }
+    guard let cookie = await obtainCookie() else { return }
+    guard let session = SteamWebSession(cookie: cookie) else {
+      throw WorkshopFailure(message: String(localized: "Steam’s sign-in finished without a session this app can use. Try signing in again."))
+    }
+    steamWebSession = session
+    if (committedQuery?.source ?? source) == .subscriptions { search() }
+  }
+
+  /// Forgets the Steam Community session; Steam's own sign-in window keeps no cookie either.
+  func signOutOfSteamWeb() {
+    steamWebSession = nil
+    if (committedQuery?.source ?? source) == .subscriptions {
+      cancelSearch()
+      items = []
+      totalCount = 0
+      totalPages = 1
+      reachableCount = 0
+      committedQuery = nil
+      hasLoaded = false
+    }
+  }
+
+  /// The ids of subscribed wallpapers not in `installed`, asking Steam for every page of
+  /// subscriptions. Throws `SteamSignInRequired` when the session has ended.
+  func missingSubscriptions(installed: Set<String>) async throws -> [WorkshopItem] {
+    guard let session = steamWebSession else { throw SteamSignInRequired() }
+    do {
+      let ids = try await service.subscribedIDs(account: session).filter { !installed.contains($0) }
+      return try await service.details(ids: ids).filter { $0.collectionSize == nil }
+    } catch is SteamSignInRequired {
+      steamWebSession = nil
+      throw SteamSignInRequired()
+    }
   }
 
   func loadPage(_ page: Int) {
@@ -426,9 +514,7 @@ final class WorkshopStore {
     let service = service
     let task = Task { [weak self] in
       defer { if let self, self.cacheID == cacheID { self.steamFetches[number] = nil } }
-      let result = try await service.browse(
-        search: query.text, kind: query.kind, sort: query.sort, page: number, tags: query.tags,
-        excludedTags: query.excludedTags)
+      let result = try await service.page(for: query, page: number, account: self?.steamWebSession)
       try Task.checkCancellation()
       // Only the cache that asked keeps the page; a superseded fetch is simply dropped.
       if let self, self.cacheID == cacheID {
@@ -452,6 +538,7 @@ final class WorkshopStore {
     page = min(totalPages, request.page)
     hasLoaded = true
     committedQuery = request.query
+    sourceTitle = result.title
     failedRequest = nil
     // A failed prefetch is simply retried as an ordinary load when the user gets there.
     if prefetchesNextPage, page < totalPages, steamPages[page + 1] == nil {
@@ -479,6 +566,8 @@ final class WorkshopStore {
         publish(result, for: request)
       } catch {
         guard generation == requestID, !Task.isCancelled else { return }
+        // Steam ended the session: forget it, so the panel offers to sign in again.
+        if error is SteamSignInRequired { steamWebSession = nil }
         errorMessage = error.localizedDescription
         failedRequest = request
       }

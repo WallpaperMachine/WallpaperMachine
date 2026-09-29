@@ -45,6 +45,16 @@ Swift tests cover, without starting the app:
   a failed check keeping what was known, and forgetting deleted items;
   `ImportTests` covers the swap that replaces an installed tree. The reload of a
   wallpaper on screen after its update needs a renderer and is not covered.
+  Other sources: `WorkshopSourceTests` covers reading Steam's session cookie,
+  author pages (ids, total, name, and only Steam's sign-in page meaning signed
+  out), a collection's order, collections marked on browse pages over a
+  megabyte, the sidebar's rules on unfiltered pages, the age-rating sampling of
+  collections, a collection's pages, every page of subscriptions sent with the
+  session, and the store's back history, sign-in, a session Steam ended and
+  sign-out, all against a fixture protocol. `WebPanelWorkshopSourceTests`
+  covers the panel's source actions, their validation, sign-in through an
+  injected window and refusing to download a collection. Steam's real sign-in
+  window is not covered.
 - **Pixiv** — decoding of pixiv's ranking, search, page-list, status and
   profile answers (numbers sent as strings, content types as objects or lists,
   withheld and members-only entries), ratings including R-18 and R-18G, search

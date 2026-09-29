@@ -98,7 +98,8 @@ library reloads, waiting for any wallpaper being applied to finish first.
 ## Signing in and R-18 works
 
 **Sign in to pixiv…** in the sidebar's pixiv account group opens pixiv's own
-sign-in page in a window of its own (`PixivSignInWindowController`). The page
+sign-in page in a window of its own (`WebSignInWindowController`, the one Steam's
+sign-in for [subscriptions](workshop-downloads.md#subscriptions) uses too). The page
 runs in a private website data store that disappears with the window; the app
 reads exactly one thing from it, the `PHPSESSID` cookie pixiv sets on
 `.pixiv.net` once someone has signed in, and only in its signed-in shape
@@ -146,7 +147,7 @@ and password always works.
 | Browse state, account | `App/Services/Pixiv/PixivStore.swift`, `PixivSessionStore.swift` |
 | Downloads and packaging | `App/Services/Pixiv/PixivDownloadQueue.swift`, `PixivWallpaperPackager.swift` |
 | Panel snapshot and actions | `App/Views/ControlPanel/WebPanelPixiv.swift` |
-| Sign-in window | `App/Views/ControlPanel/PixivSignInWindow.swift` |
+| Sign-in window | `App/Views/ControlPanel/WebSignInWindow.swift` |
 | Page | `WebUI/pixiv.js` |
 
 ## Verification

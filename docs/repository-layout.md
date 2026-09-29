@@ -41,7 +41,7 @@ App/                               WallpaperMachine application target sources o
                                    owns the app's copies under <support>/UserAssets/ and the derived,
                                    regenerable <project>/.mwe-user-assets/ bridge a page can read
   Services/WebWallpaper/           WKWebView host windows and page protocol for web wallpapers
-  Services/Workshop/               Workshop query model, browse store, downloader and queue
+  Services/Workshop/               Workshop query model and sources, browse store, downloader and queue
   ViewModels/                      BridgeStore and editor draft state; observable, no view code
   Views/ControlPanel/              SwiftUI container, WKWebView host, snapshot builder, action handlers
   Resources/                       Info.plist, string catalogs, Assets.xcassets; app resources only

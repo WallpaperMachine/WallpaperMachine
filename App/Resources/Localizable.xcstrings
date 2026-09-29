@@ -1700,6 +1700,27 @@
     },
     "Play or Pause" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Play or Pause"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "播放或暂停"}}}
+    },
+    "A collection can’t be downloaded as one. Open it to download its wallpapers." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A collection can’t be downloaded as one. Open it to download its wallpapers."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "合集无法整体下载。请打开合集，下载其中的壁纸。"}}}
+    },
+    "Every wallpaper you subscribe to is already in your library." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Every wallpaper you subscribe to is already in your library."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "你订阅的每个壁纸都已在库中。"}}}
+    },
+    "Sign in to Steam" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Sign in to Steam"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "登录 Steam"}}}
+    },
+    "Steam asked you to sign in again. Sign in to Steam to see your subscriptions." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam asked you to sign in again. Sign in to Steam to see your subscriptions."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 要求你重新登录。登录 Steam 后即可查看你的订阅。"}}}
+    },
+    "Steam no longer serves this collection." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam no longer serves this collection."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 已不再提供这个合集。"}}}
+    },
+    "Steam’s sign-in finished without a session this app can use. Try signing in again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam’s sign-in finished without a session this app can use. Try signing in again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 登录已结束，但没有得到本应用可用的会话。请再试一次登录。"}}}
+    },
+    "This Steam account id is not one Steam uses." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This Steam account id is not one Steam uses."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这不是 Steam 使用的账户 ID。"}}}
     }
   },
   "version" : "1.0"

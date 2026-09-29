@@ -463,6 +463,13 @@ extension WebPanelController {
       "bridgeVersion": settings.bridgeVersion, "coreVersion": settings.coreVersion,
       "shaderVersion": settings.shaderPipelineVersion, "gitSha": settings.gitSha,
     ]
+    // The source on show, named as Steam named it once its first page arrived.
+    let shownSource = workshop.source
+    let sourceName = (workshop.committedQuery?.source == shownSource ? workshop.sourceTitle : nil) ?? shownSource.name
+    let workshopSource: [String: Any] = [
+      "key": shownSource.key, "id": shownSource.id as Any? ?? null, "name": sourceName as Any? ?? null,
+      "searchable": shownSource.isSearchable, "canGoBack": !workshop.sourceHistory.isEmpty,
+    ]
     let workshopSnapshot: [String: Any] = [
       "text": workshop.searchText, "kind": workshop.kind.rawValue, "sort": workshop.sort.rawValue,
       "tags": workshop.tags, "excludedTags": workshop.excludedTags,
@@ -473,6 +480,8 @@ extension WebPanelController {
       "maxPages": WorkshopStore.maxPages,
       "loading": workshop.isLoading, "loaded": workshop.hasLoaded,
       "error": workshop.errorMessage as Any? ?? null,
+      "source": workshopSource,
+      "steamSignedIn": workshop.steamWebSession != nil, "steamSigningIn": workshop.isSigningInToSteamWeb,
     ]
     // Every configured display's playlist, with when it next changes on its own.
     var playlistSnapshot: [String: Any] = [:]
@@ -878,6 +887,8 @@ extension WebPanelController {
       // Steam lists staff-approved wallpapers under the `Approved` tag; the tile marks them.
       "approved": value.tags.contains { $0.caseInsensitiveCompare("Approved") == .orderedSame },
       "size": value.size, "subscriptions": value.subscriptions, "kind": value.kind.rawValue,
+      "creatorID": value.creatorID as Any? ?? NSNull(),
+      "collection": value.collectionSize != nil, "collectionSize": value.collectionSize ?? 0,
     ]
   }
 

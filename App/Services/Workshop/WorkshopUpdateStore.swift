@@ -24,7 +24,7 @@ final class WorkshopUpdateStore {
     static let checkInterval: TimeInterval = 24 * 60 * 60
     /// Steam's clock and this Mac's may disagree a little; a change within this of the install
     /// is the version that was installed.
-    static let tolerance: TimeInterval = 60
+    nonisolated static let tolerance: TimeInterval = 60
     private static let installedKey = "WallpaperMachine.workshopInstalledAt"
     private static let availableKey = "WallpaperMachine.workshopUpdates"
     private static let lastCheckedKey = "WallpaperMachine.workshopUpdatesCheckedAt"

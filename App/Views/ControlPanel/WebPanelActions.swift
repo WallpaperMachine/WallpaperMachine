@@ -63,6 +63,50 @@ extension WebPanelController {
       workshop.excludedTags = excludedTags
       workshop.search()
       return
+    // Where Discover looks. An author or a collection is opened from a tile, so Back returns.
+    case "workshopSource":
+      switch try request.string("source") {
+      case "browse": workshop.open(.browse)
+      case "collections": workshop.open(.collections)
+      case "subscriptions": workshop.open(.subscriptions)
+      default: throw WebPanelRequest.invalid
+      }
+      return
+    case "workshopCreator":
+      let id = try request.string("id")
+      let name = try request.string("name")
+      guard SteamWebSession.isSteamID(id), name.count <= 256 else { throw WebPanelRequest.invalid }
+      workshop.open(.creator(id: id, name: name))
+      return
+    case "workshopCollection":
+      let id = try request.string("id")
+      let title = try request.string("title")
+      guard !id.isEmpty, id.count <= 20, UInt64(id) != nil, title.count <= 512 else { throw WebPanelRequest.invalid }
+      workshop.open(.collection(id: id, title: title))
+      return
+    case "workshopBack":
+      workshop.back()
+      return
+    // Steam's own page in a window of its own; the panel learns the outcome from its snapshot.
+    case "steamWebSignIn":
+      if workshop.isSigningInToSteamWeb {
+        WebSignInWindowController.bringToFront(.steam)
+      } else if workshop.steamWebSession == nil {
+        let obtain = signInToSteamWeb ?? { await WebSignInWindowController.obtainCookie(for: .steam) }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            try await self.workshop.signInToSteamWeb(obtainCookie: obtain)
+          } catch {
+            self.actionError = error.localizedDescription
+          }
+          self.scheduleUpdate()
+        }
+      }
+      return
+    case "steamWebSignOut":
+      workshop.signOutOfSteamWeb()
+      return
     case "workshopPage":
       workshop.loadPage(
         Int(try request.number("page", range: 1...Double(WorkshopStore.maxPages))))
@@ -241,6 +285,22 @@ extension WebPanelController {
                 "Moved \(report.deleted.count) of \(ids.count) wallpapers to Trash. Couldn’t move \(details.joined(separator: "; "))"
             )
           )
+        }
+      }
+    // Every subscribed wallpaper the library lacks. Steam is asked outside the queue, which
+    // only the downloads, queued like a single one, wait in.
+    case "workshopDownloadSubscribed":
+      let installed = Set(store.librarySnapshot.wallpapers.map(\.id))
+      let missing = try await workshop.missingSubscriptions(installed: installed)
+        .filter { $0.kind != .application }
+      guard !missing.isEmpty else {
+        throw WallpaperActionError(
+          message: String(localized: "Every wallpaper you subscribe to is already in your library."))
+      }
+      try await store.commands.run {
+        for item in missing where workshop.downloader.download(for: item.id)?.isPending != true {
+          workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+          try checkDownloadError()
         }
       }
     default:
@@ -515,6 +575,12 @@ extension WebPanelController {
       let item: WorkshopItem?
       if let id = body["id"] as? String, id != WorkshopStore.sceneAssetsRequestID {
         guard let found = workshop.workshopItem(id: id) else { throw WebPanelRequest.invalid }
+        // A collection is a list on Steam, not a wallpaper: it is opened, and its wallpapers
+        // downloaded one by one.
+        guard found.collectionSize == nil else {
+          throw WallpaperActionError(
+            message: String(localized: "A collection can’t be downloaded as one. Open it to download its wallpapers."))
+        }
         item = found
       } else {
         item = nil
