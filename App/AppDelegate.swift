@@ -645,7 +645,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         rebuildMenu(menu)
     }
 
-
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
         guard sender === controlPanelWindow else { return frameSize }
         return ControlPanelWindow.clampedFrameSize(frameSize, for: sender)
