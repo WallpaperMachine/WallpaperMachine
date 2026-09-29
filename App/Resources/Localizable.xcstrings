@@ -1592,6 +1592,24 @@
     },
     "This image could not be read. Choose a picture that opens in Preview." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This image could not be read. Choose a picture that opens in Preview."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法读取这张图片。请选择能在“预览”中打开的图片。"}}}
+    },
+    "Wallpapers" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸"}}}
+    },
+    "Pause, mute or stop wallpapers while this Focus is on." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Pause, mute or stop wallpapers while this Focus is on."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "在此专注模式开启时暂停、静音或停止壁纸。"}}}
+    },
+    "Wallpaper playback" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper playback"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸播放"}}}
+    },
+    "Keep running" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Keep running"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "继续运行"}}}
+    },
+    "Mute" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Mute"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "静音"}}}
+    },
+    "Stop (free memory)" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Stop (free memory)"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "停止（释放内存）"}}}
     }
   },
   "version" : "1.0"

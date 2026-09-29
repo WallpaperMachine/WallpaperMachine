@@ -45,7 +45,7 @@ or skip to the next wallpaper.
 | [**Energy**](docs/features/performance.md#energy-use) | Settings → Performance shows the power the app draws and, on a laptop, its share of a full charge per hour. Change a setting there and it compares before and after. Each installed wallpaper gets its own rating once it has been measured. |
 | [**Native**](docs/features/appearance.md) | Light, dark and your accent colour, like the rest of macOS, in English or [简体中文](docs/features/control-panel.md#language). |
 | [**Import**](docs/features/control-panel.md#downloads-and-import) | Bring the Wallpaper Engine folders you already have, or your own videos and pictures. Drop them on the Dock icon or use Import; the app copies them and leaves the originals alone. |
-| [**Out of sight, paused**](docs/architecture.md#desktop-wallpaper-windows-and-private-api-handling) | A covered display stops its own wallpaper, and sleep or lock pauses them all. [Playback rules](docs/features/performance.md#playback) can also pause or mute them while another app plays sound, or while an app you choose is running or in front. Your own pause stays yours. |
+| [**Out of sight, paused**](docs/architecture.md#desktop-wallpaper-windows-and-private-api-handling) | A covered display stops its own wallpaper, and sleep or lock pauses them all. [Playback rules](docs/features/performance.md#playback) can also pause or mute them while another app plays sound, while an app you choose is running or in front, in Low Power Mode, when the Mac runs hot, or during a Focus. Your own pause stays yours. |
 | [**Lock screen**](docs/features/lock-screen.md) | Video and scene wallpapers can animate the lock screen too. Experimental and off by default. |
 
 ## Rust core · Metal graphics

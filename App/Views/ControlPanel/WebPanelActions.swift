@@ -288,6 +288,15 @@ extension WebPanelController {
           throw WebPanelRequest.invalid
         }
         playback.desktopCoveredAction = action
+      case "lowPowerModeAction", "thermalAction":
+        guard let action = SystemConditionAction(rawValue: try request.string("value")) else {
+          throw WebPanelRequest.invalid
+        }
+        if key == "lowPowerModeAction" {
+          playback.lowPowerModeAction = action
+        } else {
+          playback.thermalAction = action
+        }
       case "verboseLogging":
         try await store.setVerboseLoggingAsync(enabled: try request.boolean("value"))
       case "keepWindowsOnWallpaperClick":
@@ -349,6 +358,9 @@ extension WebPanelController {
       guard let id = UUID(uuidString: try request.string("id")) else { throw WebPanelRequest.invalid }
       playback.removeRule(id: id)
     case "lockScreenRetry": store.lockScreenWallpaper?.refresh()
+    case "openFocusSettings":
+      // Focus filters are added to a Focus there; the app cannot add its own.
+      NSWorkspace.shared.open(Self.focusSettingsURL)
     case "displaySetting": try await displaySetting(request)
     case "eject":
       try await store.ejectWallpaperFromDisplayAsync(
@@ -837,6 +849,7 @@ extension WebPanelController {
       """)
   }
 
+  static let focusSettingsURL = URL(string: "x-apple.systempreferences:com.apple.Focus-Settings.extension")!
   static let videoBackendModes = ["compatibility", "native_preferred"]
   /// The only two scene renderer names. Must stay identical to the Rust
   /// `set_scene_renderer` match arms: a name accepted here and rejected there

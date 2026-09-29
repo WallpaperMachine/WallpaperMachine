@@ -25,6 +25,8 @@ final class PlaybackPreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.displaySleepAction, .pause)
         XCTAssertEqual(preferences.otherAudioAction, .keepRunning)
         XCTAssertEqual(preferences.desktopCoveredAction, .pause, "A covered desktop pauses unless the user opts out")
+        XCTAssertEqual(preferences.lowPowerModeAction, .keepRunning, "Low Power Mode alone never changes playback")
+        XCTAssertEqual(preferences.thermalAction, .keepRunning)
         XCTAssertTrue(preferences.appRules.isEmpty)
     }
 
@@ -33,6 +35,8 @@ final class PlaybackPreferencesTests: XCTestCase {
         preferences.displaySleepAction = .stop
         preferences.otherAudioAction = .mute
         preferences.desktopCoveredAction = .keepRunning
+        preferences.lowPowerModeAction = .pause
+        preferences.thermalAction = .stop
         let added = preferences.addRule(bundleIdentifier: "com.example.Player", name: "Player")
         try? preferences.updateRule(id: added.id, condition: .frontmost)
         try? preferences.updateRule(id: added.id, action: .stop)
@@ -41,6 +45,8 @@ final class PlaybackPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.displaySleepAction, .stop)
         XCTAssertEqual(reloaded.otherAudioAction, .mute)
         XCTAssertEqual(reloaded.desktopCoveredAction, .keepRunning)
+        XCTAssertEqual(reloaded.lowPowerModeAction, .pause)
+        XCTAssertEqual(reloaded.thermalAction, .stop)
         XCTAssertEqual(reloaded.appRules.count, 1)
         XCTAssertEqual(reloaded.appRules[0].bundleIdentifier, "com.example.Player")
         XCTAssertEqual(reloaded.appRules[0].condition, .frontmost)
@@ -52,12 +58,14 @@ final class PlaybackPreferencesTests: XCTestCase {
         defaults.set("not-an-action", forKey: "WallpaperMachine.displaySleepAction")
         defaults.set("louder", forKey: "WallpaperMachine.otherAudioAction")
         defaults.set("sometimes", forKey: "WallpaperMachine.desktopCoveredAction")
+        defaults.set("nap", forKey: "WallpaperMachine.lowPowerModeAction")
         defaults.set(Data("not-json".utf8), forKey: "WallpaperMachine.appRules")
 
         let preferences = PlaybackPreferences(defaults: defaults)
         XCTAssertEqual(preferences.displaySleepAction, .pause)
         XCTAssertEqual(preferences.otherAudioAction, .keepRunning)
         XCTAssertEqual(preferences.desktopCoveredAction, .pause)
+        XCTAssertEqual(preferences.lowPowerModeAction, .keepRunning)
         XCTAssertTrue(preferences.appRules.isEmpty)
     }
 

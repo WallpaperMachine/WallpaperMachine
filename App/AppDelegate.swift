@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var presentationPolicy: WallpaperPresentationPolicy?
     private var appRuleMonitor: AppRuleMonitor?
     private var otherAudioMonitor: OtherAudioMonitor?
+    private var systemConditionMonitor: SystemConditionMonitor?
     private var playbackPreferencesObserver: NSObjectProtocol?
     private var wallpaperEnergy: WallpaperEnergyRecorder?
     /// Last presentation the bridge accepted, so leaving unloaded clears that flag first.
@@ -204,10 +205,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let preferences = PlaybackPreferences.shared
             let appRules = AppRuleMonitor(preferences: preferences)
             let otherAudio = OtherAudioMonitor(preferences: preferences)
+            let conditions = SystemConditionMonitor(preferences: preferences, focus: .shared)
             appRuleMonitor = appRules
             otherAudioMonitor = otherAudio
+            systemConditionMonitor = conditions
             appRules.onChange = { [weak self] in self?.presentationPolicy?.evaluate() }
             otherAudio.onChange = { [weak self] in self?.presentationPolicy?.evaluate() }
+            conditions.onChange = { [weak self] in self?.presentationPolicy?.evaluate() }
             playbackPreferencesObserver = NotificationCenter.default.addObserver(
                 forName: PlaybackPreferences.didChangeNotification, object: preferences, queue: .main
             ) { [weak self] _ in
@@ -218,7 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             let policy = WallpaperPresentationPolicy(
                 displaySleepAction: { preferences.displaySleepAction },
-                appRuleActions: { appRules.actions },
+                // Low Power Mode, a hot Mac and a Focus filter act exactly as app rules do.
+                appRuleActions: { appRules.actions.union(conditions.actions) },
                 otherAudioActive: { otherAudio.isActive },
                 otherAudioAction: { preferences.otherAudioAction },
                 desktopCoveredAction: { preferences.desktopCoveredAction },
@@ -308,7 +313,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 })
             presentationPolicy = policy
             syncPlaybackMonitors()
+            conditions.start()
             policy.start()
+            Task { await WallpaperFocusFilter.refreshState() }
             startWallpaperEnergyRecorder(store: store)
             do {
                 try lockScreen?.start()
@@ -370,7 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     /// Nil whenever the app's energy is not one wallpaper's: playback paused or suspended
-    /// (display sleep, lock, app rules, other audio, battery pause), the panel on screen
+    /// (display sleep, lock, app rules, Low Power Mode, heat, a Focus filter, other audio,
+    /// battery pause), the panel on screen
     /// with its WebKit work, or a download running SteamCMD inside the app's coalition or
     /// fetching a pixiv original in the app itself.
     private func wallpaperEnergyContext() -> WallpaperEnergyContext? {
@@ -542,6 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         appRuleMonitor?.stop()
         otherAudioMonitor?.stop()
+        systemConditionMonitor?.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

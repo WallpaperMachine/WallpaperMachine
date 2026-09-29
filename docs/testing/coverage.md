@@ -170,6 +170,14 @@ Swift tests cover, without starting the app:
   an older build and an unjournaled poster restore the display's (else any
   display's) real original. Coordinator tests use unattached
   `CAMetalLayer`s and injected notification/encoding services.
+- **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
+  Mode and thermal readings and a private notification center: Low Power Mode
+  acting only once an action is chosen, only serious and critical heat counting
+  (and staying hot not re-announcing), a Focus filter joining the other
+  conditions, its state surviving a new instance, and `stop()` releasing every
+  action. `WallpaperFocusFilterTests` pins the filter's default to the choice
+  that lets wallpapers run, since macOS performs it with defaults when a Focus
+  ends. The real Focus Settings pane and a real Low Power Mode are not exercised.
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,

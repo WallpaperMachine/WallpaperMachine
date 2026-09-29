@@ -22,7 +22,9 @@ App/                               WallpaperMachine application target sources o
   Bridge/                          BridgeEnvironment.swift (Vulkan ICD) and Generated/ (uniffi output; not hand-edited)
   Logging/                         AppLog.swift; the only Swift logging entry point
   Services/Appearance/             AppTheme.swift: theme preference model and store
-  Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy
+  Services/Automation/             App Intents the system runs in the app (Focus filter)
+  Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy,
+                                   playback rules and the system conditions (Low Power Mode, heat, Focus) that feed it
   Services/Diagnostics/            runtime diagnostics session and counter sampling; per-coalition energy readout
   Services/GitHub/                 GitHub release client, update models, update store, installer
   Services/Library/                ClientPaths and library import/deletion; owns the app-support layout
@@ -48,7 +50,7 @@ Shared/                            contracts compiled into both targets: LockScr
 WebUI/                             HTML/CSS/JS control panel; bundled verbatim as the app resource folder WebUI
   locales/                         one panel catalog module per shipped language (zh-Hans.js), registered in i18n.js
 Resources/StarterWallpaper/        bundled sample wallpaper (Aurora.mp4, preview.jpg, project.json)
-Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Desktop, Diagnostics, GitHub,
+Tests/Unit/<Domain>/               WallpaperMachineTests, grouped Appearance, Automation, Desktop, Diagnostics, GitHub,
                                    Library, Localization, LockScreen, NativeVideo, Panel, Pixiv, Steam, SystemMedia,
                                    UserAssets, WebWallpaper, Workshop; hosted in the app binary
 Tests/UI/                          WallpaperMachineUITests; desktop-driving XCUITest suite

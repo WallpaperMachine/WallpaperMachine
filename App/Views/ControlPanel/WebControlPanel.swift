@@ -221,6 +221,17 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
         Task { @MainActor [weak self] in self?.scheduleUpdate() }
       }
       .store(in: &subscriptions)
+    // Playback shows whether Low Power Mode, heat or a Focus filter is in effect right now.
+    for name in [
+      Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification,
+      FocusFilterState.didChangeNotification,
+    ] {
+      NotificationCenter.default.publisher(for: name)
+        .sink { [weak self] _ in
+          Task { @MainActor [weak self] in self?.scheduleUpdate() }
+        }
+        .store(in: &subscriptions)
+    }
     navigation.objectWillChange.sink { [weak self] _ in
       Task { @MainActor [weak self] in self?.scheduleUpdate() }
     }.store(in: &subscriptions)

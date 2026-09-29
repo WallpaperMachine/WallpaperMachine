@@ -131,7 +131,8 @@ Services are grouped by domain under `App/Services/`.
 | Domain | Types | Responsibility |
 |---|---|---|
 | `Appearance/` | `AppTheme` (`AppThemePreferences`, `AppThemeStore`) | Mode/accent/tone preferences shared by AppKit and the page |
-| `Desktop/` | `DesktopSpaceWallpaperAPI`, `DesktopWallpaperLedger`, `DesktopWallpaperSync`, `PlaybackPreferences`, `AppRuleMonitor`, `OtherAudioMonitor`, `WallpaperPresentationPolicy`, `WallpaperCoverageProbes` | Per-Space desktop picture control, original-wallpaper journal, still-poster sync, playback rules, per-display renderer suspension |
+| `Desktop/` | `DesktopSpaceWallpaperAPI`, `DesktopWallpaperLedger`, `DesktopWallpaperSync`, `PlaybackPreferences`, `AppRuleMonitor`, `OtherAudioMonitor`, `SystemConditionMonitor`, `FocusFilterState`, `WallpaperPresentationPolicy`, `WallpaperCoverageProbes` | Per-Space desktop picture control, original-wallpaper journal, still-poster sync, playback rules (apps, other audio, Low Power Mode, heat, Focus filter), per-display renderer suspension |
+| `Automation/` | `WallpaperFocusFilter` | App Intents the system runs in the app: the Focus filter that pauses, mutes or stops wallpapers during a Focus |
 | `GitHub/` | `GitHubReleaseClient`, `AppUpdateModels`, `AppUpdateStore`, `AppUpdateInstaller` | GitHub Releases update check, download, in-place install |
 | `Library/` | `ClientPaths`, `WallpaperImportService`, `LibraryImportStore`, `StillImageWallpaper`, `WallpaperDeletionService` | App-support layout, non-destructive import (run for the app, not the panel page, so Finder and Dock drops import too), still pictures packaged as `web` wallpapers, guarded deletion |
 | `LockScreen/` | `LockScreenWallpaperSelection`, `LockScreenWallpaperService` | System lock-screen selection overrides and configuration publishing |

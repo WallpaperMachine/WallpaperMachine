@@ -382,6 +382,10 @@ extension WebPanelController {
         "optimizationApplied": report.optimizationApplied as Any? ?? null,
       ]
     }
+    // What Playback shows as in effect right now, beside the saved choices.
+    let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+    let thermalState = Self.thermalState(ProcessInfo.processInfo.thermalState)
+    let focusAction = FocusFilterState.shared.action?.rawValue ?? "keepRunning"
     // The sections are built separately: as one literal, the Swift compiler on the
     // macOS 15 release runner gives up type-checking it in reasonable time.
     let settingsSnapshot: [String: Any] = [
@@ -410,6 +414,9 @@ extension WebPanelController {
       "displaySleepAction": playback.displaySleepAction.rawValue,
       "otherAudioAction": playback.otherAudioAction.rawValue,
       "desktopCoveredAction": playback.desktopCoveredAction.rawValue,
+      "lowPowerModeAction": playback.lowPowerModeAction.rawValue,
+      "thermalAction": playback.thermalAction.rawValue,
+      "lowPowerMode": lowPowerMode, "thermalState": thermalState, "focusAction": focusAction,
       "appRules": playback.appRules.map { rule in
         [
           "id": rule.id.uuidString,
@@ -651,6 +658,16 @@ extension WebPanelController {
     case .video: "Video"
     case .webpage: "Web"
     case .unknown: "Unknown"
+    }
+  }
+
+  static func thermalState(_ state: ProcessInfo.ThermalState) -> String {
+    switch state {
+    case .nominal: "nominal"
+    case .fair: "fair"
+    case .serious: "serious"
+    case .critical: "critical"
+    @unknown default: "nominal"
     }
   }
 
