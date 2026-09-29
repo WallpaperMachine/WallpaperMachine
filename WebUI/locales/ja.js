@@ -31,6 +31,15 @@ export default {
   'Network speed: {speed}': 'ネットワーク速度：{speed}',
   '{received} of {expected}': '{received} / {expected}',
 
+  // First-wallpaper support prompt
+  'Feeling good?': '気に入りましたか？',
+  'Dismiss support prompt': 'サポートの案内を閉じる',
+  'Your first downloaded wallpaper is up and running. Enjoying WallpaperMachine? You can help it grow.': '初めてダウンロードした壁紙が動き始めました。WallpaperMachineを気に入ったら、応援していただけるとうれしいです。',
+  'Star on GitHub': 'GitHubでStarを付ける',
+  'Help others discover WallpaperMachine.': 'WallpaperMachineをもっと多くの人に届けましょう。',
+  'Become a Supporter': 'サポーターになる',
+  'Support development with a one-time contribution.': '一度限りの寄付で開発を応援する。',
+
   // Toolbar and filters
   '{count} active': '{count}件が有効',
   'Hide filters': 'フィルタを非表示',

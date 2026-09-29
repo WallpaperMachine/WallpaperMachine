@@ -78,7 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             AppLog.attach(created.bridge)
             // Reloading waits for a wallpaper being applied, so a page that lands meanwhile
             // appears once that finishes rather than failing.
-            pixivStore.downloads.onInstalled = { [weak created] _ in try await created?.refreshLibraryAsync() }
+            pixivStore.downloads.onInstalled = { [weak created] id in
+                created?.supportPrompt?.recordDownload(wallpaperID: id)
+                try await created?.refreshLibraryAsync()
+            }
             libraryImports.refreshLibrary = { [weak created] in try await created?.refreshLibraryAsync() }
             for line in DiagnosticEnvironment.current() { AppLog.info("environment: \(line)") }
             startupError = nil
@@ -1103,7 +1106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // "Next" is measured from whatever the display shows when this one gets its turn.
             try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId)) {
                 guard let id = store.nextWallpaperID(displayId: displayId) else { return }
-                try await store.activateWallpaperAsync(id: id, displayId: displayId)
+                try await store.activateWallpaperAsync(id: id, displayId: displayId, userInitiated: true)
             }
         case .apply(let id, let display):
             let displayId = try automationDisplay(display, store: store)
@@ -1111,7 +1114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 throw AutomationError(message: String(localized: "No installed wallpaper has the id “\(id)”."))
             }
             try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId), subject: id) {
-                try await store.activateWallpaperAsync(id: id, displayId: displayId)
+                try await store.activateWallpaperAsync(id: id, displayId: displayId, userInitiated: true)
             }
         case .open(let page):
             switch page {

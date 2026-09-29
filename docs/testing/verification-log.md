@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — First downloaded wallpaper support prompt
+
+- Added a persistent, once-only support offer after a successfully installed Workshop/pixiv wallpaper receives a successful explicit activation; failed applies, automatic rotation, restoration and local imports do not qualify.
+- Initial targeted state/activation/panel run: 18 passed, 6 panel failures because windowless WebKit reports document.hidden. The offscreen fixture now simulates page visibility independently from native presentation, matching the existing Discover tests.
+- python3 scripts/test.py --only WebPanelSupportPromptTests: exit 0; 7 passed, 0 failed, 0 skipped. Covers actual display acknowledgment, persistence/reload, welcome/modal/hidden deferral, captured Star and localized Pricing URLs, link failure retry, Escape and body-focus restoration.
+- python3 scripts/test.py: exit 0; 226 Python tests passed; 861 native tests: 850 passed, 0 failed, 11 skipped. The full gate ran once after the targeted fix.
+- Skipped opt-in tests: 9 NativeVideoPlayerMediaTests requiring real media decoding and 2 live Steam Workshop queries. Renderer probes were not run; no renderer or generated binding changes.
+- Changed JavaScript syntax checks, native localization JSON parsing and git diff --check passed. English and Chinese Pricing destinations each returned HTTP 200. XcodeGen regenerated the project for the new Swift files.
+- Visual presentation and real desktop/VoiceOver behavior remain unverified; no windows, screenshots, wallpaper changes or external browser launches. No Release build, install, commit or push requested.
+
 ## 2026-09-30 — Release notes read squash merges per listed commit; CI serial cost corrected
 
 - Change: scripts/release_notes.py model_prompt splits a squash merge's body at its '* type(scope): subject' lines; each listed commit gets its own 1,500-character cut, internal ones only their subject line; Co-authored-by/Signed-off-by/Reviewed-by/Claude-Session trailers and GitHub's --- rule are dropped. Budget unchanged (120,000).
@@ -114,13 +124,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py: 215 Python passed; native app, extension and tests compiled, then Xcode aborted before executing native tests with IDELaunchServicesLauncher childPID > 0 (exit 250). Targeted parallel, serial, PTY and cleaned-launch-environment attempts hit the same launch failure. Debug bundle codesign --verify --deep --strict passed.
 - Native gate blocked, not passed: no commit or Release build. No app installation/restart, display reconfiguration, real lock/wake run or screen capture. Private XPC/compositor handoff timing remains visually unverified.
 - Removed task-owned smoke programs, XCTest bundle/module and shader cache through the cleanup helper; retained pre-existing artifacts and delivered apps.
-
-## 2026-09-29 — Commit wallpaper pixels before lock-screen context handoff
-
-- Readback readiness previously acknowledged only an IOSurface in Swift memory, leaving the remote layer tree without backing pixels until a drawable became available. Now commits an IOSurface-backed image under the nonopaque Metal layer with implicit actions disabled, before readiness replies; does not wait for scanout or unload the paused renderer.
-- Standalone offscreen Core Animation smoke: old unbacked composition exposed white host pixels [255,255,255,255]; corrected composition returned wallpaper pixels [19,47,83,255] with the same Metal layer and no drawable. No window or screen capture.
-- python3 scripts/test.py --only LockScreenFrameBackingTests: 2 passed after correcting a CoreFoundation cast compile error. Covers no-drawable pixel composition and release/retention across snapshot replacement.
-- python3 scripts/test.py: 215 Python passed; 737 native passed, 0 failed, 11 skipped of 748. Opt-in media/network cases remain skipped.
-- Scene replacement retains backing until new pixels arrive; explicit clear releases it. The image shares the immutable snapshot storage without another bitmap copy; compositor memory and power impact not measured.
-- Recurring host reacquisition was observed in the existing extension log, but its cause is unproven. A third-party snapshot-encoding hypothesis was not verified on this OS; no private-method swizzle, snapshot-freshness change or retry logic added.
-- Real lock/wake visual timing and private XPC transport remain unverified. No desktop manipulation, Release rebuild, app installation or restart. Removed this task's standalone smoke files only; existing artifacts retained.

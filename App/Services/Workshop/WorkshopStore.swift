@@ -329,6 +329,7 @@ final class WorkshopStore {
       ) { [updates] in
         // The files are already in the library, so the install counts even if the refresh fails.
         updates.recordInstalled(item.id)
+        if !replacing { bridge.supportPrompt?.recordDownload(wallpaperID: item.id) }
         try await bridge.refreshLibraryAsync()
         guard replacing else { return }
         do {

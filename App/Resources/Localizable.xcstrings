@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The link could not be opened. Please try again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The link could not be opened. Please try again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リンクを開けませんでした。もう一度お試しください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法打开链接，请重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法開啟連結，請重試。"}}}
+    },
     "What’s New" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "What’s New"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "新機能"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新内容"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新內容"}}}
     },

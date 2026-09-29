@@ -31,6 +31,15 @@ export default {
   'Network speed: {speed}': '網路速度：{speed}',
   '{received} of {expected}': '{received} / {expected}',
 
+  // First-wallpaper support prompt
+  'Feeling good?': '感覺不錯？',
+  'Dismiss support prompt': '關閉支持邀請',
+  'Your first downloaded wallpaper is up and running. Enjoying WallpaperMachine? You can help it grow.': '你下載的第一張桌布已經用上了。喜歡 WallpaperMachine？歡迎支持它繼續成長。',
+  'Star on GitHub': '到 GitHub 點個 Star',
+  'Help others discover WallpaperMachine.': '讓更多人發現 WallpaperMachine。',
+  'Become a Supporter': '成為支持者',
+  'Support development with a one-time contribution.': '透過一次性贊助，支持後續開發。',
+
   // Toolbar and filters
   '{count} active': '{count} 項作用中',
   'Hide filters': '隱藏篩選',

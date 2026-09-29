@@ -131,6 +131,26 @@ extension WebPanelController {
       dragSelectLearned = true
       defaults.set(true, forKey: Self.dragSelectLearnedKey)
       return
+    case "supportPromptShown":
+      store.supportPrompt?.markPresented()
+      return
+    case "supportPromptChoice":
+      let url: URL
+      switch try request.string("choice") {
+      case "dismiss":
+        store.supportPrompt?.markPresented()
+        return
+      case "star": url = AppUpdateConfiguration.repositoryURL
+      case "supporter":
+        let path = language.hasPrefix("zh") ? "zh/pricing/" : "pricing/"
+        url = URL(string: "https://www.wallpapermachine.app/\(path)")!
+      default: throw WebPanelRequest.invalid
+      }
+      guard openSupportURL(url) else {
+        throw WallpaperActionError(message: String(localized: "The link could not be opened. Please try again."))
+      }
+      store.supportPrompt?.markPresented()
+      return
     case "workshopSelect":
       guard let id = body["id"] as? String, let item = workshop.workshopItem(id: id) else {
         throw WebPanelRequest.invalid
@@ -229,10 +249,11 @@ extension WebPanelController {
       let displayID = navigation.targetDisplayID
       let slot = BridgeStore.activationSlot(displayId: displayID)
       try await store.commands.run(slot: slot, subject: id) {
-        try await store.activateWallpaperAsync(id: id, displayId: displayID)
+        try await store.activateWallpaperAsync(id: id, displayId: displayID, userInitiated: true)
         // Get out of the way so the freshly applied wallpaper is visible, unless another
         // switch is already waiting to replace it.
-        if hidesAfterActivating, !store.commands.hasWaiting(slot: slot) { NSApp.hide(nil) }
+        if hidesAfterActivating, store.supportPrompt?.isPending != true,
+          !store.commands.hasWaiting(slot: slot) { NSApp.hide(nil) }
       }
     // The confirmation is asked before queueing, so an open sheet holds up nothing else.
     case "delete":
@@ -321,7 +342,8 @@ extension WebPanelController {
         })
       else { throw WebPanelRequest.invalid }
       navigation.targetDisplayID = id
-    case "apply": try await store.applyWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
+    case "apply":
+      try await store.applyWallpaperOptionsAsync(wallpaperId: try wallpaperID(request), userInitiated: true)
     case "revert":
       try await store.cancelWallpaperOptionsAsync(wallpaperId: try wallpaperID(request))
     case "refresh":

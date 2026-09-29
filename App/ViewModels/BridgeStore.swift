@@ -15,6 +15,7 @@ struct WallpaperActionError: LocalizedError {
 @Observable
 final class BridgeStore {
     let bridge: WallpaperBridge
+    let supportPrompt: SupportPromptStore?
     var appSnapshot: BridgeAppSnapshot
     var librarySnapshot: BridgeLibrarySnapshot
     var wallpaperOptionsSnapshot: BridgeWallpaperOptionsSnapshot?
@@ -50,13 +51,14 @@ final class BridgeStore {
     private(set) var libraryRefreshRevision: UInt64 = 0
 
     convenience init() throws {
-        self.init(bridge: try WallpaperBridge())
+        self.init(bridge: try WallpaperBridge(), supportPrompt: SupportPromptStore())
     }
 
-    init(bridge: WallpaperBridge) {
+    init(bridge: WallpaperBridge, supportPrompt: SupportPromptStore? = nil) {
         let snapshots = Self.emptySnapshots()
 
         self.bridge = bridge
+        self.supportPrompt = supportPrompt
         self.appSnapshot = snapshots.app
         self.librarySnapshot = snapshots.library
         self.wallpaperOptionsSnapshot = snapshots.wallpaperOptions
@@ -128,6 +130,7 @@ final class BridgeStore {
                     try await ejectWallpaperFromDisplayAsync(displayId: displayID, wallpaperId: id)
                 }
                 try WallpaperDeletionService.moveToTrash(id: id, library: ClientPaths.libraryURL, recycle: recycle)
+                supportPrompt?.forgetDownload(wallpaperID: id)
                 report.deleted.append(id)
             } catch {
                 report.failures.append((id: id, error: error))
@@ -160,7 +163,7 @@ final class BridgeStore {
         return next == current ? nil : next
     }
 
-    func activateWallpaperAsync(id: String, displayId: String) async throws {
+    func activateWallpaperAsync(id: String, displayId: String, userInitiated: Bool = false) async throws {
         await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: id)
         guard librarySnapshot.wallpapers.contains(where: { $0.id == id }) else {
@@ -212,6 +215,11 @@ final class BridgeStore {
                 throw WallpaperActionError(message: String(localized: "Could not apply the wallpaper: \(error.localizedDescription). Could not restore the display draft: \(restoreError.localizedDescription). Refresh all wallpaper state before retrying."))
             }
             throw error
+        }
+        // Startup, playlist rotation and update reloads never solicit support. Wait until
+        // saving and the final display check both succeed for an explicit activation.
+        if userInitiated, !previouslyActive {
+            supportPrompt?.recordSuccessfulActivation(wallpaperID: id)
         }
     }
 
@@ -554,7 +562,7 @@ final class BridgeStore {
         apply(bundle)
     }
 
-    func applyWallpaperOptionsAsync(wallpaperId: String) async throws {
+    func applyWallpaperOptionsAsync(wallpaperId: String, userInitiated: Bool = false) async throws {
         await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: wallpaperId)
         guard !activationNeedsRefresh else {
@@ -562,6 +570,9 @@ final class BridgeStore {
         }
         applyingWallpaperID = wallpaperId
         defer { applyingWallpaperID = nil; resumeActivationWaiters() }
+        let previousDisplays = Set(monitorInformationSnapshot.rows.filter {
+            $0.wallpaperId == wallpaperId && $0.mirrorTargetDisplayId == nil
+        }.map(\.displayId))
         try await validateWallpaperForPlaybackAsync(id: wallpaperId)
         try await commitPendingWallpaperEditsAsync(id: wallpaperId)
         do {
@@ -571,6 +582,12 @@ final class BridgeStore {
             // so re-read it instead of leaving the UI stuck behind a manual refresh.
             try await resyncAfterFailedApplyAsync(cause: error)
             throw error
+        }
+        if userInitiated, monitorInformationSnapshot.rows.contains(where: {
+            $0.wallpaperId == wallpaperId && $0.mirrorTargetDisplayId == nil
+                && !previousDisplays.contains($0.displayId)
+        }) {
+            supportPrompt?.recordSuccessfulActivation(wallpaperID: wallpaperId)
         }
     }
 

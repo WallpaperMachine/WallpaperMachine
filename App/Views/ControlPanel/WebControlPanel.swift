@@ -69,6 +69,8 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   var signInToPixiv: (@MainActor () async -> String?)?
   /// The same for Steam Community, whose session lets Discover list subscriptions.
   var signInToSteamWeb: (@MainActor () async -> String?)?
+  /// Support links open only on a deliberate choice; tests capture their destinations.
+  var openSupportURL: @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) }
   let displayTitles: DisplayTitleResolver
   weak var webView: WKWebView?
   let assets: WebPanelAssets
@@ -626,7 +628,7 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
   private var nextTicket: UInt64 = 0
   private static let files: Set<String> = [
     "index.html", "panel.js", "panel.css", "settings.js", "settings.css", "welcome.js",
-    "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js", "pixiv.js",
+    "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js", "pixiv.js", "support-prompt.js",
     "app-icons/minimal.png", "app-icons/day.png", "app-icons/night.png",
   ]
   /// One catalog module per shipped language, served as `mwe-ui://app/locales/<tag>.js`.

@@ -56,6 +56,92 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
                       "Without a trustworthy re-read the app must ask for a full refresh")
     }
 
+    func testSupportPromptWaitsForSuccessfulDownloadedActivation() async throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prompt = SupportPromptStore(defaults: defaults)
+        prompt.recordDownload(wallpaperID: "failing")
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        let store = BridgeStore(bridge: bridge, supportPrompt: prompt)
+        try await store.refreshAllAsync()
+        XCTAssertFalse(prompt.isPending)
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.activateWallpaperAsync(id: "failing", displayId: "primary", userInitiated: true))
+        XCTAssertFalse(prompt.isPending)
+
+        bridge.applyError = nil
+        try await store.activateWallpaperAsync(id: "failing", displayId: "primary", userInitiated: true)
+        XCTAssertTrue(prompt.isPending)
+    }
+
+    func testSupportPromptDoesNotTreatMissingDisplayAssignmentAsSuccess() async throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prompt = SupportPromptStore(defaults: defaults)
+        prompt.recordDownload(wallpaperID: "failing")
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        bridge.applyError = nil
+        bridge.reportsActivation = false
+        let store = BridgeStore(bridge: bridge, supportPrompt: prompt)
+        try await store.refreshAllAsync()
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.activateWallpaperAsync(id: "failing", displayId: "primary", userInitiated: true))
+        XCTAssertFalse(prompt.isPending)
+    }
+
+    func testAutomaticActivationAndNoOpReapplyDoNotRequestSupport() async throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prompt = SupportPromptStore(defaults: defaults)
+        prompt.recordDownload(wallpaperID: "failing")
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        bridge.applyError = nil
+        let store = BridgeStore(bridge: bridge, supportPrompt: prompt)
+        try await store.refreshAllAsync()
+
+        try await store.activateWallpaperAsync(id: "failing", displayId: "primary")
+        XCTAssertFalse(prompt.isPending)
+        try await store.activateWallpaperAsync(id: "failing", displayId: "primary", userInitiated: true)
+        XCTAssertFalse(prompt.isPending)
+    }
+
+    func testApplyingAnImportedWallpaperDoesNotRequestSupport() async throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prompt = SupportPromptStore(defaults: defaults)
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        bridge.applyError = nil
+        let store = BridgeStore(bridge: bridge, supportPrompt: prompt)
+        try await store.refreshAllAsync()
+
+        try await store.activateWallpaperAsync(id: "failing", displayId: "primary", userInitiated: true)
+        XCTAssertFalse(prompt.isPending)
+    }
+
+    func testEnablingDownloadedWallpaperThroughApplyChangesRequestsSupportOnlyOnSuccess() async throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prompt = SupportPromptStore(defaults: defaults)
+        prompt.recordDownload(wallpaperID: "failing")
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        let store = BridgeStore(bridge: bridge, supportPrompt: prompt)
+        try await store.refreshAllAsync()
+
+        await XCTAssertThrowsErrorAsync(
+            try await store.applyWallpaperOptionsAsync(wallpaperId: "failing", userInitiated: true))
+        XCTAssertFalse(prompt.isPending)
+        bridge.applyError = nil
+        try await store.applyWallpaperOptionsAsync(wallpaperId: "failing", userInitiated: true)
+        XCTAssertTrue(prompt.isPending)
+    }
+
     /// Downloads and imports rescan the library on their own schedule; one landing mid-apply
     /// waits for the apply instead of failing with a "wait" error.
     func testLibraryRefreshDuringApplyWaitsForIt() async throws {
@@ -94,6 +180,7 @@ private final class ApplyFailureBridge: WallpaperBridge {
     var applyError: Error? = WallpaperActionError(
         message: "The wallpaper did not render a first frame within 90 seconds.")
     var snapshotsFail = false
+    var reportsActivation = true
     var holdApply: (@MainActor () async -> Void)?
     /// Whether the wallpaper was already active when the library rescan reached the bridge.
     var refreshSawActive: Bool?
@@ -129,7 +216,7 @@ private final class ApplyFailureBridge: WallpaperBridge {
     ) async throws -> BridgeWallpaperMutationBundle {
         if let holdApply { await holdApply() }
         if let applyError { throw applyError }
-        active = true
+        active = reportsActivation
         return mutation
     }
 

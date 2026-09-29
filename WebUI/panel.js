@@ -4,6 +4,7 @@ import { glyphs } from './icons.js';
 import { t, applyStaticText, setLanguage, language } from './i18n.js';
 import { renderPropertyLabel } from './property-label.js';
 import { createPixivPage } from './pixiv.js';
+import { createSupportPrompt } from './support-prompt.js';
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -252,7 +253,7 @@ function render() {
       renderInspector(discover);
     }
   }
-  renderActivity(); renderPopover(); renderDialog(); welcome.render(state); surfaceAuthRequests();
+  renderActivity(); renderPopover(); renderDialog(); welcome.render(state); surfaceAuthRequests(); supportPrompt.render(state);
 }
 const filtersCollapsed = () => Boolean(state?.filtersCollapsed?.[state.page]);
 // Active filters on a page: every required tag plus every box that differs from the page's
@@ -918,6 +919,7 @@ function closePopover(restore) {
   renderActivity();
   renderPopover();
   if (restore) restorePanelFocus([selector, '#browser-toolbar .import-button', '.tabs [aria-current="page"]']);
+  supportPrompt.render(state);
 }
 function openDialog(id, trigger) {
   dialogTarget = id;
@@ -949,6 +951,7 @@ function closeDialog() {
   node.removeAttribute('data-stage');
   // Closing must not leave focus stranded on the body, and must not pull it away from wherever the user went.
   if (!document.activeElement || document.activeElement === document.body) restorePanelFocus([selector, '#top-actions [data-action="openDownloads"]', '#activity-bar [data-action="openDownloads"]', '.tabs [aria-current="page"]']);
+  supportPrompt.render(state);
 }
 // The dialog only ever opens from an explicit request, so a later snapshot never reopens it.
 function renderDialog() {
@@ -1238,7 +1241,7 @@ document.querySelector('.topbar').addEventListener('dblclick', event => { if (ti
 function run(promise) { Promise.resolve(promise).catch(error => { localError = error?.message || String(error); renderError(); }); }
 document.addEventListener('click', event => {
   if (swallowClick) { swallowClick = false; return; }
-  if (event.target.closest('#settings-content, #welcome')) return;
+  if (event.target.closest('#settings-content, #welcome, #support-dialog')) return;
   const control = event.target.closest('[data-action]');
   if (!control) {
     const tab = event.target.closest('.tabs [data-page]');
@@ -1313,7 +1316,7 @@ document.addEventListener('submit', event => {
   }
 });
 document.addEventListener('keydown', event => {
-  if (event.target.closest('#settings-content, #welcome')) return;
+  if (event.target.closest('#settings-content, #welcome, #support-dialog')) return;
   if (event.key === 'Escape') {
     endSweep();
     if (popover) closePopover(true);
@@ -1465,6 +1468,7 @@ function setWelcomeBackgroundInert(open) {
     if (open && !node.inert) { node.inert = true; welcomeInert.add(node); }
     else if (!open && welcomeInert.delete(node)) node.inert = false;
   }
+  supportPrompt.render(state);
 }
 // The first-run guide draws over the whole window, so it owns its own events and the panel's
 // document-level handlers stay out of it.
@@ -1479,6 +1483,22 @@ const welcome = createWelcome({
 const pixiv = createPixivPage({
   $, send, run, escapeHTML, icon, button, morph, keyAttr, checked, disabled, selectOptions, safeImage, safeLink, preview, tags, bytes, tileRing, filterButton, filterGroup, filterHeading,
   activate: (id) => handleAction('activate', { id }),
+});
+const supportPrompt = createSupportPrompt({
+  container: $('support-dialog'), send, escapeHTML, icon, morph,
+  canPresent: () => !welcome.isOpen() && !popover && dialogTarget === null && !state?.busy
+    && !state?.applyingID && !(state?.queuedApplyIDs || []).length
+    && !state?.pixiv?.account?.signingIn
+    && !(state?.downloads || []).some(job => job.pending && (job.authenticating || job.prompt || job.challenge)),
+  restoreFocus: (previous) => {
+    if (welcome.isOpen() || document.querySelector('dialog[open]')) return;
+    if (previous && previous !== document.body && previous !== document.documentElement
+      && previous.isConnected && !previous.disabled && !previous.closest('[inert]') && previous.getClientRects().length) {
+      previous.focus();
+      if (document.activeElement === previous) return;
+    }
+    restorePanelFocus(['.tabs [aria-current="page"]']);
+  },
 });
 applyStaticText();
 run(send('ready'));

@@ -12,9 +12,9 @@ import XCTest
 /// synthetic GIF frames the Discover previews are tested with.
 @MainActor
 class ControlPanelTestCase: XCTestCase {
-  func makeStore() -> (store: BridgeStore, bridge: LayoutSnapshotBridge) {
+  func makeStore(supportPrompt: SupportPromptStore? = nil) -> (store: BridgeStore, bridge: LayoutSnapshotBridge) {
     let bridge = LayoutSnapshotBridge(noPointer: .init())
-    let store = BridgeStore(bridge: bridge)
+    let store = BridgeStore(bridge: bridge, supportPrompt: supportPrompt)
     store.settingsSnapshot.displays = [
       BridgeDisplaySettingsRow(
         displayId: "primary",
@@ -28,9 +28,10 @@ class ControlPanelTestCase: XCTestCase {
   }
 
   func withPanel(
-    displayTitles: DisplayTitleResolver = .renderer, _ body: (PanelFixture) async throws -> Void
+    displayTitles: DisplayTitleResolver = .renderer, supportPrompt: SupportPromptStore? = nil,
+    _ body: (PanelFixture) async throws -> Void
   ) async throws {
-    let fixture = makeStore()
+    let fixture = makeStore(supportPrompt: supportPrompt)
     let panel = try PanelFixture(
       store: fixture.store, bridge: fixture.bridge, displayTitles: displayTitles)
     do {

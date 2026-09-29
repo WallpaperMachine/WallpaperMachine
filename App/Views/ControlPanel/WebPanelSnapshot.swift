@@ -5,6 +5,7 @@ extension WebPanelController {
   /// Register native dependencies without materializing a page payload while hidden.
   func trackSnapshotDependencies() {
     _ = store.appSnapshot
+    _ = store.supportPrompt?.isPending
     _ = store.librarySnapshot
     _ = store.libraryRefreshRevision
     _ = store.wallpaperOptionsSnapshot
@@ -541,6 +542,7 @@ extension WebPanelController {
       "libraryLoading": loading, "favorites": favoriteIDs.sorted(), "wallpapers": wallpapers,
       "filtersCollapsed": filtersCollapsed,
       "welcomeSeen": welcomeSeen,
+      "supportPromptPending": store.supportPrompt?.isPending == true && presentationAllowsUpdates(),
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
       "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,

@@ -341,6 +341,29 @@ the error; an apply failure stays until an apply succeeds. Nothing is submitted
 by the app; the user edits and sends the issue on GitHub. Neither is shown when
 the snapshot carries no `https` repository URL.
 
+## First wallpaper support prompt
+
+After a wallpaper downloaded through Discover or pixiv is successfully applied by
+the user, the panel offers **Feeling good?** once. **Star on GitHub** opens the
+project repository; **Become a Supporter** opens the website's pricing page
+(the Chinese page for either Chinese app language). Both require a click.
+**Not now**, the close button and Escape dismiss the offer.
+
+The download must have finished installing, and applying must have succeeded and
+reported a new active display assignment. Downloads alone, local imports, failed
+applies, startup restoration, playlist changes, automatic update reloads and
+reapplying an already active wallpaper do not qualify. **Apply changes** also
+qualifies when it first enables the downloaded wallpaper on a display. Downloads
+completed before this feature was installed are not inferred from library IDs.
+
+Eligibility survives quitting between download and apply. If the panel is hidden,
+onboarding or sign-in is open, another dialog is active, or a wallpaper switch is
+in progress, the offer waits. **Hide window after applying a wallpaper** defers
+hiding for this first offer. Only a displayed offer consumes the one-time flag;
+after that it never returns automatically, including after quitting or updating.
+Opening a link neither stars the repository nor makes a payment; the user finishes
+that action in their browser. See [Supporter details](../../SPONSORS.md).
+
 ## Deleting wallpapers
 
 Deletion always moves the managed library copy to the Mac's Trash after a

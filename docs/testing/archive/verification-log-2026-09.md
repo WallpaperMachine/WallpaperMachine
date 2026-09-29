@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Commit wallpaper pixels before lock-screen context handoff
+
+- Readback readiness previously acknowledged only an IOSurface in Swift memory, leaving the remote layer tree without backing pixels until a drawable became available. Now commits an IOSurface-backed image under the nonopaque Metal layer with implicit actions disabled, before readiness replies; does not wait for scanout or unload the paused renderer.
+- Standalone offscreen Core Animation smoke: old unbacked composition exposed white host pixels [255,255,255,255]; corrected composition returned wallpaper pixels [19,47,83,255] with the same Metal layer and no drawable. No window or screen capture.
+- python3 scripts/test.py --only LockScreenFrameBackingTests: 2 passed after correcting a CoreFoundation cast compile error. Covers no-drawable pixel composition and release/retention across snapshot replacement.
+- python3 scripts/test.py: 215 Python passed; 737 native passed, 0 failed, 11 skipped of 748. Opt-in media/network cases remain skipped.
+- Scene replacement retains backing until new pixels arrive; explicit clear releases it. The image shares the immutable snapshot storage without another bitmap copy; compositor memory and power impact not measured.
+- Recurring host reacquisition was observed in the existing extension log, but its cause is unproven. A third-party snapshot-encoding hypothesis was not verified on this OS; no private-method swizzle, snapshot-freshness change or retry logic added.
+- Real lock/wake visual timing and private XPC transport remain unverified. No desktop manipulation, Release rebuild, app installation or restart. Removed this task's standalone smoke files only; existing artifacts retained.
+
 ## 2026-09-29 — Resume the retained lock-screen renderer on wake
 
 - Extension log identified the poster-only lifecycle: unlock destroyed the renderer; one wake took about three seconds from active host update to first-frame readiness.
