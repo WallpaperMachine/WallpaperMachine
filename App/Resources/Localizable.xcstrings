@@ -2561,6 +2561,9 @@
     },
     "This Steam account id is not one Steam uses." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This Steam account id is not one Steam uses."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このSteamアカウントIDは、Steamで使われているIDではありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这不是 Steam 使用的账户 ID。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此 Steam 帳號 ID 並非 Steam 使用的有效 ID。"}}}
+    },
+    "The library’s folder for Workshop item %@ is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The library’s folder for Workshop item %@ is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ライブラリにあるワークショップアイテム%@のフォルダはインストール済みの壁紙ではないため、アップデートで置き換えませんでした。フォルダをライブラリの外に移動してから、アイテムをもう一度ダウンロードしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸库中创意工坊项目 %@ 的文件夹不是已安装的壁纸，因此未用更新替换它。请将该文件夹移出壁纸库，然后重新下载该项目。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布庫中工作坊項目 %@ 的資料夾不是已安裝的桌布，因此沒有以更新取代它。請將該資料夾移出桌布庫，再重新下載該項目。"}}}
     }
   },
   "version" : "1.0"

@@ -74,7 +74,7 @@ final class WorkshopUpdateStore {
                     Self.localVersions(ids, recorded: recorded, library: library)
                 }.value
                 let remote = ids.isEmpty ? [] : try await fetch(ids)
-                self?.finish(Self.outdated(remote: remote, local: local))
+                self?.finish(Self.outdated(remote: remote, local: local), recorded: recorded)
             } catch {
                 self?.fail(error)
             }
@@ -131,12 +131,13 @@ final class WorkshopUpdateStore {
         return versions
     }
 
-    private func finish(_ outdated: [String: WorkshopItem]) {
-        available = outdated
+    /// `recorded` is what the check compared against; an item downloaded while it ran is current.
+    private func finish(_ outdated: [String: WorkshopItem], recorded: [String: Date]) {
+        available = outdated.filter { installedAt[$0.key] == recorded[$0.key] }
         lastChecked = now()
         isChecking = false
         task = nil
-        AppLog.info("Workshop update check: \(outdated.count) of the installed items have updates")
+        AppLog.info("Workshop update check: \(available.count) of the installed items have updates")
         persist()
     }
 

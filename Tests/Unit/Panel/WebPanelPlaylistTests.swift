@@ -95,7 +95,7 @@ final class WebPanelPlaylistTests: XCTestCase {
     XCTAssertEqual(playlists.playlist(for: "primary").wallpaperIDs, ["a"])
   }
 
-  func testChangeNowNeedsARotatingDisplay() async {
+  func testChangeNowNeedsARotatingDisplay() async throws {
     do {
       try await controller.perform("playlistSkip", body: ["displayID": "primary"])
       XCTFail("a display without a scheduler to move it cannot change now")
@@ -105,7 +105,7 @@ final class WebPanelPlaylistTests: XCTestCase {
       asked.append(display)
       return true
     }
-    try? await controller.perform("playlistSkip", body: ["displayID": "primary"])
+    try await controller.perform("playlistSkip", body: ["displayID": "primary"])
     XCTAssertEqual(asked, ["primary"])
   }
 }

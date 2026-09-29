@@ -92,6 +92,22 @@ final class WorkshopUpdateStoreTests: XCTestCase {
         XCTAssertNil(makeStore().available["300"])
     }
 
+    func testADownloadThatFinishesDuringACheckStaysCurrent() async throws {
+        try installed("600", writtenAt: clock.addingTimeInterval(-7200))
+        let changed = [item("600", updated: clock.addingTimeInterval(-3600))]
+        let gate = Gate()
+        let store = WorkshopUpdateStore(
+            defaults: defaults, fetch: { _ in
+                await gate.wait()
+                return changed
+            }, now: { self.clock })
+        store.check(installed: ["600"], library: root)
+        store.recordInstalled("600")
+        await gate.open()
+        try await settle(store)
+        XCTAssertNil(store.available["600"], "the check compared the version the download replaced")
+    }
+
     func testAutomaticChecksWaitADayAndCanBeTurnedOff() async throws {
         let store = makeStore()
         store.checkIfDue(installed: ["1"], library: root)
@@ -146,5 +162,22 @@ private final class Recorder: @unchecked Sendable {
         let onAsk = onAsk
         await MainActor.run { onAsk?(ids) }
         return answer.filter { ids.contains($0.id) }
+    }
+}
+
+/// Holds a details request until the test lets it answer.
+private actor Gate {
+    private var isOpen = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        for continuation in waiting { continuation.resume() }
+        waiting = []
     }
 }

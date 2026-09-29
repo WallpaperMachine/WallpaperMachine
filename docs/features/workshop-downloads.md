@@ -493,7 +493,10 @@ Workshop download (same queue, sign-in and prerequisites); once it has arrived
 whole, the importer swaps the new folder in and the old one out in one step
 (`renamex_np` with `RENAME_SWAP`), so the library never lacks the wallpaper and
 a failure leaves the old version in place; the old folder is removed with the
-download's staging. The item's saved options belong to its id and are kept. A
+download's staging. Only a folder that holds an installed wallpaper is replaced:
+anything else under the item's id is left alone and the download says so. An
+update check still running when the download finishes does not mark it outdated
+again. The item's saved options belong to its id and are kept. A
 display showing it then loads it again: applying alone would find nothing changed,
 so it is removed and applied again through the display's command slot. Moving a
 wallpaper to Trash forgets its update and install record.

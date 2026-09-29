@@ -219,9 +219,15 @@ actor WallpaperImportService {
         let destination = managedRoot.appendingPathComponent(itemID, isDirectory: true)
         try Task.checkCancellation()
         if replacing, let installed = try? downloadMetadata(at: destination), installed.st_mode & S_IFMT == S_IFDIR {
+            // Only an installed wallpaper is replaced: the old tree ends up in staging, which the
+            // caller clears, so a folder that is not one is left where it is.
+            do {
+                try validateProject(at: destination)
+            } catch {
+                throw ImportError(message: String(localized: "The library’s folder for Workshop item \(itemID) is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again."))
+            }
             // An update swaps the new tree in and the old one out in one step, so the library never
-            // lacks the wallpaper and a failure leaves the old version where it was. The old tree
-            // ends up in staging, which the caller clears.
+            // lacks the wallpaper and a failure leaves the old version where it was.
             let result = source.path.withCString { sourcePath in
                 destination.path.withCString { destinationPath in
                     renamex_np(sourcePath, destinationPath, UInt32(RENAME_SWAP))

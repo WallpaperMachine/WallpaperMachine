@@ -327,8 +327,9 @@ final class WorkshopStore {
         item: item, username: request.account, executable: runtime.executableURL,
         library: ClientPaths.libraryURL, rememberSession: request.rememberSession
       ) { [updates] in
-        try await bridge.refreshLibraryAsync()
+        // The files are already in the library, so the install counts even if the refresh fails.
         updates.recordInstalled(item.id)
+        try await bridge.refreshLibraryAsync()
         guard replacing else { return }
         do {
           try await bridge.reloadWallpaperAsync(id: item.id)
