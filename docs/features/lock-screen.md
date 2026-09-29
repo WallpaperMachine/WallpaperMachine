@@ -36,7 +36,11 @@ is OS-controlled and is not established by the offscreen regression checks.
 
 Display-topology refreshes stage the next complete configuration before replacing
 the previous one; they do not publish an empty manifest between a one-display
-and two-display mapping. Removing the last wallpaper, explicit disable and
+and two-display mapping. If Core Graphics temporarily cannot resolve a display
+still named by the bridge during wake or a lid change, the committed manifest
+and native selection stay untouched; the existing status monitor retries once
+the topology settles instead of clearing every screen and restarting WallpaperAgent.
+Removing the last wallpaper, explicit disable and actual publication/readiness
 failure recovery still clear the manifest. If macOS reacquires the same
 WallpaperID on the same physical display at a different size or scale, the
 extension keeps its remote context and backing frame while rebuilding the

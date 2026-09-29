@@ -15,6 +15,29 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-28 — Trim idle reservations and share lock-screen poster storage
+
+- scripts/check_renderer.py passed: 23 binaries, ten generated pixel comparisons, eight projects x2 reloads; three asset-dependent skips.
+- Full scripts/test.py with CPython 3.12.14 passed once: 190 Python; 664 native passed, 11 skipped. LockScreenPosterTests passed independently and verifies retained pixels plus eventual release.
+- Apple VMA preference 32 to 8 MiB: same-scene reservation 231.4 to 203.4 MiB, active allocations unchanged at 198.1 MiB, blocks 8 to 10; three comparison frames identical.
+- Previous texture policy checked across a complete 15-second crossfade: all 17 frames byte-identical against full-source rendering; visible changed-layer frames differ from startup by over 13 million bytes. The earlier two-second test missed these layers.
+- Poster now retains its read-locked snapshot through a no-copy Data provider. The explicit 3024x1964 BGRA copy (22.7 MiB) is removed; extension footprint remained around 38 MiB, so an equal footprint saving is not claimed.
+- Renderer/bindings and Release builds passed. Signed bundle installed in /Applications with backup and restarted using Codex computer use; saved configuration identical.
+- Live logs show desktop first-frame readiness and extension poster readiness/unload at 3024x1964. Only installed extension registered; intermediate registration-contaminated samples excluded.
+- Live app-plus-extension totals after settling varied around 402–509 MiB, later 504.9 MiB. WebKit lifetimes and GPU accounting prevent attributing another large whole-app reduction; component reservation is the controlled evidence.
+- Real user-operated lock/unlock still pending. A closed-window lifetime hypothesis was tested but not reproduced; its experimental code was removed. No new quality or buffering tradeoff introduced.
+
+## 2026-09-28 — Review follow-ups: reconnected displays, held buttons, owed frames, late-created Spaces
+
+Pre-push review of perf/wallpaper-power (four reviewers, each finding checked by a skeptic): 6 confirmed, 8 rejected. Each fix has a test that fails without it.
+
+- Reconnected display: a display that disconnects while suspended and returns visible is resumed; one that returns still hidden stays suspended with no resume/suspend pair (WallpaperPresentationPolicyTests, 2 cases).
+- Pointer: button levels are adopted without edges after the monitors return (wallpaper-core 222 passed).
+- Frame clock: 18 ms draws at 60 fps deliver ≥42/s (35 without the owed-frame path, measured with a spinning draw because sleep_for(18 ms) slept ~22 ms here); requests after a long content-paced wait stay within the ceiling; timer_tests 32 passed, three consecutive runs.
+- Lock screen: turning off restores a Space created after the last check (test failed without the fix: node left on the extension).
+- `python3 scripts/test.py` — 671 passed, 0 failed, 11 skipped. `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped. Release build signed.
+- Not re-measured on hardware after these follow-ups: power figures in the earlier entry stand for the code measured then.
+
 ## 2026-09-28 — Lock screen: a Space created while active no longer turns the feature off
 
 M3 Max, macOS 27.2; AllSpacesAndDisplays held only another app's Idle choice. After activation macOS had copied the extension's selection into SystemDefault and some Space Defaults, so a new Space started from those copies and restorationOriginal found no native fallback in the live store. Space creation and toggling Animate Lock Screen were done by the user on request.

@@ -171,16 +171,19 @@ final class LockScreenWallpaperService {
         status = String(localized: "Off")
         return
       }
-      status = String(localized: "Preparing committed wallpapers…")
       let records = try await scenes()
       try Task.checkCancellation()
       guard generation == revision else { return }
-      let inputs = try records.map { record -> LockScreenPublishInput in
+      var inputs: [LockScreenPublishInput] = []
+      for record in records {
         guard let uuid = displayUUID(record.displayId) else {
-          throw LockScreenWallpaperFailure(
-            message:
-              String(localized: "An active wallpaper display is no longer connected. Refresh displays before retrying.")
-          )
+          // Core Graphics and the bridge settle independently during wake and
+          // clamshell changes. This is not a failed wallpaper: keep the entire
+          // committed mapping until the existing monitor gets a coherent one.
+          status = String(localized: "Waiting for committed wallpapers…")
+          errorMessage = nil
+          AppLog.debug("Lock screen topology pending: display \(record.displayId) is not online")
+          return
         }
         let mode: Int32
         switch record.scalingMode {
@@ -189,14 +192,15 @@ final class LockScreenWallpaperService {
         case .match: mode = 2
         case .fill: mode = 3
         }
-        return LockScreenPublishInput(
+        inputs.append(LockScreenPublishInput(
           displayID: record.displayId,
           displayUUID: uuid,
           wallpaperID: record.wallpaperId, title: record.title,
           projectPath: record.projectPath, assetsPath: record.assetsPath, fps: record.fps,
           scalingMode: mode, scalingFactor: record.scalingFactor,
-          propertiesJSON: record.propertiesJson, paused: record.paused)
-      }.sorted { $0.displayID < $1.displayID }
+          propertiesJSON: record.propertiesJson, paused: record.paused))
+      }
+      inputs.sort { $0.displayID < $1.displayID }
       guard !inputs.isEmpty else {
         try deactivate()
         // A web wallpaper has no lock-screen renderer at all, so this is not a
@@ -225,6 +229,7 @@ final class LockScreenWallpaperService {
       // backing frame, including screens unaffected by an external display waking.
       isEnabled = false
       try selection.checkCompatibility()
+      status = String(localized: "Preparing committed wallpapers…")
       let root = exchange
       let userAssets = UserAssetStorage.managedRootURL
       let staging = Task.detached(priority: .utility) {

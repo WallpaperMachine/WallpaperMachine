@@ -203,6 +203,10 @@ Swift keeps the *system* wallpaper consistent with that window:
   video-backend switch, a repair) hands the engine each scene with the frame-rate ceiling and the
   transient mute already applied, the form an open scene's descriptor holds, so it too reopens
   only the scenes whose saved configuration changed.
+  Window-only updates compare the native geometry before writing it: moving a display or
+  changing the primary display does not force a window redraw or reset an unchanged Metal
+  drawable size. Geometry changes commit without implicit layer animations, retaining the
+  existing surface while sleep/wake topology settles rather than exposing its placeholder.
 
 ### Renderer bridge (generated uniffi)
 

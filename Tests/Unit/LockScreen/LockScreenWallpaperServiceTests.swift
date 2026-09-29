@@ -298,6 +298,64 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers() async throws {
+    var builtIn = scene()
+    builtIn.displayId = 1
+    var external = builtIn
+    external.displayId = 2
+    var records = [external, builtIn]
+    var online: Set<UInt32> = [1, 2]
+    var reloads = 0
+    let service = LockScreenWallpaperService(
+      scenes: { records },
+      selection: LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: { reloads += 1 }),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { online.contains($0) ? [1: "one", 2: "two"][$0] : nil })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("external-primary lock screens ready") { service.isEnabled && !service.isBusy }
+    let manifest = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+    let committed = try Data(contentsOf: manifest)
+    let selected = try Data(contentsOf: store)
+    let initialReloads = reloads
+
+    // Core Graphics can temporarily report either or both screens offline
+    // before the bridge publishes the settled topology.
+    for visible: Set<UInt32> in [[2], [], [1, 2]] {
+      online = visible
+      service.refresh()
+      await waitFor("wake lookup settles") { !service.isBusy }
+      XCTAssertTrue(service.isEnabled)
+      XCTAssertTrue(service.ownsDesktopProvider)
+      XCTAssertNil(service.errorMessage)
+      XCTAssertEqual(try Data(contentsOf: manifest), committed)
+      XCTAssertEqual(try Data(contentsOf: store), selected)
+      XCTAssertEqual(reloads, initialReloads, "A lookup gap must not restart WallpaperAgent")
+      XCTAssertTrue(timers.last?.isValid == true, "The existing monitor must keep checking topology")
+    }
+
+    online = [2]
+    records = [external]
+    service.refresh()
+    await waitFor("settled external-only topology") { service.isEnabled && !service.isBusy }
+    let configuration = try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: manifest))
+    XCTAssertEqual(configuration.scenes.map(\.displayID), [2])
+
+    // A real removal, unlike an offline lookup, must still release ownership.
+    records = []
+    service.refresh()
+    await waitFor("last wallpaper removed") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertEqual(try JSONDecoder().decode(LockScreenConfiguration.self,
+      from: Data(contentsOf: manifest)).scenes, [])
+  }
+
+  @MainActor
   func testMonitorExistsOnlyWhileRequestedAndDoesNotRescheduleWhileBusy() async throws {
     var calls = 0
     var pending: CheckedContinuation<[BridgeLockScreenScene], Never>?

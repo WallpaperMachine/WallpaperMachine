@@ -25,6 +25,28 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Retain wallpaper presentation across wake topology changes
+
+- Hidden-window Rust smoke: before the fix, three origin/primary/refresh updates performed 3 drawable-size writes and 3 forced AppKit redraws; afterward both counts were 0 with the same layer, and a real resize still produced a 256x144 window/drawable at scale 1. Window ordering was suppressed; no wallpaper or visible desktop window was changed. Temporary smoke removed.
+- LockScreenWallpaperServiceTests/testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed before the Swift fix and passed afterward; partial/all-display lookup gaps preserve manifest, native selection, provider ownership and the status monitor, then settled disconnect and last-wallpaper removal still reconcile.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0, 14 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py: exit 0; all 17 Python modules passed; native 746 passed, 0 failed, 11 skipped (9 opt-in media and 2 live Steam cases).
+- The initial targeted launch in Background exited 250 with IDELaunchServicesLauncher childPID > 0; the failing-before, passing-after and full native runs used a temporary same-user Aqua launch job. Jobs and temporary runners removed.
+- cargo test --release -p wallpaper-core --lib with the build.py cargo environment: exit 0; runner reported 222 passed. Opt-in desktop/private-asset cases were not enabled; this is not physical wake proof.
+- python3 scripts/check_renderer.py: exit 0; generated ten-scene pooled/isolated pixel comparisons matched, no diagnostics, and 8 projects x2 reload cycles passed. No user wallpaper corpus was requested.
+- Real external-primary lid/sleep/wake visual timing remains unverified. No Release app build, launch, install, desktop automation or screen capture; the running app still has its previous behavior.
+
+## 2026-09-29 — Bilingual post-update What's New
+
+- Implemented native post-update window, persisted opt-out and version-range history; all 18 historical releases now contain English and Simplified Chinese.
+- Isolated swiftc smoke: actual native content laid out offscreen at 560×400; 1.0.2 → 1.1.0 includes both releases and their complete translations; checkbox persistence and Close callback passed. No windows opened.
+- python3 scripts/test.py --only WhatsNewTests: initial Background-session launcher failed with exit 250 before tests; same command through a temporary same-user Aqua launch job passed 7/7, exit 0.
+- python3 scripts/test.py through the Aqua job: 17 Python suites passed, including 51 release-note tests; native result 745 passed, 1 failed, 11 skipped of 757, exit 65.
+- Shared-workspace blocker: LockScreenWallpaperServiceTests.testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed while preserving enabled state and committed topology. This concurrently added test is absent from HEAD; its test and service edits were not changed by this task. Commit withheld because the full gate did not pass.
+- python3 scripts/release_notes.py --tag v1.1.0 --release-body --output <temporary-file>: exit 0; actual output matches the recorded current notes exactly, and all bundled historical sections passed bilingual publication validation.
+- History comparison: all 18 version/date headings, English notes and compare links preserved; translated bullet counts match. cmp confirmed Debug-bundled CHANGELOG.md is byte-identical to the source.
+- Skipped: 9 opt-in native-media and 2 live Workshop tests. No live release-note model call, desktop visual check, Release build, install or app restart performed. Temporary Aqua job removed.
+
 ## 2026-09-29 — Multi-display lock-screen fix gate and Release delivery
 
 - Resolved the previous native-launch blocker without changing the test command or product code: launchctl managername reported Background for the detached tool session; a temporary same-user launch job ran the existing gate in Aqua. Serial and environment-only changes had not resolved childPID > 0.
@@ -108,26 +130,3 @@ Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (com
 - Prefer Native Metal was selected through the UI for this experiment and remains selected. The before/after native builds used identical config; resolution and FPS settings were preserved. The app default renderer preference is unchanged in code.
 - Native-only resource pruning retains final output, every pass output/copy source/texture input, hidden draws and elided copies; declaration-only shadow/mip/bloom buffers stay unallocated, including after live optimization toggles.
 - Real user-operated lock/unlock remains unverified. Private assets, frames and traces stay outside Git; no universal memory ceiling or CPU saving claimed.
-
-## 2026-09-28 — Trim idle reservations and share lock-screen poster storage
-
-- scripts/check_renderer.py passed: 23 binaries, ten generated pixel comparisons, eight projects x2 reloads; three asset-dependent skips.
-- Full scripts/test.py with CPython 3.12.14 passed once: 190 Python; 664 native passed, 11 skipped. LockScreenPosterTests passed independently and verifies retained pixels plus eventual release.
-- Apple VMA preference 32 to 8 MiB: same-scene reservation 231.4 to 203.4 MiB, active allocations unchanged at 198.1 MiB, blocks 8 to 10; three comparison frames identical.
-- Previous texture policy checked across a complete 15-second crossfade: all 17 frames byte-identical against full-source rendering; visible changed-layer frames differ from startup by over 13 million bytes. The earlier two-second test missed these layers.
-- Poster now retains its read-locked snapshot through a no-copy Data provider. The explicit 3024x1964 BGRA copy (22.7 MiB) is removed; extension footprint remained around 38 MiB, so an equal footprint saving is not claimed.
-- Renderer/bindings and Release builds passed. Signed bundle installed in /Applications with backup and restarted using Codex computer use; saved configuration identical.
-- Live logs show desktop first-frame readiness and extension poster readiness/unload at 3024x1964. Only installed extension registered; intermediate registration-contaminated samples excluded.
-- Live app-plus-extension totals after settling varied around 402–509 MiB, later 504.9 MiB. WebKit lifetimes and GPU accounting prevent attributing another large whole-app reduction; component reservation is the controlled evidence.
-- Real user-operated lock/unlock still pending. A closed-window lifetime hypothesis was tested but not reproduced; its experimental code was removed. No new quality or buffering tradeoff introduced.
-
-## 2026-09-28 — Review follow-ups: reconnected displays, held buttons, owed frames, late-created Spaces
-
-Pre-push review of perf/wallpaper-power (four reviewers, each finding checked by a skeptic): 6 confirmed, 8 rejected. Each fix has a test that fails without it.
-
-- Reconnected display: a display that disconnects while suspended and returns visible is resumed; one that returns still hidden stays suspended with no resume/suspend pair (WallpaperPresentationPolicyTests, 2 cases).
-- Pointer: button levels are adopted without edges after the monitors return (wallpaper-core 222 passed).
-- Frame clock: 18 ms draws at 60 fps deliver ≥42/s (35 without the owed-frame path, measured with a spinning draw because sleep_for(18 ms) slept ~22 ms here); requests after a long content-paced wait stay within the ceiling; timer_tests 32 passed, three consecutive runs.
-- Lock screen: turning off restores a Space created after the last check (test failed without the fix: node left on the extension).
-- `python3 scripts/test.py` — 671 passed, 0 failed, 11 skipped. `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped. Release build signed.
-- Not re-measured on hardware after these follow-ups: power figures in the earlier entry stand for the code measured then.
