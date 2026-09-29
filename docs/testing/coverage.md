@@ -186,6 +186,9 @@ Swift tests cover, without starting the app:
   action. `WallpaperFocusFilterTests` pins the filter's default to the choice
   that lets wallpapers run, since macOS performs it with defaults when a Focus
   ends. The real Focus Settings pane and a real Low Power Mode are not exercised.
+- **Automation** — `AutomationCommandTests`, `AppAutomationTests`,
+  `HotKeyPreferencesTests` and `GlobalHotKeysTests`; what each covers, and what
+  needs the running app, is in [automation](../features/automation.md#verification).
 - **Playlists** — `PlaylistPlannerTests`, `PlaylistStoreTests`,
   `PlaylistSchedulerTests` (fake clock, library and activation; no renderer) and
   `WebPanelPlaylistTests`; what each covers is listed in

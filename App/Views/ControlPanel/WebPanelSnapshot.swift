@@ -392,6 +392,13 @@ extension WebPanelController {
         "optimizationApplied": report.optimizationApplied as Any? ?? null,
       ]
     }
+    // Each global shortcut the user can record, with why macOS refused it if it did.
+    let hotKeyRows: [[String: Any]] = HotKeyAction.allCases.map { action in
+      [
+        "id": action.rawValue, "shortcut": hotKeys.bindings[action]?.label as Any? ?? null,
+        "error": hotKeys.failures[action] as Any? ?? null,
+      ]
+    }
     // What Playback shows as in effect right now, beside the saved choices.
     let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     let thermalState = Self.thermalState(ProcessInfo.processInfo.thermalState)
@@ -437,6 +444,7 @@ extension WebPanelController {
         ]
       },
       "keepWindowsOnWallpaperClick": !DesktopClickRevealPreference.isEnabled,
+      "hotkeys": hotKeyRows,
       "hideAfterActivating": hidesAfterActivating,
       "lockScreenEnabled": lock?.isRequested ?? false, "lockScreenAvailable": lock != nil,
       "lockScreenBusy": lock?.isBusy ?? false, "lockScreenStatus": lock?.status

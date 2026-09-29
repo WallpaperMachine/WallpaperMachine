@@ -61,6 +61,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
   let playlists: PlaylistStore
+  let hotKeys: HotKeyPreferences
   /// Tests pass a closure so choosing an app does not open a panel. Nil uses the sheet.
   var chooseApplication: (@MainActor () async -> URL?)?
   /// Tests pass a closure that answers a pixiv session, so signing in opens no window. Nil
@@ -147,6 +148,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     appLanguage: AppLanguageStore? = nil,
     playback: PlaybackPreferences? = nil,
     playlists: PlaylistStore? = nil,
+    hotKeys: HotKeyPreferences? = nil,
     chooseApplication: (@MainActor () async -> URL?)? = nil
   ) {
     self.store = store
@@ -164,6 +166,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.defaults = defaults
     self.playback = playback ?? .shared
     self.playlists = playlists ?? .shared
+    self.hotKeys = hotKeys ?? .shared
     self.chooseApplication = chooseApplication
     filtersCollapsed = Self.filtersCollapsedKeys.mapValues { defaults.bool(forKey: $0) }
     welcomeSeen = defaults.bool(forKey: Self.welcomeSeenKey)
@@ -220,6 +223,11 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
         .store(in: &subscriptions)
     }
     NotificationCenter.default.publisher(for: PlaybackPreferences.didChangeNotification, object: playback)
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in self?.scheduleUpdate() }
+      }
+      .store(in: &subscriptions)
+    NotificationCenter.default.publisher(for: HotKeyPreferences.didChangeNotification, object: hotKeys)
       .sink { [weak self] _ in
         Task { @MainActor [weak self] in self?.scheduleUpdate() }
       }

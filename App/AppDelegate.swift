@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var otherAudioMonitor: OtherAudioMonitor?
     private var systemConditionMonitor: SystemConditionMonitor?
     private var playlistScheduler: PlaylistScheduler?
+    private var globalHotKeys: GlobalHotKeys?
     private var playbackPreferencesObserver: NSObjectProtocol?
     private var wallpaperEnergy: WallpaperEnergyRecorder?
     /// Last presentation the bridge accepted, so leaving unloaded clears that flag first.
@@ -323,6 +324,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             conditions.start()
             policy.start()
             startPlaylistScheduler(store: store)
+            // The Shortcuts app lists these; commands wait for the handler set after bootstrap.
+            AppAutomation.shared.wallpapers = {
+                store.librarySnapshot.wallpapers.filter(\.supported).map { (id: $0.id, title: $0.title) }
+            }
+            let hotKeys = GlobalHotKeys(preferences: .shared)
+            hotKeys.onPress = { [weak self] action in self?.runAutomation(action.command) }
+            globalHotKeys = hotKeys
+            hotKeys.start()
             Task { await WallpaperFocusFilter.refreshState() }
             startWallpaperEnergyRecorder(store: store)
             do {
@@ -349,6 +358,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     /// the way Import does, skipping wallpapers already there. The panel opens on Installed so
     /// the import's progress and report are in view.
     func application(_ application: NSApplication, open urls: [URL]) {
+        // `wallpapermachine://` links; see `AutomationCommand` for what they may ask.
+        for url in urls where !url.isFileURL {
+            guard let command = AutomationCommand(url: url) else {
+                AppLog.warn("ignored a link WallpaperMachine does not understand: \(url.absoluteString)")
+                continue
+            }
+            runAutomation(command)
+        }
         let files = urls.filter(\.isFileURL)
         guard !files.isEmpty else { return }
         guard finishedLaunching else {
@@ -503,6 +520,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        globalHotKeys?.stop()
+        AppAutomation.shared.handler = nil
         playlistScheduler?.stop()
         stopPlaybackMonitoring()
         wallpaperEnergy?.stop()
@@ -541,6 +560,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Task {
             do {
                 try await store?.lockScreenWallpaper?.shutdown()
+                globalHotKeys?.stop()
+                AppAutomation.shared.handler = nil
                 playlistScheduler?.stop()
                 stopPlaybackMonitoring()
                 wallpaperEnergy?.stop()
@@ -1000,27 +1021,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         else {
             return
         }
-        // The playlist's own next, with a fresh interval after it; a switch it is already making
-        // counts as the answer rather than falling back to the library order.
-        if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
-            playlistScheduler?.skip(displayId)
-            return
-        }
+        runAutomation(.next(display: displayId))
+    }
 
+    /// Runs a command from a link, a keyboard shortcut or the menu bar. A failure shows in the
+    /// menu bar menu, as one from the menu itself does.
+    private func runAutomation(_ command: AutomationCommand) {
         Task {
             do {
-                // Shares the panel's slot: the latest switch for this display wins, and "next"
-                // is measured from whatever the display shows when this one gets its turn.
-                try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId)) {
-                    guard let id = store.nextWallpaperID(displayId: displayId) else { return }
-                    try await store.activateWallpaperAsync(id: id, displayId: displayId)
-                }
+                try await AppAutomation.shared.perform(command)
                 lastError = nil
             } catch {
                 lastError = error
+                AppLog.warn("\(String(describing: command)) failed: \(error.localizedDescription)")
             }
             rebuildMenu()
         }
+    }
+
+    /// Carries out a command from outside the window: the Shortcuts app, a link, a keyboard
+    /// shortcut or the menu bar. Switches share the panel's per-display slot, so the latest
+    /// request for a display wins.
+    private func performAutomation(_ command: AutomationCommand) async throws {
+        guard let store, !shutdownInProgress, !shutdownComplete else { throw AutomationError.notReady }
+        switch command {
+        case .play, .pause, .togglePlayback:
+            try await store.commands.run {
+                let paused = store.appSnapshot.playbackState == .paused
+                let play = command == .play || (command == .togglePlayback && paused)
+                if play, paused {
+                    try await store.playAllAsync()
+                } else if !play, !paused {
+                    try await store.pauseAllAsync()
+                }
+            }
+            playbackSnapshotCurrent = true
+        case .next(let display):
+            let displayId = try automationDisplay(display, store: store)
+            // The playlist's own next, with a fresh interval after it; a switch it is already
+            // making counts as the answer rather than falling back to the library order.
+            if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
+                playlistScheduler?.skip(displayId)
+                return
+            }
+            // "Next" is measured from whatever the display shows when this one gets its turn.
+            try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId)) {
+                guard let id = store.nextWallpaperID(displayId: displayId) else { return }
+                try await store.activateWallpaperAsync(id: id, displayId: displayId)
+            }
+        case .apply(let id, let display):
+            let displayId = try automationDisplay(display, store: store)
+            guard store.librarySnapshot.wallpapers.contains(where: { $0.id == id }) else {
+                throw AutomationError(message: String(localized: "No installed wallpaper has the id “\(id)”."))
+            }
+            try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId), subject: id) {
+                try await store.activateWallpaperAsync(id: id, displayId: displayId)
+            }
+        case .open(let page):
+            switch page {
+            case .discover?:
+                if !workshopStore.hasLoaded && !workshopStore.isLoading { workshopStore.search() }
+                showControlPanel(selection: .workshop)
+            case .pixiv?:
+                if !pixivStore.hasLoaded && !pixivStore.isLoading { pixivStore.apply(pixivStore.query) }
+                showControlPanel(selection: .pixiv)
+            case .settings?:
+                showControlPanel(selection: .settings)
+            case .installed?:
+                showControlPanel(selection: .wallpaper)
+            case nil:
+                showControlPanel(selection: controlPanelNavigation.selection ?? .wallpaper)
+            }
+        }
+    }
+
+    /// The display a command names, or the panel's target display; only an enabled display
+    /// that shows its own wallpaper can be switched.
+    private func automationDisplay(_ requested: String?, store: BridgeStore) throws -> String {
+        let id = requested ?? controlPanelNavigation.targetDisplayID
+        guard store.settingsSnapshot.displays.contains(where: {
+            $0.displayId == id && $0.enabled && $0.mode == .standalone
+        }) else {
+            throw AutomationError(message: String(localized: "No enabled display showing its own wallpaper has the id “\(id)”."))
+        }
+        return id
     }
 
     @objc private func lockScreen() {
@@ -1046,6 +1130,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 playbackSnapshotCurrent = true
                 AppLog.info("startup: bootstrapAsync completed successfully")
                 checkWorkshopUpdatesIfDue()
+                // Links, keyboard shortcuts and the Shortcuts app act from here on.
+                AppAutomation.shared.handler = { [weak self] command in
+                    guard let self else { throw AutomationError.notReady }
+                    try await self.performAutomation(command)
+                }
             } catch {
                 AppLog.error("startup: bootstrapAsync FAILED: \(error.localizedDescription)")
                 lastError = error

@@ -1625,6 +1625,81 @@
     },
     "Could not replace Workshop item %@ with its update: %@. The installed version is unchanged." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Could not replace Workshop item %@ with its update: %@. The installed version is unchanged."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法用更新替换创意工坊项目 %@：%@。已安装的版本保持不变。"}}}
+    },
+    "Play or pause wallpapers" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Play or pause wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "播放或暂停壁纸"}}}
+    },
+    "Next wallpaper" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Next wallpaper"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "下一张壁纸"}}}
+    },
+    "Open the control panel" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Open the control panel"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "打开控制面板"}}}
+    },
+    "Another app already uses this shortcut. Record a different one." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Another app already uses this shortcut. Record a different one."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "其他应用已在使用这个快捷键。请录制另一个。"}}}
+    },
+    "macOS did not accept this shortcut (error %lld). Record a different one." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS did not accept this shortcut (error %lld). Record a different one."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 不接受这个快捷键（错误 %lld）。请录制另一个。"}}}
+    },
+    "Hold ⌘, ⌥ or ⌃ with the key, so the shortcut doesn’t take it away from typing." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Hold ⌘, ⌥ or ⌃ with the key, so the shortcut doesn’t take it away from typing."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请与 ⌘、⌥ 或 ⌃ 一起按下按键，以免快捷键占用正常输入。"}}}
+    },
+    "This key can’t be used for a shortcut. Try a letter, a number or a function key." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This key can’t be used for a shortcut. Try a letter, a number or a function key."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个按键不能用作快捷键。请试试字母、数字或功能键。"}}}
+    },
+    "That shortcut is already used for “%@”." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "That shortcut is already used for “%@”."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这个快捷键已用于“%@”。"}}}
+    },
+    "WallpaperMachine is still starting, or its renderer could not start. Try again in a moment." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachine is still starting, or its renderer could not start. Try again in a moment."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachine 仍在启动，或其渲染器无法启动。请稍后再试。"}}}
+    },
+    "No installed wallpaper has the id “%@”." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No installed wallpaper has the id “%@”."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "没有 ID 为“%@”的已安装壁纸。"}}}
+    },
+    "No enabled display showing its own wallpaper has the id “%@”." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No enabled display showing its own wallpaper has the id “%@”."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "没有 ID 为“%@”且显示自身壁纸的已启用显示器。"}}}
+    },
+    "Wallpaper" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸"}}}
+    },
+    "Pause Wallpapers" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Pause Wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "暂停壁纸"}}}
+    },
+    "Pauses every wallpaper, as Pause in the menu bar does." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Pauses every wallpaper, as Pause in the menu bar does."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "暂停所有壁纸，与菜单栏中的“暂停”相同。"}}}
+    },
+    "Resume Wallpapers" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Resume Wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "继续播放壁纸"}}}
+    },
+    "Plays every wallpaper again after a pause." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Plays every wallpaper again after a pause."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "暂停后重新播放所有壁纸。"}}}
+    },
+    "Play or Pause Wallpapers" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Play or Pause Wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "播放或暂停壁纸"}}}
+    },
+    "Pauses wallpapers that are playing, and plays them when paused." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Pauses wallpapers that are playing, and plays them when paused."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "暂停正在播放的壁纸；已暂停时则开始播放。"}}}
+    },
+    "Changes the target display to its next wallpaper: its playlist's next when it rotates, otherwise the next one in your library." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes the target display to its next wallpaper: its playlist's next when it rotates, otherwise the next one in your library."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "将目标显示器切换到下一张壁纸：若其播放列表在轮换，则为列表中的下一张，否则为壁纸库中的下一张。"}}}
+    },
+    "Apply Wallpaper" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Apply Wallpaper"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "应用壁纸"}}}
+    },
+    "Applies an installed wallpaper to the target display." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applies an installed wallpaper to the target display."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "将已安装的壁纸应用到目标显示器。"}}}
+    },
+    "Apply ${wallpaper}" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Apply ${wallpaper}"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "应用 ${wallpaper}"}}}
+    },
+    "Open WallpaperMachine" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Open WallpaperMachine"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "打开 WallpaperMachine"}}}
+    },
+    "Opens the control panel." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Opens the control panel."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "打开控制面板。"}}}
+    },
+    "Play or Pause" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Play or Pause"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "播放或暂停"}}}
     }
   },
   "version" : "1.0"

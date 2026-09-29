@@ -17,6 +17,9 @@ const desktopCoveredActions = [['pause', 'Pause'], ['keepRunning', 'Keep running
 const systemConditionActions = [['keepRunning', 'Keep running'], ['pause', 'Pause'], ['stop', 'Stop (free memory)']];
 const focusActions = { keepRunning: 'Keep running', mute: 'Mute', pause: 'Pause', stop: 'Stop (free memory)' };
 const thermalStates = { nominal: 'normal', fair: 'warm', serious: 'hot', critical: 'very hot' };
+const hotkeyTitles = { togglePlayback: 'Play or pause wallpapers', nextWallpaper: 'Next wallpaper', openControlPanel: 'Open the control panel' };
+// What the Shortcuts app and wallpapermachine:// links can do; the ellipsis stands for an id.
+const automationLinks = ['wallpapermachine://toggle', 'wallpapermachine://play', 'wallpapermachine://pause', 'wallpapermachine://next', 'wallpapermachine://apply?id=…', 'wallpapermachine://open?page=settings'];
 const playlistModes = [['off', 'Off'], ['rotate', 'Rotate wallpapers'], ['dayNight', 'Day and night']];
 const playlistOrders = [['sequential', 'In order'], ['shuffle', 'Shuffle']];
 
@@ -241,12 +244,25 @@ export function showEnergyUsage(reading) {
 export function renderSettings(container, state, helpers) {
   let view = views.get(container);
   if (!view) {
-    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '' };
+    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '', recording: null };
     views.set(container, view);
     container.addEventListener('click', event => onClick(view, event));
     container.addEventListener('input', event => onInput(view, event));
     container.addEventListener('change', event => onChange(view, event));
     compactNavigation.addEventListener('change', () => draw(view));
+    // Recording a keyboard shortcut takes the next key press made in its row, before anything
+    // else reads it; pressing Escape alone, or moving focus away, gives up.
+    container.addEventListener('keydown', event => {
+      if (!view.recording) return;
+      if (!event.target.closest(`[data-key="hotkey-${view.recording}"]`)) { view.recording = null; draw(view); return; }
+      if (['Meta', 'Control', 'Alt', 'Shift', 'CapsLock', 'Fn', 'FnLock'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = view.recording;
+      view.recording = null;
+      if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey) { draw(view); return; }
+      perform(view, `hotkey-${id}`, 'hotkeySet', { id, code: event.code, command: event.metaKey, option: event.altKey, control: event.ctrlKey, shift: event.shiftKey });
+    }, true);
     container.addEventListener('keydown', event => {
       const target = event.target.closest('[data-section]');
       const previous = compactNavigation.matches ? 'ArrowLeft' : 'ArrowUp';
@@ -310,6 +326,15 @@ function draw(view) {
     + group('general-behavior', t('Startup & desktop'), settingToggle('launchAtLogin', 'Launch at login', !settings.launchAtLoginAvailable, !settings.launchAtLoginAvailable ? t('Move the app to Applications to enable.') : '')
       + settingToggle('hideAfterActivating', 'Hide window after applying a wallpaper')
       + settingToggle('keepWindowsOnWallpaperClick', 'Keep windows in place when clicking the wallpaper', false, t('Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.')))
+    + group('general-shortcuts', t('Keyboard shortcuts'), (settings.hotkeys || []).map(hotkey => {
+      const id = String(hotkey.id);
+      const recording = view.recording === id;
+      const control = recording
+        ? `<span class="settings-status" role="status">${e(t('Press the new shortcut…'))}</span>${button(t('Cancel'), 'hotkeyCancel', { id })}`
+        : `<kbd class="settings-shortcut">${e(hotkey.shortcut || t('Not set'))}</kbd>${button(hotkey.shortcut ? t('Change…') : t('Record…'), 'hotkeyRecord', { id }, busy)}${hotkey.shortcut ? button(t('Clear'), 'hotkeyClear', { id }, busy) : ''}`;
+      return row(`hotkey-${id}`, t(hotkeyTitles[id] || id), control) + error(`hotkey-error-${id}`, hotkey.error);
+    }).join('') + `<p class="settings-note" data-key="hotkeys-note">${e(t('They work whichever app is in front. Hold ⌘, ⌥ or ⌃ with the key; F13 to F20 work alone. No permission is needed.'))}</p>`)
+      + disclosure('general-automation', t('Shortcuts app and links'), paragraphs(t('The Shortcuts app offers WallpaperMachine’s actions: play or pause wallpapers, change to the next wallpaper, apply a wallpaper you choose and open this window. Siri and Spotlight can run them too.'), t('A wallpapermachine:// link does the same from a browser, a script or another app. Next and Apply act on the target display, or on the one a display= value names; an id is the wallpaper’s folder name in your library.')) + `<ul class="settings-list" data-key="automation-links">${automationLinks.map(link => `<li><code>${e(link)}</code></li>`).join('')}</ul>`)
     + group('general-lock', t('Lock screen'), settingToggle('lockScreenEnabled', 'Animate lock screen', lockUnavailable || settings.lockScreenBusy, t('Experimental'))
       + row('lock-status', t('Lock screen status'), `<span class="settings-status" role="status">${e(lockUnavailable ? (settings.lockScreenAvailable === false && settings.lockScreenStatus) || t('Unavailable') : settings.lockScreenBusy ? `${settings.lockScreenStatus || t('Updating')}…` : settings.lockScreenStatus)}</span>${settings.lockScreenError ? button(t('Retry'), 'lockScreenRetry', {}, busy || settings.lockScreenBusy) : ''}`, '', 'settings-readout')
       + error('lock-error', settings.lockScreenError)
@@ -751,6 +776,14 @@ async function onClick(view, event) {
     });
     return;
   }
+  if (action === 'hotkeyRecord') {
+    view.recording = String(args.id);
+    draw(view);
+    view.container.querySelector(`[data-key="hotkey-${view.recording}"] button`)?.focus();
+    return;
+  }
+  if (action === 'hotkeyCancel') { view.recording = null; draw(view); return; }
+  view.recording = null;
   if (action === 'requestSceneAssets') { await view.helpers.requestAssets(button); return; }
   if (action === 'openSceneDialog') { view.helpers.openDownloadDialog('scene-assets', button); return; }
   if (action === 'openWelcome') { view.helpers.openWelcome(); return; }

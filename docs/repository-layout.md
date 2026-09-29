@@ -22,7 +22,8 @@ App/                               WallpaperMachine application target sources o
   Bridge/                          BridgeEnvironment.swift (Vulkan ICD) and Generated/ (uniffi output; not hand-edited)
   Logging/                         AppLog.swift; the only Swift logging entry point
   Services/Appearance/             AppTheme.swift: theme preference model and store
-  Services/Automation/             App Intents the system runs in the app (Focus filter)
+  Services/Automation/             commands from outside the window: keyboard shortcuts, App Intents (Shortcuts app,
+                                   Focus filter) and wallpapermachine:// links
   Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy,
                                    playback rules and the system conditions (Low Power Mode, heat, Focus) that feed it
   Services/Diagnostics/            runtime diagnostics session and counter sampling; per-coalition energy readout

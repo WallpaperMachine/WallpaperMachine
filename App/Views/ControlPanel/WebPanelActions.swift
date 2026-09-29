@@ -127,6 +127,19 @@ extension WebPanelController {
     case "playlistSetting":
       try playlistSetting(request)
       return
+    // Recorded in Settings → General: the page sends the key's position and the modifiers held.
+    case "hotkeySet":
+      guard let action = HotKeyAction(rawValue: try request.string("id")) else { throw WebPanelRequest.invalid }
+      let hotKey = try GlobalHotKeys.hotKey(
+        code: try request.string("code"), command: try request.boolean("command"),
+        option: try request.boolean("option"), control: try request.boolean("control"),
+        shift: try request.boolean("shift"))
+      try hotKeys.set(hotKey, for: action)
+      return
+    case "hotkeyClear":
+      guard let action = HotKeyAction(rawValue: try request.string("id")) else { throw WebPanelRequest.invalid }
+      try hotKeys.set(nil, for: action)
+      return
     case "workshopCheckUpdates":
       workshop.updates.check(
         installed: store.librarySnapshot.wallpapers.map(\.id), library: ClientPaths.libraryURL)

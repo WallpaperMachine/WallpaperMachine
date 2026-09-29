@@ -991,4 +991,17 @@ export default {
   'Not checked yet.': '尚未检查。',
   '{time}: everything is up to date.': '{time}：全部是最新版本。',
   '{time}: {count} wallpapers have updates. Update them from Installed.': '{time}：有 {count} 张壁纸可更新。可在“已安装”中更新。',
+  // Keyboard shortcuts and automation
+  'Keyboard shortcuts': '键盘快捷键',
+  'Play or pause wallpapers': '播放或暂停壁纸',
+  'Next wallpaper': '下一张壁纸',
+  'Open the control panel': '打开控制面板',
+  'Not set': '未设置',
+  'Record…': '录制…',
+  'Change…': '更改…',
+  'Press the new shortcut…': '请按下新的快捷键…',
+  'They work whichever app is in front. Hold ⌘, ⌥ or ⌃ with the key; F13 to F20 work alone. No permission is needed.': '无论哪个应用在前台都可使用。请与 ⌘、⌥ 或 ⌃ 一起按下按键；F13 到 F20 可单独使用。无需任何权限。',
+  'Shortcuts app and links': '“快捷指令”与链接',
+  'The Shortcuts app offers WallpaperMachine’s actions: play or pause wallpapers, change to the next wallpaper, apply a wallpaper you choose and open this window. Siri and Spotlight can run them too.': '“快捷指令”应用提供 WallpaperMachine 的操作：播放或暂停壁纸、切换到下一张壁纸、应用你选择的壁纸以及打开此窗口。Siri 和“聚焦”也可以运行它们。',
+  'A wallpapermachine:// link does the same from a browser, a script or another app. Next and Apply act on the target display, or on the one a display= value names; an id is the wallpaper’s folder name in your library.': 'wallpapermachine:// 链接可以在浏览器、脚本或其他应用中做同样的事。“下一张”和“应用”作用于目标显示器，或 display= 指定的显示器；id 是壁纸在壁纸库中的文件夹名称。',
 };

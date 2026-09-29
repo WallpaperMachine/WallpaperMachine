@@ -199,7 +199,8 @@ a download.
   General, Appearance, Displays, Library & Steam, Storage and About. Everyday
   categories lead the navigation; library, storage and product information are
   visually separated. **General** starts with the
-  [Language](#language) picker, then startup/desktop and lock-screen groups.
+  [Language](#language) picker, then startup/desktop, keyboard shortcuts (see
+  [automation](automation.md)) and lock-screen groups.
   It no longer has a pause-on-battery toggle; battery is one choice on
   Performance. **Performance** opens with a live energy readout for the app
   (grade, total, CPU and GPU, battery share, and the figure before and after
