@@ -12,45 +12,61 @@ repeat that section, so they always say the same thing. See
 
 ### English
 
-This release adds pixiv browsing, picture import, playlists and new ways to pause wallpapers automatically, and makes the experimental animated lock screen more dependable
+This release adds pixiv, playlists, Workshop updates and subscriptions, picture import, keyboard shortcuts and Shortcuts actions, and Traditional Chinese and Japanese, and makes the experimental animated lock screen more dependable.
 
 #### New
 
 - A new pixiv tab browses rankings and tag search with filters, and saves any illustration page to Installed as a still wallpaper
 - Sign in to pixiv to see members-only works and, if your account allows it, choose to include R-18 works
+- Settings → Displays gives each display a Playlist that rotates through all wallpapers, your favorites or its own list, in order or shuffled, from every 5 minutes to every day, or switches between a day and a night wallpaper
+- Add wallpapers to a display's playlist from their details or a selection, and the menu bar's Next Wallpaper follows a rotating display's playlist
+- Once a day the app asks Steam which of your installed Workshop wallpapers have been updated, sending only their ids; update one or all of them from Installed and they keep their settings, and Settings → Library & Steam can turn the check off
+- Discover can browse Workshop collections, more wallpapers by an author and your Steam subscriptions, and download the subscribed wallpapers you don't have yet
 - Import JPEG, PNG, GIF, WebP, HEIC, TIFF, BMP and AVIF pictures up to 512 MB as still wallpapers with Image fit and background colour options
+- Drop files or folders on WallpaperMachine in the Dock, or open them with it from Finder, to import them
+- Settings → General can record global keyboard shortcuts to play or pause wallpapers, go to the next wallpaper and open the control panel; none is set until you record one
+- The Shortcuts app gains WallpaperMachine actions that Siri and Spotlight can run too, and the same commands work as wallpapermachine:// links
 - Settings → Performance → Playback can pause or stop wallpapers in Low Power Mode or when the Mac is hot, off until you choose
 - Add the WallpaperMachine Focus filter in System Settings to pause, mute or stop wallpapers while a Focus is on
-- Drop files or folders on WallpaperMachine in the Dock, or open them with it from Finder, to import them
-- Playlists arrive for your wallpaper library
-- The control panel is now also available in Traditional Chinese and Japanese
+- WallpaperMachine is now also in Traditional Chinese and Japanese, chosen in Settings → General → Language or used automatically when your Mac is set to one of them
+- After an update, a What's New window lists the changes since your previous version in English and Simplified Chinese, and can be turned off
 
 #### Fixed
 
 - The experimental animated lock screen now resumes where it left off after the display wakes, instead of reloading and restarting its animation
 - The experimental animated lock screen no longer briefly shows the background behind the wallpaper
 - The experimental animated lock screen no longer clears its wallpaper when displays are connected, removed or change resolution
+- A waking display shows black instead of white until its wallpaper draws again
+- Wallpapers are no longer reset when a display wakes and macOS only moves their windows
 
 ### 简体中文
 
-此版本新增 pixiv 浏览、图片导入、播放列表以及自动暂停壁纸的新方式，并让实验性的动态锁定屏幕更加可靠
+此版本新增 pixiv、播放列表、创意工坊更新与订阅、图片导入、键盘快捷键与快捷指令操作，以及繁体中文和日语，并让实验性的动态锁定屏幕更加可靠。
 
 #### 新增
 
 - 新增 pixiv 标签页，可按条件筛选浏览排行榜和标签搜索，并将任意插画页面保存到已安装，作为静态壁纸使用
 - 登录 pixiv 后可查看仅限会员的作品，若账户允许，还可选择显示 R-18 作品
+- 设置 → 显示器为每台显示器提供播放列表，可在全部壁纸、个人收藏或它自己的列表中按顺序或随机轮换，间隔从 5 分钟到 1 天，也可在白天和夜晚各显示一张壁纸
+- 可从壁纸详情或多选中把壁纸加入显示器的播放列表，菜单栏的“下一张壁纸”会跟随正在轮换的显示器的播放列表
+- 应用每天向 Steam 查询一次已安装的创意工坊壁纸是否有更新，只发送壁纸 ID；可在已安装中更新单个或全部壁纸，壁纸设置会保留，也可在 设置 → 壁纸库与 Steam 中关闭检查
+- 发现页可以浏览创意工坊合集、作者的更多作品和你的 Steam 订阅，并可下载库中还没有的订阅壁纸
 - 可导入最大 512 MB 的 JPEG、PNG、GIF、WebP、HEIC、TIFF、BMP 和 AVIF 图片作为静态壁纸，并可设置图像适配方式和背景颜色
+- 将文件或文件夹拖到程序坞中的 WallpaperMachine 上，或在访达中用它打开，即可导入
+- 设置 → 通用可录制全局键盘快捷键，用于播放或暂停壁纸、切换到下一张壁纸和打开控制面板，录制之前不会设置任何快捷键
+- 快捷指令 App 新增 WallpaperMachine 操作，Siri 和聚焦搜索也能运行，同样的命令也可以通过 wallpapermachine:// 链接调用
 - 设置 → 性能 → 播放新增选项，可在低电量模式下或 Mac 过热时暂停或停止壁纸，选择前默认关闭
 - 在系统设置中添加 WallpaperMachine 的专注模式过滤条件，即可在专注模式开启时暂停、静音或停止壁纸
-- 将文件或文件夹拖到程序坞中的 WallpaperMachine 上，或在访达中用它打开，即可导入
-- 壁纸库新增播放列表功能
-- 控制面板新增繁体中文和日语界面
+- WallpaperMachine 新增繁体中文和日语，可在 设置 → 通用 → 语言 中选择，Mac 使用这两种语言时也会自动采用
+- 更新后会显示“更新内容”窗口，用中英双语列出自上个版本以来的变化，也可以关闭
 
 #### 修复
 
 - 实验性的动态锁定屏幕在显示器唤醒后会从中断处继续播放，不再重新加载并从头开始动画
 - 实验性的动态锁定屏幕不再短暂露出壁纸下方的背景
 - 连接、移除显示器或更改分辨率时，实验性的动态锁定屏幕不再清除壁纸
+- 显示器唤醒时，壁纸重新绘制之前显示黑色而不是白色
+- 显示器唤醒且 macOS 只是移动壁纸窗口时，壁纸不再被重置
 
 **Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.1.0...v1.2.0
 
