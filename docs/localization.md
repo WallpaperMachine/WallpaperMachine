@@ -52,7 +52,8 @@ are translated: the Wallpaper Engine editor's own token for the scheme colour it
 adds to every scene, and the **Unnamed option** stand-in for a control whose
 label was pure decoration. The property labels the app itself writes into the
 wallpapers it saves from pixiv (Image fit, its options and Background color) are
-translated too, and only on wallpapers whose id starts with `pixiv-`; pixiv's
+translated too, and only on wallpapers whose id starts with `pixiv-` or
+`image-` (pictures imported from disk carry the same two properties); pixiv's
 titles, tags and names never are.
 
 ## Keeping the native catalogs in sync

@@ -69,7 +69,8 @@ a time in the order asked for, each with progress on its tile and in the
 activity bar, and can be cancelled or retried.
 
 A page is saved as a `web` project, since the renderer plays scene, video and web
-projects only (`PixivWallpaperPackager`):
+projects only (`PixivWallpaperPackager`, with the page, properties and sizes of
+`StillImageWallpaper`, which pictures imported from disk share):
 
 - the folder, and so the wallpaper id, is `pixiv-<work id>-p<page>`;
 - `illustration.<jpg|png|gif>` is the original exactly as pixiv serves it, named
@@ -87,7 +88,7 @@ The manifest gives each wallpaper two properties: **Image fit** (Fill, Fill,
 keep the top, Fit with blurred backdrop, Fit, Original size) and **Background
 color**. Pages at least 6:5 wide start on Fill and squarer or taller ones on Fit
 with blurred backdrop. The labels stay English in the manifest like any
-wallpaper's, and the panel translates exactly these for `pixiv-` wallpapers (see
+wallpaper's, and the panel translates exactly these for `pixiv-` and `image-` wallpapers (see
 [localization](../localization.md)). The project is written to a staging folder
 beside the library and moved in whole, so the library never lists a half-written
 wallpaper; a copy already in the library is kept with its saved options, and

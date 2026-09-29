@@ -133,7 +133,7 @@ Services are grouped by domain under `App/Services/`.
 | `Appearance/` | `AppTheme` (`AppThemePreferences`, `AppThemeStore`) | Mode/accent/tone preferences shared by AppKit and the page |
 | `Desktop/` | `DesktopSpaceWallpaperAPI`, `DesktopWallpaperLedger`, `DesktopWallpaperSync`, `PlaybackPreferences`, `AppRuleMonitor`, `OtherAudioMonitor`, `WallpaperPresentationPolicy`, `WallpaperCoverageProbes` | Per-Space desktop picture control, original-wallpaper journal, still-poster sync, playback rules, per-display renderer suspension |
 | `GitHub/` | `GitHubReleaseClient`, `AppUpdateModels`, `AppUpdateStore`, `AppUpdateInstaller` | GitHub Releases update check, download, in-place install |
-| `Library/` | `ClientPaths`, `WallpaperImportService`, `WallpaperDeletionService` | App-support layout, non-destructive import, guarded deletion |
+| `Library/` | `ClientPaths`, `WallpaperImportService`, `LibraryImportStore`, `StillImageWallpaper`, `WallpaperDeletionService` | App-support layout, non-destructive import (run for the app, not the panel page, so Finder and Dock drops import too), still pictures packaged as `web` wallpapers, guarded deletion |
 | `LockScreen/` | `LockScreenWallpaperSelection`, `LockScreenWallpaperService` | System lock-screen selection overrides and configuration publishing |
 | `Pixiv/` | `PixivService`, `PixivTransport`, `PixivStore`, `PixivSessionStore`, `PixivDownloadQueue`, `PixivWallpaperPackager` | pixiv rankings and tag search, the signed-in session (keychain, sent to `www.pixiv.net` only), downloads of originals and their packaging as still `web` wallpapers; see [features/pixiv.md](features/pixiv.md) |
 | `Steam/` | `SteamCMDRuntime`, `SteamCMDSetupStore` | SteamCMD discovery, download, validation, security approval |

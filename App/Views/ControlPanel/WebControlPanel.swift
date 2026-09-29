@@ -13,10 +13,12 @@ struct WebControlPanel: NSViewRepresentable {
   let workshop: WorkshopStore
   let pixiv: PixivStore
   let updater: AppUpdateStore
+  let imports: LibraryImportStore
 
   func makeCoordinator() -> WebPanelController {
     let controller = WebPanelController(
-      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater)
+      store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater,
+      imports: imports)
     // Discover previews start caching the moment Steam's page arrives, and the following page
     // is fetched behind the one on show, so neither waits for the web view to ask. The pixiv
     // tab does the same with its thumbnails and its next page.
@@ -53,6 +55,8 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let workshop: WorkshopStore
   let pixiv: PixivStore
   let updater: AppUpdateStore
+  /// Library imports, owned by the app so one outlives this page.
+  let imports: LibraryImportStore
   let theme: AppThemeStore
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
@@ -76,11 +80,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let isPresentationVisible: (@MainActor () -> Bool)?
   var observationInstalled = false
   var actionError: String?
-  var importTask: Task<Void, Never>? {
-    didSet { navigation.isImporting = importTask != nil }
-  }
-  var importStatus = ""
-  var importReport: WallpaperImportService.Report?
   var remembersSession = true
   var favoriteIDs: Set<String>
   /// Each library page (`discover`, `pixiv`, `installed`) hides its filter sidebar when the
@@ -136,6 +135,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     store: BridgeStore, navigation: ControlPanelNavigation, workshop: WorkshopStore,
     pixiv: PixivStore? = nil,
     updater: AppUpdateStore? = nil,
+    imports: LibraryImportStore? = nil,
     isPresentationVisible: (@MainActor () -> Bool)? = nil,
     theme: AppThemeStore? = nil,
     displayTitles: DisplayTitleResolver = .system,
@@ -155,6 +155,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.pixiv = pixiv ?? PixivStore()
     self.updater =
       updater ?? AppUpdateStore(currentVersion: "0.0.0", client: DisabledAppUpdateClient())
+    self.imports = imports ?? LibraryImportStore()
     self.displayTitles = displayTitles
     self.isPresentationVisible = isPresentationVisible
     self.theme = theme ?? .shared
@@ -282,7 +283,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     updatePending = false
     cancelDisplayOptions()
     subscriptions.removeAll()
-    importTask?.cancel()
     webView?.configuration.userContentController.removeScriptMessageHandler(
       forName: "native", contentWorld: .page)
     webView?.navigationDelegate = nil

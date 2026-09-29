@@ -30,6 +30,7 @@ extension WebPanelController {
       return
     case "dismissError":
       actionError = nil
+      imports.dismissFailure()
       dismissedErrorRevision = store.latestBridgeErrorRevision
       dismissedLibraryError = libraryFailureMessage
       dismissedDownloadError = workshop.downloader.errorMessage
@@ -93,8 +94,7 @@ extension WebPanelController {
       workshop.selectedItem = item
       return
     case "importCancel":
-      importTask?.cancel()
-      importStatus = "Cancelling…"
+      imports.cancel()
       return
     case "downloadCancel":
       workshop.downloader.cancel(try download(request))
@@ -773,7 +773,7 @@ extension WebPanelController {
   }
 
   func beginImport(_ request: WebPanelRequest) async throws {
-    guard importTask == nil else {
+    guard !imports.isBusy else {
       throw WallpaperActionError(message: String(localized: "An import is already running."))
     }
     let policy =
@@ -782,45 +782,18 @@ extension WebPanelController {
     let panel = NSOpenPanel()
     panel.title = String(localized: "Import Wallpapers")
     panel.message = String(
-      localized: "Choose videos, HTML files, project folders or a Steam library. Your original files are kept.")
+      localized: "Choose videos, images, HTML files, project folders or a Steam library. Your original files are kept.")
     panel.canChooseDirectories = true
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = true
     panel.resolvesAliases = false
     panel.allowedContentTypes =
       [.folder]
-      + WallpaperImportService.videoExtensions.union(WallpaperImportService.webExtensions).sorted()
+      + WallpaperImportService.videoExtensions.union(WallpaperImportService.webExtensions)
+      .union(WallpaperImportService.imageExtensions).sorted()
       .compactMap { UTType(filenameExtension: $0) }
     guard await choose(panel) else { return }
-    let urls = panel.urls
-    importStatus = String(localized: "Preparing import…")
-    importReport = nil
-    importTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      defer {
-        self.importTask = nil
-        self.scheduleUpdate()
-      }
-      do {
-        self.importReport = try await WallpaperImportService().importItems(
-          urls, into: ClientPaths.libraryURL, duplicates: policy
-        ) { [weak self] status in
-          guard let self else { return }
-          await MainActor.run {
-            self.importStatus = status
-            self.scheduleUpdate()
-          }
-        }
-        let refresh = Task { @MainActor in try await self.store.refreshLibraryAsync() }
-        try await refresh.value
-        self.importStatus =
-          self.importReport?.cancelled == true
-          ? String(localized: "Import cancelled") : String(localized: "Import complete")
-      } catch {
-        self.actionError = error.localizedDescription
-        self.importStatus = String(localized: "Import could not finish")
-      }
-    }
+    try imports.start(panel.urls, duplicates: policy)
   }
 
   func choose(_ panel: NSSavePanel) async -> Bool {

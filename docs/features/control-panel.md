@@ -506,8 +506,24 @@ downloads button while downloads exist, and from **Show in downloads** in the
 inspector. The import
 popover opens from **Import** in the Installed toolbar; imports copy source
 files into the library and leave the originals untouched, with a duplicate
-policy of **Skip duplicates** or **Keep both copies**. Closing a popover never
-cancels work. The Steam sign-in dialog uses a guide card (glyph plus numbered
+policy of **Skip duplicates** or **Keep both copies**. Closing a popover, or the
+window, never cancels work: `LibraryImportStore` runs the import for the app, not
+for the page.
+
+An import takes Wallpaper Engine project folders, a Steam library, videos
+(`mp4`, `m4v`, `mov`, `webm`, `mkv`, `avi`), HTML files and pictures (`jpg`,
+`jpeg`, `png`, `gif`, `webp`, `heic`, `heif`, `tif`, `tiff`, `bmp`, `avif`, at
+most 512 MB). A picture becomes a still `web` wallpaper with the id
+`image-<file name>`, packaged the way pixiv pages are (`StillImageWallpaper`; see
+[pixiv](pixiv.md#saving-a-page)): the original kept as `image.<ext>`, a 512 px
+`preview.jpg`, and a `display.jpg` shown instead when the format is not one a
+web view shows as it is (`jpg`, `png`, `gif`, `webp`) or the long side exceeds
+8,192 px. Its **Image fit** and **Background color** labels are translated like
+pixiv's. A picture ImageIO cannot measure or scale is reported and not imported.
+Files dropped on the Dock icon, or opened with WallpaperMachine from Finder
+(`CFBundleDocumentTypes` in `Info.plist`, rank Alternate, so the app never
+becomes a default), are imported the same way with **Skip duplicates**, and the
+window opens on Installed with the import in the activity bar. The Steam sign-in dialog uses a guide card (glyph plus numbered
 steps) for Steam Guard stages; account and password prompts are just the
 labelled field. Once Steam accepts the sign-in, it confirms that the download
 is running before it closes; see

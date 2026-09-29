@@ -18,6 +18,10 @@ extension WebPanelController {
     _ = store.commands.waiting
     _ = store.latestBridgeErrorMessage
     _ = store.latestBridgeErrorRevision
+    _ = imports.isBusy
+    _ = imports.status
+    _ = imports.report
+    _ = imports.failure
     let lock = store.lockScreenWallpaper
     _ = lock?.isRequested
     _ = lock?.isBusy
@@ -452,7 +456,8 @@ extension WebPanelController {
       "canCancel": setup.isBusy && setup.state != .committing,
       "progress": setupProgress as Any? ?? null,
     ]
-    let error: String? = actionError ?? (libraryError == dismissedLibraryError ? nil : libraryError)
+    let error: String? = actionError ?? imports.failure
+      ?? (libraryError == dismissedLibraryError ? nil : libraryError)
       ?? (store.latestBridgeErrorRevision > dismissedErrorRevision
         ? store.latestBridgeErrorMessage : nil)
     let options: Any? = store.wallpaperOptionsSnapshot.map {
@@ -498,8 +503,8 @@ extension WebPanelController {
       "downloadError": downloadError as Any? ?? null,
       "update": Self.update(updater.state, notes: updater.releaseNotes, rateLimitedUntil: updater.rateLimitedUntil),
       "import": [
-        "busy": importTask != nil, "status": importStatus,
-        "report": importReport.map { report -> [String: Any] in
+        "busy": imports.isBusy, "status": imports.status,
+        "report": imports.report.map { report -> [String: Any] in
           [
             "imported": report.importedIDs.count, "skipped": report.skipped.count,
             "failures": report.failures, "cancelled": report.cancelled,

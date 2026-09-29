@@ -9,6 +9,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let controlPanelNavigation = ControlPanelNavigation()
     private lazy var workshopStore = WorkshopStore()
     private lazy var pixivStore = PixivStore()
+    private lazy var libraryImports = LibraryImportStore()
+    /// Files handed to the app before it finished launching, imported once it has.
+    private var pendingOpenedFiles: [URL] = []
+    private var finishedLaunching = false
     private lazy var appUpdater = AppUpdateStore()
     private var automaticUpdates: Task<Void, Never>?
     /// The version the unattended check last prompted for; "Later" holds until the next launch.
@@ -70,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // Reloading waits for a wallpaper being applied, so a page that lands meanwhile
             // appears once that finishes rather than failing.
             pixivStore.downloads.onInstalled = { [weak created] _ in try await created?.refreshLibraryAsync() }
+            libraryImports.refreshLibrary = { [weak created] in try await created?.refreshLibraryAsync() }
             for line in DiagnosticEnvironment.current() { AppLog.info("environment: \(line)") }
             startupError = nil
             playbackSnapshotCurrent = false
@@ -316,8 +321,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         bootstrapStore()
         AppLog.info("startup: bootstrap dispatched")
         startDiagnosticsSessionIfRequested()
+        finishedLaunching = true
+        let opened = pendingOpenedFiles
+        pendingOpenedFiles = []
         DispatchQueue.main.async { [weak self] in
             self?.showControlPanel(selection: .wallpaper)
+            if !opened.isEmpty { self?.importOpenedFiles(opened) }
+        }
+    }
+
+    /// Files dropped on the Dock icon, or opened with the app from Finder, go into the library
+    /// the way Import does, skipping wallpapers already there. The panel opens on Installed so
+    /// the import's progress and report are in view.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return }
+        guard finishedLaunching else {
+            pendingOpenedFiles.append(contentsOf: files)
+            return
+        }
+        importOpenedFiles(files)
+    }
+
+    private func importOpenedFiles(_ files: [URL]) {
+        guard store != nil, !shutdownInProgress, !shutdownComplete else { return }
+        showControlPanel(selection: .wallpaper)
+        do {
+            try libraryImports.start(files, duplicates: .skip)
+        } catch {
+            lastError = error
+            rebuildMenu()
+            NSAlert(error: error).runModal()
         }
     }
 
@@ -523,15 +557,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func menuWillOpen(_ menu: NSMenu) {
         refreshStoreSnapshot()
         rebuildMenu(menu)
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard sender === controlPanelWindow, controlPanelNavigation.isImporting else { return true }
-        // ponytail: retain the page during an import so dismantling cannot cancel it;
-        // the next close releases it. Move import ownership to a store if this grows.
-        sender.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
-        return false
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -835,7 +860,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                         navigation: controlPanelNavigation,
                         workshop: workshopStore,
                         pixiv: pixivStore,
-                        updater: appUpdater
+                        updater: appUpdater,
+                        imports: libraryImports
                     )
                 )
             )

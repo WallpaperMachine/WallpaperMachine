@@ -513,7 +513,7 @@ function renderInspector(discover) {
   const options = !discover && state.options?.id === item.id ? state.options : null;
   // An illustration saved from the pixiv tab is a web wallpaper only in how it is shown; its id names the artwork.
   const pixivArtwork = !discover && /^pixiv-(\d+)-p\d+$/.exec(item.id)?.[1];
-  const compatibility = pixivArtwork ? t('A still illustration saved from pixiv. Choose how it fits the screen under Image fit.') : { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
+  const compatibility = pixivArtwork ? t('A still illustration saved from pixiv. Choose how it fits the screen under Image fit.') : !discover && item.id.startsWith('image-') ? t('A still image imported from your Mac. Choose how it fits the screen under Image fit.') : { Scene: t('Scene renderer is experimental.'), Video: t('Playback depends on the video codec.'), Web: t('Runs in a built-in web view. Mouse input and audio response reach the page; keyboard input does not.'), Application: t('Application wallpapers cannot run on macOS.'), Unknown: t('This wallpaper type is not supported.') }[item.kind] || '';
   const artworkLink = pixivArtwork ? button(t('View on pixiv'), 'openExternal', { url: `https://www.pixiv.net/artworks/${pixivArtwork}` }, { icon: 'external', className: 'link inspector-artwork-link' }) : '';
   const meta = [t(item.kind), bytes(item.size), discover && Number.isFinite(item.subscriptions) ? t('{count} subscribers', { count: item.subscriptions.toLocaleString() }) : ''].filter(Boolean).map(escapeHTML).join('<span aria-hidden="true"> · </span>');
   const energy = !discover ? energyRating(item.energy) : '';
@@ -651,7 +651,7 @@ function assetProperty(id, property, fieldID, unavailable, name) {
 function renderProperty(id, property, lock) {
   const token = property.labelHTML || property.label;
   const engineLabel = Object.hasOwn(enginePropertyLabels, token) ? enginePropertyLabels[token]
-    : id.startsWith('pixiv-') && packagedPropertyLabels.includes(token) ? token : null;
+    : packagedStill(id) && packagedPropertyLabels.includes(token) ? token : null;
   const presentation = engineLabel ? { ...property, label: t(engineLabel), labelHTML: '' } : property;
   const name = presentation.label || t('Unnamed option');
   const label = renderPropertyLabel(presentation);
@@ -676,9 +676,11 @@ function renderProperty(id, property, lock) {
   const restore = property.defaultValue !== undefined && property.defaultValue !== null ? button('', 'restoreProperty', { id, propertyID: property.id }, { icon: 'refresh', className: 'quiet icon-button property-reset', title: t('Restore default: {name}', { name }), disabled: unavailable }) : '';
   return `<div ${keyAttr(property.id)} class="field property-row property-${escapeHTML(property.kind)}${modified ? ' modified' : ''}"><div class="field-title"><label class="property-label" for="${escapeHTML(fieldID)}">${label || escapeHTML(name)}</label>${modified ? `<span class="field-flag">${escapeHTML(t('Modified'))}</span>` : ''}</div><div class="property-control">${control}</div>${restore}</div>`;
 }
-// The property labels this app writes into the pixiv wallpapers it packages. The manifest keeps
-// them in English, as any wallpaper's are; being ours, they are translated for those wallpapers.
+// The property labels this app writes into the still images it packages, saved from pixiv or
+// imported from disk. The manifest keeps them in English, as any wallpaper's are; being ours, they
+// are translated for those wallpapers, which the library knows by their id.
 const packagedPropertyLabels = ['Image fit', 'Background color'];
+const packagedStill = (id) => /^(pixiv|image)-/.test(id);
 // Wallpaper Engine's built-in label tokens are UI vocabulary, not author prose.
 const enginePropertyLabels = {
   ui_browse_properties_scheme_color: 'Scheme color',
@@ -822,7 +824,7 @@ function queueJobRow(item) {
 function importMarkup() {
   const status = state.import || {};
   const report = status.report;
-  return `<div class="popover-heading"><h2 id="import-popover-title">${escapeHTML(t('Import wallpapers'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close import'), className: 'quiet icon-button' })}</div><div class="popover-body"><p class="muted">${escapeHTML(t('Choose wallpaper folders or files. Imports copy the source files into your library and leave the originals untouched.'))}</p><label class="field">${escapeHTML(t('If a wallpaper already exists'))}<select id="import-duplicates"${disabled(status.busy)}>${selectOptions([['skip', t('Skip duplicates')], ['keepBoth', t('Keep both copies')]], importDuplicates)}</select></label><div class="actions">${button(t('Choose wallpapers'), 'import', { duplicates: importDuplicates }, { icon: 'folder', className: 'primary', disabled: status.busy })}${status.busy ? button(t('Cancel import'), 'importCancel') : ''}</div>${status.busy ? `<progress aria-label="${escapeHTML(t('Importing…'))}"></progress>` : ''}${status.status ? `<p class="muted" role="status">${escapeHTML(status.status)}</p>` : ''}${report ? `<div class="import-controls" role="status"><p>${escapeHTML(t('{imported} imported · {skipped} skipped', { imported: Number(report.imported), skipped: Number(report.skipped) }))}${report.cancelled ? escapeHTML(t(' · Cancelled')) : ''}</p>${(report.failures || []).map(failure => `<p class="notice error">${escapeHTML(failure)}</p>`).join('')}</div>` : ''}</div>`;
+  return `<div class="popover-heading"><h2 id="import-popover-title">${escapeHTML(t('Import wallpapers'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close import'), className: 'quiet icon-button' })}</div><div class="popover-body"><p class="muted">${escapeHTML(t('Choose wallpaper folders, videos, images or web pages. Imports copy the source files into your library and leave the originals untouched.'))}</p><p class="muted"><small>${escapeHTML(t('You can also drop them on WallpaperMachine in the Dock.'))}</small></p><label class="field">${escapeHTML(t('If a wallpaper already exists'))}<select id="import-duplicates"${disabled(status.busy)}>${selectOptions([['skip', t('Skip duplicates')], ['keepBoth', t('Keep both copies')]], importDuplicates)}</select></label><div class="actions">${button(t('Choose wallpapers'), 'import', { duplicates: importDuplicates }, { icon: 'folder', className: 'primary', disabled: status.busy })}${status.busy ? button(t('Cancel import'), 'importCancel') : ''}</div>${status.busy ? `<progress aria-label="${escapeHTML(t('Importing…'))}"></progress>` : ''}${status.status ? `<p class="muted" role="status">${escapeHTML(status.status)}</p>` : ''}${report ? `<div class="import-controls" role="status"><p>${escapeHTML(t('{imported} imported · {skipped} skipped', { imported: Number(report.imported), skipped: Number(report.skipped) }))}${report.cancelled ? escapeHTML(t(' · Cancelled')) : ''}</p>${(report.failures || []).map(failure => `<p class="notice error">${escapeHTML(failure)}</p>`).join('')}</div>` : ''}</div>`;
 }
 function placePopover(node) {
   const trigger = popoverTrigger ? document.querySelector(popoverTrigger) : null;

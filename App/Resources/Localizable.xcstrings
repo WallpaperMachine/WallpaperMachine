@@ -1224,9 +1224,6 @@
     "Import Wallpapers" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Import Wallpapers"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "导入壁纸"}}}
     },
-    "Choose videos, HTML files, project folders or a Steam library. Your original files are kept." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose videos, HTML files, project folders or a Steam library. Your original files are kept."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "选择视频、HTML 文件、项目文件夹或 Steam 库。原始文件会保留。"}}}
-    },
     "Choose Folder" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose Folder"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "选择文件夹"}}}
     },
@@ -1407,9 +1404,6 @@
     "No system media provider is configured." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No system media provider is configured."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "没有可用的系统媒体来源。"}}}
     },
-    "Choose a video, HTML file, or Wallpaper Engine project folder. Standalone images are not supported by this renderer." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose a video, HTML file, or Wallpaper Engine project folder. Standalone images are not supported by this renderer."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择视频、HTML 文件或 Wallpaper Engine 项目文件夹。不支持单独的图片。"}}}
-    },
     "The folder name cannot be used as a library identifier." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The folder name cannot be used as a library identifier."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此文件夹名称无法用作壁纸库标识符。"}}}
     },
@@ -1586,6 +1580,18 @@
     },
     "Sign in to pixiv" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Sign in to pixiv"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "登录 pixiv"}}}
+    },
+    "Choose a video, image, HTML file, or Wallpaper Engine project folder." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose a video, image, HTML file, or Wallpaper Engine project folder."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择视频、图片、HTML 文件或 Wallpaper Engine 项目文件夹。"}}}
+    },
+    "Choose videos, images, HTML files, project folders or a Steam library. Your original files are kept." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose videos, images, HTML files, project folders or a Steam library. Your original files are kept."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "选择视频、图片、HTML 文件、项目文件夹或 Steam 库。原始文件会被保留。"}}}
+    },
+    "Images must be regular files between 1 byte and 512 MB." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Images must be regular files between 1 byte and 512 MB."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "图片必须是 1 字节到 512 MB 之间的普通文件。"}}}
+    },
+    "This image could not be read. Choose a picture that opens in Preview." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This image could not be read. Choose a picture that opens in Preview."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法读取这张图片。请选择能在“预览”中打开的图片。"}}}
     }
   },
   "version" : "1.0"
