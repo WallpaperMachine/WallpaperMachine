@@ -57,19 +57,52 @@ which runs as part of `python3 scripts/test.py`.
 ## Release notes and the changelog
 
 A version's notes are written once, when it is cut, into its
-[`CHANGELOG.md`](../CHANGELOG.md) section. The release page repeats that section
-and the in-app **What's new** card reads the release page, so the three cannot
-disagree. [`scripts/release_notes.py`](../scripts/release_notes.py) does both
-halves. `gh release --generate-notes` is not used: with no pull requests in the
-history it produces a bare compare link, which is all the thirteen releases
-through `v0.5.0` ever said before they were deleted.
+[`CHANGELOG.md`](../CHANGELOG.md) section. The app bundles that file. The
+release page repeats the current section, so the history in the app and the
+page cannot disagree. [`scripts/release_notes.py`](../scripts/release_notes.py)
+does both halves. `gh release --generate-notes` is not used: with no pull
+requests in the history it produces a bare compare link, which is all the
+thirteen releases through `v0.5.0` ever said before they were deleted.
+
+A published section is both languages, in this order, and nothing else at `###`:
+
+```markdown
+### English
+
+One or two sentences on what the release means, omitted when the lists say it.
+
+#### New
+
+- One change, one line
+
+### 简体中文
+
+同样的一两句。
+
+#### 新增
+
+- 同一变更的简体中文
+
+**Full changelog**: https://github.com/owner/repo/compare/v0.1.0...v0.2.0
+```
+
+Category headings inside a language are `####`. The compare link follows both
+blocks; the app ignores it. The headings are:
+
+| Section | `####` English | `####` 简体中文 |
+|---|---|---|
+| breaking | Breaking changes | 不兼容变更 |
+| new | New | 新增 |
+| improved | Improved | 改进 |
+| fixed | Fixed | 修复 |
 
 ### Written by the release-notes model
 
 With `--ai` the commits between two version tags go to a language model that
 writes them up for users — what they can do now, what works better, what no
-longer goes wrong — merging commits that describe one change and leaving internal
-work out. The release pipeline always passes `--ai`.
+longer goes wrong — in English and in Simplified Chinese, the same changes in
+both, merging commits that describe one change and leaving internal work out.
+The release pipeline always passes `--ai`.
 
 | Environment | Default | Meaning |
 |---|---|---|
@@ -87,27 +120,44 @@ The instructions also carry the project's rules on claims, because CI commits th
 notes without review: no energy, battery or power-saving claims, nothing called
 fully supported or fully compatible, and opt-in features (Native Metal, native
 video, content pacing, on-demand scene idle, the animated lock screen) keep their
-optional, experimental or off-by-default qualifier.
+optional, experimental or off-by-default qualifier in both languages. Places in
+the app are named the way the panel names them (`Settings` / `设置`, and the
+same for General, Appearance, Performance, Playback, Library & Steam, Discover,
+Installed, About and Lock screen).
 
-It answers with JSON (`summary`, `breaking`, `new`, `improved`, `fixed`), which
-the script checks and renders in one fixed shape: an optional summary paragraph,
-then **Breaking changes**, **New**, **Improved** and **Fixed**, one line per
-bullet, then the compare link. Whitespace is collapsed and list or heading markers
-are stripped, so no entry can open a changelog section of its own. A reply that is
-not that JSON, carries other fields or an HTML comment (the boundary marker
-below), or was cut off at the output-token limit stops the run; a range without
-commits is reported as having no user-visible changes without a request. The
-request streams, so a slow answer never trips a proxy's time-to-first-byte limit,
-and names its own `User-Agent`, because Cloudflare in front of the gateway refuses
-urllib's default one (error 1010). A connection that goes quiet for 120 seconds, or
-a reply still running after 600, stops the run: the Version job holds its branch
-lock while it waits. Nothing is retried; a failed run is re-run.
+It answers with JSON. `summary` is `{"english", "chinese"}`. Each of `breaking`,
+`new`, `improved` and `fixed` is a list of the same pair, one object per change,
+so the two languages cannot drift in length. The script checks that and renders
+the shape above: `### English`, then `### 简体中文`, categories at `####`, then
+the compare link. A Chinese string must contain Chinese characters and must not
+be a copy of the English; an English string must contain Latin text. Whitespace
+is collapsed and list or heading markers are stripped, so no entry can open a
+changelog section of its own. A reply that is not that JSON, uses the old
+English-only shape, omits a language, carries other fields or an HTML comment
+(the boundary marker below), or was cut off at the output-token limit stops the
+run. A range without commits is reported in both languages as having no
+user-visible changes, without a request. The request streams, so a slow answer
+never trips a proxy's time-to-first-byte limit, and names its own `User-Agent`,
+because Cloudflare in front of the gateway refuses urllib's default one (error
+1010). A connection that goes quiet for 120 seconds, or a reply still running
+after 600, stops the run: the Version job holds its branch lock while it waits.
+Nothing is retried; a failed run is re-run.
 
 ### Listed from the commits
 
-Without `--ai` the commits are listed, read through the `type(scope): subject`
-convention in [conventions.md](conventions.md). It is offline and free: for
-previews, for tests, and it is how every section up to `0.5.0` was written.
+Without `--ai` the commits are listed in English, read through the
+`type(scope): subject` convention in [conventions.md](conventions.md). It is
+offline and free, and it is a developer preview: for inspecting a range, for
+tests, and it is how every section up to `0.5.0` was first written. It is not
+published. `--release-body` and `--changelog --apply` refuse notes that are not
+`### English` then `### 简体中文`.
+Publication validates every bundled historical section, not just the current
+release: each needs actual prose in both languages and matching bullet counts.
+Headings and compare links do not count as translated content.
+`--rebuild-changelog --apply` also refuses to replace the file if rebuilding
+would introduce an English-only section; translate missing history before applying.
+
+
 
 | Commit type | Section |
 |---|---|
@@ -126,10 +176,10 @@ word boundary; the linked commit still carries every word.
 ### Commands
 
 ```sh
-python3 scripts/release_notes.py                               # listed notes for project.yml's version
-python3 scripts/release_notes.py --ai --tag v0.6.0 --to HEAD   # the model's notes, before the tag exists
-python3 scripts/release_notes.py --tag v0.6.0 --release-body --output notes.md
-python3 scripts/release_notes.py --ai --changelog --apply      # write one section
+python3 scripts/release_notes.py                               # English listing, not for publish
+python3 scripts/release_notes.py --ai --tag v0.6.0 --to HEAD   # bilingual notes, before the tag exists
+python3 scripts/release_notes.py --tag v0.6.0 --release-body --ai --output notes.md
+python3 scripts/release_notes.py --ai --changelog --apply      # write one bilingual section
 python3 scripts/release_notes.py --rebuild-changelog --apply   # a section for every tag, recorded ones kept
 ```
 
@@ -138,26 +188,35 @@ A local `--ai` run needs `RELEASE_NOTES_API_KEY` exported for that command only.
 newest released version below the target that the range's end descends from, so a
 gap in the numbering resolves correctly.
 
-`--release-body` is the release page: the version's `CHANGELOG.md` section, or,
-for a version without one, notes written afresh (by the model with `--ai`); then
-`<!-- release-notes-end -->`, the install, checksum and requirement footer, and
-every commit in the range folded into a `<details>` list, so whatever the notes
-leave out is still on the page. The marker is a contract: the app shows
-everything above it and nothing below.
+`--release-body` is the release page. It reuses the version's `CHANGELOG.md`
+section when that section is already bilingual, and does not call the model
+again. A hand-pushed tag with no section is written once, by the model when
+`--ai` is set, into the working-tree `CHANGELOG.md` before anything is built, and
+the release page is that stored text: one generation, so the bundled history and
+the page cannot diverge. English-only or malformed current notes fail the run
+instead of being published. Then `<!-- release-notes-end -->`, the install,
+checksum and requirement footer, and every commit in the range folded into a
+`<details>` list, so whatever the notes leave out is still on the page. The
+marker is a contract: the updater shows everything above it and nothing below.
+The What's New window reads the bundled changelog, not that footer.
 
 Inserting a section is idempotent — rerunning replaces the section for that
 version instead of duplicating it. `--rebuild-changelog` writes a section for every
 version tag but keeps each section `CHANGELOG.md` already holds word for word, so
-the model's notes survive; only missing ones are listed from the commits. It never
-calls the model, and refuses `--ai`. `CHANGELOG.md` is only written with
-`--apply`. With `--changelog`, nothing is generated unless `--apply` or `--output`
-is given, so that dry run never calls the model; a plain `--ai` run prints the
-model's notes and does make the request. `scripts/tests/test_release_notes.py` covers
-classification, rendering, changelog ordering, reuse and rebuilding, and range
-resolution against a real throwaway repository; the model path against a fake
-gateway (what the model reads, how its streamed reply is parsed and rendered,
-each reply that must stop a release); and the real HTTP request against a local
-server (headers, the gateway's refusal message, the deadline).
+the model's notes survive; only missing ones are listed from the commits, in
+English, and that listing is not a publishable section. It never calls the model,
+and refuses `--ai`. `CHANGELOG.md` is written with `--apply`, and also when
+`--release-body` has to generate the current section. With `--changelog`, nothing
+is generated unless `--apply` or `--output` is given, so that dry run never calls
+the model; a plain `--ai` run prints the model's notes and does make the request.
+`scripts/tests/test_release_notes.py` covers classification, rendering, changelog
+ordering, reuse and rebuilding, and range resolution against a real throwaway
+repository; the model path against a fake gateway (what the model reads, how its
+streamed reply is parsed and rendered, each reply that must stop a release,
+including a missing language); publishing (recorded bilingual notes reused with
+no second request, generated notes stored once and used unchanged, English-only
+notes refused); and the real HTTP request against a local server (headers, the
+gateway's refusal message, the deadline).
 
 ## Workflows
 
@@ -183,11 +242,12 @@ workflow** with a `spec` input. On an `ubuntu-latest` runner it:
 
 1. checks out with full history;
 2. runs `python3 scripts/bump_version.py --ci --apply`;
-3. has the release-notes model write the new version's section into
+3. has the release-notes model write the new version's bilingual section into
    `CHANGELOG.md` with `scripts/release_notes.py --to HEAD --ai --changelog
-   --apply` — the tag does not exist yet, so the range ends at `HEAD`. Without the
-   secret, or when the model fails, the job stops here: nothing is committed or
-   tagged, and re-running the failed job retries the same bump;
+   --apply` — `### English` then `### 简体中文`. The tag does not exist yet, so
+   the range ends at `HEAD`. Without the secret, or when the model fails or omits
+   a language, the job stops here: nothing is committed or tagged, and re-running
+   the failed job retries the same bump;
 4. if anything changed, refuses to continue when the target tag already exists on
    `origin`, then commits `project.yml`,
    `WallpaperMachine.xcodeproj/project.pbxproj` and `CHANGELOG.md` as
@@ -238,10 +298,13 @@ target, and hands `Assets.car`, `AppIcon.icns` and the partial Info.plist to
 
 1. checks out the tag with full history, which the notes need;
 2. writes the release body with `scripts/release_notes.py --release-body --ai
-   --built-from "$(git rev-parse HEAD)"`: the tag's `CHANGELOG.md` section, which
-   Version had the model write, or for a hand-pushed tag without one, notes the
-   model writes now. It runs before anything is built, so a notes problem fails in
-   seconds rather than after the macOS build;
+   --built-from "$(git rev-parse HEAD)"` before anything is built. The current
+   section must already be bilingual (`### English`, then `### 简体中文`); that
+   text is reused and the model is not called again. A hand-pushed tag with no
+   section is written once, into the working-tree `CHANGELOG.md`, and that same
+   text is the release page, so the bundled history matches the page. English-only
+   or malformed current notes fail here, in seconds, rather than after the macOS
+   build;
 3. runs `prepare-build` (below) and downloads the `app-icon-<tag>` artifact;
 4. runs `python3 scripts/build.py --configuration Release --app-icon DIR`, which
    leaves `AppIcon.icon` out of the Xcode build, puts the compiled icon and catalog
@@ -378,8 +441,10 @@ wording in the script, not between the markers, where edits are overwritten.
 Triggered by pushing a `v*.*.*` tag by hand. It only calls Build with
 `github.ref_name`, sharing the `publish-<tag>` concurrency group with Version's
 publish job so one tag is never built twice at once. A hand-pushed tag has no
-`CHANGELOG.md` section unless one was committed before tagging, so its notes are
-written by the model during Build.
+`CHANGELOG.md` section unless one was committed before tagging. Build then asks
+the model once, writes that exact section into the working tree before the app
+is built, and publishes that same text. A section that is present but not
+bilingual fails the build; it is not rewritten.
 
 ## What the in-app updater expects
 
@@ -500,16 +565,20 @@ from a real disk image.
 1. Land the change on `main` with a `release:` spec line, or run the Version
    workflow with a spec.
 2. Confirm the Version run committed `chore: bump version to x.y.z` with the new
-   `CHANGELOG.md` section and pushed `vx.y.z`. Read the section: the model wrote
-   it, and it is what users will see.
+   `CHANGELOG.md` section and pushed `vx.y.z`. Read the section: it is `### English`
+   then `### 简体中文`, the model wrote both, and it is what the bundled history
+   and the release page will show.
 3. Confirm the called Build run passed the test gate, verified the mounted
    image, and published `WallpaperMachine-x.y.z-arm64.dmg` with its `.sha256`
    sidecar, `WallpaperMachine-update.json` and a provenance attestation. The
    manifest's `digest` must equal the sidecar's checksum:
    `curl -sL https://github.com/WallpaperMachine/WallpaperMachine/releases/latest/download/WallpaperMachine-update.json`.
-4. Read the release body on the page: it should be the `CHANGELOG.md` section
-   with the folded commit list below the install footer, not a bare compare link,
-   and the `Built from` line must match `git rev-parse vx.y.z^{commit}`.
+4. Read the release body on the page: it should be the current `CHANGELOG.md`
+   section, both languages, with the folded commit list below the install footer,
+   not a bare compare link, and the `Built from` line must match
+   `git rev-parse vx.y.z^{commit}`. For a hand-pushed tag the section in the
+   built app is the text Build wrote into the working tree; it is the same text
+   as the page.
 5. Confirm Latest points at the highest published version. Re-running Build for a
    tag that is already published fails by design; if a published release is
    genuinely wrong, delete it deliberately rather than re-running.

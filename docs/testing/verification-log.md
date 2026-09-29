@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Bilingual What's New Release build
+
+- python3 scripts/test.py via a temporary same-user Aqua launch job: exit 0; all 17 Python suites passed, including 51 release-note tests; native 746 passed, 0 failed, 11 skipped of 757. The previous lock-screen recovery blocker now passes.
+- python3 scripts/build.py --swift-only --configuration Release: exit 0; built WallpaperMachine.app, version 1.1.0, using the existing renderer and bindings. No version bump requested.
+- codesign --verify --deep --strict on the Release bundle: exit 0.
+- cmp of source and Release-bundled CHANGELOG.md: exit 0; bilingual history is byte-identical. diff -qr of WebUI and bundled Contents/Resources/WebUI: exit 0.
+- Skipped: 9 opt-in native-media and 2 live Workshop cases; no desktop visual check, live release-note model call, install, launch or restart. Temporary Aqua launch job and helper removed.
+
 ## 2026-09-29 — Retain wallpaper presentation across wake topology changes
 
 - Hidden-window Rust smoke: before the fix, three origin/primary/refresh updates performed 3 drawable-size writes and 3 forced AppKit redraws; afterward both counts were 0 with the same layer, and a real resize still produced a 256x144 window/drawable at scale 1. Window ordering was suppressed; no wallpaper or visible desktop window was changed. Temporary smoke removed.
@@ -118,15 +126,3 @@ Written in a Linux container with no Xcode, then rebased onto main at 1.1.0 (com
 - python3 scripts/check_renderer.py: 24 binaries passed, 10 generated pixel comparisons equal, 8 projects x2 reloads 0 failures; three asset-dependent tests skipped.
 - Not changed: the poster still wraps the IOSurface in a CGImage (IOSurface as layer contents needs a colour-tag decision and a real lock/unlock check); the 8 MiB Vulkan block size is unmeasured for allocation count and load or frame time (generated fixtures are too small).
 - Not run: desktop lock/unlock, Release build.
-
-## 2026-09-28 — Native Metal allocates only graph-referenced targets
-
-- New UnreferencedTargetsStayUnallocatedAcrossOptimizationChanges regression failed on old allocation logic and passed after filtering both compile and live-toggle paths; output stays identical through on/off/on.
-- scripts/check_renderer.py passed: 23 binaries, ten generated pixel comparisons, eight projects x2 reloads; three asset-dependent cases skipped.
-- Full scripts/test.py with CPython 3.12.14 passed once for this change: 190 Python; 664 native passed, 11 skipped.
-- Same local native scene at 120/240/360/540/720/900 frames: all six checkpoint images byte-identical, covering a full 15-second crossfade. Metal-reported allocation savings median 79.5 MiB, range 56.5–102.5 MiB as drawable residency varied.
-- Fresh-launch live native comparison, closed panels and last three ten-second samples: main median 400.7 to 380.3 MiB; total app coalition plus separate extension 451.4 to 430.9 MiB. The smaller physical-footprint change is reported separately from Metal allocation counts.
-- Renderer/bindings and Release builds passed. Signed app installed in /Applications with backup and relaunched using Codex computer use; logs confirm native Metal and first-frame readiness, same wallpaper playing, only installed extension registered.
-- Prefer Native Metal was selected through the UI for this experiment and remains selected. The before/after native builds used identical config; resolution and FPS settings were preserved. The app default renderer preference is unchanged in code.
-- Native-only resource pruning retains final output, every pass output/copy source/texture input, hidden draws and elided copies; declaration-only shadow/mip/bloom buffers stay unallocated, including after live optimization toggles.
-- Real user-operated lock/unlock remains unverified. Private assets, frames and traces stay outside Git; no universal memory ceiling or CPU saving claimed.

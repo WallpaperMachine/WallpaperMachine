@@ -1,6 +1,21 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "What’s New" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "What’s New"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新内容"}}}
+    },
+    "Changes since version %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes since version %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "自 %@ 版本以来的更新"}}}
+    },
+    "Changes in this version" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes in this version"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此版本的更新内容"}}}
+    },
+    "Release notes in English and Simplified Chinese" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes in English and Simplified Chinese"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "英文和简体中文更新说明"}}}
+    },
+    "Don’t show this window after updates" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Don’t show this window after updates"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "以后更新时不再显示此窗口"}}}
+    },
     "The appearance could not update: %@" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The appearance could not update: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "外观无法更新：%@"}}}
     },

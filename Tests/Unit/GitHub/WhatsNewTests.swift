@@ -1,0 +1,112 @@
+import XCTest
+@testable import WallpaperMachine
+
+@MainActor
+final class WhatsNewTests: XCTestCase {
+    private var suite: String!
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suite = "WhatsNewTests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suite)!
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suite)
+        super.tearDown()
+    }
+
+    func testFreshInstallAndSameVersionRelaunchDoNotAnnounce() throws {
+        let history = try history()
+        XCTAssertNil(store("1.0.0").announcement(history: history, existingUser: false))
+        XCTAssertNil(store("1.0.0").announcement(history: history, existingUser: true))
+        XCTAssertEqual(store("1.1.0").announcement(history: history, existingUser: true)?.previousVersion, "1.0.0")
+    }
+
+    func testUpgradeIncludesSkippedVersionsButNotPreviousOrFutureReleases() throws {
+        let history = try history()
+        _ = store("1.0.0").announcement(history: history, existingUser: false)
+        let current = store("1.2.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        XCTAssertEqual(announcement.currentVersion, "1.2.0")
+        XCTAssertEqual(announcement.previousVersion, "1.0.0")
+        XCTAssertEqual(announcement.releases.map(\.version.display), ["1.2.0", "1.1.0"])
+        XCTAssertEqual(announcement.releases.last?.english.sections.first?.items, ["Added a library filter."])
+        XCTAssertEqual(announcement.releases.last?.chinese.sections.first?.items, ["新增媒体库筛选功能。"])
+        XCTAssertNotNil(store("1.2.0").announcement(history: history, existingUser: true), "An interrupted presentation must retry")
+        current.didPresent(announcement)
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
+    }
+
+    func testCheckboxImmediatelySuppressesFutureVersionsAcrossStoreReloads() throws {
+        let history = try history()
+        _ = store("1.0.0").announcement(history: history, existingUser: false)
+        let current = store("1.1.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        let controller = WhatsNewViewController(announcement: announcement, preferences: current, close: {})
+        _ = controller.view
+        controller.suppressionCheckbox.performClick(nil)
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
+        XCTAssertNil(store("2.0.0").announcement(history: history, existingUser: true))
+        controller.suppressionCheckbox.performClick(nil)
+        XCTAssertFalse(store("2.0.0").isSuppressed)
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true), "Suppressed versions still advance the high-water mark")
+    }
+
+    func testDowngradeAndReturnDoNotRepeatAnAnnouncement() throws {
+        let history = try history()
+        _ = store("1.2.0").announcement(history: history, existingUser: false)
+        XCTAssertNil(store("1.0.0").announcement(history: history, existingUser: true))
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
+        XCTAssertEqual(store("2.0.0").announcement(history: history, existingUser: true)?.previousVersion, "1.2.0")
+    }
+
+    func testLegacyInstallationShowsCurrentNotesWithoutInventingPreviousVersion() throws {
+        let history = try history()
+        let current = store("1.2.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        XCTAssertNil(announcement.previousVersion)
+        XCTAssertEqual(announcement.releases.map(\.version.display), ["1.2.0"])
+        current.didPresent(announcement)
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
+    }
+
+    func testMissingCurrentNotesDoNotConsumeAnUpgrade() throws {
+        let incomplete = try AppReleaseHistory(markdown: entry("1.0.0"))
+        _ = store("1.0.0").announcement(history: incomplete, existingUser: false)
+        XCTAssertNil(store("1.2.0").announcement(history: incomplete, existingUser: true))
+        XCTAssertEqual(store("1.2.0").announcement(history: try history(), existingUser: true)?.previousVersion, "1.0.0")
+        XCTAssertNil(store("not-a-version").announcement(history: try history(), existingUser: true))
+    }
+
+    func testHistoryRejectsMissingTranslationsAndDuplicateVersions() throws {
+        XCTAssertThrowsError(try AppReleaseHistory(markdown: "## 1.0.0 — 2026-01-01\n### English\n- Added a filter."))
+        XCTAssertThrowsError(try AppReleaseHistory(markdown: entry("1.0.0") + entry("1.0.0")))
+        XCTAssertThrowsError(try AppReleaseHistory(markdown: entry("invalid")))
+        let history = try AppReleaseHistory(markdown: entry("1.0.0"))
+        XCTAssertEqual(history.entries.first?.chinese.sections.first?.items, ["新增媒体库筛选功能。"], "Compare links are not release prose")
+    }
+
+    private func store(_ version: String) -> WhatsNewStore {
+        WhatsNewStore(defaults: defaults, currentVersion: version)
+    }
+
+    private func history() throws -> AppReleaseHistory {
+        try AppReleaseHistory(markdown: ["1.1.0", "2.0.0", "1.0.0", "1.2.0"].map(entry).joined())
+    }
+
+    private func entry(_ version: String) -> String {
+        """
+        ## \(version) — 2026-01-01
+        ### English
+        #### New
+        - Added a library filter.
+        ### 简体中文
+        #### 新增
+        - 新增媒体库筛选功能。
+        **Full changelog**: https://example.com/compare
+
+        """
+    }
+}
