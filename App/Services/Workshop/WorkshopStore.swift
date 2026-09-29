@@ -73,6 +73,8 @@ final class WorkshopStore {
   var errorMessage: String?
   let downloader: WorkshopDownloadManager
   let steamCMDSetup: SteamCMDSetupStore
+  /// Which installed Workshop wallpapers have updates; an update downloads like any item.
+  let updates: WorkshopUpdateStore
   @ObservationIgnored private let service: WorkshopService
   @ObservationIgnored private let defaults: UserDefaults
   static let concurrentDownloadsKey = "WallpaperMachine.concurrentDownloads"
@@ -116,12 +118,14 @@ final class WorkshopStore {
     service: WorkshopService = WorkshopService(), downloader: WorkshopDownloadManager,
     supportDirectory: URL = ClientPaths.supportURL, defaults: UserDefaults = .standard,
     runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
+    updates: WorkshopUpdateStore? = nil,
     sceneAssetsAvailable: @escaping @MainActor () -> Bool = {
       ClientPaths.hasSceneAssets(at: ClientPaths.assetsURL)
     }
   ) {
     self.service = service
     self.downloader = downloader
+    self.updates = updates ?? WorkshopUpdateStore(defaults: defaults)
     self.defaults = defaults
     self.sceneAssetsAvailable = sceneAssetsAvailable
     sceneAssetsReady = sceneAssetsAvailable()
@@ -254,7 +258,8 @@ final class WorkshopStore {
     if let item = items.first(where: { $0.id == id }) { return item }
     if let selectedItem, selectedItem.id == id { return selectedItem }
     if let item = downloadRequests.first(where: { $0.id == id })?.item { return item }
-    return downloader.downloads.first { $0.item?.id == id }?.item
+    if let item = downloader.downloads.first(where: { $0.item?.id == id })?.item { return item }
+    return updates.available[id]
   }
 
   /// A running session pins the account every queued job reuses; a name typed elsewhere must
@@ -303,11 +308,21 @@ final class WorkshopStore {
       if needsSharedAssets(item), !sharedAssetsPending {
         installAssets(request, runtime: runtime)
       }
+      // A wallpaper already in the library is being updated: its new files replace the old,
+      // and a display showing it loads them again.
+      let replacing = bridge.librarySnapshot.wallpapers.contains { $0.id == item.id }
       downloader.start(
         item: item, username: request.account, executable: runtime.executableURL,
         library: ClientPaths.libraryURL, rememberSession: request.rememberSession
-      ) {
+      ) { [updates] in
         try await bridge.refreshLibraryAsync()
+        updates.recordInstalled(item.id)
+        guard replacing else { return }
+        do {
+          try await bridge.reloadWallpaperAsync(id: item.id)
+        } catch {
+          AppLog.warn("Workshop item \(item.id) was updated but could not be reloaded: \(error.localizedDescription)")
+        }
       }
     } else {
       installAssets(request, runtime: runtime)

@@ -127,6 +127,10 @@ extension WebPanelController {
     case "playlistSetting":
       try playlistSetting(request)
       return
+    case "workshopCheckUpdates":
+      workshop.updates.check(
+        installed: store.librarySnapshot.wallpapers.map(\.id), library: ClientPaths.libraryURL)
+      return
     case "playlistAdd":
       playlists.add(try wallpaperIDs(request), to: try playlistDisplay(request))
       return
@@ -190,6 +194,7 @@ extension WebPanelController {
         try await store.deleteWallpaperAsync(id: id)
         try forgetFavorites([id])
         playlists.forget([id])
+        workshop.updates.forget([id])
       }
     case "deleteMany":
       let ids = try wallpaperIDs(request)
@@ -212,6 +217,7 @@ extension WebPanelController {
         let report = try await store.deleteWallpapersAsync(ids: ids)
         try forgetFavorites(report.deleted)
         playlists.forget(report.deleted)
+        workshop.updates.forget(report.deleted)
         if !report.failures.isEmpty {
           let titles = Dictionary(
             store.librarySnapshot.wallpapers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
@@ -323,6 +329,8 @@ extension WebPanelController {
         try DesktopClickRevealPreference.setEnabled(!(try request.boolean("value")))
       case "hideAfterActivating":
         defaults.set(try request.boolean("value"), forKey: Self.hideAfterActivatingKey)
+      case "workshopUpdateChecks":
+        workshop.updates.checksAutomatically = try request.boolean("value")
       case "concurrentDownloads":
         let range = WorkshopDownloadManager.concurrentDownloadRange
         let value = try request.number(
@@ -500,6 +508,20 @@ extension WebPanelController {
       }
       workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
       try checkDownloadError()
+    // An update downloads through the same queue and prerequisites as any Workshop item, and
+    // replaces the installed copy once it has arrived whole.
+    case "workshopUpdate":
+      guard let item = workshop.updates.available[try wallpaperID(request)] else {
+        throw WebPanelRequest.invalid
+      }
+      workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+      try checkDownloadError()
+    case "workshopUpdateAll":
+      for item in workshop.updates.available.values.sorted(by: { $0.title < $1.title })
+      where workshop.downloader.download(for: item.id)?.isPending != true {
+        workshop.requestDownload(item: item, rememberSession: remembersSession, bridge: store)
+        try checkDownloadError()
+      }
     case "continueDownload":
       let account = try request.string("account")
       remembersSession = try request.boolean("rememberSession")

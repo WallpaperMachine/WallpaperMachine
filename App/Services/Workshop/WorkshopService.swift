@@ -1,6 +1,6 @@
 import Foundation
 
-struct WorkshopItem: Identifiable, Sendable {
+struct WorkshopItem: Identifiable, Codable, Equatable, Sendable {
     let id: String
     let title: String
     let creator: String
@@ -9,6 +9,10 @@ struct WorkshopItem: Identifiable, Sendable {
     let tags: [String]
     let size: Int64
     let subscriptions: Int
+    /// The author's SteamID64, when the source said; it opens the author's other items.
+    var creatorID: String?
+    /// When the author last changed the item on the Workshop.
+    var timeUpdated: Date?
 
     var kind: WorkshopKind {
         WorkshopKind.allCases.first { $0 != .all && tags.contains($0.rawValue) } ?? .all
@@ -75,6 +79,11 @@ struct WorkshopPage: Sendable {
     let totalCount: Int
 }
 
+/// Wallpaper Engine's Steam app id; every Workshop request is scoped to it.
+enum WorkshopApp {
+    static let id = 431960
+}
+
 struct WorkshopFailure: LocalizedError, Sendable {
     let message: String
     var errorDescription: String? { message }
@@ -134,6 +143,78 @@ actor WorkshopService {
         return try Self.decodePage(html)
     }
 
+    /// Steam's public details endpoint answers up to this many items per request without a key.
+    static let detailsBatchSize = 100
+
+    /// Current details of Workshop items, in the order asked, without those Steam no longer
+    /// serves (removed, hidden, or not Wallpaper Engine's). The public endpoint needs no key and
+    /// no sign-in, and names creators only by SteamID, so `creator` is the stand-in name.
+    func details(ids: [String]) async throws -> [WorkshopItem] {
+        var items: [WorkshopItem] = []
+        var start = 0
+        while start < ids.count {
+            try Task.checkCancellation()
+            let batch = Array(ids[start..<min(ids.count, start + Self.detailsBatchSize)])
+            start += batch.count
+            let (data, response) = try await session.data(for: Self.detailsRequest(ids: batch))
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw WorkshopFailure(message: String(localized: "Steam did not answer the request for Workshop details. Check your connection and try again."))
+            }
+            items += try Self.decodeDetails(data)
+        }
+        return items
+    }
+
+    static func detailsRequest(ids: [String]) -> URLRequest {
+        var request = URLRequest(url: URL(string: "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 35
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("WallpaperMachine/1.0 (macOS; public Workshop browser)", forHTTPHeaderField: "User-Agent")
+        // Ids are digits only, checked here, so the form needs no escaping.
+        let numeric = ids.filter { !$0.isEmpty && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }
+        var fields = ["itemcount=\(numeric.count)"]
+        for (index, id) in numeric.enumerated() { fields.append("publishedfileids[\(index)]=\(id)") }
+        request.httpBody = Data(fields.joined(separator: "&").utf8)
+        return request
+    }
+
+    static func decodeDetails(_ data: Data) throws -> [WorkshopItem] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let response = root["response"] as? [String: Any],
+              let rows = response["publishedfiledetails"] as? [[String: Any]] else {
+            throw WorkshopFailure(message: String(localized: "Steam answered the request for Workshop details in a form this app does not read."))
+        }
+        return rows.compactMap(Self.item(details:))
+    }
+
+    /// One row of a details answer; nil unless Steam served it and it is Wallpaper Engine's.
+    static func item(details row: [String: Any]) -> WorkshopItem? {
+        guard (row["result"] as? Int) == 1, (row["consumer_app_id"] as? Int) == WorkshopApp.id,
+              let id = row["publishedfileid"] as? String, UInt64(id) != nil,
+              let title = row["title"] as? String else { return nil }
+        let preview = (row["preview_url"] as? String).flatMap(URL.init(string:))
+        let updated = (row["time_updated"] as? NSNumber)?.doubleValue
+        return WorkshopItem(
+            id: id, title: title, creator: String(localized: "Workshop creator"),
+            summary: Self.summary(row["description"] as? String ?? ""),
+            previewURL: preview?.scheme == "https" ? preview : nil,
+            tags: (row["tags"] as? [[String: Any]] ?? []).compactMap { $0["tag"] as? String },
+            size: Int64(row["file_size"] as? String ?? "") ?? (row["file_size"] as? NSNumber)?.int64Value ?? 0,
+            subscriptions: row["subscriptions"] as? Int ?? 0,
+            creatorID: row["creator"] as? String,
+            timeUpdated: updated.map(Date.init(timeIntervalSince1970:)))
+    }
+
+    /// The first paragraph of a Workshop description, without Steam's BBCode markup, short
+    /// enough for the inspector the way the browse page's own short description is.
+    static func summary(_ description: String) -> String {
+        let plain = description.replacingOccurrences(of: #"\[/?[a-zA-Z0-9*]+(=[^\]]*)?\]"#, with: "", options: .regularExpression)
+        let first = plain.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        return first.count > 400 ? String(first.prefix(399)) + "…" : first
+    }
+
     // Steam's public server-rendered page contains a JSON string, not an executable API response.
     // Decode the JSON layers without evaluating any page JavaScript.
     static func decodePage(_ html: String) throws -> WorkshopPage {
@@ -166,12 +247,15 @@ actor WorkshopService {
                   row["consumer_appid"] as? Int == 431960,
                   let title = row["title"] as? String, seen.insert(id).inserted else { return nil }
             let preview = (row["preview_url"] as? String).flatMap(URL.init(string:))
+            let updated = (row["time_updated"] as? NSNumber)?.doubleValue
             return WorkshopItem(
                 id: id, title: title, creator: creators[row["creator"] as? String ?? ""] ?? String(localized: "Workshop creator"),
                 summary: row["short_description"] as? String ?? "", previewURL: preview?.scheme == "https" ? preview : nil,
                 tags: (row["tags"] as? [[String: Any]] ?? []).compactMap { $0["tag"] as? String },
                 size: Int64(row["file_size"] as? String ?? "") ?? 0,
-                subscriptions: row["subscriptions"] as? Int ?? 0
+                subscriptions: row["subscriptions"] as? Int ?? 0,
+                creatorID: row["creator"] as? String,
+                timeUpdated: updated.map(Date.init(timeIntervalSince1970:))
             )
         }
         return WorkshopPage(items: items, page: result["current_page"] as? Int ?? 1,

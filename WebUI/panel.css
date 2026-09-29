@@ -349,6 +349,7 @@ small, .muted { color: var(--muted); }
 .tile-mark.approved { color: var(--media-approved); }
 .tile-mark.favorite { color: var(--media-heart); }
 .tile-mark.favorite svg { fill: currentColor; }
+.tile-mark.update { background: var(--primary); color: var(--on-primary); }
 .wallpaper-grid.selecting .tile-check:not([aria-pressed="true"]) { color: transparent; box-shadow: inset 0 0 0 1.5px var(--media-ink); }
 .wallpaper-grid.selecting .tile-check:not([aria-pressed="true"]):hover { color: var(--media-ink); }
 .browser-toolbar button[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }

@@ -140,7 +140,7 @@ Services are grouped by domain under `App/Services/`.
 | `LockScreen/` | `LockScreenWallpaperSelection`, `LockScreenWallpaperService` | System lock-screen selection overrides and configuration publishing |
 | `Pixiv/` | `PixivService`, `PixivTransport`, `PixivStore`, `PixivSessionStore`, `PixivDownloadQueue`, `PixivWallpaperPackager` | pixiv rankings and tag search, the signed-in session (keychain, sent to `www.pixiv.net` only), downloads of originals and their packaging as still `web` wallpapers; see [features/pixiv.md](features/pixiv.md) |
 | `Steam/` | `SteamCMDRuntime`, `SteamCMDSetupStore` | SteamCMD discovery, download, validation, security approval |
-| `Workshop/` | `WorkshopService`, `WorkshopStore`, `WorkshopDownloader`, `WorkshopDownloadManager`, `WorkshopThumbnailCache` | Workshop query model, browse state, SteamCMD-driven downloads, concurrent download queue sharing one saved sign-in, one-download on-disk previews (still + animation) for Discover tiles, warmed ahead of the panel |
+| `Workshop/` | `WorkshopService`, `WorkshopStore`, `WorkshopDownloader`, `WorkshopDownloadManager`, `WorkshopThumbnailCache`, `WorkshopUpdateStore` | Workshop query model, browse state, SteamCMD-driven downloads, concurrent download queue sharing one saved sign-in, one-download on-disk previews (still + animation) for Discover tiles, warmed ahead of the panel, updates of installed items found through Steam's public details endpoint |
 | `WebWallpaper/` | `WebWallpaperHost`, `WebWallpaperWindow`, `WebWallpaperPage` | Desktop-level `WKWebView` windows for `type: "web"` projects, driven by the bridge's `webWallpapers()`; see [features/web-wallpapers.md](features/web-wallpapers.md) |
 
 `ClientPaths` fixes the on-disk contract: everything lives under

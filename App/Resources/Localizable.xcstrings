@@ -1613,6 +1613,18 @@
     },
     "This display has no rotating playlist to move along." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This display has no rotating playlist to move along."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此显示器没有可轮换的播放列表。"}}}
+    },
+    "Steam answered the request for Workshop details in a form this app does not read." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam answered the request for Workshop details in a form this app does not read."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 返回的创意工坊详情格式无法识别。"}}}
+    },
+    "Steam did not answer the request for Workshop details. Check your connection and try again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam did not answer the request for Workshop details. Check your connection and try again."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 未响应创意工坊详情请求。请检查网络连接后重试。"}}}
+    },
+    "Couldn’t check the Workshop for updates: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Couldn’t check the Workshop for updates: %@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法检查创意工坊更新：%@"}}}
+    },
+    "Could not replace Workshop item %@ with its update: %@. The installed version is unchanged." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Could not replace Workshop item %@ with its update: %@. The installed version is unchanged."}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法用更新替换创意工坊项目 %@：%@。已安装的版本保持不变。"}}}
     }
   },
   "version" : "1.0"

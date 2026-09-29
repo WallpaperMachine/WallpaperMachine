@@ -257,6 +257,27 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: source.appendingPathComponent("movie.mp4")), Data("video-content".utf8))
     }
 
+    func testDownloadedUpdateReplacesTheInstalledTreeAndLeavesTheOldInStaging() async throws {
+        let firstStaging = root.appendingPathComponent("download-first")
+        _ = try downloadedProject("123", staging: firstStaging)
+        try await importer.importDownloadedItem("123", from: firstStaging, into: library)
+        let updateStaging = root.appendingPathComponent("download-update")
+        let update = try downloadedProject("123", staging: updateStaging)
+        try Data("updated-content".utf8).write(to: update.appendingPathComponent("movie.mp4"))
+
+        try await importer.importDownloadedItem("123", from: updateStaging, into: library, replacing: true)
+        XCTAssertEqual(try Data(contentsOf: library.appendingPathComponent("123/movie.mp4")), Data("updated-content".utf8))
+        // The old tree is swapped into staging, which the downloader clears with the rest of it.
+        XCTAssertEqual(try Data(contentsOf: update.appendingPathComponent("movie.mp4")), Data("video-content".utf8))
+    }
+
+    func testReplacingWithNothingInstalledStillPublishes() async throws {
+        let staging = root.appendingPathComponent("download-new")
+        _ = try downloadedProject("456", staging: staging)
+        try await importer.importDownloadedItem("456", from: staging, into: library, replacing: true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: library.appendingPathComponent("456/project.json").path))
+    }
+
     func testConcurrentDownloadedPublicationsKeepOneWholeProject() async throws {
         let firstStaging = root.appendingPathComponent("download-first")
         let secondStaging = root.appendingPathComponent("download-second")

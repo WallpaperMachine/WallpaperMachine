@@ -833,7 +833,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    /// Asks the Workshop about installed items at most once a day, unless turned off; the
+    /// automatic update loop calls this too, since the app can run for weeks.
+    private func checkWorkshopUpdatesIfDue() {
+        guard let store, !shutdownInProgress, !shutdownComplete, playbackSnapshotCurrent else { return }
+        workshopStore.updates.checkIfDue(
+            installed: store.librarySnapshot.wallpapers.map(\.id), library: ClientPaths.libraryURL)
+    }
+
     private func runAutomaticUpdate() async {
+        checkWorkshopUpdatesIfDue()
         let state = await appUpdater.checkAndDownloadInBackground()
         rebuildMenu()
         guard !shutdownInProgress, !shutdownComplete,
@@ -1036,6 +1045,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 lastError = nil
                 playbackSnapshotCurrent = true
                 AppLog.info("startup: bootstrapAsync completed successfully")
+                checkWorkshopUpdatesIfDue()
             } catch {
                 AppLog.error("startup: bootstrapAsync FAILED: \(error.localizedDescription)")
                 lastError = error

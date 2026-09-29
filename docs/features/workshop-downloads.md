@@ -408,6 +408,37 @@ remain non-destructive copies.
 A download interrupted by a crash leaves staging behind. The app reclaims only
 staging directories it can prove nothing is writing to.
 
+## Updates
+
+`WorkshopUpdateStore` finds installed Workshop wallpapers (numeric ids) whose
+authors changed them since they were installed. It sends their ids to Steam's
+public details endpoint (`ISteamRemoteStorage/GetPublishedFileDetails`, POST,
+no key and no sign-in, up to 100 ids a request) and compares each item's
+`time_updated` with when it was installed here: the moment this app finished
+downloading it, or, for an item it did not download (an import, or a download
+from before installs were recorded), when its `project.json` was last written.
+An import copies files, so an item that was already out of date when imported is
+not caught. A difference of a minute or less counts as the same version.
+
+It checks at most once a day on its own, after the library loads and from the
+same six-hourly loop as app updates, unless **Settings → Library & Steam →
+Workshop updates → Check once a day** is off; **Check Now** checks at once. The
+result is kept across launches, and a failed check keeps what was known and says
+why beneath the row.
+
+An installed wallpaper with an update wears a download mark on its tile,
+matches **Show only → Update available** in Installed's filters, and says in its
+details when its author changed it, with **Update**. Installed's summary offers
+**Update N wallpapers** while any have updates. An update is an ordinary
+Workshop download (same queue, sign-in and prerequisites); once it has arrived
+whole, the importer swaps the new folder in and the old one out in one step
+(`renamex_np` with `RENAME_SWAP`), so the library never lacks the wallpaper and
+a failure leaves the old version in place; the old folder is removed with the
+download's staging. The item's saved options belong to its id and are kept. A
+display showing it then loads it again: applying alone would find nothing changed,
+so it is removed and applied again through the display's command slot. Moving a
+wallpaper to Trash forgets its update and install record.
+
 ## Verification
 
 See [Testing](../testing/README.md) for how download and Workshop behavior is

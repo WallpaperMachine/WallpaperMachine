@@ -61,10 +61,10 @@ let swallowClick = false;
 // unchecked by default. Application and Asset are never offered, so they are always excluded.
 const showOnlyTags = ['Approved', 'Audio responsive', 'Customizable'];
 // Installed leads with the two facts only a library has, then Discover's three.
-const installedShowOnlyTags = ['Favorite', 'Active', ...showOnlyTags];
-const showOnlyLabels = { Favorite: 'Favorites', Active: 'Active on target display' };
+const installedShowOnlyTags = ['Favorite', 'Active', 'Update', ...showOnlyTags];
+const showOnlyLabels = { Favorite: 'Favorites', Active: 'Active on target display', Update: 'Update available' };
 // Approved keeps Wallpaper Engine's green trophy so the mark matches what users know from Workshop.
-const showOnlyIcons = { Approved: 'trophy', 'Audio responsive': 'audioLines', Customizable: 'slidersVertical', Favorite: 'heart', Active: 'play' };
+const showOnlyIcons = { Approved: 'trophy', 'Audio responsive': 'audioLines', Customizable: 'slidersVertical', Favorite: 'heart', Active: 'play', Update: 'download' };
 const hiddenExcludedTags = ['Application', 'Asset'];
 const resolutionSection = (key, title, prefix, sizes) => ({ key, title, quick: true, tags: [[`${prefix}Standard Definition`, prefix ? `${title} (standard)` : 'Standard definition'], ...sizes.map(size => [`${prefix}${size}`, size])] });
 // `discoverOnly` marks what Steam knows but a wallpaper's manifest does not carry (its
@@ -309,6 +309,7 @@ function installedTags(item, target) {
   if (item.approved) tags.push('approved');
   if (state.favorites.includes(item.id)) tags.push('favorite');
   if (target?.wallpaperID === item.id) tags.push('active');
+  if (item.updateAvailable) tags.push('update');
   if (!tags.some(tag => genreTags.includes(tag))) tags.push('unspecified');
   return new Set(tags);
 }
@@ -371,8 +372,10 @@ function renderGrid(discover) {
   // Drag-selecting is taught where selecting happens: until the user has swept once or said
   // "Got it", every selection context carries the tip; afterwards a short reminder remains in
   // selection mode only.
+  const updateCount = Number(state.workshopUpdates?.count) || 0;
+  const updateAll = !discover && updateCount ? button(updateCount === 1 ? t('Update 1 wallpaper') : t('Update {count} wallpapers', { count: updateCount.toLocaleString() }), 'workshopUpdateAll', {}, { icon: 'download', className: 'link', title: t('Download the new versions the Workshop has of your wallpapers'), disabled: busy('workshopUpdateAll') }) : '';
   const sweepTip = !discover && items.length > 1 && !state.dragSelectLearned ? `<span class="selection-tip" role="note">${icon('mousePointerClick', 14)}<span>${escapeHTML(t('Tip: hold a tile, then drag across others to select them all at once.'))}</span>${button(t('Got it'), 'dragSelectLearned', {}, { className: 'link' })}</span>` : '';
-  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop')) : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Add to playlist') : t('Add {count} to playlist', { count: selection.size.toLocaleString() }), 'addSelectedToPlaylist', {}, { icon: 'listPlus', title: t('Adds them to the list of the target display’s playlist'), disabled: !target?.enabled || target.mode === 'mirror' || busy('playlistAdd') })}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
+  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop')) : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Add to playlist') : t('Add {count} to playlist', { count: selection.size.toLocaleString() }), 'addSelectedToPlaylist', {}, { icon: 'listPlus', title: t('Adds them to the list of the target display’s playlist'), disabled: !target?.enabled || target.mode === 'mirror' || busy('playlistAdd') })}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${updateAll}${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
   $('wallpaper-grid').classList.toggle('selecting', !discover && (selecting || selection.size > 0));
   // Animations belong to Discover. An installed wallpaper keeps its Workshop id, so a live entry
   // left over from Discover would mark its Installed tile as playing and hide that tile's still.
@@ -395,12 +398,13 @@ function renderGrid(discover) {
 // Wallpaper Engine staff approved, and a heart for one of the user's favorites. Approval comes
 // from Steam's tag on Discover and from project.json in the library; favorites are the user's
 // own list, so a Discover tile shows the heart too once its wallpaper is installed and loved.
-const tileMarkGlyphs = { installed: ['check', 'In your library'], approved: ['trophy', 'Approved by Wallpaper Engine'], favorite: ['heart', 'Favorite'] };
+const tileMarkGlyphs = { installed: ['check', 'In your library'], approved: ['trophy', 'Approved by Wallpaper Engine'], favorite: ['heart', 'Favorite'], update: ['download', 'Update available'] };
 function tileMarkNames(item, discover) {
   const names = [];
   if (discover && state.wallpapers.some(wallpaper => wallpaper.id === item.id)) names.push('installed');
   if (item.approved) names.push('approved');
   if (state.favorites.includes(item.id)) names.push('favorite');
+  if (!discover && item.updateAvailable) names.push('update');
   return names;
 }
 function tileMarksMarkup(item, discover) {
@@ -530,6 +534,10 @@ function renderInspector(discover) {
   const inPlaylist = playlistIDs.includes(item.id);
   const playlistToggle = !discover && isInstalled && item.supported !== false ? button('', inPlaylist ? 'playlistRemove' : 'playlistAdd', { id: item.id }, { icon: inPlaylist ? 'listMinus' : 'listPlus', title: inPlaylist ? t('Remove from this display’s playlist') : t('Add to this display’s playlist'), className: `icon-button${inPlaylist ? ' playlist-selected' : ''}`, disabled: !target?.enabled || target.mode === 'mirror' }) : '';
   const secondary = `${discover ? button(t('View on Steam Workshop'), 'openExternal', { url: `https://steamcommunity.com/sharedfiles/filedetails/?id=${encodeURIComponent(item.id)}` }, { icon: 'external', className: 'wide', title: t('View on Steam Workshop') }) : isInstalled ? button(t('Show in Finder'), 'reveal', { id: item.id }, { icon: 'folder', className: 'wide', title: t('Show in Finder') }) : ''}${!discover && isInstalled ? button('', 'favorite', { id: item.id }, { icon: 'heart', title: state.favorites.includes(item.id) ? t('Remove from favorites') : t('Add to favorites'), className: `icon-button${state.favorites.includes(item.id) ? ' favorite-selected' : ''}` }) : ''}${playlistToggle}${!discover && isInstalled ? button('', 'delete', { id: item.id }, { icon: 'trash', className: 'icon-button danger', title: t('Move wallpaper to Trash') }) : ''}`;
+  // An installed Workshop wallpaper whose author has changed it since: one click downloads the
+  // new version, which replaces this one once it has arrived whole.
+  const updating = isInstalled && download?.pending;
+  const updateNotice = !discover && isInstalled && (item.updateAvailable || updating) ? `<div class="notice inspector-update" role="status"><p>${escapeHTML(updating ? (download.queued ? t('The update is waiting to download.') : percent === null ? t('Downloading the update…') : t('Downloading the update… {percent}%', { percent })) : Number.isFinite(item.updatedAt) ? t('Its author updated it on the Workshop on {date}.', { date: new Date(item.updatedAt).toLocaleDateString(language()) }) : t('Its author updated it on the Workshop.'))}</p><div class="actions">${updating ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : request ? button(t('Continue setup'), 'continueSetup', { id: request.id }, { icon: 'shield', className: 'primary' }) : button(t('Update'), 'workshopUpdate', { id: item.id }, { icon: 'download', className: 'primary', disabled: busy('workshopUpdate', { id: item.id }) })}</div></div>` : '';
   const showInLibrary = discover && isInstalled && !(download && !download.pending && !download.error) ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : '';
   const activateLabel = target?.wallpaperID === item.id ? t('Reapply wallpaper') : t('Apply wallpaper');
   const activation = isInstalled ? button('', 'activate', { id: item.id }, { icon: 'play', title: activateLabel, className: 'primary inspector-play', disabled: !canActivate }) : '';
@@ -540,6 +548,7 @@ function renderInspector(discover) {
     <div class="actions inspector-actions">${!isInstalled ? downloadAction : ''}${secondary}</div>${tags(item.tags)}
     ${!isInstalled && download?.pending && !download.queued ? `<progress class="inspector-progress" max="1"${Number.isFinite(download.progress) ? ` value="${clamp(download.progress)}"` : ''} aria-label="${escapeHTML(t('{title} download progress', { title: item.title }))}"></progress><p class="muted"><small>${escapeHTML(download.status)}${transfer(download, { includePercent: false }) ? ` · ${transfer(download, { includePercent: false })}` : ''}</small></p>` : ''}
     ${request ? `<p class="muted"><small>${escapeHTML(stageHint(request.stage))}</small></p>` : ''}
+    ${updateNotice}
     ${failureNotice}
     ${isInstalled && download && !download.pending && !download.error ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : ''}
     ${download || request ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : ''}

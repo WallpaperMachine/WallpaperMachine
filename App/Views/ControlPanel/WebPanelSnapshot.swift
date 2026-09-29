@@ -45,6 +45,12 @@ extension WebPanelController {
     _ = workshop.downloadRequests
     _ = workshop.username
     _ = workshop.suggestedAccount
+    let updates = workshop.updates
+    _ = updates.available
+    _ = updates.isChecking
+    _ = updates.lastChecked
+    _ = updates.errorMessage
+    _ = updates.checksAutomatically
     let setup = workshop.steamCMDSetup
     _ = setup.state
     _ = setup.isBusy
@@ -203,6 +209,7 @@ extension WebPanelController {
     var previews: [String: URL] = [:]
     let metrics = libraryMetrics.metrics(
       for: store.librarySnapshot.wallpapers.map(\.id), revision: store.libraryRefreshRevision)
+    let updates = workshop.updates.available
     let wallpapers: [[String: Any]] = store.librarySnapshot.wallpapers.map { entry in
       var preview: Any = null
       if let path = entry.previewPath {
@@ -225,6 +232,9 @@ extension WebPanelController {
         "addedAt": metrics[entry.id]?.addedAt.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
         // Measured in the background while the wallpaper played alone; null until rated.
         "energy": store.wallpaperEnergyRatings?.snapshot(for: entry.id) as Any? ?? null,
+        // When the Workshop has a newer version: when its author last changed it.
+        "updateAvailable": updates[entry.id] != nil,
+        "updatedAt": updates[entry.id]?.timeUpdated.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
       ]
     }
     assets.previews = previews
@@ -469,6 +479,12 @@ extension WebPanelController {
         "dayStart": playlist.dayStart, "nightStart": playlist.nightStart, "nextChange": next,
       ] as [String: Any]
     }
+    let updateCheck = workshop.updates
+    let updatesSnapshot: [String: Any] = [
+      "checking": updateCheck.isChecking, "count": updateCheck.available.count,
+      "lastChecked": updateCheck.lastChecked.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
+      "error": updateCheck.errorMessage as Any? ?? null, "automatic": updateCheck.checksAutomatically,
+    ]
     let setupSnapshot: [String: Any] = [
       "status": setupStatus, "busy": setup.isBusy, "ready": setup.selectedRuntime != nil,
       "error": setupError as Any? ?? null, "canApprove": canApprove,
@@ -513,7 +529,7 @@ extension WebPanelController {
       "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
       "options": options ?? null,
       "settings": settingsSnapshot,
-      "workshop": workshopSnapshot,
+      "workshop": workshopSnapshot, "workshopUpdates": updatesSnapshot,
       "pixiv": pixivSnapshot(),
       "setup": setupSnapshot,
       "downloads": downloads, "downloadRequests": downloadRequests,

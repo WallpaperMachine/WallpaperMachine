@@ -536,6 +536,7 @@ function draw(view) {
   const slots = Number(settings.concurrentDownloads) || 1;
   const slotChoices = Array.from({ length: Math.max(slots, Number(settings.concurrentDownloadsMax) || 1) }, (_, index) => [index + 1, String(index + 1)]);
   const serialNow = slots > 1 && Number(state.downloadSlots) === 1;
+  const updates = state.workshopUpdates || {};
   const library = group('library-folder', '', row('library-path', t('Wallpaper library'), button(t('Show in Finder'), 'showLibrary', {}, busy), settings.libraryPath || t('Unavailable')))
     + group('library-steamcmd', 'SteamCMD', row('steam-status', t('Installation'), `<span class="settings-status" role="status">${e(setup.status || (setup.ready ? t('Ready') : t('Not installed')))}</span>`, '', 'settings-readout')
     + progress
@@ -543,6 +544,9 @@ function draw(view) {
     + candidate + error('setup-error', setup.error)
     + (anyDownload && !setup.busy ? `<div class="settings-note">${e(t('Installation changes are unavailable while downloads are running.'))}</div>` : ''))
     + sceneSummary
+    + group('library-updates', t('Workshop updates'), row('workshop-update-checks', t('Check once a day'), toggle('workshopUpdateChecks', t('Check once a day'), draft('workshopUpdateChecks', updates.automatic !== false), 'data-setting="workshopUpdateChecks" aria-describedby="settings-note-workshop-update-checks"', busy), t('Asks Steam which of your installed Workshop wallpapers have changed since you got them. Only their ids are sent, and no sign-in is needed.'), '', 'workshopUpdateChecks')
+      + row('workshop-update-status', t('Last check'), button(updates.checking ? t('Checking…') : t('Check Now'), 'workshopCheckUpdates', {}, busy || updates.checking), updates.lastChecked != null ? (Number(updates.count) ? t('{time}: {count} wallpapers have updates. Update them from Installed.', { time: changeTime(Number(updates.lastChecked)), count: Number(updates.count) }) : t('{time}: everything is up to date.', { time: changeTime(Number(updates.lastChecked)) })) : t('Not checked yet.'))
+      + error('workshop-update-error', updates.error))
     + group('library-downloads', t('Downloads'), row('concurrent-downloads', t('Downloads at once'), select('concurrentDownloads', t('Downloads at once'), draft('concurrentDownloads', slots), slotChoices, 'data-setting="concurrentDownloads" data-number aria-describedby="settings-note-concurrent-downloads"', busy || unavailable), serialNow ? t('Steam ended one of the sessions, so downloads run one at a time until you reopen the app.') : t('Each download signs in to Steam on its own. More at once mostly helps batches of small wallpapers; large ones share your connection.')))
     + group('library-account', '', row('steam-account', t('Steam account'), state.savedAccount ? button(t('Log out…'), 'logOutSteam', {}, anyDownload || busy, 'settings-destructive') : `<span class="settings-note">${e(t('Not signed in'))}</span>`, state.savedAccount ? `${t('Signed in as {account}', { account: state.savedAccount })}${anyDownload ? t(' · log out once downloads finish') : ''}` : t('You sign in when a download starts.'))
     + row('welcome-guide', t('Welcome guide'), button(t('Show again'), 'openWelcome'), t('Shown on first launch: language and appearance, Steam sign-in, preferences and tips.'))

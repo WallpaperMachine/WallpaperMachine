@@ -184,8 +184,9 @@ actor WallpaperImportService {
     }
 
     /// Consumes a complete item from disposable Steam staging without copying payload bytes.
-    /// A valid existing item is left untouched; the caller remains responsible for staging cleanup.
-    func importDownloadedItem(_ itemID: String, from staging: URL, into library: URL) throws {
+    /// A valid existing item is left untouched unless `replacing`, when the new tree takes its
+    /// place; the caller remains responsible for staging cleanup.
+    func importDownloadedItem(_ itemID: String, from staging: URL, into library: URL, replacing: Bool = false) throws {
         try Task.checkCancellation()
         guard !itemID.isEmpty, itemID.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
               let numericID = UInt64(itemID), numericID > 0 else {
@@ -217,6 +218,24 @@ actor WallpaperImportService {
         }
         let destination = managedRoot.appendingPathComponent(itemID, isDirectory: true)
         try Task.checkCancellation()
+        if replacing, let installed = try? downloadMetadata(at: destination), installed.st_mode & S_IFMT == S_IFDIR {
+            // An update swaps the new tree in and the old one out in one step, so the library never
+            // lacks the wallpaper and a failure leaves the old version where it was. The old tree
+            // ends up in staging, which the caller clears.
+            let result = source.path.withCString { sourcePath in
+                destination.path.withCString { destinationPath in
+                    renamex_np(sourcePath, destinationPath, UInt32(RENAME_SWAP))
+                }
+            }
+            guard result == 0 else {
+                let code = errno
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [
+                    NSFilePathErrorKey: destination.path,
+                    NSLocalizedDescriptionKey: String(localized: "Could not replace Workshop item \(itemID) with its update: \(String(cString: strerror(code))). The installed version is unchanged.")
+                ])
+            }
+            return
+        }
         // Unlike moveItem, this cannot fall back to a cross-volume copy. RENAME_EXCL
         // atomically refuses even a destination created after our validation.
         let result = source.path.withCString { sourcePath in

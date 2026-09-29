@@ -37,6 +37,14 @@ Swift tests cover, without starting the app:
   regression (`ControlPanelDiscoverTests`) checks that Discover tiles load the
   still first, admit the animation beneath it, fade the still out only for a
   bright animation and never for a black one, and skip single-frame previews.
+  Updates: `WorkshopTests` decodes a recorded details answer (served item,
+  withdrawn item, another app's) and checks the request form;
+  `WorkshopUpdateStoreTests` covers what counts as outdated, recorded downloads
+  against `project.json` dates, non-Workshop ids never sent, results kept across
+  a relaunch, a download making an item current, the daily limit and its switch,
+  a failed check keeping what was known, and forgetting deleted items;
+  `ImportTests` covers the swap that replaces an installed tree. The reload of a
+  wallpaper on screen after its update needs a renderer and is not covered.
 - **Pixiv** — decoding of pixiv's ranking, search, page-list, status and
   profile answers (numbers sent as strings, content types as objects or lists,
   withheld and members-only entries), ratings including R-18 and R-18G, search

@@ -215,6 +215,20 @@ final class BridgeStore {
         }
     }
 
+    /// Loads a wallpaper's files afresh on every display showing it, after an update replaced
+    /// them: applying it again alone would find nothing changed and keep what is loaded. Each
+    /// display goes through its own command slot, so a switch the user asks for meanwhile wins.
+    func reloadWallpaperAsync(id: String) async throws {
+        let displays = monitorInformationSnapshot.rows
+            .filter { $0.wallpaperId == id && $0.mirrorTargetDisplayId == nil }.map(\.displayId)
+        for display in displays {
+            try await commands.run(slot: Self.activationSlot(displayId: display), subject: id) {
+                try await self.ejectWallpaperFromDisplayAsync(displayId: display, wallpaperId: id)
+                try await self.activateWallpaperAsync(id: id, displayId: display)
+            }
+        }
+    }
+
     func isWallpaperActive(id: String, displayId: String) -> Bool {
         monitorInformationSnapshot.rows.contains {
             $0.displayId == displayId && $0.wallpaperId == id && $0.mirrorTargetDisplayId == nil

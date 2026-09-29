@@ -36,7 +36,7 @@ or skip to the next wallpaper.
 | Feature | What it does |
 | --- | --- |
 | [**Apply**](docs/features/control-panel.md#selection-versus-apply) | Scene, video or [web](docs/features/web-wallpapers.md): press play and it becomes your desktop. Choosing a wallpaper only selects it. |
-| [**Workshop**](docs/features/workshop-downloads.md) | The live Steam Workshop, no sign-in to browse. Downloads run in the app, several at once, with a Steam account that owns Wallpaper Engine. |
+| [**Workshop**](docs/features/workshop-downloads.md) | The live Steam Workshop, no sign-in to browse. Downloads run in the app, several at once, with a Steam account that owns Wallpaper Engine. [Updates](docs/features/workshop-downloads.md#updates) to the wallpapers you have are found once a day and installed in one click. |
 | [**pixiv**](docs/features/pixiv.md) | pixiv's illustration rankings and tag search. Save any page of a work as a still wallpaper; sign in to pixiv for members-only works and, if your account allows them, R-18. |
 | [**Settings**](docs/features/control-panel.md#properties) | Every option its artist made, saved for each wallpaper when you apply your changes. |
 | [**Music**](docs/features/audio-response.md) | Turn on Audio response and wallpapers made for sound move with what your Mac plays. Turn on [Media integration](docs/features/media-integration.md) and ones with a music display show the song that's on. |
