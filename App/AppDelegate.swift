@@ -83,9 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         pixivStore.restoreSession()
         // A crash during a download leaves its staging behind, holding the whole downloaded item.
         let stagingRoot = ClientPaths.supportURL
+        let pixivStagingRoot = PixivWallpaperPackager.stagingRoot(forLibrary: ClientPaths.libraryURL)
         Task.detached(priority: .utility) {
             WorkshopDownloader.removeAbandonedStaging(in: stagingRoot)
-            PixivWallpaperPackager.removeAbandonedStaging(in: stagingRoot)
+            PixivWallpaperPackager.removeAbandonedStaging(in: pixivStagingRoot)
         }
 
         NSApp.setActivationPolicy(.accessory)

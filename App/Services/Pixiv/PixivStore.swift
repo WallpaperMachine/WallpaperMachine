@@ -233,7 +233,8 @@ final class PixivStore {
     }
 
     /// Switches every later request to `session`. What was fetched with the old one is
-    /// dropped: the listing reloads, and so do the selected work's pages.
+    /// dropped: the listing reloads, and so do the selected work's pages. Without a session,
+    /// R-18 works leave the page at once rather than when the reload succeeds.
     private func use(_ session: String?, account: PixivAccount?) {
         accountTask?.cancel()
         accountTask = nil
@@ -249,6 +250,11 @@ final class PixivStore {
             selectedPage = 0
         } else if let selectedWork {
             loadPages(of: selectedWork)
+        }
+        if session == nil {
+            let kept = works.filter { $0.rating != .mature }
+            hiddenCount += works.count - kept.count
+            works = kept
         }
         let query = query.sanitized(signedIn: session != nil)
         if hasLoaded || isLoading || committedQuery != nil {

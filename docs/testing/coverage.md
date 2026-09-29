@@ -37,7 +37,8 @@ Swift tests cover, without starting the app:
   withheld and members-only entries), ratings including R-18 and R-18G, search
   and ranking addresses, query sanitising without a sign-in, request pacing,
   the session cookie reaching `https://www.pixiv.net` only, sign-in, log out,
-  a keychain refusal and a session pixiv ended against an in-memory store, the
+  a keychain refusal, and a saved session that pixiv's status reports as signed out
+  (at launch, and after an R-18 ranking is refused) against an in-memory store, the
   download queue (concurrency, cancel, retry, shutdown) and packaging (sniffed
   formats, scaled display copies, kept copies, staging reclaim).
   `WebPanelPixivTests` checks the actions' validation and snapshot without a web

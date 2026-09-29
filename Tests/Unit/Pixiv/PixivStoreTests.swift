@@ -318,6 +318,7 @@ final class PixivStoreTests: XCTestCase {
         try await waitUntil { store.committedQuery?.ranking == .weeklyR18 && !store.isLoading }
         store.select(try XCTUnwrap(store.works.first))
         XCTAssertEqual(store.selectedWork?.rating, .mature)
+        XCTAssertEqual(store.works.count, 3)
 
         store.signOut()
 
@@ -325,6 +326,8 @@ final class PixivStoreTests: XCTestCase {
         XCTAssertNil(store.account)
         XCTAssertNil(sessions.session)
         XCTAssertNil(store.selectedWork, "an R-18 work does not stay on show")
+        XCTAssertTrue(store.works.isEmpty, "R-18 tiles leave at once, before the reload answers")
+        XCTAssertEqual(store.hiddenCount, 3)
         XCTAssertEqual(store.query.ranking, .weekly)
         XCTAssertEqual(store.query.ratings, [])
         try await waitUntil { store.committedQuery?.ranking == .weekly && !store.isLoading }

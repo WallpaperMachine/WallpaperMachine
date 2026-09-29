@@ -17,7 +17,8 @@ final class PixivSignInWindowController: NSWindowController, NSWindowDelegate, W
     private var continuation: CheckedContinuation<String?, Never>?
 
     /// Opens the window and answers the session pixiv set, or nil once the window closes
-    /// without one. While a window is open, another call only brings it forward.
+    /// without one. While a window is open, another call only brings it forward and answers
+    /// nil at once, so a caller must not start a second sign-in; `PixivStore.signIn` never does.
     static func obtainSession() async -> String? {
         if let current {
             current.showWindow(nil)

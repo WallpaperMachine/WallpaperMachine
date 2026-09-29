@@ -102,9 +102,7 @@ actor PixivWallpaperPackager {
         }
         try Task.checkCancellation()
 
-        // A sibling of the library is on the same volume, so the final move is a rename, and
-        // the library scanner never sees the folder while it is incomplete.
-        let staging = root.deletingLastPathComponent()
+        let staging = Self.stagingRoot(forLibrary: library)
             .appendingPathComponent(Self.stagingPrefix + UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: staging) }
@@ -129,8 +127,16 @@ actor PixivWallpaperPackager {
         return id
     }
 
+    /// Where pages are staged: beside the library as it resolves, so on the same volume, the
+    /// final move is a rename, and the library scanner never sees a folder while it is
+    /// incomplete. A symlinked library stages beside its target.
+    static func stagingRoot(forLibrary library: URL) -> URL {
+        library.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent()
+    }
+
     /// A staging folder lives for the moment it takes to write one page; any still there after
-    /// `quiet` seconds was left by a crash. Called at launch, before a download can start.
+    /// `quiet` seconds was left by a crash. Called at launch with `stagingRoot(forLibrary:)`,
+    /// before a download can start.
     static func removeAbandonedStaging(in root: URL, quiet: TimeInterval = 600) {
         let fm = FileManager.default
         let deadline = Date().addingTimeInterval(-quiet)

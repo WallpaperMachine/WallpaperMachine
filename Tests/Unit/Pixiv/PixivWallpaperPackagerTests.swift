@@ -168,6 +168,23 @@ final class PixivWallpaperPackagerTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: unrelated.path))
     }
 
+    func testASymlinkedLibraryStagesBesideItsTarget() async throws {
+        let fm = FileManager.default
+        let target = root.appendingPathComponent("Elsewhere/Library", isDirectory: true)
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: library, withDestinationURL: target)
+
+        let staging = PixivWallpaperPackager.stagingRoot(forLibrary: library)
+        let id = try await PixivWallpaperPackager(library: library) { data, _ in data }
+            .install(PixivFixtures.imageBytes("jpg"), work: work(), page: page(), pageCount: 1)
+
+        XCTAssertEqual(staging.path, target.deletingLastPathComponent().resolvingSymlinksInPath().path)
+        XCTAssertTrue(PixivWallpaperPackager.hasManifest(target.appendingPathComponent(id)))
+        let leftovers = try fm.contentsOfDirectory(atPath: staging.path)
+            .filter { $0.hasPrefix(PixivWallpaperPackager.stagingPrefix) }
+        XCTAssertEqual(leftovers, [], "the launch sweep looks where the page was staged")
+    }
+
     func testImageFormatsAreRecognisedByTheirSignature() {
         typealias Format = PixivWallpaperPackager.ImageFormat
         XCTAssertEqual(Format(sniffing: PixivFixtures.imageBytes("jpg")), .jpeg)

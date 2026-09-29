@@ -85,7 +85,7 @@ extension WebPanelController {
       guard let work = pixiv.selectedWork, work.id == (try request.string("id")) else {
         throw WebPanelRequest.invalid
       }
-      pixiv.selectPage(Int(try request.number("page", range: 0...Double(pixiv.pageCount(of: work) - 1))))
+      pixiv.selectPage(Int(try request.number("page", range: 0...Double(max(0, pixiv.pageCount(of: work) - 1)))))
     case "pixivRetryPages":
       pixiv.retrySelectedPages()
     case "pixivDownload":
