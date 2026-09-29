@@ -78,9 +78,9 @@ is sold:
 2. **Supporter.** A one-time purchase through Paddle.com, the website's
    reseller and Merchant of Record, that buys two things and no software:
    - a **sponsor place**: a name and picture on the website's sponsor wall
-     (https://www.wallpapermachine.app/#sponsors) and a name in the
-     [README's sponsor list](README.md#thank-you-to-every-supporter), each
-     shown only if the Supporter turns it on;
+     (https://www.wallpapermachine.app/#sponsors) and in the
+     [README's sponsor list](README.md#thank-you-to-every-supporter), shown
+     only if the Supporter turns it on;
    - **priority support**: wallpaper-compatibility questions and feature
      requests, asked on the website's supporter forum, answered ahead of
      general requests.

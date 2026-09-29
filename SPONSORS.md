@@ -1,8 +1,8 @@
 <!-- Follows the website's pricing page (https://www.wallpapermachine.app/pricing/) and the
      Supporter model in LICENSING.md; change them together. The price itself stays on the
      website, which shows it per country. The sponsor list stays in README.md, which the
-     website and LICENSING.md promise Supporters a name in; the Supporters workflow
-     rewrites it from the website's sponsor wall every hour (docs/release.md). -->
+     website and LICENSING.md promise Supporters a name and picture in; the Supporters
+     workflow rewrites it from the website's sponsor wall every hour (docs/release.md). -->
 
 # Sponsor WallpaperMachine
 
@@ -25,7 +25,7 @@ payment and become a Supporter.
 | **The app** | The signed download, or build it from source | The same app |
 | **Features** | All of them | All of them |
 | **Account** | Not needed | A free account on the website |
-| **Sponsor place** | No | Your name and picture on the website, your name in the README |
+| **Sponsor place** | No | Your name and picture on the website and in the README |
 | **Priority support** | No | Your questions answered first |
 
 The [pricing page](https://www.wallpapermachine.app/pricing/) shows the price in
@@ -35,7 +35,7 @@ Merchant of Record.
 ## What a Supporter gets.
 
 **A sponsor place.** Your name and picture on the website's
-[sponsor wall](https://www.wallpapermachine.app/#sponsors), and your name in the
+[sponsor wall](https://www.wallpapermachine.app/#sponsors) and in the
 [README's Supporter list](README.md#thank-you-to-every-supporter). It stays off
 until you turn it on, and you can change it from your account.
 
