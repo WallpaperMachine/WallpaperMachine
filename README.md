@@ -190,7 +190,11 @@ source stay free for everyone. If WallpaperMachine has earned a place on your
 desktop, [become a Supporter](SPONSORS.md).
 
 <!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
-No one is on the list yet.
+<p align="center">
+  xwei12
+</p>
+
+<p align="center"><sub>1 Supporter on the list.</sub></p>
 <!-- supporters:end -->
 
 ## License
