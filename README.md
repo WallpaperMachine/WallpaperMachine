@@ -191,10 +191,8 @@ desktop, [become a Supporter](SPONSORS.md).
 
 <!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
 <p align="center">
-  xwei12
+  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=a2bffb5dc1b2" width="100%" alt="WallpaperMachine Supporters: xwei12. 1 Supporter on the wall."></a>
 </p>
-
-<p align="center"><sub>1 Supporter on the list.</sub></p>
 <!-- supporters:end -->
 
 ## License
