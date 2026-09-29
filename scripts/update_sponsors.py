@@ -45,7 +45,7 @@ BLOCK = re.compile(r"<!-- supporters:start\b.*?-->.*?<!-- supporters:end -->", r
 # none of them may become a tag, a link, an image or one of the markers above.
 SIGNIFICANT = re.compile(r"[&<>\"'`*_\[\]()\\~|#!]")
 # Control and format characters, which the website already drops from names.
-INVISIBLE = re.compile(r"[\x00-\x1f\x7f-\x9f​‎‏‪-‮⁦-⁩﻿]")
+INVISIBLE = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 
 
 class Wall(NamedTuple):

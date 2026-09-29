@@ -42,7 +42,7 @@ class ParseWallTests(unittest.TestCase):
 
     def test_collapses_whitespace_and_drops_invisible_characters(self):
         wall = update_sponsors.parse_wall(
-            {"supporters": [{"name": "  A​l‮ice \n\t Smith "}, {"name": "​ "}], "hidden": 0}
+            {"supporters": [{"name": "  A\u200bl\u202eice \n\t Smith "}, {"name": "\u200b "}], "hidden": 0}
         )
         self.assertEqual(wall.names, ("Alice Smith",))
 
