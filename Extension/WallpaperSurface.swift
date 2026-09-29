@@ -25,8 +25,7 @@ final class WallpaperSurface {
   private var snapshotDeadline: Task<Void, Never>?
   private var latestSnapshot: IOSurface?
   private var stopped = false
-  var hasContent: Bool { renderer != nil || latestSnapshot != nil }
-  private var reloadFailed = false
+  var hasContent: Bool { renderer != nil }
   private var rendererPaused = false
   /// When this surface started presenting, set once its first frame arrived.
   /// Kept apart from readiness so rendering one frame for a snapshot or a
@@ -94,8 +93,7 @@ final class WallpaperSurface {
       metal.pixelFormat = .bgra8Unorm
       metal.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
       metal.framebufferOnly = false
-      // Keep the captured poster visible behind the new layer until its first frame.
-      metal.isOpaque = root.contents == nil
+      metal.isOpaque = true
       guard metal.device != nil else {
         throw WallpaperRuntime.failure("Metal rendering is unavailable.")
       }
@@ -137,23 +135,14 @@ final class WallpaperSurface {
         do { try await Task.sleep(for: .seconds(30)) } catch { return }
         guard let self, let reply = self.firstFrameReply else { return }
         self.firstFrameReply = nil
-        self.failedStart()
+        self.stop()
         reply(
           WallpaperRuntime.failure(
             "The lock-screen renderer did not produce a frame within 30 seconds."))
       }
     } catch {
-      failedStart()
-      completion(error)
-    }
-  }
-
-  private func failedStart() {
-    if root.contents != nil, latestSnapshot != nil {
-      releaseRenderer(keepingPoster: true)
-      reloadFailed = true
-    } else {
       stop()
+      completion(error)
     }
   }
 
@@ -184,9 +173,6 @@ final class WallpaperSurface {
         deadline?.cancel()
         deadline = nil
         presentingSince = ContinuousClock.now
-        root.contents = nil
-        layer?.isOpaque = true
-        reloadFailed = false
         counters.record(.readinessFrameRendered, for: surfaceKey)
         applyPolicy()
         WallpaperRuntime.log(
@@ -201,7 +187,7 @@ final class WallpaperSurface {
     } catch {
       if let reply = firstFrameReply {
         firstFrameReply = nil
-        failedStart()
+        stop()
         reply(error)
       }
       finishSnapshots(error: error)
@@ -273,28 +259,10 @@ final class WallpaperSurface {
   }
 
   func applyPolicy() {
-    guard firstFrameReply == nil, !stopped else { return }
+    guard firstFrameReply == nil, !stopped, let renderer else { return }
     let request = authorityRequest
-    switch WallpaperPresentationAuthority.rendererAction(
-      for: request, hasRenderer: renderer != nil, hasSnapshot: latestSnapshot != nil,
-      reloadFailed: reloadFailed)
-    {
-    case .unload:
-      reloadFailed = false
-      if renderer == nil || unloadKeepingPoster() { return }
-      // If retaining the poster failed, still stop rendering through the pause policy.
-      break
-    case .reload:
-      start { [weak self] error in
-        guard let self else { return }
-        WallpaperController.shared.acknowledge(surface: self, error: error)
-        if let error { WallpaperRuntime.log("Lock-screen reload failed: \(error.localizedDescription)") }
-      }
-      return
-    case .updatePlayback:
-      break
-    }
-    guard let renderer else { return }
+    // Keep the last drawable and scene state through unlock/sleep. Replacing
+    // them with a poster forces a cold load after the display is already lit.
     let reasons = WallpaperPresentationAuthority.suspensionReasons(for: request)
     let shouldPause = !reasons.isEmpty
     schedulePreviewExpiry(for: request)
@@ -307,17 +275,6 @@ final class WallpaperSurface {
         "Playback display=\(scene.displayID) mode=\(presentation) activity=\(activity) locked=\(request.sessionLocked) paused=\(shouldPause) reasons=\(reasons.rawValue)"
       )
     } catch { WallpaperRuntime.log(error.localizedDescription) }
-  }
-
-  private func unloadKeepingPoster() -> Bool {
-    guard let surface = latestSnapshot, let image = LockScreenPoster.image(from: surface)
-    else { return false }
-    root.contents = image
-    root.contentsGravity = .resize
-    releaseRenderer(keepingPoster: true)
-    CATransaction.flush()
-    WallpaperRuntime.log("Unloaded lock-screen renderer display=\(scene.displayID); retained poster")
-    return true
   }
 
   /// Re-evaluates a preview when its budget runs out, so it stops on its own
@@ -395,7 +352,7 @@ final class WallpaperSurface {
     start(completion: completion)
   }
 
-  private func releaseRenderer(keepingPoster: Bool = false) {
+  private func releaseRenderer() {
     deadline?.cancel()
     deadline = nil
     previewExpiry?.cancel()
@@ -416,17 +373,11 @@ final class WallpaperSurface {
       reply(CancellationError())
     }
     rendererPaused = true
-    if keepingPoster {
-      finishSnapshots(error: nil)
-    } else {
-      let waiters = readyWaiters
-      readyWaiters.removeAll()
-      waiters.forEach { $0(CancellationError()) }
-      finishSnapshots(error: CancellationError())
-      latestSnapshot = nil
-      root.contents = nil
-      reloadFailed = false
-    }
+    let waiters = readyWaiters
+    readyWaiters.removeAll()
+    waiters.forEach { $0(CancellationError()) }
+    finishSnapshots(error: CancellationError())
+    latestSnapshot = nil
   }
 
   func clear() {

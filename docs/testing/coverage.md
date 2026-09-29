@@ -170,7 +170,10 @@ Swift tests cover, without starting the app:
   Space cleanup, system-copied fallback restoration, global linked conflicts,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
-  after suspension. No test selects a real wallpaper.
+  after suspension. `WallpaperPresentationAuthorityTests` covers both display/
+  host wake orders and preserves user pause across sleep/wake. These policy
+  tests do not import the extension's surface or establish real lock-screen
+  visual timing. No test selects a real wallpaper.
 - **Diagnostics** — `AppLogRouterTests`: lines logged before the bridge keep
   their time and order and are written when it attaches, overflow is reported
   rather than silent, loads start only once the log is open, and concurrent

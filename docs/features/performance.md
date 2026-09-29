@@ -271,8 +271,8 @@ the targets they can use. The same filter applies when a toggle reallocates targ
 This applies to scenes drawn with **Prefer Native Metal**; the Compatibility
 backend already requests its targets from the cache as passes prepare them.
 
-The lock-screen extension releases its renderer while unlocked after preserving
-a poster; see [lock-screen behavior and reload costs](lock-screen.md#enabling-it).
+The lock-screen extension keeps its renderer paused while unlocked or asleep
+to avoid a cold reload on wake; see [lock-screen memory tradeoff](lock-screen.md#enabling-it).
 The desktop renderer still needs the textures and render targets of the active
 wallpaper. An idle control-panel benchmark cannot establish its playback memory
 usage, and the extension must be measured separately from the app coalition.

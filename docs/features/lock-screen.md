@@ -14,18 +14,19 @@ This uses a sandboxed native wallpaper extension — the
 [`Extension/`](../../Extension) ExtensionKit target — rather than drawing an
 ordinary app window over the login UI. While it is active the native desktop
 remains a still frame, while the existing desktop renderer keeps playing.
-Once its first frame is ready, an unlocked lock-screen surface retains its
-captured poster and releases the renderer, textures and device allocations.
-The poster image reads the snapshot IOSurface in place, holding a read lock
-until Core Animation releases the image, instead of copying it into a second
-bitmap first. Whether Core Animation keeps its own copy for display has not been
-measured; the extension's footprint did not visibly drop when the copy went.
-Locking again reloads the scene behind that poster before resuming animation.
-This saves memory while unlocked; a cold lock may briefly show the still frame,
-and animation/script state starts again. Resolution, frame rate and effects
-are unchanged. A failed reload keeps the poster and reports readiness failure;
-it does not repeatedly retry until a new unlock/lock cycle or scene replacement.
-User pause, display sleep and host suspension still prevent a reload.
+Once its first frame is ready, an unlocked lock-screen surface pauses its
+renderer while retaining the last Metal drawable, scene state, textures and
+device allocations. Display sleep and host suspension also pause rather than
+unload it. Locking or waking resumes that same renderer only once the display
+is awake, the host is active and user/power policy permits playback.
+
+This avoids replacing the live surface with an old static poster and loading
+the scene again after the display lights up. It uses more resident memory than
+the former poster-only idle state, but does not continuously render while
+paused. Resolution, frame rate and effects are unchanged. A newly acquired
+surface or a changed wallpaper still needs an initial load; macOS can display
+its own cached snapshot before it presents the extension. Real lock/wake timing
+is OS-controlled and is not established by the offscreen regression checks.
 
 Lock-screen audio, audio input and media integration are disabled; see
 [Audio response](audio-response.md) and
