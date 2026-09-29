@@ -15,8 +15,14 @@ This uses a sandboxed native wallpaper extension — the
 ordinary app window over the login UI. While it is active the native desktop
 remains a still frame, while the existing desktop renderer keeps playing.
 Once its first frame is ready, an unlocked lock-screen surface pauses its
-renderer while retaining the last Metal drawable, scene state, textures and
-device allocations. Display sleep and host suspension also pause rather than
+renderer while retaining scene state, textures and device allocations. A
+readback frame is committed beneath the nonopaque Metal layer before readiness
+is acknowledged, with implicit animations disabled. It supplies real wallpaper
+pixels when a drawable is not yet available or is reclaimed across sleep;
+later drawables cover it without a timed fade or a wait for scanout. The image
+retains the snapshot IOSurface without copying its bitmap. Scene replacement
+keeps this backing until a new frame arrives; clearing the configuration drops
+it. Display sleep and host suspension pause rather than
 unload it. Locking or waking resumes that same renderer only once the display
 is awake, the host is active and user/power policy permits playback.
 

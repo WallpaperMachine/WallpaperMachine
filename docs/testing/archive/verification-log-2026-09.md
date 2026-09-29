@@ -15,6 +15,18 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-28 — Display-sized packaged texture residency
+
+- scripts/test.py with CPython 3.12.14: 190 Python passed; 663 native passed, 11 skipped. Full gate run once for this feature.
+- scripts/check_renderer.py passed: 23 binaries, ten generated pixel comparisons, eight projects x2 reloads. Three asset-dependent cases skipped; the local Metal scene was tested separately.
+- tex_schema_tests: 22 passed, including surface budget selection/reset, metadata preservation, pre-decode skipping, payload truncation and sprite/video exclusions.
+- Current local scene: GPU allocated 457.1 to 198.1 MiB, reserved 490.4 to 231.4 MiB. Matched headless process peak 1175.4 to 622.9 MiB.
+- Compatibility: five frames spanning two seconds with particle seed 42 and synthetic silent audio were byte-identical before/after; the frames differed over time.
+- Metal: fixed local-project random-seed handling; full-source and budgeted seeded 120-frame runs ended with byte-identical images. Temporary baseline budget bypass was restored before final review.
+- Live closed-panel samples, 3 per build 10 seconds apart: main median 735.5 to 458.9 MiB; whole app coalition plus separate extension median 786.3 to 509.4 MiB (after range 413.9–509.4). GPU accounting and settling samples fluctuate; no universal ceiling or CPU saving claimed.
+- Renderer/bindings and Release builds passed. Signed app installed into /Applications with backup, launched using Codex computer use, same wallpaper playing and first frame ready. Saved configuration identical; only installed extension registered.
+- Policy may reduce source detail under zoom and only limits available authored mip chains. Actual lock/unlock and the local-import close exception remain unexercised; private scene assets/images stay in artifacts.
+
 ## 2026-09-28 — Release the closed control panel to reduce memory
 
 - Panel lifecycle follow-up: CPython 3.12.14 scripts/test.py --only ControlPanelWindowSizingTests --only ControlPanelShellTests --only ControlPanelSyncTests passed 30/30. Earlier full gate is recorded separately; not repeated.

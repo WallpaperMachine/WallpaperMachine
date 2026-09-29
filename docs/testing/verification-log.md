@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-29 — Commit wallpaper pixels before lock-screen context handoff
+
+- Readback readiness previously acknowledged only an IOSurface in Swift memory, leaving the remote layer tree without backing pixels until a drawable became available. Now commits an IOSurface-backed image under the nonopaque Metal layer with implicit actions disabled, before readiness replies; does not wait for scanout or unload the paused renderer.
+- Standalone offscreen Core Animation smoke: old unbacked composition exposed white host pixels [255,255,255,255]; corrected composition returned wallpaper pixels [19,47,83,255] with the same Metal layer and no drawable. No window or screen capture.
+- python3 scripts/test.py --only LockScreenFrameBackingTests: 2 passed after correcting a CoreFoundation cast compile error. Covers no-drawable pixel composition and release/retention across snapshot replacement.
+- python3 scripts/test.py: 215 Python passed; 737 native passed, 0 failed, 11 skipped of 748. Opt-in media/network cases remain skipped.
+- Scene replacement retains backing until new pixels arrive; explicit clear releases it. The image shares the immutable snapshot storage without another bitmap copy; compositor memory and power impact not measured.
+- Recurring host reacquisition was observed in the existing extension log, but its cause is unproven. A third-party snapshot-encoding hypothesis was not verified on this OS; no private-method swizzle, snapshot-freshness change or retry logic added.
+- Real lock/wake visual timing and private XPC transport remain unverified. No desktop manipulation, Release rebuild, app installation or restart. Removed this task's standalone smoke files only; existing artifacts retained.
+
 ## 2026-09-29 — Resume the retained lock-screen renderer on wake
 
 - Extension log identified the poster-only lifecycle: unlock destroyed the renderer; one wake took about three seconds from active host update to first-frame readiness.
@@ -122,15 +132,3 @@ M3 Max, macOS 27.2, built-in XDR at 120 Hz in a 4112x2658 scaled mode, AC; coali
 - `cargo test --release -p wallpaper-core --lib` 221 passed; `-p wallpaper-bridge --lib` 360 passed (first run hit the documented CMake configure retry). timer_tests 30 passed; the new cadence test fails without the fix (50 ticks).
 - `python3 scripts/check_renderer.py` — 24 binaries exit 0, 10 generated cases pixel-equal, reload cycles 0; 3 asset-dependent gtest cases skipped (metal_scene_draw_smoke 1, text_object_runtime_test 2).
 - Pointer monitors installed only while a scene reads the pointer: with the final build, Lucy (camera parallax) followed the mouse with the panel frontmost, after switching to another app and after a covered pause and resume (checked by the user). Untested for the covered-desktop pause: multiple displays, Stage Manager, tiled windows with gaps.
-
-## 2026-09-28 — Display-sized packaged texture residency
-
-- scripts/test.py with CPython 3.12.14: 190 Python passed; 663 native passed, 11 skipped. Full gate run once for this feature.
-- scripts/check_renderer.py passed: 23 binaries, ten generated pixel comparisons, eight projects x2 reloads. Three asset-dependent cases skipped; the local Metal scene was tested separately.
-- tex_schema_tests: 22 passed, including surface budget selection/reset, metadata preservation, pre-decode skipping, payload truncation and sprite/video exclusions.
-- Current local scene: GPU allocated 457.1 to 198.1 MiB, reserved 490.4 to 231.4 MiB. Matched headless process peak 1175.4 to 622.9 MiB.
-- Compatibility: five frames spanning two seconds with particle seed 42 and synthetic silent audio were byte-identical before/after; the frames differed over time.
-- Metal: fixed local-project random-seed handling; full-source and budgeted seeded 120-frame runs ended with byte-identical images. Temporary baseline budget bypass was restored before final review.
-- Live closed-panel samples, 3 per build 10 seconds apart: main median 735.5 to 458.9 MiB; whole app coalition plus separate extension median 786.3 to 509.4 MiB (after range 413.9–509.4). GPU accounting and settling samples fluctuate; no universal ceiling or CPU saving claimed.
-- Renderer/bindings and Release builds passed. Signed app installed into /Applications with backup, launched using Codex computer use, same wallpaper playing and first frame ready. Saved configuration identical; only installed extension registered.
-- Policy may reduce source detail under zoom and only limits available authored mip chains. Actual lock/unlock and the local-import close exception remain unexercised; private scene assets/images stay in artifacts.

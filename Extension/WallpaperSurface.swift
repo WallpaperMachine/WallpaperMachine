@@ -93,7 +93,8 @@ final class WallpaperSurface {
       metal.pixelFormat = .bgra8Unorm
       metal.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
       metal.framebufferOnly = false
-      metal.isOpaque = true
+      // An absent/purged drawable must reveal the committed frame underneath.
+      metal.isOpaque = false
       guard metal.device != nil else {
         throw WallpaperRuntime.failure("Metal rendering is unavailable.")
       }
@@ -167,7 +168,9 @@ final class WallpaperSurface {
       let bgra = notification.userInfo?["bgra"] as? Bool
     else { return }
     do {
-      latestSnapshot = try Self.snapshot(data, width: width, height: height, bgra: bgra)
+      let snapshot = try Self.snapshot(data, width: width, height: height, bgra: bgra)
+      try LockScreenFrameBacking.install(snapshot, on: root)
+      latestSnapshot = snapshot
       if let reply = firstFrameReply {
         firstFrameReply = nil
         deadline?.cancel()
@@ -346,13 +349,13 @@ final class WallpaperSurface {
       completion(CancellationError())
       return
     }
-    releaseRenderer()
+    releaseRenderer(keepingFrame: true)
     self.scene = scene
     rendererPaused = false
     start(completion: completion)
   }
 
-  private func releaseRenderer() {
+  private func releaseRenderer(keepingFrame: Bool = false) {
     deadline?.cancel()
     deadline = nil
     previewExpiry?.cancel()
@@ -378,6 +381,7 @@ final class WallpaperSurface {
     waiters.forEach { $0(CancellationError()) }
     finishSnapshots(error: CancellationError())
     latestSnapshot = nil
+    if !keepingFrame { root.contents = nil }
   }
 
   func clear() {
