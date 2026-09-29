@@ -140,9 +140,10 @@ failed one or two offscreen control-panel tests per run, a different one each
 time, with `InvalidTransition { phase: idle targetPhase: failed(deinit) }`:
 WebKit dropped a `callAsyncJavaScript` call unanswered. The same tests pass
 locally, in parallel and under CPU load, and a panel left idle for 25 seconds
-still answers. When it recurs, the panel fixture's error says whether the page
-reloaded meanwhile, and `test-logs-<tag>` carries the run's WebKit and jetsam
-reports.
+still answers. Serial costs the runner almost nothing (300 s against 278 s in
+parallel), unlike a local run (220 s against 50 s). When it recurs, the panel
+fixture's error says whether the page reloaded meanwhile, and `test-logs-<tag>`
+carries the run's WebKit and jetsam reports.
 
 The per-test `UserDefaults` suite is not only a parallelism concern: the unit
 bundle runs inside the real app as its test host, so `UserDefaults.standard`

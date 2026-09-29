@@ -203,8 +203,8 @@ jobs:
       - name: Test
         # One test class at a time. In parallel, offscreen control-panel suites failed here
         # (never locally) with "InvalidTransition … failed(deinit)": WebKit dropped a
-        # JavaScript call unanswered. Serial takes about four times as long (locally 220 s
-        # against 50 s), which delays publishing but stays far inside the job's timeout.
+        # JavaScript call unanswered. Here serial costs almost nothing: 300 s for the 1.2.0
+        # gate against 278 s in parallel (locally it is 220 s against 50 s).
         run: python3 scripts/test.py --serial
 
       - name: Report the C++ object cache
