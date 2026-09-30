@@ -1002,6 +1002,7 @@ TEST(ScriptRuntimeCompat, HostVectorUpdatesDoNotCallMutableGlobalVectorConstruct
     auto program = runtime->scriptEngine().CreatePropertyScriptProgram(
         runtime.get(),
         R"JS(
+export var scriptProperties = createScriptProperties().finish();
 var savedVec2 = Vec2;
 var savedVec3 = Vec3;
 var savedVec4 = Vec4;
@@ -1078,6 +1079,214 @@ function update() {
         EXPECT_FLOAT_EQ(constant->second[1], 0.5f);
         EXPECT_FLOAT_EQ(constant->second[2], 0.75f);
     }
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, LazyTemplateScriptsStartOnTheFollowingTickAndLoadedGeometryIsReusable) {
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    auto owner = std::make_shared<SceneNode>();
+    scene.sceneGraph->AppendChild(owner);
+    std::shared_ptr<SceneMesh> loaded_mesh;
+    int loads = 0;
+    runtime->SetLayerTemplateLoader([&](std::string_view path) {
+        ++loads;
+        auto source = std::make_shared<SceneNode>();
+        loaded_mesh = std::make_shared<SceneMesh>();
+        loaded_mesh->AddMaterial(SceneMaterial {});
+        source->AddMesh(loaded_mesh);
+        runtime->RegisterMaterialConstant(loaded_mesh->MaterialSlotPtr(), "u_Age",
+            ResolveFloatSetting(*runtime, {
+                {"value", 0.0f}, {"script", R"JS(
+export function update(value) { return value + 1; }
+)JS"}
+            }));
+        runtime->RegisterLayerTemplate(std::string(path), source, Eigen::Vector2f(32, 32));
+        return true;
+    });
+    runtime->RegisterNodeVisibility("owner", owner.get(), ResolveBoolSetting(*runtime, {
+        {"value", true}, {"script", R"JS(
+let frame = 0;
+export function update(value) {
+    const point = thisScene.createLayer({image: 'models/lazy.json'});
+    point.origin = new Vec3(++frame, 0, 0);
+    return value;
+}
+)JS"}}, "owner"));
+    EXPECT_EQ(loads, 0);
+    runtime->Tick(0.01);
+    ASSERT_NE(loaded_mesh, nullptr);
+    EXPECT_FLOAT_EQ(loaded_mesh->Material()->customShader.constValues.at("u_Age")[0], 0);
+    runtime->Tick(0.01);
+    EXPECT_EQ(loads, 1);
+    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 3u);
+    auto first = std::next(scene.sceneGraph->GetChildren().begin());
+    auto second = std::next(first);
+    EXPECT_TRUE((*first)->Translate().isApprox(Eigen::Vector3f(1, 0, 0)));
+    EXPECT_TRUE((*second)->Translate().isApprox(Eigen::Vector3f(2, 0, 0)));
+    EXPECT_FLOAT_EQ((*first)->Mesh()->Material()->customShader.constValues.at("u_Age")[0], 1);
+    EXPECT_FLOAT_EQ((*second)->Mesh()->Material()->customShader.constValues.at("u_Age")[0], 1);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, RecursiveTemplateLoadsAreGuardedAndMissingAssetsAreNotRetried) {
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    int loads = 0;
+    runtime->SetLayerTemplateLoader([&](std::string_view path) {
+        ++loads;
+        EXPECT_TRUE(runtime->CreateLayerFromTemplate(path, "").empty());
+        if (path == "models/missing.json") return false;
+        auto source = std::make_shared<SceneNode>();
+        runtime->RegisterLayerTemplate(std::string(path), source, Eigen::Vector2f(32, 32));
+        return true;
+    });
+    const auto first = runtime->CreateLayerFromTemplate("models/available.json", "");
+    const auto second = runtime->CreateLayerFromTemplate("models/available.json", "");
+    ASSERT_FALSE(first.empty());
+    ASSERT_FALSE(second.empty());
+    EXPECT_NE(first, second);
+    runtime->SetNodeTranslate(first, Eigen::Vector3f(1, 2, 3));
+    EXPECT_TRUE(runtime->NodeTranslate(second).isZero());
+    EXPECT_TRUE(runtime->CreateLayerFromTemplate("models/missing.json", "").empty());
+    EXPECT_TRUE(runtime->CreateLayerFromTemplate("models/missing.json", "").empty());
+    EXPECT_EQ(loads, 2);
+}
+
+TEST(ScriptRuntimeCompat, CachedFactoriesCreateLayersBesideTheirOwnOwner) {
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    auto source = std::make_shared<SceneNode>();
+    auto mesh = std::make_shared<SceneMesh>();
+    mesh->AddMaterial(SceneMaterial {});
+    source->AddMesh(mesh);
+    runtime->RegisterLayerTemplate("models/point.json", source, Eigen::Vector2f(32, 32));
+    const std::string script = R"JS(
+let point;
+export function update(value) {
+    if (!point) point = thisScene.createLayer('models/point.json');
+    point.origin = thisLayer.origin;
+    return value;
+}
+)JS";
+    std::array<std::shared_ptr<SceneNode>, 2> parents;
+    for (int index = 0; index < 2; ++index) {
+        parents[index] = std::make_shared<SceneNode>();
+        auto owner = std::make_shared<SceneNode>();
+        owner->SetTranslate(Eigen::Vector3f(10 * (index + 1), 0, 0));
+        parents[index]->AppendChild(owner);
+        scene.sceneGraph->AppendChild(parents[index]);
+        const auto name = "owner" + std::to_string(index);
+        runtime->RegisterNodeVisibility(name, owner.get(), ResolveBoolSetting(*runtime, {
+            {"value", true}, {"script", script}
+        }, name));
+    }
+    runtime->Tick(0.01);
+    for (int index = 0; index < 2; ++index) {
+        ASSERT_EQ(parents[index]->GetChildren().size(), 2u);
+        EXPECT_TRUE(parents[index]->GetChildren().back()->Translate().isApprox(
+            Eigen::Vector3f(10 * (index + 1), 0, 0)));
+    }
+    runtime->Tick(0.01);
+    for (const auto& parent : parents) EXPECT_EQ(parent->GetChildren().size(), 2u);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, ConfiguredTrailPoolKeepsIndependentLayersAndRecyclesWithoutCloning) {
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    auto source = std::make_shared<SceneNode>(
+        Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(), Eigen::Vector3f::Zero(), "source");
+    auto mesh = std::make_shared<SceneMesh>();
+    SceneMaterial material;
+    material.customShader.constValues["g_Color"] = std::array<float, 3> {1, 1, 1};
+    material.customShader.constValues["g_Color4"] = std::array<float, 4> {1, 1, 1, 0.9f};
+    material.customShader.constValues["g_UserAlpha"] = 0.9f;
+    material.customShader.constValues["g_Alpha"] = 0.9f;
+    mesh->AddMaterial(std::move(material));
+    source->AddMesh(mesh);
+    scene.sceneGraph->AppendChild(source);
+    runtime->RegisterNode("source", source.get());
+    runtime->RegisterLayerTemplate("models/point.json", source, Eigen::Vector2f(32, 32));
+    runtime->RegisterSceneScript(R"JS(
+let points = [], frame = 0;
+export function update() {
+    ++frame;
+    let point;
+    if (points.length < 3) {
+        point = thisScene.createLayer({
+            image: 'models/point.json',
+            origin: new Vec3(frame, 2, -3),
+            scale: '0.1 0.2 0.3',
+            angles: new Vec3(0, 0, 90),
+            color: new Vec3(0.2, 0.4, 0.6),
+            alpha: 0.25,
+            visible: false
+        });
+    } else {
+        point = points.shift();
+        point.origin = new Vec3(frame, 2, -3);
+        point.color = new Vec3(0.6, 0.4, 0.2);
+        point.alpha = 0.5;
+        point.visible = true;
+    }
+    points.push(point);
+}
+)JS", "source");
+
+    runtime->Tick(0.01);
+    auto first = scene.sceneGraph->GetChildren().back();
+    EXPECT_TRUE(first->Translate().isApprox(Eigen::Vector3f(1, 2, -3)));
+    EXPECT_TRUE(first->Scale().isApprox(Eigen::Vector3f(0.1f, 0.2f, 0.3f)));
+    EXPECT_NEAR(first->Rotation().z(), 1.57079632679f, 1.0e-6f);
+    EXPECT_FALSE(first->Visible());
+    EXPECT_EQ(runtime->NodeAlpha(first->Name()), 0.25f);
+    EXPECT_TRUE(runtime->NodeColor(first->Name()).isApprox(Eigen::Vector3f(0.2f, 0.4f, 0.6f)));
+    EXPECT_FLOAT_EQ(first->Mesh()->Material()->customShader.constValues.at("g_Alpha")[0], 0.25f);
+    runtime->Tick(0.01);
+    auto second = scene.sceneGraph->GetChildren().back();
+    EXPECT_NE(first, second);
+    EXPECT_TRUE(first->Translate().isApprox(Eigen::Vector3f(1, 2, -3)));
+    EXPECT_TRUE(second->Translate().isApprox(Eigen::Vector3f(2, 2, -3)));
+    for (int frame = 3; frame <= 8; ++frame) runtime->Tick(0.01);
+    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 4u);
+    EXPECT_TRUE(first->Translate().isApprox(Eigen::Vector3f(7, 2, -3)));
+    EXPECT_TRUE(second->Translate().isApprox(Eigen::Vector3f(8, 2, -3)));
+    for (const auto& point : scene.sceneGraph->GetChildren()) {
+        if (point == source) continue;
+        EXPECT_TRUE(point->Visible());
+        EXPECT_EQ(runtime->NodeAlpha(point->Name()), 0.5f);
+        EXPECT_TRUE(runtime->NodeColor(point->Name()).isApprox(Eigen::Vector3f(0.6f, 0.4f, 0.2f)));
+        EXPECT_FLOAT_EQ(point->Mesh()->Material()->customShader.constValues.at("g_Color4")[3], 0.5f);
+    }
+    EXPECT_TRUE(source->Translate().isZero());
+    EXPECT_TRUE(source->Scale().isOnes());
+    EXPECT_TRUE(runtime->NodeColor("source").isOnes());
+    EXPECT_FLOAT_EQ(mesh->Material()->customShader.constValues.at("g_Alpha")[0], 0.9f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, SharedProducerRunsBeforeDependentTextAndAdvancesOncePerTick) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {});
+    auto producer = std::make_shared<SceneNode>();
+    runtime->RegisterNodeVisibility("producer", producer.get(), ResolveBoolSetting(*runtime, {
+        {"value", true}, {"script", R"JS(
+let count = 0;
+export function update(value) {
+    shared.position = ++count + engine.runtime;
+    return value;
+}
+)JS"}}, "producer"));
+    runtime->RegisterTextLayer("readout", TextLayerState { .text = "initial" });
+    runtime->RegisterTextValue("readout", ResolveStringSetting(*runtime, {
+        {"value", "initial"}, {"script", R"JS(
+export function update(value) { return shared.position.toFixed(2); }
+)JS"}}, "readout"), false);
+    EXPECT_EQ(runtime->NodeText("readout"), "initial");
+    runtime->Tick(0.25);
+    EXPECT_EQ(runtime->NodeText("readout"), "1.25");
+    runtime->Tick(0.25);
+    EXPECT_EQ(runtime->NodeText("readout"), "2.50");
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
@@ -1742,136 +1951,6 @@ TEST(ScriptRuntimeCompat, MaterialConstantUserBindingUpdatesThroughRuntimeProper
     EXPECT_FLOAT_EQ(constant->second[0], 0.1f);
     EXPECT_FLOAT_EQ(constant->second[1], 0.2f);
     EXPECT_FLOAT_EQ(constant->second[2], 0.3f);
-}
-
-TEST(ScriptRuntimeCompat, SceneScriptCreateLayerInUpdateReusesGeneratedLayer) {
-    Scene scene;
-    auto  runtime = MakeRuntimeWithScene(scene);
-    ASSERT_NE(runtime, nullptr);
-
-    auto source_node = std::make_shared<SceneNode>(
-        Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(), Eigen::Vector3f::Zero(), "source");
-    auto source_mesh = std::make_shared<SceneMesh>();
-    source_mesh->AddMaterial(SceneMaterial {});
-    source_node->AddMesh(source_mesh);
-    scene.sceneGraph->AppendChild(source_node);
-
-    runtime->RegisterNode("source", source_node.get());
-    runtime->RegisterLayerTemplate("models/workshop/123456/bar.json",
-                                   source_node,
-                                   Eigen::Vector2f(20.0f, 10.0f));
-
-    runtime->RegisterSceneScript(
-        R"JS(
-function update() {
-  var layer = thisScene.createLayer('models/bar.json');
-  layer.origin = new Vec3(10, 20, 0);
-}
-)JS",
-        "source");
-
-    runtime->Tick(1.0 / 60.0);
-    ASSERT_TRUE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 2u);
-    const auto generated_name = scene.sceneGraph->GetChildren().back()->Name();
-    ASSERT_FALSE(generated_name.empty());
-
-    runtime->Tick(1.0 / 60.0);
-    EXPECT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 2u);
-    EXPECT_EQ(scene.sceneGraph->GetChildren().back()->Name(), generated_name);
-    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
-}
-
-TEST(ScriptRuntimeCompat, SceneUpdateCallbackCreateLayerReusesGeneratedLayer) {
-    Scene scene;
-    auto  runtime = MakeRuntimeWithScene(scene);
-    ASSERT_NE(runtime, nullptr);
-
-    auto source_node = std::make_shared<SceneNode>(
-        Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(), Eigen::Vector3f::Zero(), "source");
-    auto source_mesh = std::make_shared<SceneMesh>();
-    source_mesh->AddMaterial(SceneMaterial {});
-    source_node->AddMesh(source_mesh);
-    scene.sceneGraph->AppendChild(source_node);
-
-    runtime->RegisterNode("source", source_node.get());
-    runtime->RegisterLayerTemplate("models/workshop/123456/bar.json",
-                                   source_node,
-                                   Eigen::Vector2f(20.0f, 10.0f));
-
-    runtime->RegisterSceneScript(
-        R"JS(
-scene.on('update', function() {
-  var layer = thisScene.createLayer('models/bar.json');
-  layer.origin = new Vec3(10, 20, 0);
-});
-)JS",
-        "source");
-
-    runtime->Tick(1.0 / 60.0);
-    ASSERT_TRUE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 2u);
-    const auto generated_name = scene.sceneGraph->GetChildren().back()->Name();
-    ASSERT_FALSE(generated_name.empty());
-
-    runtime->Tick(1.0 / 60.0);
-    EXPECT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 2u);
-    EXPECT_EQ(scene.sceneGraph->GetChildren().back()->Name(), generated_name);
-    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
-}
-
-TEST(ScriptRuntimeCompat, ExportAndCallbackCreateLayerUpdatesUseSeparateGeneratedLayers) {
-    Scene scene;
-    auto  runtime = MakeRuntimeWithScene(scene);
-    ASSERT_NE(runtime, nullptr);
-
-    auto source_node = std::make_shared<SceneNode>(
-        Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones(), Eigen::Vector3f::Zero(), "source");
-    auto source_mesh = std::make_shared<SceneMesh>();
-    source_mesh->AddMaterial(SceneMaterial {});
-    source_node->AddMesh(source_mesh);
-    scene.sceneGraph->AppendChild(source_node);
-
-    runtime->RegisterNode("source", source_node.get());
-    runtime->RegisterLayerTemplate("models/workshop/123456/bar.json",
-                                   source_node,
-                                   Eigen::Vector2f(20.0f, 10.0f));
-
-    runtime->RegisterSceneScript(
-        R"JS(
-function update() {
-  var exported = thisScene.createLayer('models/bar.json');
-  exported.origin = new Vec3(10, 20, 0);
-}
-
-scene.on('update', function() {
-  var callback = thisScene.createLayer('models/bar.json');
-  callback.origin = new Vec3(30, 40, 0);
-});
-)JS",
-        "source");
-
-    runtime->Tick(1.0 / 60.0);
-    ASSERT_TRUE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 3u);
-    auto first_generated  = std::next(scene.sceneGraph->GetChildren().begin());
-    auto second_generated = std::next(first_generated);
-    const auto first_generated_name  = (*first_generated)->Name();
-    const auto second_generated_name = (*second_generated)->Name();
-    ASSERT_FALSE(first_generated_name.empty());
-    ASSERT_FALSE(second_generated_name.empty());
-    ASSERT_NE(first_generated_name, second_generated_name);
-
-    runtime->Tick(1.0 / 60.0);
-    EXPECT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-    ASSERT_EQ(scene.sceneGraph->GetChildren().size(), 3u);
-    first_generated  = std::next(scene.sceneGraph->GetChildren().begin());
-    second_generated = std::next(first_generated);
-    EXPECT_EQ((*first_generated)->Name(), first_generated_name);
-    EXPECT_EQ((*second_generated)->Name(), second_generated_name);
-    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
 TEST(ScriptRuntimeCompat, RepeatedSortLayerToHigherIndexMutatesOnlyOnce) {

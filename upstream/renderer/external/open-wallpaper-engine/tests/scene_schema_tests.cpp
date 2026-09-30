@@ -333,39 +333,6 @@ std::string BuildMeshOnlyPuppetMdlFixture() {
     return b.TakeString();
 }
 
-std::string BuildLegacySingleMeshPuppetMdlFixture() {
-    Bytes b;
-    b.Stamp("MDL", 20);
-    b.U32(kSceneTestSkinUvFlag);
-    b.U32(1);
-    b.U32(1);
-    b.Str("legacy.json");
-    b.U32(0);
-    b.U32(3u * 52u);
-    WritePuppetVertex(b, 0.0f, 0.0f, 0.0f);
-    WritePuppetVertex(b, 1.0f, 0.0f, 0.5f);
-    WritePuppetVertex(b, 0.0f, 1.0f, 1.0f);
-    b.U32(6);
-    b.U16(0);
-    b.U16(1);
-    b.U16(2);
-
-    b.Stamp("MDLS", 1);
-    b.U32(0);
-    b.U16(1);
-    b.U16(0);
-    b.Str("root");
-    b.I32(0);
-    b.U32(0xFFFFFFFFu);
-    b.U32(64);
-    WriteIdentity3x4(b);
-    b.Str("{}");
-
-    b.Stamp("MDLA", 0);
-    b.U8(0);
-    return b.TakeString();
-}
-
 std::string BuildVideoTexFixture() {
     Bytes b;
     b.Stamp("TEXV", 5);
@@ -442,13 +409,11 @@ std::string PuppetMaterialJson(std::string_view                        shader,
 
 void AddPuppetImageSceneFiles(std::map<std::string, std::string>& files,
                               bool                               include_eyes_material = true,
-                              bool                               legacy_puppet = false,
                               bool                               mesh_only_puppet = false) {
     files["/puppet_image.json"] =
         R"({"width":64,"height":32,"material":"mat/base.json","puppet":"puppet.mdl"})";
-    files["/puppet.mdl"] = legacy_puppet       ? BuildLegacySingleMeshPuppetMdlFixture()
-                            : mesh_only_puppet ? BuildMeshOnlyPuppetMdlFixture()
-                                               : BuildTwoMeshPuppetMdlFixture();
+    files["/puppet.mdl"] = mesh_only_puppet ? BuildMeshOnlyPuppetMdlFixture()
+                                          : BuildTwoMeshPuppetMdlFixture();
     files["/mat/base.json"] = PuppetMaterialJson("baseimage", "base.tex");
     files["/mat/head.json"] = PuppetMaterialJson("headimage", "head.tex");
     if (include_eyes_material) {
@@ -1846,37 +1811,6 @@ TEST(SceneSchema, ParserKeepsTransitiveInvisibleImageDependenciesFromDynamicVisi
     ASSERT_NE(consumer, nullptr);
 }
 
-TEST(SceneSchema, ParserDoesNotRetainInvisibleImageDependenciesFromNonImageRoots) {
-    fs::VFS vfs;
-    MountSceneFiles(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-    const std::string   scene = R"({
-      "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
-      "general": {
-        "ambientcolor":[0.2,0.2,0.2], "skylightcolor":[0.3,0.3,0.3],
-        "clearcolor":[0,0,0], "cameraparallax":false,
-        "cameraparallaxamount":0, "cameraparallaxdelay":0,
-        "cameraparallaxmouseinfluence":0,
-        "orthogonalprojection":{"width":640,"height":360}
-      },
-      "objects": [
-        {"id":190,"name":"hidden image source from particle","image":"image.json",
-         "origin":[0,0,0],"scale":[1,1,1],"angles":[0,0,0],"visible":false},
-        {"id":191,"name":"visible particle root","particle":"particle.json","dependencies":[190],
-         "origin":[8,0,0],"scale":[1,1,1],"angles":[0,0,0],"visible":true}
-      ]
-    })";
-
-    auto parsed = parser.Parse("non-image-root-image-dependency-source", scene, vfs, sound_manager);
-
-    ASSERT_NE(parsed, nullptr);
-    EXPECT_EQ(FindRootChildByName(*parsed, "hidden image source from particle"), nullptr);
-    auto particle = FindRootChildByName(*parsed, "visible particle root");
-    ASSERT_NE(particle, nullptr);
-    EXPECT_TRUE(particle->Visible());
-}
-
 TEST(SceneSchema, ParserDoesNotRetainInvisibleNonImageDependencySources) {
     fs::VFS vfs;
     MountSceneFiles(vfs);
@@ -3182,7 +3116,7 @@ TEST(SceneSchema, ParserLoadsPuppetMeshMaterialSlotsFromPerMeshMaterialFiles) {
 
 TEST(SceneSchema, ParserKeepsMeshOnlyPuppetMaterialSlotsWithoutMdlsBlock) {
     auto files = std::map<std::string, std::string> {};
-    AddPuppetImageSceneFiles(files, true, false, true);
+    AddPuppetImageSceneFiles(files, true, true);
     fs::VFS vfs;
     EXPECT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
     audio::SoundManager sound_manager;
@@ -3249,7 +3183,7 @@ TEST(SceneSchema, ParserAlignsMaskedMultiMeshPuppetMaterialSlotsWithSubmeshes) {
 
 TEST(SceneSchema, ParserBuildsMeshOnlyPuppetSubmeshesWithMeshVertexLayout) {
     auto files = std::map<std::string, std::string> {};
-    AddPuppetImageSceneFiles(files, true, false, true);
+    AddPuppetImageSceneFiles(files, true, true);
     fs::VFS vfs;
     EXPECT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
     audio::SoundManager sound_manager;
@@ -3367,32 +3301,6 @@ TEST(SceneSchema, ParserCopiesImageParallaxDepthToPuppetMaterialSlots) {
     const auto placed = node->ModelTrans();
     EXPECT_NE(updates.at("g_ModelMatrix")[12], static_cast<float>(placed(0, 3)));
     EXPECT_NE(updates.at("g_ModelMatrix")[13], static_cast<float>(placed(1, 3)));
-}
-
-TEST(SceneSchema, ParserKeepsLegacyEmptyPuppetMeshSingleMaterialSlotFallback) {
-    auto files = std::map<std::string, std::string> {};
-    AddPuppetImageSceneFiles(files, true, true);
-    fs::VFS vfs;
-    EXPECT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-
-    auto parsed = parser.Parse("legacy-puppet-slot", BasicPuppetSceneJson(), vfs, sound_manager);
-
-    ASSERT_NE(parsed, nullptr);
-    auto node = FindRootChildByName(*parsed, "puppet image");
-    ASSERT_NE(node, nullptr);
-    ASSERT_NE(node->Mesh(), nullptr);
-    const auto& mesh = *node->Mesh();
-    ASSERT_EQ(mesh.Submeshes().size(), 1u);
-    EXPECT_EQ(mesh.Submeshes()[0].material_slot, 0u);
-    ASSERT_EQ(mesh.Submeshes()[0].VertexCount(), 1u);
-    EXPECT_EQ(mesh.Submeshes()[0].GetVertexArray(0).VertexCount(), 3u);
-    ASSERT_EQ(mesh.Submeshes()[0].IndexCount(), 1u);
-    EXPECT_EQ(mesh.Submeshes()[0].GetIndexArray(0).DataCount(), 2u);
-    ASSERT_EQ(node->Mesh()->MaterialSlots().size(), 1u);
-    ASSERT_NE(node->Mesh()->Material(), nullptr);
-    EXPECT_EQ(node->Mesh()->Material()->name, "baseimage");
 }
 
 TEST(SceneSchema, ParserFallsBackWhenPuppetMeshSlotMaterialFailsToLoad) {

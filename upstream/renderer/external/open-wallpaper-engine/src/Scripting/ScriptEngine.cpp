@@ -12,7 +12,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -37,48 +36,9 @@ Eigen::Vector3f RadiansToDegrees(const Eigen::Vector3f& value) { return value * 
 
 struct SceneScriptBridgeState {
     SceneRuntimeContext* runtime = nullptr;
-    uint32_t create_layer_slot = 0;
-    uint32_t update_scope_id = 0;
-    bool cache_created_layers = false;
 };
 
 SceneScriptBridgeState* GetBridgeState(JSContext* context);
-
-enum class GeneratedLayerUpdateScope : uint32_t
-{
-    ExportUpdate = 1,
-    SceneCallback = 2,
-};
-
-class GeneratedLayerCacheScope {
-public:
-    explicit GeneratedLayerCacheScope(JSContext* context, std::optional<GeneratedLayerUpdateScope> scope)
-        : m_bridge(scope.has_value() ? GetBridgeState(context) : nullptr) {
-        if (m_bridge == nullptr) return;
-        m_old_cache_created_layers = m_bridge->cache_created_layers;
-        m_old_create_layer_slot    = m_bridge->create_layer_slot;
-        m_old_update_scope_id      = m_bridge->update_scope_id;
-        m_bridge->create_layer_slot = 0;
-        m_bridge->update_scope_id = static_cast<uint32_t>(*scope);
-        m_bridge->cache_created_layers = true;
-    }
-
-    ~GeneratedLayerCacheScope() {
-        if (m_bridge == nullptr) return;
-        m_bridge->update_scope_id = m_old_update_scope_id;
-        m_bridge->create_layer_slot = m_old_create_layer_slot;
-        m_bridge->cache_created_layers = m_old_cache_created_layers;
-    }
-
-    GeneratedLayerCacheScope(const GeneratedLayerCacheScope&) = delete;
-    GeneratedLayerCacheScope& operator=(const GeneratedLayerCacheScope&) = delete;
-
-private:
-    SceneScriptBridgeState* m_bridge { nullptr };
-    bool                    m_old_cache_created_layers { false };
-    uint32_t                m_old_create_layer_slot { 0 };
-    uint32_t                m_old_update_scope_id { 0 };
-};
 
 enum class ScriptProgramMode
 {
@@ -1201,7 +1161,6 @@ void AppendCommonHostBootstrap(std::ostringstream& wrapper) {
         << "  globalThis.__layerOrder = globalThis.__layerOrder || [];\n"
         << "  globalThis.__videoTextureCache = globalThis.__videoTextureCache || "
            "Object.create(null);\n"
-        << "  globalThis.__nextGeneratedLayerId = globalThis.__nextGeneratedLayerId || 1;\n"
         << "  function __rememberLayer(name) {\n"
         << "    if (globalThis.__layerOrder.indexOf(name) < 0) "
            "globalThis.__layerOrder.push(name);\n"
@@ -1294,6 +1253,8 @@ void AppendCommonHostBootstrap(std::ostringstream& wrapper) {
         << "      set origin(v) { __layerSetOrigin(name, v); },\n"
         << "      get scale() { return __layerGetScale(name); },\n"
         << "      set scale(v) { __layerSetScale(name, v); },\n"
+        << "      get color() { return __layerGetColor(name); },\n"
+        << "      set color(v) { __layerSetColor(name, v); },\n"
         << "      get alignment() { return state.alignment || 'center'; },\n"
         << "      set alignment(v) { state.alignment = String(v || 'center'); "
            "__layerSetAlignment(name, state.alignment); },\n"
@@ -1435,17 +1396,30 @@ void AppendCommonHostBootstrap(std::ostringstream& wrapper) {
         << "    if (nativeIndex >= 0) return nativeIndex;\n"
         << "    return globalThis.__layerOrder.indexOf(name);\n"
         << "  };\n"
-        << "  __sceneBase.__createLayerFor = function(currentLayerName, sourcePath) {\n"
-        << "    var templateName = String(sourcePath || '');\n"
+        << "  function __layerConfigVector(value) {\n"
+        << "    if (typeof value !== 'string') return value;\n"
+        << "    var parts = value.trim().split(/\\s+/).map(Number);\n"
+        << "    return new Vec3(parts[0], parts[1], parts[2]);\n"
+        << "  }\n"
+        << "  __sceneBase.__createLayerFor = function(currentLayerName, configuration) {\n"
+        << "    var options = typeof configuration === 'object' && configuration !== null ? configuration : null;\n"
+        << "    var templateName = options ? String(options.image || '') : String(configuration || '');\n"
         << "    var generatedName = __layerCreate(templateName, String(currentLayerName || ''));\n"
-        << "    if (!generatedName) generatedName = '__generated_layer_' + "
-           "(globalThis.__nextGeneratedLayerId++) + ':' + templateName;\n"
-        << "    if (!globalThis.__layerCache[generatedName]) {\n"
-        << "      var generated = __createLayer(generatedName);\n"
-        << "      generated.template = templateName;\n"
-        << "      globalThis.__layerCache[generatedName] = generated;\n"
+        << "    if (!generatedName) throw new Error('Unable to create layer: ' + templateName);\n"
+        << "    var generated = __createLayer(generatedName);\n"
+        << "    generated.template = templateName;\n"
+        << "    globalThis.__layerCache[generatedName] = generated;\n"
+        << "    if (options) {\n"
+        << "      if (options.origin !== undefined) generated.origin = __layerConfigVector(options.origin);\n"
+        << "      if (options.scale !== undefined) generated.scale = __layerConfigVector(options.scale);\n"
+        << "      if (options.angles !== undefined) generated.angles = __layerConfigVector(options.angles);\n"
+        << "      if (options.color !== undefined) generated.color = __layerConfigVector(options.color);\n"
+        << "      if (options.alpha !== undefined) generated.alpha = options.alpha;\n"
+        << "      if (options.visible !== undefined) generated.visible = options.visible;\n"
+        << "      if (options.alignment !== undefined) generated.alignment = options.alignment;\n"
+        << "      generated.originalOrigin = generated.origin;\n"
         << "    }\n"
-        << "    return globalThis.__layerCache[generatedName];\n"
+        << "    return generated;\n"
         << "  };\n"
         << "  __sceneBase.createLayer = function(sourcePath) {\n"
         << "    return this.__createLayerFor('', sourcePath);\n"
@@ -1888,11 +1862,6 @@ JSValue CallStoredExport(JSContext* context, const char* exports_object_name,
     JSValue function      = JS_GetPropertyStr(context, exports, export_name);
 
     JSValue result = JS_UNDEFINED;
-    GeneratedLayerCacheScope create_layer_cache_scope(
-        context,
-        strcmp(export_name, "update") == 0
-            ? std::make_optional(GeneratedLayerUpdateScope::ExportUpdate)
-            : std::nullopt);
     if (JS_IsFunction(context, function)) {
         result = JS_Call(context, function, JS_UNDEFINED, argc, argv);
         if (JS_IsException(result)) {
@@ -1988,6 +1957,29 @@ JSValue JsLayerSetScale(JSContext* context, JSValueConst, int argc, JSValueConst
         bridge->runtime->SetNodeScale(layer_name, value->getVec3());
     }
     if (layer_name != nullptr) JS_FreeCString(context, layer_name);
+    return JS_UNDEFINED;
+}
+
+JSValue JsLayerGetColor(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
+    auto* bridge = GetBridgeState(context);
+    if (argc < 1 || bridge == nullptr || bridge->runtime == nullptr)
+        return CreateJsVec3(context, 1.0, 1.0, 1.0);
+    const char* name = JS_ToCString(context, argv[0]);
+    const Eigen::Vector3f color = name != nullptr ? bridge->runtime->NodeColor(name)
+                                                  : Eigen::Vector3f::Ones();
+    if (name != nullptr) JS_FreeCString(context, name);
+    return CreateJsVec3(context, color.x(), color.y(), color.z());
+}
+
+JSValue JsLayerSetColor(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
+    auto* bridge = GetBridgeState(context);
+    if (argc < 2 || bridge == nullptr || bridge->runtime == nullptr) return JS_UNDEFINED;
+    const char* name = JS_ToCString(context, argv[0]);
+    DynamicValue color;
+    FillDynamicValueFromJS(context, argv[1], DynamicValue::Vec3, color);
+    if (name != nullptr && color.getType() == DynamicValue::Vec3)
+        bridge->runtime->SetNodeColor(name, color.getVec3());
+    if (name != nullptr) JS_FreeCString(context, name);
     return JS_UNDEFINED;
 }
 
@@ -2121,18 +2113,12 @@ JSValue JsLayerCreate(JSContext* context, JSValueConst, int argc, JSValueConst* 
     auto* bridge = GetBridgeState(context);
     if (bridge == nullptr || bridge->runtime == nullptr) return JS_NewString(context, "");
 
-    uint32_t create_slot = std::numeric_limits<uint32_t>::max();
-    if (bridge->cache_created_layers) {
-        create_slot =
-            (bridge->update_scope_id << 16U) | (bridge->create_layer_slot++ & 0xffffU);
-    }
-
     const char* template_name      = JS_ToCString(context, argv[0]);
     const char* current_layer_name = JS_ToCString(context, argv[1]);
     std::string generated_name;
     if (template_name != nullptr) {
         generated_name = bridge->runtime->CreateLayerFromTemplate(
-            template_name, current_layer_name != nullptr ? current_layer_name : "", create_slot);
+            template_name, current_layer_name != nullptr ? current_layer_name : "");
     }
     if (template_name != nullptr) JS_FreeCString(context, template_name);
     if (current_layer_name != nullptr) JS_FreeCString(context, current_layer_name);
@@ -2514,11 +2500,6 @@ void RunSceneCallbacks(JSContext* context, const char* event_name,
     JSValue global_object = JS_GetGlobalObject(context);
     JSValue runner        = JS_GetPropertyStr(context, global_object, "__runSceneCallbacks");
 
-    GeneratedLayerCacheScope create_layer_cache_scope(
-        context,
-        strcmp(event_name, "update") == 0
-            ? std::make_optional(GeneratedLayerUpdateScope::SceneCallback)
-            : std::nullopt);
     if (JS_IsFunction(context, runner)) {
         JSValue                     event = JS_NewString(context, event_name);
         std::array<JSValueConst, 2> argv { event, payload };
@@ -2619,8 +2600,8 @@ std::string BuildPropertyScriptFactorySource(const ScriptFrontEndResult& front_e
             << "  var __props = globalThis[__scriptContext.propsName];\n";
     AppendScriptPropertiesBuilder(wrapper);
     wrapper << "  const thisScene = Object.create(globalThis.scene);\n"
-            << "  thisScene.createLayer = function(sourcePath) { return "
-               "globalThis.scene.__createLayerFor(__scriptContext.layerName, sourcePath); };\n"
+            << "  Object.defineProperty(thisScene, 'createLayer', { value: function(configuration) { return "
+               "globalThis.scene.__createLayerFor(__scriptContext.layerName, configuration); } });\n"
             << "  let thisLayer = __scriptContext.layerName ? "
                "globalThis.scene.getLayer(__scriptContext.layerName) : undefined;\n"
             << "  let thisObject = thisLayer;\n"
@@ -2663,8 +2644,8 @@ std::string BuildSceneScriptFactorySource(const ScriptFrontEndResult& front_end)
             << "  var __props = globalThis.__scriptProps || {};\n";
     AppendScriptPropertiesBuilder(wrapper);
     wrapper << "  const thisScene = Object.create(globalThis.scene);\n"
-            << "  thisScene.createLayer = function(sourcePath) { return "
-               "globalThis.scene.__createLayerFor(__scriptContext.layerName, sourcePath); };\n"
+            << "  Object.defineProperty(thisScene, 'createLayer', { value: function(configuration) { return "
+               "globalThis.scene.__createLayerFor(__scriptContext.layerName, configuration); } });\n"
             << "  let thisLayer = __scriptContext.layerName ? "
                "globalThis.scene.getLayer(__scriptContext.layerName) : undefined;\n"
             << "  let thisObject = thisLayer;\n"
@@ -2742,6 +2723,10 @@ bool EnsureSharedHostBindings(JSContext* context, SceneRuntimeContext* runtime,
                           global_object,
                           "__layerSetScale",
                           JS_NewCFunction(context, JsLayerSetScale, "__layerSetScale", 2));
+        JS_SetPropertyStr(context, global_object, "__layerGetColor",
+                          JS_NewCFunction(context, JsLayerGetColor, "__layerGetColor", 1));
+        JS_SetPropertyStr(context, global_object, "__layerSetColor",
+                          JS_NewCFunction(context, JsLayerSetColor, "__layerSetColor", 2));
         JS_SetPropertyStr(context,
                           global_object,
                           "__layerSetAlignment",

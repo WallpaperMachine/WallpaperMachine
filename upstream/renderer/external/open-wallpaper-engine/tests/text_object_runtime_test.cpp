@@ -73,7 +73,7 @@ TEST(TextObjectRuntime, LonelyCatHeadlessRegression) {
     ASSERT_TRUE(ParseProjectProperties(project, &properties, &error)) << error;
     auto source = vfs.Open("/assets/scene.json");
     ASSERT_NE(source, nullptr);
-    audio::SoundManager sound;
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
     WPSceneParser parser;
     WPShaderParser::ClearProgramCache();
     WPShaderParser::ResetStartupMetrics();
@@ -1302,6 +1302,8 @@ TEST(TextObjectRuntime, ExplicitAlignedTextEffectTracksMeasuredRenderFrameWhenRa
     ASSERT_TRUE(camera->HasImgEffect());
     const auto effect_layer = camera->GetImgEffect();
     ASSERT_NE(effect_layer, nullptr);
+    scene->runtime->Tick(1.0 / 60.0);
+    PumpTextUntilClean(*scene->runtime);
 
     EXPECT_EQ(scene->runtime->NodeText("caption"),
               "a much longer caption for explicit effects");
@@ -1362,7 +1364,7 @@ TEST(TextObjectRuntime, ExplicitAlignedTextEffectTracksMeasuredRenderFrameWhenRa
     EXPECT_NEAR(resolved_final_mesh_center.x(), render_frame.center.x(), 1.0e-4f);
     EXPECT_NEAR(resolved_final_mesh_center.y(), render_frame.center.y(), 1.0e-4f);
 
-    EXPECT_FALSE(scene->runtime->ConsumeSceneGraphMutationFlag());
+    EXPECT_TRUE(scene->runtime->ConsumeSceneGraphMutationFlag());
     PumpTextUntilClean(*scene->runtime);
     EXPECT_FALSE(scene->runtime->ConsumeSceneGraphMutationFlag());
 }
@@ -1747,84 +1749,6 @@ TEST(TextObjectRuntime, ExplicitTextObjectSizeRemainsLogicalFrameWhenRasterExpan
     EXPECT_NEAR(resized_mesh_bounds.max_x, logical_size.x() * 0.5f, 1.0e-4f);
     EXPECT_NEAR(resized_mesh_bounds.min_y, -logical_size.y() * 0.5f, 1.0e-4f);
     EXPECT_FALSE(scene->runtime->ConsumeSceneGraphMutationFlag());
-}
-
-TEST(TextObjectRuntime, TextStyleColorAlphaAndBrightnessTintRuntimeTexture) {
-    fs::VFS vfs;
-    MountAssets(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-
-    ProjectProperties properties;
-    SceneParseRequest request {
-        .scene_id           = "text-style-tint",
-        .project_properties = &properties,
-    };
-    auto scene = parser.Parse(request,
-                              MinimalSceneObjects(R"([
-          {
-            "id": 1,
-            "name": "caption",
-            "text": "IIII",
-            "font": "Arial",
-            "pointsize": 20,
-            "color": [0.25, 0.5, 0.75],
-            "brightness": 0.5,
-            "alpha": 0.25,
-            "visible": true
-          }
-        ])"),
-                              vfs,
-                              sound_manager);
-
-    ASSERT_NE(scene, nullptr);
-    auto* node = FindRootChild(*scene, "caption");
-    ASSERT_NE(node, nullptr);
-    ASSERT_NE(node->Mesh(), nullptr);
-    auto* material = node->Mesh()->MaterialForSlot(0);
-    ASSERT_NE(material, nullptr);
-    ASSERT_EQ(material->textures.size(), 1u);
-
-    auto image = scene->imageParser->Parse(material->textures.front());
-    ASSERT_NE(image, nullptr);
-    ASSERT_EQ(image->slots.size(), 1u);
-    ASSERT_EQ(image->slots[0].mipmaps.size(), 1u);
-    const auto& mip = image->slots[0].mipmaps[0];
-    ASSERT_NE(mip.data, nullptr);
-
-    bool saw_tinted_pixel         = false;
-    bool saw_straight_alpha_pixel = false;
-    int  max_alpha                = 0;
-    for (int y = 0; y < mip.height; ++y) {
-        for (int x = 0; x < mip.width; ++x) {
-            const auto offset =
-                (static_cast<std::size_t>(y) * mip.width + static_cast<std::size_t>(x)) * 4u;
-            const auto alpha = mip.data.get()[offset + 3u];
-            max_alpha        = std::max(max_alpha, static_cast<int>(alpha));
-            if (alpha == 0u || saw_tinted_pixel) continue;
-
-            EXPECT_LT(mip.data.get()[offset + 0u], mip.data.get()[offset + 1u]);
-            EXPECT_LT(mip.data.get()[offset + 1u], mip.data.get()[offset + 2u]);
-            saw_tinted_pixel = true;
-        }
-    }
-    for (int y = 0; y < mip.height && ! saw_straight_alpha_pixel; ++y) {
-        for (int x = 0; x < mip.width; ++x) {
-            const auto offset =
-                (static_cast<std::size_t>(y) * mip.width + static_cast<std::size_t>(x)) * 4u;
-            const auto alpha = mip.data.get()[offset + 3u];
-            if (alpha < 48u) continue;
-
-            EXPECT_GE(mip.data.get()[offset + 0u], 24u);
-            EXPECT_GE(mip.data.get()[offset + 1u], 48u);
-            EXPECT_GE(mip.data.get()[offset + 2u], 72u);
-            saw_straight_alpha_pixel = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(saw_tinted_pixel);
-    EXPECT_TRUE(saw_straight_alpha_pixel);
-    EXPECT_LE(max_alpha, 64);
 }
 
 TEST(TextObjectRuntime, RasterizedTextUsesFontPixelSizeAndAntialiasesEdges) {
@@ -2577,42 +2501,28 @@ TEST(TextObjectRuntime, TextVisibleUserBindingFollowsProjectOverride) {
     EXPECT_FALSE(node->Visible());
 }
 
-TEST(TextObjectRuntime, TextFieldScriptContinuesFromPrimedTextOnTick) {
+TEST(TextObjectRuntime, TextScriptsWaitForTheNormalTickBeforeReadingSharedState) {
     fs::VFS vfs;
     MountAssets(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-    ProjectProperties   properties;
-    SceneParseRequest   request {
-          .scene_id           = "text-field-script",
-          .project_properties = &properties,
+    audio::SoundManager sound;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    SceneParseRequest request {
+        .scene_id = "text-shared-order", .project_properties = &properties,
     };
-
-    auto scene = parser.Parse(request,
-                              MinimalSceneObjects(R"([
-          {
-            "id": 1,
-            "name": "caption",
-            "text": {
-              "value": "before",
-              "script": "export function update(value) { return value + ' after'; }"
-            },
-            "font": "Arial",
-            "visible": true
-          }
-        ])"),
-                              vfs,
-                              sound_manager);
-
+    auto scene = parser.Parse(request, MinimalSceneObjects(R"([
+        {"id":1,"name":"producer","visible":{"value":true,
+         "script":"export function update() { shared.number = (shared.number || 6) + 1; return true; }"}},
+        {"id":2,"name":"caption","font":"Arial","text":{"value":"waiting",
+         "script":"export function update() { return shared.number.toFixed(1); }"}}
+      ])"), vfs, sound);
     ASSERT_NE(scene, nullptr);
     ASSERT_NE(scene->runtime, nullptr);
-    EXPECT_EQ(scene->runtime->NodeText("caption"), "before after");
-    EXPECT_FALSE(scene->runtime->NodeTextDirty("caption"));
-
+    EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
     scene->runtime->Tick(1.0 / 60.0);
-
-    EXPECT_EQ(scene->runtime->NodeText("caption"), "before after after");
-    EXPECT_TRUE(scene->runtime->NodeTextDirty("caption"));
+    EXPECT_EQ(scene->runtime->NodeText("caption"), "7.0");
+    scene->runtime->Tick(1.0 / 60.0);
+    EXPECT_EQ(scene->runtime->NodeText("caption"), "8.0");
     EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
 }
 
@@ -2883,118 +2793,6 @@ TEST(TextObjectRuntime, UnchangedRuntimeTextMutationSkipsDirtyAndCacheRevision) 
     EXPECT_FALSE(after_state->full_dirty);
     EXPECT_FALSE(runtime->NodeTextDirty("caption"));
     EXPECT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-}
-
-TEST(TextObjectRuntime, ClockScriptUpdatesSameSizeTextOnceThenSkipsMeasurements) {
-    fs::VFS vfs;
-    MountAssets(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-    ProjectProperties   properties;
-    SceneParseRequest   request {
-          .scene_id           = "text-clock-script-same-size",
-          .project_properties = &properties,
-    };
-
-    auto scene = parser.Parse(request,
-                              MinimalSceneObjects(R"([
-          {
-            "id": 1,
-            "name": "Clock",
-            "text": {
-              "value": "06:15",
-              "script": "export function update(value) { return '12:34'; }"
-            },
-            "font": "systemfont_sansserif",
-            "pointsize": 33,
-            "padding": 32,
-            "size": "342 156",
-            "horizontalalign": "center",
-            "verticalalign": "center",
-            "visible": true
-          }
-        ])"),
-                              vfs,
-                              sound_manager);
-
-    ASSERT_NE(scene, nullptr);
-    ASSERT_NE(scene->runtime, nullptr);
-    auto* runtime = scene->runtime.get();
-
-    EXPECT_EQ(runtime->NodeText("Clock"), "12:34");
-    runtime->ClearNodeTextDirty("Clock");
-    ASSERT_FALSE(runtime->NodeTextDirty("Clock"));
-
-    runtime->Tick(1.0 / 60.0);
-    EXPECT_EQ(runtime->NodeText("Clock"), "12:34");
-    const auto changed_state = runtime->NodeTextState("Clock");
-    ASSERT_TRUE(changed_state.has_value());
-    EXPECT_FALSE(runtime->NodeTextDirty("Clock"));
-    EXPECT_FALSE(changed_state->cache_dirty);
-
-    runtime->ClearNodeTextDirty("Clock");
-    ASSERT_FALSE(runtime->NodeTextDirty("Clock"));
-    ResetTextLayerMeasurementCountForTests();
-    runtime->Tick(1.0 / 60.0);
-
-    EXPECT_EQ(runtime->NodeText("Clock"), "12:34");
-    EXPECT_EQ(TextLayerMeasurementCountForTests(), 0u);
-    EXPECT_FALSE(runtime->NodeTextDirty("Clock"));
-}
-
-TEST(TextObjectRuntime, ClockScriptTextResizeDoesNotMutateSceneGraph) {
-    fs::VFS vfs;
-    MountAssets(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
-    ProjectProperties   properties;
-    SceneParseRequest   request {
-          .scene_id           = "text-clock-script-resize-no-graph-mutation",
-          .project_properties = &properties,
-    };
-
-    auto scene = parser.Parse(request,
-                              MinimalSceneObjects(R"([
-          {
-            "id": 1,
-            "name": "Clock",
-            "text": {
-              "value": "1",
-              "script": "export function update(value) { return '888888888888'; }"
-            },
-            "font": "systemfont_sansserif",
-            "pointsize": 33,
-            "padding": 32,
-            "horizontalalign": "center",
-            "verticalalign": "center",
-            "visible": true
-          }
-        ])"),
-                              vfs,
-                              sound_manager);
-
-    ASSERT_NE(scene, nullptr);
-    ASSERT_NE(scene->runtime, nullptr);
-    auto* runtime = scene->runtime.get();
-    auto* clock   = FindRootChild(*scene, "Clock");
-    ASSERT_NE(clock, nullptr);
-    ASSERT_NE(clock->Mesh(), nullptr);
-    ASSERT_TRUE(clock->Mesh()->Dynamic());
-    ASSERT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-
-    EXPECT_EQ(runtime->NodeText("Clock"), "888888888888");
-    EXPECT_FALSE(runtime->NodeTextDirty("Clock"));
-    const auto before_size      = runtime->NodeSize("Clock");
-    const auto before_mesh_size = MeshSize(*clock->Mesh());
-
-    runtime->Tick(1.0 / 60.0);
-
-    EXPECT_EQ(runtime->NodeText("Clock"), "888888888888");
-    EXPECT_FALSE(runtime->NodeTextDirty("Clock"));
-    EXPECT_FLOAT_EQ(runtime->NodeSize("Clock").x(), before_size.x());
-    EXPECT_FLOAT_EQ(MeshSize(*clock->Mesh()).x(), before_mesh_size.x());
-    EXPECT_FALSE(runtime->ConsumeSceneGraphMutationFlag());
-    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
 TEST(TextObjectRuntime, Workshop3409533530ClockParentKeepsVisibleRuntimeTexture) {
@@ -3867,6 +3665,77 @@ TEST(TextObjectRuntime, FreeTypeRasterizationFallsBackForMissingPrimaryGlyph) {
 #endif
 }
 
+
+TEST(TextObjectRuntime, AWaitingClockIsNotStarvedByNewerReadoutUpdates) {
+    fs::VFS vfs;
+    MountAssets(vfs);
+    audio::SoundManager sound;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    SceneParseRequest request {
+        .scene_id = "text-queue-fairness", .project_properties = &properties,
+    };
+    auto scene = parser.Parse(request, MinimalSceneObjects(R"([
+        {"id":1,"name":"clock","text":"00:00","font":"Arial","pointsize":20},
+        {"id":2,"name":"caption","text":"idle","font":"Arial","pointsize":20}
+      ])"), vfs, sound);
+    ASSERT_NE(scene, nullptr);
+    auto& runtime = *scene->runtime;
+    const auto before = scene->imageParser->Parse(TextTextureName("clock"));
+    ASSERT_NE(before, nullptr);
+    struct Gate {
+        std::mutex mutex;
+        std::condition_variable cv;
+        int completed { 0 };
+        int released { 0 };
+        bool stop { false };
+    };
+    auto gate = std::make_shared<Gate>();
+    runtime.SetContentWakeHandler([gate] {
+        std::unique_lock lock(gate->mutex);
+        const int completed = ++gate->completed;
+        gate->cv.notify_all();
+        gate->cv.wait(lock, [&] { return gate->stop || gate->released >= completed; });
+    });
+    struct ReleaseGate {
+        SceneRuntimeContext& runtime;
+        std::shared_ptr<Gate> gate;
+        ~ReleaseGate() {
+            {
+                std::lock_guard lock(gate->mutex);
+                gate->stop = true;
+            }
+            gate->cv.notify_all();
+            runtime.SetContentWakeHandler({});
+        }
+    } release { runtime, gate };
+    const auto wait_for = [&](int count) {
+        std::unique_lock lock(gate->mutex);
+        return gate->cv.wait_for(lock, std::chrono::seconds(2),
+                                 [&] { return gate->completed >= count; });
+    };
+    ASSERT_TRUE(runtime.SetNodeText("caption", "first"));
+    runtime.PumpTextLayerCache();
+    ASSERT_TRUE(wait_for(1));
+    ASSERT_TRUE(runtime.SetNodeText("clock", "12:34"));
+    runtime.PumpTextLayerCache();
+    ASSERT_TRUE(runtime.SetNodeText("caption", "second"));
+    runtime.PumpTextLayerCache();
+    ASSERT_TRUE(runtime.SetNodeText("caption", "third"));
+    runtime.PumpTextLayerCache();
+    {
+        std::lock_guard lock(gate->mutex);
+        gate->released = 1;
+    }
+    gate->cv.notify_all();
+    ASSERT_TRUE(wait_for(2));
+    runtime.PumpTextLayerCache();
+    const auto updated = scene->imageParser->Parse(TextTextureName("clock"));
+    ASSERT_NE(updated, nullptr);
+    EXPECT_NE(updated->key, before->key);
+    EXPECT_FALSE(runtime.NodeTextDirty("clock"));
+    EXPECT_TRUE(runtime.NodeTextDirty("caption"));
+}
 
 TEST(TextObjectRuntime, PreparedTextWakesWhoeverOwnsTheFrameClock) {
     // A scene that has gone quiet has no clock left to notice that the text

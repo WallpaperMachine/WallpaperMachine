@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Perspective wallpaper fix delivered after gate recovery
+
+- The earlier app-gate blocker is cleared. Concurrent screensaver fixes were preserved: canonical asset URLs, denied-or-unavailable capture behavior and rendered content checks; this delivery added no changes to those files.
+- python3 scripts/test.py --serial — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 explicit opt-in skips of 894. Serial execution avoided the previous multi-runner launchd spawn failure without excluding tests.
+- python3 scripts/check_renderer.py — exit 0; all renderer executables passed, all 10 generated pooled/isolated images equal with zero diagnostics, eight projects reloaded twice. Local-asset skips remain explicit.
+- Fresh surface-free Native Metal scenario: installed perspective wallpaper drew 1200 frames at 3840x2160; inspected the private final frame for full coverage, live clock/date/status and faded login overlays. 44 render passes/frame, 1 blit/frame, 0.53 ms thread CPU per drawFrame; no desktop FPS or power claim.
+- CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 python3 scripts/build.py --configuration Release — exit 0; rebuilt the full Rust/C++ renderer, regenerated bindings and built the Release application.
+- Delivered build/Build/Products/Release/WallpaperMachine.app. codesign --verify --deep --strict passed; diff -qr confirmed bundled Contents/Resources/WebUI matches WebUI byte for byte.
+- No app launch/restart, desktop input, wallpaper changes or live audio capture. The user must quit the old app and open the delivered build; physical desktop behavior and exact Windows visual parity remain unverified.
+
 ## 2026-09-30 — Independent native wallpaper screen saver
 
 - `python3 scripts/test.py --serial` — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 skipped (9 opt-in media/device and 2 live Steam checks).
@@ -35,6 +45,17 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Isolated regressions cover independent selection/restoration, topology gaps, native-video exports, web properties/files, capture denial, readiness and paused teardown.
 - Real idle transitions, lock/password UI, multi-monitor compositor delivery and sleep/wake visuals remain unverified. No Release app rebuild, activation or restart.
 - The shared workspace contained unrelated import-picker and renderer changes; those are excluded from this feature commit.
+
+## 2026-09-30 — Perspective scene rendering and live text compatibility
+
+- Renderer gate: python3 scripts/check_renderer.py passed; 494 tests across 23 binaries, 3 explicit local-asset skips; all 10 generated pooled/isolated pixel cases equal with zero diagnostics; 8 projects reloaded twice.
+- Focused suites passed: text_object_runtime_test 60, script_runtime_compat_test 81, scene_schema_tests 89, mdl_schema_tests 55; the final renderer gate also passed 19 layer-reference and 10 render-scale tests.
+- Installed perspective scene: both Native Metal and Compatibility drew 1200 frames offscreen at 3840x2160. Inspected final private images: no black quadrant or login overlay, current clock/date/status text, full-resolution starfield and visible star glows. No asset edits or wallpaper-specific renderer branches.
+- Native Metal final scenario: 44 render passes/frame, 26 on scene output, 1 blit/frame, 0.52 ms thread CPU per drawFrame; 299270656 render-target bytes and 779829248 device-allocated bytes. These exclude script/update CPU and do not establish desktop FPS or power use.
+- Compatibility final scenario: 738564736 VMA allocated bytes; process footprint/peak 2156971808 bytes. Native resolution and retained perspective source mips use more resources than a blurred 1080p/down-mip path; no supersampling or per-frame text-style raster uploads.
+- Routine application gate: python3 scripts/test.py failed, 879 passed / 4 failed / 11 skipped. Three assertions belong to concurrently added ScreenSaverWebSurfaceTests (capture error type, owned-file URL, live-canvas color); another failure is test-runner launchd spawn. Those files and other concurrent app/bridge/extension edits were left unchanged.
+- No Release rebuild, app launch/restart, desktop input or wallpaper changes. Initial diagnostic helpers unexpectedly initialized sound devices on asset mount despite their no-Play comments; corpus helpers now explicitly use the null backend. No live-audio or desktop verification claimed.
+- No commit: the required shared application gate is failing. Exact Windows parity, physical desktop presentation and battery/power effects remain unverified.
 
 ## 2026-09-30 — Issue #17 non-disruptive visual verification
 
@@ -98,20 +119,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Skipped: 9 opt-in native video media cases and 2 live Steam Workshop cases.
 - Updated English, Japanese, Simplified Chinese, and Traditional Chinese native error catalogs and the Workshop download documentation.
 - Live non-owning Steam account and visual error layout not exercised. No Release rebuild or desktop interaction.
-
-## 2026-09-30 — Advanced performance settings refinement
-
-- Local WebUI preview: captured matching before/after views with illustrative wallpaper reports; exercised both renderer selectors and all five switches, keyboard disclosure controls, snapshot focus/open-state preservation, pending/rejection recovery, empty/shared-decode/fallback reports, and escaped long titles.
-- Local WebUI preview: no overflow in 24 combinations of 760/960/1240 px, light/dark, and en/ja/zh-Hans/zh-Hant; sampled Advanced text contrast exceeded 4.5:1 in both themes.
-- Impeccable detect over WebUI/settings.js and WebUI/settings.css — exit 0, no findings.
-- python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped. ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit InvalidTransition during WebKit teardown.
-- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863; Python script suites also passed. Skips: 9 opt-in media/device cases and 2 live Steam cases.
-- Desktop app presentation not checked; preview uses the real settings renderer and CSS with an isolated fixture. No wallpaper changes, app restart, or Release rebuild. Temporary preview files and servers removed; requested comparison images remain disposable.
-
-## 2026-09-30 — English-only GitHub release notes
-
-- python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed; bilingual history remains required and GitHub keeps only English plus the compare link.
-- Actual release_notes.py --tag v1.2.0 --release-body CLI — exit 0; English matches the published English section; Chinese omitted; compare link, download footer and build SHA preserved.
-- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 opt-in skips of 863.
-- gh release edit v1.2.0 --repo WallpaperMachine/WallpaperMachine --notes-file … — exit 0; live readback confirms English-only notes, no raw commit appendix, and unchanged assets, tag, title, publish date and release flags. Description reduced from 8,192 to 3,740 bytes.
-- The app’s bundled changelog remains bilingual. No app rebuild, install, or desktop test. Temporary previews removed.

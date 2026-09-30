@@ -670,7 +670,7 @@ void CollectImageExpectations(const std::filesystem::path& scene_dir, fs::VFS& v
                                  "puppet model asset path escapes corpus/common roots '" +
                                      puppet_path + "' for " + context });
         } else if (WPMdlParser::Parse(puppet_path, vfs, parsed_puppet)) {
-            bool has_puppet_mesh = ! parsed_puppet.vertexs.empty();
+            bool has_puppet_mesh = false;
             for (const auto& mesh : parsed_puppet.meshes) {
                 if (! mesh.positions.empty()) has_puppet_mesh = true;
             }

@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <limits>
@@ -23,6 +24,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -139,6 +141,9 @@ public:
                                          bool has_value);
     void          RegisterLayerTemplate(std::string template_path, std::shared_ptr<SceneNode> node,
                                         Eigen::Vector2f size);
+    // Called synchronously on a registry miss. The loader registers the requested
+    // normalized template without attaching a drawable source to the scene graph.
+    void          SetLayerTemplateLoader(std::function<bool(std::string_view)> loader);
     void          RegisterNodeVisibility(std::string name, SceneNode* node,
                                          std::unique_ptr<DynamicValue> value);
     void          RegisterNodeTranslate(std::string name, SceneNode* node,
@@ -147,7 +152,6 @@ public:
     void RegisterNodeRotation(std::string name, SceneNode* node,
                               std::unique_ptr<DynamicValue> value);
     void RegisterTextLayer(std::string name, TextLayerState state);
-    void PrimeTextValue(DynamicValue& value);
     void RegisterTextValue(std::string name, std::unique_ptr<DynamicValue> value,
                            bool apply_current_value = true);
     void RegisterMaterialConstant(std::shared_ptr<SceneMaterial> material, std::string name,
@@ -235,9 +239,9 @@ public:
     bool            SoundLayerMuted(std::string_view name) const;
     int             NodeSiblingIndex(std::string_view name) const;
     std::string     CreateLayerFromTemplate(std::string_view requested_template_path,
-                                            std::string_view current_layer_name,
-                                            uint32_t create_slot =
-                                                std::numeric_limits<uint32_t>::max());
+                                            std::string_view current_layer_name);
+    Eigen::Vector3f NodeColor(std::string_view name) const;
+    bool            SetNodeColor(std::string_view name, const Eigen::Vector3f& color);
     bool            SortNode(std::string_view name, int index);
     bool            NodeVisible(std::string_view name) const;
     // A layer's parent as scripts address layers: by name. Empty when the layer
@@ -421,34 +425,6 @@ private:
         std::shared_ptr<SceneNode> node;
         Eigen::Vector2f            size { Eigen::Vector2f::Zero() };
     };
-    struct GeneratedLayerKey {
-        std::string current_layer_name;
-        std::string template_path;
-        uint32_t    update_scope_id { 0 };
-        uint32_t    create_slot { 0 };
-
-        bool operator==(const GeneratedLayerKey& other) const {
-            return current_layer_name == other.current_layer_name &&
-                   template_path == other.template_path &&
-                   update_scope_id == other.update_scope_id && create_slot == other.create_slot;
-        }
-    };
-    struct GeneratedLayerKeyHash {
-        std::size_t operator()(const GeneratedLayerKey& key) const {
-            const std::size_t current_hash = std::hash<std::string> {}(key.current_layer_name);
-            const std::size_t template_hash = std::hash<std::string> {}(key.template_path);
-            const std::size_t scope_hash = std::hash<uint32_t> {}(key.update_scope_id);
-            const std::size_t slot_hash = std::hash<uint32_t> {}(key.create_slot);
-            const std::size_t combined =
-                current_hash ^ (template_hash + 0x9e3779b97f4a7c15ULL +
-                                (current_hash << 6U) + (current_hash >> 2U));
-            const std::size_t scoped =
-                combined ^ (scope_hash + 0x9e3779b97f4a7c15ULL + (combined << 6U) +
-                             (combined >> 2U));
-            return scoped ^ (slot_hash + 0x9e3779b97f4a7c15ULL + (scoped << 6U) +
-                             (scoped >> 2U));
-        }
-    };
     std::shared_ptr<WPSoundStream> LockSoundLayer(std::string_view name) const;
     void DispatchMediaPlaybackChanged(std::string_view name, bool playing);
     void ApplyNodeTransform(std::string_view name);
@@ -523,8 +499,9 @@ private:
     std::unordered_map<std::string, NodeAlignmentBinding>          m_node_alignment;
     std::unordered_map<std::string, std::string>                   m_node_template_paths;
     std::unordered_map<std::string, LayerTemplateBinding>          m_layer_templates;
-    std::unordered_map<GeneratedLayerKey, std::string, GeneratedLayerKeyHash>
-        m_generated_layers;
+    std::function<bool(std::string_view)>                          m_layer_template_loader;
+    std::unordered_set<std::string>                               m_loading_layer_templates;
+    std::unordered_set<std::string>                               m_failed_layer_templates;
     std::unordered_map<std::string, std::vector<std::string>>      m_node_video_textures;
     struct StringHash {
         using is_transparent = void;
@@ -548,7 +525,7 @@ private:
     mutable std::mutex                                             m_text_worker_mutex;
     std::condition_variable                                        m_text_worker_cv;
     std::thread                                                    m_text_worker;
-    std::vector<RuntimePendingTextLayerJob>                        m_pending_text_jobs;
+    std::deque<RuntimePendingTextLayerJob>                         m_pending_text_jobs;
     std::vector<RuntimePreparedTextLayerImage>                     m_prepared_text_layers;
     bool                                                           m_stop_text_worker { false };
     /// Guarded by `m_text_worker_mutex`, alongside the queues it describes.

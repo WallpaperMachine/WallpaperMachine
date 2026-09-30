@@ -302,7 +302,7 @@ int main() {
         if (std::getenv("WE_TEST_DUMP_SOURCE"))
             std::ofstream(out / "scene.json") << scene_source;
         WPSceneParser parser;
-        audio::SoundManager sound; // Never Init/Play.
+        audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
         auto scene = parser.Parse(SceneParseRequest {
             .scene_id = paths.scene_id, .project_path = project,
             .project_properties = &properties, .pkg_version = PackageVersion(paths.pkg_path),
@@ -510,9 +510,16 @@ int main() {
             unsigned width = 0, height = 0;
             Check(std::sscanf(size, "%ux%u", &width, &height) == 2 && width && height,
                   "WE_TEST_TEXTURE_SURFACE must be <width>x<height>");
-            scene->imageParser->SetTextureSurfaceSize(width, height);
+            scene->imageParser->SetTextureSurfaceSize(scene->display_sized ? 0 : width,
+                                                     scene->display_sized ? 0 : height);
         }
-        const auto extents = ResolveScreenBoundRenderTargetSizes(*scene, {1920, 1080});
+        VkExtent2D surface_extent { 1920, 1080 };
+        if (const char* size = std::getenv("WE_TEST_SURFACE")) {
+            Check(std::sscanf(size, "%ux%u", &surface_extent.width, &surface_extent.height) == 2 &&
+                      surface_extent.width > 0 && surface_extent.height > 0,
+                  "WE_TEST_SURFACE must be <width>x<height>");
+        }
+        const auto extents = ResolveScreenBoundRenderTargetSizes(*scene, surface_extent);
         const auto extent = extents.raster;
         Check(extent.width <= 8192 && extent.height <= 8192, "probe raster extent exceeds 8192");
         for (auto& [name, rt] : scene->renderTargets) {
@@ -652,6 +659,7 @@ int main() {
             static_skip.assign(passes.size(), uint8_t { 0 });
         }
 
+        const bool capture_last = std::getenv("WE_TEST_CAPTURE_LAST") != nullptr;
         for (int frame = 0; frame < frame_count; ++frame) {
             scene->shaderValueUpdater->FrameBegin();
             if (audio_hz_env) {
@@ -744,7 +752,8 @@ int main() {
                 }
             }
             Submit(device, rr);
-            ReadImage(device, rr, *result, out / ("frame-" + std::to_string(frame) + ".ppm"));
+            if (! capture_last || frame == frame_count - 1)
+                ReadImage(device, rr, *result, out / ("frame-" + std::to_string(frame) + ".ppm"));
             // The same knob the Metal harness takes, so a target can be held
             // against its counterpart on the other backend instead of the two
             // being described from different code. Names carry a per-run

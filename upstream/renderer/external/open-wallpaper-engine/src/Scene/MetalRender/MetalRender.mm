@@ -3854,7 +3854,8 @@ bool MetalRender::Impl::compile(Scene& scene, rg::RenderGraph& graph)
 {
     releaseGraph();
     if (scene.imageParser != nullptr) {
-        scene.imageParser->SetTextureSurfaceSize(output_width, output_height);
+        scene.imageParser->SetTextureSurfaceSize(scene.display_sized ? 0 : output_width,
+                                                 scene.display_sized ? 0 : output_height);
     }
 
     if (auto reason = MetalGraphRejection(scene, graph); ! reason.empty()) {

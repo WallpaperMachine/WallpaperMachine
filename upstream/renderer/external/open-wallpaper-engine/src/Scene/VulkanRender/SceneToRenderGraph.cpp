@@ -494,7 +494,39 @@ std::unique_ptr<rg::RenderGraph> wallpaper::sceneToRenderGraph(Scene& scene) {
     for (const auto id : scene.layer_texture_sources) {
         extra.referenced_ids.insert(static_cast<size_t>(id));
     }
-    std::function<void(SceneNode*)> build_graph = [&extra, &build_graph](SceneNode* node) {
+    std::unordered_set<SceneNode*> opaque_nodes;
+    if (scene.opaque_first) {
+        // Depth-tested opaque geometry must precede translucent cards: a
+        // skybox drawn later otherwise erases their glow without touching the
+        // opaque bodies. Effect/compose subgraphs retain their own ordering.
+        const auto opaque = [&](auto&& self, SceneNode* node) -> void {
+            if (node == nullptr || IsComposeEffectNode(scene, node)) return;
+            const auto camera = scene.cameras.find(node->Camera());
+            const bool effect = camera != scene.cameras.end() && camera->second != nullptr &&
+                                camera->second->HasImgEffect();
+            auto* mesh = node->Mesh();
+            if (! effect && ! node->SkipRenderPass() && mesh != nullptr &&
+                ! mesh->MaterialSlots().empty()) {
+                bool all_opaque = true;
+                for (const auto& material : mesh->MaterialSlots()) {
+                    if (material == nullptr ||
+                        (material->blenmode != BlendMode::Disable &&
+                         material->blenmode != BlendMode::Normal) || ! material->depth_test) {
+                        all_opaque = false;
+                        break;
+                    }
+                }
+                if (all_opaque) {
+                    ToGraphPass(node, std::string(SpecTex_Default), node->ID(), extra);
+                    opaque_nodes.insert(node);
+                }
+            }
+            if (! effect)
+                for (const auto& child : node->GetChildren()) self(self, child.get());
+        };
+        opaque(opaque, scene.sceneGraph.get());
+    }
+    std::function<void(SceneNode*)> build_graph = [&extra, &build_graph, &opaque_nodes](SceneNode* node) {
         if (node == nullptr) return;
 
         const bool is_compose_effect_node = IsComposeEffectNode(*extra.scene, node);
@@ -507,7 +539,7 @@ std::unique_ptr<rg::RenderGraph> wallpaper::sceneToRenderGraph(Scene& scene) {
                 extra,
                 nullptr,
                 GraphPassMode::BaseOnly);
-        } else if (!node->SkipRenderPass()) {
+        } else if (!node->SkipRenderPass() && !opaque_nodes.contains(node)) {
             ToGraphPass(node, std::string(SpecTex_Default), node->ID(), extra);
         }
 

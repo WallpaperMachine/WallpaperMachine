@@ -850,6 +850,13 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
             if (member == nullptr) return;
             writes_ok = WriteUniform(buf, *bufref, *member, value) && writes_ok;
         };
+        if (uniform_block != nullptr && node != nullptr && node->Mesh() != nullptr) {
+            const auto* material = node->Mesh()->MaterialForSlot(material_slot);
+            if (material == nullptr) return writes_ok;
+            for (const auto& constant : memo->Constants(*uniform_block, *material)) {
+                writes_ok = WriteUniform(buf, *bufref, *constant.member, *constant.value) && writes_ok;
+            }
+        }
         std::string original_camera;
         bool        restore_camera = false;
         if (! camera_override.empty() && node != nullptr && node->Camera() != camera_override) {
@@ -862,13 +869,6 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                 if (restore_camera) node->SetCamera(original_camera);
             });
             shader_updater->UpdateUniforms(node, material_slot, sprites, std::cref(update_unf_op));
-        }
-        if (uniform_block != nullptr && node != nullptr && node->Mesh() != nullptr) {
-            const auto* material = node->Mesh()->MaterialForSlot(material_slot);
-            if (material == nullptr) return writes_ok;
-            for (const auto& constant : memo->Constants(*uniform_block, *material)) {
-                writes_ok = WriteUniform(buf, *bufref, *constant.member, *constant.value) && writes_ok;
-            }
         }
         {
             for (auto& [i, sp] : sprites) {

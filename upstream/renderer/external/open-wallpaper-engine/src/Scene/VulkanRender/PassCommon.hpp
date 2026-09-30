@@ -233,6 +233,9 @@ inline void ResolveRenderScaledSize(SceneRenderTarget& target, double render_sca
 /// cannot move the letterbox or offset the hit test.
 inline VkExtent2D ResolveSceneSourceExtent(const wallpaper::Scene& scene,
                                            const VkExtent2D&       fallback_extent) {
+    if (scene.display_sized) {
+        return { std::max(1u, fallback_extent.width), std::max(1u, fallback_extent.height) };
+    }
     if (scene.scene_extent[0] > 0 && scene.scene_extent[1] > 0) {
         return {
             static_cast<uint32_t>(scene.scene_extent[0]),
@@ -328,6 +331,16 @@ inline void RefreshScreenBoundTextureResolutions(Scene& scene) {
 inline SceneRasterExtents ResolveScreenBoundRenderTargetSizes(Scene&            scene,
                                                               const VkExtent2D& fallback_extent) {
     const auto source_extent = ResolveSceneSourceExtent(scene, fallback_extent);
+    if (scene.display_sized) {
+        const double aspect = double(source_extent.width) / source_extent.height;
+        for (auto& [name, camera] : scene.cameras) {
+            (void)name;
+            if (camera != nullptr && camera->IsPerspective()) {
+                camera->SetAspect(aspect);
+                camera->Update();
+            }
+        }
+    }
     const auto render_scale  = ResolveSceneRenderScale(scene);
     const VkExtent2D raster_extent {
         static_cast<uint32_t>(

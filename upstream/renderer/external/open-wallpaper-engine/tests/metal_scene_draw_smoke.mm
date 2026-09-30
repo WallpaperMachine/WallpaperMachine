@@ -207,7 +207,7 @@ std::filesystem::path WriteFeedbackFixture(const std::filesystem::path& root)
 struct LoadedScene
 {
     fs::VFS                vfs;
-    audio::SoundManager    sound; // Never Init/Play.
+    audio::SoundManager    sound { audio::SoundManager::OutputBackend::Null };
     ProjectProperties      properties;
     std::shared_ptr<Scene> scene;
 };
@@ -1930,13 +1930,14 @@ namespace
 /// `{"script":...}` for one that re-evaluates itself every tick.
 std::filesystem::path WriteTextFixture(const std::filesystem::path& root, std::string_view text,
                                        bool with_effect = false,
-                                       std::string_view text_json = {})
+                                       std::string_view text_json = {},
+                                       std::string_view style_json = {})
 {
     const std::string effects =
         with_effect ? R"(,"effects":[{"file":"effects/probe.json","visible":true}])" : "";
     const std::map<std::string, std::string> files {
         { "project.json",
-          R"({"title":"Metal text smoke","type":"scene","file":"layout.json","general":{"properties":{}}})" },
+          R"({"title":"Metal text smoke","type":"scene","file":"layout.json","general":{"properties":{"intensity":{"type":"slider","value":0.5}}}})" },
         // An effect chain over the text layer: the layer draws into a buffer,
         // the effect samples it, and the chain's final card -- a second mesh the
         // relayout rewrites -- draws the result.
@@ -1967,7 +1968,8 @@ std::filesystem::path WriteTextFixture(const std::filesystem::path& root, std::s
           R"("objects":[{"id":1,"name":"caption","text":)" +
               (text_json.empty() ? "\"" + std::string(text) + "\"" : std::string(text_json)) +
               R"(,"font":"Arial","pointsize":48,"origin":[192,128,0],)"
-              R"("scale":[1,1,1],"angles":[0,0,0],"visible":true)" + effects + R"(}]})" },
+              R"("scale":[1,1,1],"angles":[0,0,0],"visible":true)" + effects +
+              std::string(style_json) + R"(}]})" },
     };
 
     for (const auto& [name, contents] : files) {
@@ -2015,6 +2017,65 @@ void AdvanceSceneFrame(MetalRender& render, Scene& scene)
 }
 
 } // namespace
+
+TEST_F(MetalSceneDraw, TextStylingChangesPixelsWithoutRerasterizingGlyphs)
+{
+    for (const bool with_effect : { false, true }) {
+        SCOPED_TRACE(with_effect);
+        const auto project = WriteTextFixture(
+            root_ / (with_effect ? "styled-effect" : "styled-text"), "FADE", with_effect, {},
+            R"(,"alpha":{"value":1,"script":"export function update() { return engine.runtime < 0.5 ? 1 : engine.runtime < 1 ? 0.5 : 0; }"},)"
+            R"("color":{"value":"1 0 0","script":"export function update() { return engine.runtime < 0.5 ? new Vec3(1,0,0) : new Vec3(0,0,1); }"},)"
+            R"("brightness":{"value":0.5,"user":"intensity"})");
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, root_ / "style-cache", loaded, error)) << error;
+        @autoreleasepool {
+            id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = device;
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            MetalRenderInitInfo info {
+                .metal_layer = (__bridge void*)layer,
+                .width = 384, .height = 256, .render_width = 384, .render_height = 256,
+                .display_scale_factor = 1.0,
+            };
+            ASSERT_TRUE(render.init(info)) << render.lastError();
+            auto graph = sceneToRenderGraph(*loaded.scene);
+            ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+            render.UpdateCameraFillMode(*loaded.scene, FillMode::ASPECTFIT);
+            for (int frame = 0; frame < 8; ++frame) AdvanceSceneFrame(render, *loaded.scene);
+            const auto peak = [](const std::vector<uint8_t>& pixels, std::size_t channel) {
+                uint8_t value = 0;
+                for (std::size_t i = channel; i < pixels.size(); i += 4)
+                    value = std::max(value, pixels[i]);
+                return value;
+            };
+            const auto red = ReadOutput(render, *loaded.scene);
+            EXPECT_NEAR(peak(red, 0), 128, 2);
+            EXPECT_EQ(peak(red, 2), 0);
+            const auto uploads = render.RuntimeImageUploadsForTests();
+            ResetTextLayerMeasurementCountForTests();
+            loaded.scene->runtime->ApplyProjectPropertyOverride({
+                { "intensity", RuntimeScalarValue::Float(1.0f) },
+            });
+            loaded.scene->runtime->Tick(0.5);
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            const auto blue = ReadOutput(render, *loaded.scene);
+            EXPECT_EQ(peak(blue, 0), 0);
+            EXPECT_NEAR(peak(blue, 2), 128, 2);
+            loaded.scene->runtime->Tick(0.5);
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            EXPECT_EQ(LitPixels(ReadOutput(render, *loaded.scene)), 0u);
+            EXPECT_EQ(render.RuntimeImageUploadsForTests(), uploads);
+            EXPECT_EQ(TextLayerMeasurementCountForTests(), 0u);
+            EXPECT_EQ(loaded.scene->runtime->scriptErrorCount(), 0u);
+            render.destroy();
+        }
+    }
+}
 
 TEST_F(MetalSceneDraw, ATextLayerIsParsedTranslatedAndDrawnByTheNativeBackend)
 {
@@ -3957,6 +4018,12 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                 if (loaded.scene->runtime != nullptr) {
                     loaded.scene->runtime->Tick(1.0 / 60.0);
                     loaded.scene->runtime->PumpTextLayerCache();
+                    if (loaded.scene->runtime->ConsumeSceneGraphMutationFlag()) {
+                        ASSERT_TRUE(render.clearLastRenderGraph()) << render.lastError();
+                        graph = sceneToRenderGraph(*loaded.scene);
+                        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph))
+                            << render.lastError();
+                    }
                 }
                 const double cpu_before = ThreadCpuMilliseconds();
                 ASSERT_TRUE(render.drawFrame(*loaded.scene))

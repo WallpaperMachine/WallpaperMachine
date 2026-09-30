@@ -1092,28 +1092,62 @@ std::vector<uint8_t> BuildMdlv21IncompleteFlagFixture() {
     return b.Take();
 }
 
-std::vector<uint8_t> BuildMdlv20LegacyHeaderWithMeshCountTwo() {
+std::vector<uint8_t> BuildVersionedMeshFixture(int version, bool skinned,
+                                            bool surface_attributes = true) {
+    const uint32_t flag = (surface_attributes ? 0x0000000Fu : 0x00000008u) |
+                          (skinned ? kSkinUvFlag : 0u);
     Bytes b;
-    b.Stamp("MDL", 20);
-    b.U32(kSkinUvFlag);
+    b.Stamp("MDL", version);
+    b.U32(flag);
     b.U32(1);
-    b.U32(2);
-    b.Str("legacy.json");
+    b.U32(1);
+    b.Str("mat/surface.json");
     b.U32(0);
-    b.U32(52);
-    WriteVertex(b, 0.0f, 0.0f, 0.0f);
-    b.U32(0);
-    b.Stamp("MDLS", 1);
-    b.U32(0);
-    b.U16(1);
+    if (version >= 17) {
+        for (float value : { -1.0f, -1.0f, -1.0f, 3.0f, 3.0f, 3.0f }) b.F32(value);
+    }
+    if (version > 14) b.U32(flag);
+    const uint32_t stride = 20u + (surface_attributes ? 28u : 0u) + (skinned ? 32u : 0u);
+    b.U32(3u * stride);
+    for (uint32_t i = 0; i < 3; ++i) {
+        b.F32(static_cast<float>(i) + 0.25f);
+        b.F32(static_cast<float>(i) * 2.0f - 1.0f);
+        b.F32(3.0f - static_cast<float>(i));
+        if (surface_attributes) {
+            for (float value : { 0.0f, 1.0f, 0.0f }) b.F32(value);
+            for (float value : { -1.0f, 0.0f, 0.0f, -1.0f }) b.F32(value);
+        }
+        if (skinned) {
+            for (uint32_t value : { 1u, 0u, 0u, 0u }) b.U32(value);
+            for (float value : { 0.25f, 0.75f, 0.0f, 0.0f }) b.F32(value);
+        }
+        b.F32(static_cast<float>(i) * 0.125f);
+        b.F32(0.75f - static_cast<float>(i) * 0.125f);
+    }
+    b.U32(6);
     b.U16(0);
-    b.Str("root");
-    b.I32(0);
-    b.U32(0xFFFFFFFFu);
-    b.U32(64);
-    WriteIdentity3x4(b);
-    b.Str("{}");
-    b.Stamp("MDLA", 0);
+    b.U16(2);
+    b.U16(1);
+    if (version >= 21) {
+        b.U8(0);
+        b.U8(0);
+        if (version > 21) b.U32(0);
+    }
+    if (skinned) {
+        b.Stamp("MDLS", 1);
+        b.U32(0);
+        b.U16(2);
+        b.U16(0);
+        for (uint32_t i = 0; i < 2; ++i) {
+            b.Str(i == 0 ? "root" : "child");
+            b.I32(0);
+            b.U32(i == 0 ? WPPuppet::NO_PARENT : 0u);
+            b.U32(64);
+            WriteIdentity3x4(b);
+            b.Str("{}");
+        }
+        b.Stamp("MDLA", 0);
+    }
     b.U8(0);
     return b.Take();
 }
@@ -1385,8 +1419,108 @@ TEST(MdlSchema, ParsesMdlv21PartsBeforeMdlsAndMultipleMeshes) {
     ASSERT_EQ(mdl.meshes[0].parts.size(), 1u);
     EXPECT_EQ(mdl.meshes[0].parts[0].id, 10u);
     EXPECT_EQ(mdl.meshes[1].parts[0].id, 20u);
-    EXPECT_EQ(mdl.mat_json_file, "mat/head.json");
-    EXPECT_EQ(mdl.vertexs.size(), 3u);
+}
+
+TEST(MdlSchema, VersionedSurfaceMeshesPreserveAllVertexAttributes) {
+    for (const int version : { 13, 14, 16, 17, 20, 21, 23 }) {
+        SCOPED_TRACE(version);
+        fs::VFS vfs;
+        MountMdlFixture(vfs, BuildVersionedMeshFixture(version, false));
+        WPMdl mdl;
+        ASSERT_TRUE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
+        ASSERT_EQ(mdl.meshes.size(), 1u);
+        const auto& src = mdl.meshes[0];
+        ASSERT_EQ(src.positions.size(), 3u);
+        ASSERT_EQ(src.normals.size(), 3u);
+        ASSERT_EQ(src.tangents.size(), 3u);
+        ASSERT_EQ(src.texcoords.size(), 3u);
+        EXPECT_TRUE(src.blend_indices.empty());
+        EXPECT_TRUE(src.blend_weights.empty());
+        EXPECT_EQ(mdl.puppet, nullptr);
+        for (uint32_t i = 0; i < 3; ++i) {
+            EXPECT_EQ(src.positions[i], (std::array<float, 3> {
+                static_cast<float>(i) + 0.25f,
+                static_cast<float>(i) * 2.0f - 1.0f,
+                3.0f - static_cast<float>(i) }));
+            EXPECT_EQ(src.normals[i], (std::array<float, 3> { 0.0f, 1.0f, 0.0f }));
+            EXPECT_EQ(src.tangents[i], (std::array<float, 4> { -1.0f, 0.0f, 0.0f, -1.0f }));
+            EXPECT_EQ(src.texcoords[i], (std::array<float, 2> {
+                static_cast<float>(i) * 0.125f, 0.75f - static_cast<float>(i) * 0.125f }));
+        }
+        EXPECT_EQ(src.indices, (std::vector<std::array<uint32_t, 3>> { { 0u, 2u, 1u } }));
+        EXPECT_EQ(src.has_aabb, version >= 17);
+
+        SceneMesh mesh;
+        WPMdlParser::GenPuppetMesh(mesh, mdl, false);
+        ASSERT_EQ(mesh.Submeshes().size(), 1u);
+        const auto& vertex = mesh.Submeshes()[0].GetVertexArray(0);
+        EXPECT_EQ(vertex.VertexCount(), 3u);
+        const auto offsets = vertex.GetAttrOffsetMap();
+        for (const auto& [name, expected] : std::map<std::string, std::vector<float>> {
+                 { "a_Position", { 0.25f, -1.0f, 3.0f } },
+                 { "a_Normal", { 0.0f, 1.0f, 0.0f } },
+                 { "a_Tangent", { -1.0f, 0.0f, 0.0f, -1.0f } },
+                 { "a_TexCoord", { 0.0f, 0.75f } } }) {
+            const auto attribute = offsets.find(name);
+            ASSERT_NE(attribute, offsets.end()) << name;
+            std::vector<float> packed(expected.size());
+            std::memcpy(packed.data(),
+                        reinterpret_cast<const uint8_t*>(vertex.Data()) + attribute->second.offset,
+                        packed.size() * sizeof(float));
+            EXPECT_EQ(packed, expected) << name;
+        }
+        EXPECT_EQ(offsets.find("a_BlendIndices"), offsets.end());
+        const auto& indices = mesh.Submeshes()[0].GetIndexArray(0);
+        EXPECT_EQ(indices.DrawIndexCount(), 3u);
+        std::array<uint16_t, 3> packed_indices {};
+        std::memcpy(packed_indices.data(), indices.Data(), sizeof(packed_indices));
+        EXPECT_EQ(packed_indices, (std::array<uint16_t, 3> { 0u, 2u, 1u }));
+    }
+}
+
+TEST(MdlSchema, VersionedSkinnedMeshesPreserveBoneIndicesWeightsAndSkeleton) {
+    for (const int version : { 13, 14, 16, 17, 20, 21, 23 }) {
+        for (const bool surface_attributes : { false, true }) {
+            SCOPED_TRACE(version);
+            SCOPED_TRACE(surface_attributes);
+            fs::VFS vfs;
+            MountMdlFixture(vfs, BuildVersionedMeshFixture(version, true, surface_attributes));
+            WPMdl mdl;
+            ASSERT_TRUE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
+            ASSERT_EQ(mdl.meshes.size(), 1u);
+            const auto& src = mdl.meshes[0];
+            ASSERT_EQ(src.positions.size(), 3u);
+            ASSERT_EQ(src.texcoords.size(), 3u);
+            ASSERT_EQ(src.blend_indices.size(), 3u);
+            ASSERT_EQ(src.blend_weights.size(), 3u);
+            for (uint32_t i = 0; i < 3; ++i) {
+                EXPECT_EQ(src.positions[i], (std::array<float, 3> {
+                    static_cast<float>(i) + 0.25f,
+                    static_cast<float>(i) * 2.0f - 1.0f,
+                    3.0f - static_cast<float>(i) }));
+                EXPECT_EQ(src.texcoords[i], (std::array<float, 2> {
+                    static_cast<float>(i) * 0.125f, 0.75f - static_cast<float>(i) * 0.125f }));
+                EXPECT_EQ(src.blend_indices[i], (std::array<uint32_t, 4> { 1u, 0u, 0u, 0u }));
+                EXPECT_EQ(src.blend_weights[i], (std::array<float, 4> { 0.25f, 0.75f, 0.0f, 0.0f }));
+            }
+            EXPECT_EQ(src.normals.size(), surface_attributes ? 3u : 0u);
+            EXPECT_EQ(src.tangents.size(), surface_attributes ? 3u : 0u);
+            ASSERT_NE(mdl.puppet, nullptr);
+            ASSERT_EQ(mdl.puppet->bones.size(), 2u);
+            EXPECT_EQ(mdl.puppet->bones[0].name, "root");
+            EXPECT_EQ(mdl.puppet->bones[1].name, "child");
+            EXPECT_EQ(mdl.puppet->bones[1].parent, 0u);
+        }
+    }
+}
+
+TEST(MdlSchema, RejectsTruncatedMdlv16SurfaceVertexPayload) {
+    auto bytes = BuildVersionedMeshFixture(16, false);
+    bytes.resize(bytes.size() - 40u);
+    fs::VFS vfs;
+    MountMdlFixture(vfs, std::move(bytes));
+    WPMdl mdl;
+    EXPECT_FALSE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
 }
 
 TEST(MdlSchema, ParsesMdlv21MeshDataWithoutOptionalMdlsBlock) {
@@ -1402,8 +1536,6 @@ TEST(MdlSchema, ParsesMdlv21MeshDataWithoutOptionalMdlsBlock) {
     ASSERT_EQ(mdl.meshes[0].positions.size(), 3u);
     ASSERT_EQ(mdl.meshes[0].parts.size(), 1u);
     EXPECT_EQ(mdl.meshes[0].parts[0].id, 10u);
-    EXPECT_EQ(mdl.mat_json_file, "mat/head.json");
-    EXPECT_EQ(mdl.vertexs.size(), 3u);
     EXPECT_EQ(mdl.puppet, nullptr);
 }
 
@@ -1765,23 +1897,6 @@ TEST(MdlSchema, MdmpAfterMdlaParsesNonzeroShapeVertexTrailers) {
     ASSERT_EQ(section.vertex_trailers.size(), 1u);
     EXPECT_EQ(section.vertex_trailers[0], 0xBEEFu);
     EXPECT_TRUE(section.trailer.empty());
-}
-
-TEST(MdlSchema, GeneratesSingleSubmeshForLegacyMdlWithoutParsedMeshes) {
-    fs::VFS vfs;
-    MountMdlFixture(vfs, BuildMdlv20LegacyHeaderWithMeshCountTwo());
-    WPMdl mdl;
-    ASSERT_TRUE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
-    ASSERT_TRUE(mdl.meshes.empty());
-
-    SceneMesh mesh;
-    WPMdlParser::GenPuppetMesh(mesh, mdl);
-
-    ASSERT_EQ(mesh.Submeshes().size(), 1u);
-    EXPECT_EQ(mesh.VertexCount(), 1u);
-    EXPECT_EQ(mesh.IndexCount(), 1u);
-    EXPECT_EQ(mesh.GetIndexArray(0).CapacitySizeof(), sizeof(uint32_t));
-    EXPECT_EQ(mesh.Submeshes()[0].material_slot, 0u);
 }
 
 TEST(MdlSchema, PuppetAnimationAdvancesOncePerAbsoluteElapsedTime) {
@@ -2162,9 +2277,6 @@ TEST(MdlSchema, ParsesMdlv23IncompleteFlagMeshOnlyPuppet) {
     ASSERT_TRUE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
     ASSERT_EQ(mdl.meshes.size(), 1u);
     EXPECT_EQ(mdl.meshes[0].flag, kSkinUvFlag);
-    EXPECT_EQ(mdl.mat_json_file, "mat/head.json");
-    EXPECT_EQ(mdl.vertexs.size(), 3u);
-    EXPECT_EQ(mdl.indices.size(), 1u);
     EXPECT_EQ(mdl.puppet, nullptr);
     EXPECT_TRUE(logs.Contains(LOGLEVEL_INFO, "incomplete flag"));
 }
@@ -2235,13 +2347,3 @@ TEST(MdlSchema, RejectsMdatAttachmentTransformThatOverrunsDeclaredBlock) {
     EXPECT_FALSE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
 }
 
-TEST(MdlSchema, MeshCountGreaterThanOneDoesNotSelectMdlv21PathBeforeMdlv21) {
-    fs::VFS vfs;
-    MountMdlFixture(vfs, BuildMdlv20LegacyHeaderWithMeshCountTwo());
-    WPMdl mdl;
-
-    ASSERT_TRUE(WPMdlParser::Parse("sample.mdl", vfs, mdl));
-    EXPECT_EQ(mdl.mdlv, 20);
-    EXPECT_TRUE(mdl.meshes.empty());
-    EXPECT_EQ(mdl.mat_json_file, "legacy.json");
-}

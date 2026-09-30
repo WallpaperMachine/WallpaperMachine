@@ -298,13 +298,18 @@ unused reservations in unified memory; it is not a cap on wallpaper size, and
 larger resources still allocate normally. The offscreen probe prints allocator reserved
 and used bytes separately from process memory.
 
-Both scene backends load packaged image mip chains to match the physical display:
-the texture's longest edge is limited to the next power of two at or above the
-display's longest edge. A 3024×1964 display therefore uses the authored 4K mip
+For scenes with an authored 2D canvas, both backends load packaged mip chains to
+match the physical display: the longest texture edge is limited to the next
+power of two at or above the display's longest edge. A 3024×1964 display therefore uses the authored 4K mip
 instead of an 8K source level. Larger levels are skipped before decoding and GPU
 upload. Layout metadata, render-target resolution, frame rate and effects stay
 unchanged, but source detail can differ, especially when zooming into an image.
 Display-surface replacement rebuilds the textures for the new display size.
+
+Perspective scenes without an authored canvas retain the source mip chain:
+a model or skybox can magnify a small UV region, so display dimensions alone
+cannot establish which source detail is safe to discard. This can use more
+texture memory, but adds no per-frame decoding or supersampling.
 
 This policy uses available authored mips; a single-level image or an incomplete
 chain may remain above the limit. Loose images, videos, sprite atlases, multi-slot
@@ -466,6 +471,12 @@ This is the internal rasterization size only. Output size, placement and
 composition are unchanged; a lower scale rasterizes fewer pixels and draws the
 result into the same area, so detail softens as the scale drops. It is a quality
 tier and is not part of any same-quality backend comparison.
+
+For 2D scenes, the authored canvas defines 100%. Perspective scenes with no
+authored canvas use the physical output size instead of a fixed 1920×1080
+fallback. The selected scale still applies, and the camera aspect follows the
+surface. Higher-resolution output requires more raster work; this is native
+resolution, not supersampling.
 
 When no running wallpaper can honour a render scale the control is disabled and
 reads `Not applicable to the wallpapers currently running`. Values arriving from

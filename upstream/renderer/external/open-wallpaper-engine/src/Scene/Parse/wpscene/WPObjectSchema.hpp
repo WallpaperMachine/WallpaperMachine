@@ -18,6 +18,7 @@ inline void AbsorbFieldBindings(const nlohmann::json& json, nlohmann::json& out)
     for (const auto& item : json.items()) {
         if (item.value().is_object() &&
             (item.value().contains("animation") ||
+             item.value().contains("user") ||
              item.value().contains("scriptproperties") ||
              item.value().contains("script"))) {
             out[item.key()] = item.value();

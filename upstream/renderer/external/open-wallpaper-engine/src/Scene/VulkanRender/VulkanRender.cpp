@@ -1704,7 +1704,10 @@ bool VulkanRender::Impl::preparePasses(Scene& scene) {
     m_present_gate.Invalidate();
     if (scene.imageParser != nullptr) {
         const auto extent = m_device->out_extent();
-        scene.imageParser->SetTextureSurfaceSize(extent.width, extent.height);
+        // A perspective view may magnify a small UV region of a model or skybox.
+        // Its display size does not bound the source texture's required detail.
+        scene.imageParser->SetTextureSurfaceSize(scene.display_sized ? 0 : extent.width,
+                                                 scene.display_sized ? 0 : extent.height);
     }
     glslang::InitializeProcess();
     {

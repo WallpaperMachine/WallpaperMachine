@@ -930,28 +930,6 @@ void ConsumeTrailingBody(fs::MemBinaryStream& f, const int32_t mdlv) {
     }
 }
 
-void MirrorFirstMeshToLegacyFields(WPMdl& mdl) {
-    if (mdl.meshes.empty()) return;
-    const auto& mesh = mdl.meshes.front();
-    mdl.mat_json_file = mesh.mat_json_file;
-    mdl.indices       = mesh.indices;
-    mdl.vertexs.resize(mesh.positions.size());
-    for (std::size_t i = 0; i < mdl.vertexs.size(); ++i) {
-        mdl.vertexs[i].position = mesh.positions[i];
-        if (i < mesh.blend_indices.size()) mdl.vertexs[i].blend_indices = mesh.blend_indices[i];
-        if (i < mesh.blend_weights.size()) mdl.vertexs[i].weight = mesh.blend_weights[i];
-        if (i < mesh.texcoords.size()) mdl.vertexs[i].texcoord = mesh.texcoords[i];
-    }
-}
-
-SceneVertexArray MakePuppetVertexArray(const std::size_t vertex_count) {
-    return SceneVertexArray({ { WE_IN_POSITION.data(), VertexType::FLOAT3 },
-                              { WE_IN_BLENDINDICES.data(), VertexType::UINT4 },
-                              { WE_IN_BLENDWEIGHTS.data(), VertexType::FLOAT4 },
-                              { WE_IN_TEXCOORD.data(), VertexType::FLOAT2 } },
-                            vertex_count);
-}
-
 bool MeshIndicesNeedWideStorage(std::span<const std::array<uint32_t, 3>> triangles) {
     for (const auto& triangle : triangles) {
         for (const uint32_t index : triangle) {
@@ -1055,17 +1033,6 @@ DrawRangesExcludingPartIndices(const WPMdl::Mesh& mdl_mesh,
 
 } // namespace
 
-// bytes * size
-constexpr uint32_t singile_vertex  = 4 * (3 + 4 + 4 + 2);
-constexpr uint32_t singile_indices = 2 * 3;
-constexpr uint32_t std_format_vertex_size_herald_value = 0x01800009;
-
-// alternative consts for alternative mdl format
-constexpr uint32_t alt_singile_vertex = 4 * (3 + 4 + 4 + 2 + 7);
-constexpr uint32_t alt_format_vertex_size_herald_value = 0x0180000F;
-
-constexpr uint32_t singile_bone_frame = 4 * 9;
-
 bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     auto str_path = std::string(path);
     auto pfile    = vfs.Open("/assets/" + str_path);
@@ -1090,84 +1057,23 @@ bool WPMdlParser::Parse(std::string_view path, fs::VFS& vfs, WPMdl& mdl) {
     f.ReadInt32(); // unk, 1
     mdl.mdl_header.mesh_count = f.ReadUint32();
 
-    bool alt_mdl_format = false;
-
-    if (mdl.mdlv >= 21) {
-        if (mdl.mdl_header.mesh_count == 0 || mdl.mdl_header.mesh_count > kMaxMdlMeshes) {
-            LOG_ERROR("unsupported mdl mesh count %d in %s",
-                      mdl.mdl_header.mesh_count, str_path.c_str());
-            return false;
-        }
-        mdl.meshes.resize(mdl.mdl_header.mesh_count);
-        for (auto& mesh : mdl.meshes) {
-            if (! ParseMesh(f, mdl.mdl_header, mesh, str_path)) return false;
-        }
-        MirrorFirstMeshToLegacyFields(mdl);
-        if (! PeekBlockMagic(f, "MDLS")) {
-            LOG_INFO("read puppet mesh: mdlv: %d, meshes: %zu, no MDLS section",
-                     mdl.mdlv,
-                     mdl.meshes.size());
-            return true;
-        }
-    } else {
-        // Local compatibility adapter: upstream has fully moved to the
-        // multi-mesh parser, but this fork still carries MDLV<21 corpus tests
-        // and fixtures. Keep the legacy reader isolated from the MDLV21+ path.
-        mdl.mat_json_file = f.ReadStr();
-        // 0
-        f.ReadInt32();
-
-        uint32_t curr = f.ReadUint32();
-
-        // if the uint at the normal vertex size position is 0, then this file
-        // uses the alternative MDL format, therefore the actual vertex size is
-        // located after the herald value, and we'll need to account for other differences later on.
-        if(curr == 0){
-            alt_mdl_format = true;
-            while (curr != alt_format_vertex_size_herald_value){
-                const idx before = f.Tell();
-                curr = f.ReadUint32();
-                if (f.Tell() == before) {
-                    LOG_ERROR("mdl missing alt vertex herald: %s", str_path.c_str());
-                    return false;
-                }
-            }
-            curr = f.ReadUint32();
-        }
-        else if(curr == std_format_vertex_size_herald_value){
-            curr = f.ReadUint32();
-        }
-
-        uint32_t vertex_size = curr;
-        if (vertex_size % (alt_mdl_format? alt_singile_vertex : singile_vertex) != 0) {
-            LOG_ERROR("unsupport mdl vertex size %d", vertex_size);
-            return false;
-        }
-
-        // if using the alternative MDL format, vertexes contain 7 extra 32-bit chunks between
-        // position and blend indices
-        uint32_t vertex_num = vertex_size / (alt_mdl_format ? alt_singile_vertex : singile_vertex);
-        mdl.vertexs.resize(vertex_num);
-        for (auto& vert : mdl.vertexs) {
-            for (auto& v : vert.position) v = f.ReadFloat();
-            if(alt_mdl_format) {for (int i = 0; i < 7; i++) f.ReadUint32();}
-            for (auto& v : vert.blend_indices) v = f.ReadUint32();
-            for (auto& v : vert.weight) v = f.ReadFloat();
-            for (auto& v : vert.texcoord) v = f.ReadFloat();
-        }
-
-        uint32_t indices_size = f.ReadUint32();
-        if (indices_size % singile_indices != 0) {
-            LOG_ERROR("unsupport mdl indices size %d", indices_size);
-            return false;
-        }
-
-        uint32_t indices_num = indices_size / singile_indices;
-        mdl.indices.resize(indices_num);
-        for (auto& id : mdl.indices) {
-            for (auto& v : id) v = f.ReadUint16();
-        }
-
+    if (mdl.mdl_header.mesh_count == 0 || mdl.mdl_header.mesh_count > kMaxMdlMeshes) {
+        LOG_ERROR("unsupported mdl mesh count %d in %s",
+                  mdl.mdl_header.mesh_count, str_path.c_str());
+        return false;
+    }
+    // Attribute flags and versioned mesh headers also describe pre-MDLV21
+    // static meshes; treating their flags as a skin-only byte count loses
+    // normals/tangents and rejects unskinned models.
+    mdl.meshes.resize(mdl.mdl_header.mesh_count);
+    for (auto& mesh : mdl.meshes) {
+        if (! ParseMesh(f, mdl.mdl_header, mesh, str_path)) return false;
+    }
+    if (! PeekBlockMagic(f, "MDLS")) {
+        LOG_INFO("read model mesh: mdlv: %d, meshes: %zu, no MDLS section",
+                 mdl.mdlv,
+                 mdl.meshes.size());
+        return true;
     }
 
     if (! ParseMDLS(f, mdl, str_path)) return false;
@@ -1348,28 +1254,7 @@ void WPMdlParser::GenPuppetMesh(SceneMesh& mesh, const WPMdl& mdl, const bool in
                 GenMaskSubmeshFromMdl(clipped_submesh, mdl_mesh, mask.part_ids_a);
             }
         }
-        return;
     }
-
-    // Local compatibility adapter for MDLV<21 files parsed above. MDLV21+
-    // should always use the upstream multi-mesh path and return before here.
-    SceneVertexArray vertex = MakePuppetVertexArray(mdl.vertexs.size());
-
-    std::array<float, 16> one_vert;
-    auto                  to_one = [](const WPMdl::Vertex& in, decltype(one_vert)& out) {
-        uint offset = 0;
-        memcpy(out.data() + 4 * (offset++), in.position.data(), sizeof(in.position));
-        memcpy(out.data() + 4 * (offset++), in.blend_indices.data(), sizeof(in.blend_indices));
-        memcpy(out.data() + 4 * (offset++), in.weight.data(), sizeof(in.weight));
-        memcpy(out.data() + 4 * (offset++), in.texcoord.data(), sizeof(in.texcoord));
-    };
-    for (uint i = 0; i < mdl.vertexs.size(); i++) {
-        auto& v = mdl.vertexs[i];
-        to_one(v, one_vert);
-        vertex.SetVertexs(i, one_vert);
-    }
-    mesh.AddVertexArray(std::move(vertex));
-    mesh.AddIndexArray(MakePuppetIndexArray(mdl.indices));
 }
 
 void WPMdlParser::AddPuppetShaderInfo(WPShaderInfo& info, const WPMdl& mdl) {

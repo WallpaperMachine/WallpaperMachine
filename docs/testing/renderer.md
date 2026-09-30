@@ -128,6 +128,8 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_DUMP_ALPHA=1` | `offscreen_scene_probe`, `metal_scene_draw_smoke` | Writes each dumped target's alpha channel separately as grey. Effects that weight by coverage -- the bokeh downsample divides by the sum of its taps' alpha -- make different colour from the same RGB when alpha differs |
 | `WE_TEST_METAL_SURFACE` | `metal_scene_draw_smoke` | `<width>x<height>` for the surface the native backend rasterizes; defaults to `960x540`. Screen-space shader inputs follow it, so comparing this backend's output with another's is only meaningful when both rasterize the same extent |
 | `WE_TEST_TEXTURE_SURFACE` | `offscreen_scene_probe` | `<width>x<height>` opts into the production display-sized texture mip policy without changing raster extent; unset retains all source levels for before/after image and allocation comparisons. Native Metal uses its surface size automatically |
+| `WE_TEST_SURFACE` | `offscreen_scene_probe` | `<width>x<height>` physical output extent; defaults to `1920x1080`. Perspective scenes use it as their full-scale raster; authored 2D canvases keep their size |
+| `WE_TEST_CAPTURE_LAST=1` | `offscreen_scene_probe` | Draw every requested frame but save only the last, for long intro and text-update checks without thousands of images |
 | `WE_TEST_SCENE_OPTIMIZATION=0` | `metal_scene_draw_smoke` | Turns static-result reuse off around the local-project loop, which is how a scene that looks wrong under it is compared with the same scene drawn every frame. Process-global, so it is restored afterwards |
 | `WE_TEST_METAL_DUMP_TARGETS` | `metal_scene_draw_smoke` | Colon-separated render target names, or `*` for every target the scene declares. Each is reported with its size and mean luma and, with `WE_TEST_OUTPUT` set, written as a PPM. Target names carry a per-run suffix, so `*` is the only way to name one across two processes |
 | `WE_TEST_EXPECT_WARM=1` | `text_object_runtime_test` | Assert zero shader compilations on a second run |
@@ -215,7 +217,7 @@ executable directly from the renderer check build directory.
 | Native backend admission | `metal_backend_test`: every refused construct keeps its own distinct reason; plain sheets, sprite particles, sprite trails, thin and thick ropes, rope trails and a skinned mesh under a `g_Bones` shader are accepted by their actual layout; a sprite trail without velocity, a rope-marked sprite layout, a thin rope trail, a skinning shader on a mesh without bone weights and a bone stride that cannot hold a 4x4 matrix are refused; a puppet under an effect chain is judged by the chain's final mesh, and only on the chain's last node. An unused perspective camera does not reject; a supported layer that names a perspective camera, or an active perspective camera with supported layers, is accepted. |
 | Perspective cameras on Metal | `MetalProjection.PerspectiveUsesFovAspectNearFarAndAHomogeneousDivide`, `.UnprojectingNdcHitsTheLayerPlane`, `.CameraAxesFollowTheAttachedNode` in `metal_backend_test`; `MetalSceneDraw.APerspectiveCameraDrawsThroughTheAuthoredShader` in `metal_scene_draw_smoke`. Projection is the scene camera's own FOV/aspect/near/far, not an orthographic scale; a rotated card must foreshorten. |
 | Layer as texture | `layer_texture_reference_test` (CPU, in the gate): `_rt_imageLayerComposite_<id>[_a|_b]` forward refs, duplicate names, missing targets, cycles, history `_b`, file names vs layer names, invisible sources kept, producer-before-consumer graph order, and an effect-chain source linking from its composite rather than `_rt_default`. A composite is the source layer's card in its own texture space, whatever its placement, the scene camera or parallax do (`AReferencedLayerIsItsCardWhereverTheSceneShowsIt`). A compose layer's camera is not layer-local: its children keep their place inside it (`ComposeChildrenKeepTheirPlaceInsideTheLayer`), and a `composelayer` drawn into its own composite still samples the screen behind it (`ScriptRuntimeCompat.ComposeBackgroundUsesScreenCameraAndParentTransform`). A linked composite's size is never folded into the material as a zero at parse time: the card padding divided by it and every texture coordinate of the consumer's card became `NaN`. Nothing stale is folded in its place either, so the shader reads the target's real size whichever the backend uploads last, constants or live values (`AReferencedCompositeIsSampledAtItsRealSize` checks both orders). |
-| Camera framing of fullscreen layers and reuse | `CameraFraming.AFullscreenLayerCoversTheScreenWhateverTheShot` and `.MovingTheCameraChangesTheStaticSampleOfAPassItDraws` in `layer_texture_reference_test`. In a 2D scene a fullscreen layer's last pass is drawn through the `fullscreen` camera, which always frames the canvas, so a zoomed shot does not shrink a post-process to a window on the screen. A 3D scene keeps its active camera for it: no 3D scene with a fullscreen layer has been checked. Every static pass sample folds in the pass's camera and the active camera through `vulkan::FoldPassCameras`, which both backends call, because a shot moving the view changes no node and rebuilds no graph. |
+| Camera framing of fullscreen layers and reuse | `CameraFraming.AFullscreenLayerCoversTheScreenWhateverTheShot`, `.AFullscreenEffectCoversAPerspectiveScene` and `.MovingTheCameraChangesTheStaticSampleOfAPassItDraws` in `layer_texture_reference_test`. Fullscreen effects use the screen-space `fullscreen` camera in both 2D and 3D scenes. Every static pass sample folds in the pass camera and active camera through `vulkan::FoldPassCameras`, shared by both backends. |
 | Rope and rope-trail geometry | `particle_rope_geometry_test` (CPU, in the gate): pieces per instance and never across instances, dead particles skipped and neighbours joined, subdivision through the particles, coincident points without `NaN`, the rope-trail head, tail shrink and per-slot separation, and the simulation's history — birth point, growth to capacity, zero time step, respawn reset. Index width: packed 16-bit up to 16 384 quads, 32-bit past that, overflow-safe capacity math, and draw order across instances on a 32-bit mesh. |
 | Skinning on the native backend | `MetalSceneDraw.APuppetIsSkinnedByItsOwnShaderFromThePoseTheRuntimeProduces`: a 64-byte reflected bone stride, the skinned quad translating by the distance its bone did with its width unchanged (what rules out a transposed matrix), the unskinned quad still, no reuse while the pose moves, `pause()` freezing and `play()` resuming. `.TheShippedImageShaderSkinsAPuppetThroughTheNativeBackend` repeats the translation and draw with the author's `genericimage2`, and skips without the shipped shaders. |
 | Trail and rope layouts on the native backend | `MetalSceneDraw.ARopeLayoutMeshReachesTheTarget`, `.ASpriteTrailMeshReachesTheTarget`, and `.TheShippedRopeAndTrailPreviewScenesAreParsedTranslatedAndDrawnNatively`, which runs the editor's own preview projects through the real parser and shaders and skips without the shipped assets. |
@@ -594,6 +596,28 @@ cache invalidation after include edits, corrupt-cache recovery, parent-aware
 compose-background sampling, and SceneScript AM/PM sprite-frame selection;
 these create no window and no Vulkan device.
 
+Text raster caches hold neutral glyph coverage. Color, brightness and alpha
+bindings reach uniforms, including text under effects, without relayout or
+uploads (`MetalSceneDraw.TextStylingChangesPixelsWithoutRerasterizingGlyphs`).
+Text scripts first run on the normal ordered tick, not while objects are still
+being parsed. The layout queue is FIFO and coalesces updates in place;
+`AWaitingClockIsNotStarvedByNewerReadoutUpdates` blocks the worker deterministically
+to verify that newer readouts cannot overtake a waiting clock. An effect target
+grows geometrically, up to 4096 per dimension, only when its caption outgrows
+the current capacity; that size change requests a graph rebuild.
+
+`CameraFraming.AFullscreenEffectCoversAPerspectiveScene` checks full-screen
+coverage independently of the perspective FOV. `RenderScale` covers physical
+surface sizing and scale/resize transitions without changing 2D canvas behavior.
+`ExternalMaterialsKeepHiddenTransitiveProducers` covers texture references absent
+from the scene JSON. Versioned model fixtures cover MDLV13–23 attribute layouts.
+SceneScript creation regressions cover independent cloned layers, owner-local
+cached factories, bounded authored pools and lazy template loading.
+
+The local-project Metal probe consumes runtime graph mutations like production.
+Local-asset probe sound managers use the null backend: not calling `Play()` alone
+does not prevent `MountStream()` from initializing a system audio device.
+
 `TextObjectRuntime.LonelyCatHeadlessRegression` in `text_object_runtime_test` is
 an opt-in local-asset diagnostic. Set `WE_TEST_PROJECT`, `WE_TEST_ASSETS` and a
 disposable `WE_TEST_CACHE`, then run with
@@ -725,7 +749,7 @@ without desktop surfaces or audio devices.
   material's `customShader.constValues` only gains keys or is updated in place
   (a runtime erase would have to invalidate the memo), and `RuntimeImageSource`
   never removes a name (`NamesGeneration()` moves when one is added).
-  `MaterialConstantsAddedOrChangedAfterPrepareReachTheNextFrame`,
+  `LiveTexelSizeOverridesParseDefaultsWhileMaterialValuesStayLive`,
   `RuntimeImagePublishedAfterPrepareReachesTheNextFrame` and
   `RuntimeImageNamePublishedAfterPrepareReachesTheNextFrame` cover them.
 - Compiled script exports suppress only absent handlers. Initialization,
@@ -1049,18 +1073,11 @@ SceneScript views.
   demand of `m_mouseDelayedTime < delay` would never clear and would keep the
   scene awake for good; a correct one needs a threshold on the offset still to
   travel.
-- **Compatibility uploads parse-time constants over live values.**
-  `CustomShaderPass::prepare` writes a material's `constValues` after the value
-  updater's `UpdateUniforms`; the Metal backend writes them first. Every
-  material's constants carry the parser's scene defaults (`InitContext` fills
-  `global_base_uniforms`: `g_TexelSize` and `g_TexelSizeHalf` for a 1920x1080
-  frame, a zero `g_EyePosition`, fixed view axes), so on Compatibility a shader
-  reads those instead of the updater's live values, including the
-  render-scale-aware texel size `VulkanRender` sets from the raster extent. A
-  link texture's size, unknown at parse time, is not folded, so its live value
-  stands under either order. Reversing the Vulkan order changes every
-  Compatibility wallpaper that reads these uniforms, 3D lighting included, and
-  needs a visual check across the corpus first.
+- Compatibility and Native Metal write live engine uniforms after parser
+  defaults. `PlaybackGPU.LiveTexelSizeOverridesParseDefaultsWhileMaterialValuesStayLive`
+  checks actual output pixels and changing user material constants.
+- Per-pass Vulkan dumps split submissions and are not proof of depth-preserving
+  batched output. Compare the ordinary unsplit final frame for perspective scenes.
 - **An animated material constant keeps a scene awake after its timeline
   ends.** `DescribeTimeAdvancingWork` reports `NodeBinding` for every
   material-constant binding that has an animation, playing or not. The

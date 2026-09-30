@@ -93,16 +93,6 @@ struct WPMdl {
     };
     std::vector<MorphSection> morph_sections;
 
-    std::string mat_json_file;
-    struct Vertex {
-        std::array<float, 3>    position;
-        std::array<uint32_t, 4> blend_indices;
-        std::array<float, 4>    weight;
-        std::array<float, 2>    texcoord;
-    };
-    std::vector<Vertex>                  vertexs;
-    std::vector<std::array<uint32_t, 3>> indices;
-
     // std::vector<Eigen::Matrix<float, 3, 4>> bones;
     std::shared_ptr<WPPuppet> puppet;
     // combo

@@ -322,6 +322,33 @@ TEST(LayerTextureReference, ParserKeepsInvisibleCompositeSource) {
     EXPECT_TRUE(source->MustProduce());
 }
 
+TEST(LayerTextureReference, ExternalMaterialsKeepHiddenTransitiveProducers) {
+    fs::VFS vfs;
+    auto parsed = ParseScene(vfs, R"([
+        {"id":159,"name":"source","image":"image.json","visible":false},
+        {"id":161,"name":"consumer","image":"outer.json"},
+        {"id":160,"name":"middle","image":"linked.json","visible":false}
+      ])",
+      {{ "/outer.json", R"({"width":64,"height":32,"material":"outer_mat.json"})" },
+       { "/outer_mat.json",
+         R"({"passes":[{"shader":"genericimage","textures":["_rt_imageLayerComposite_160_a"]}]})" },
+       { "/linked_mat.json",
+         R"({"passes":[{"shader":"genericimage","textures":["_rt_imageLayerComposite_159_a"]}]})" }});
+    ASSERT_NE(parsed, nullptr);
+    const auto graph = sceneToRenderGraph(*parsed);
+    ASSERT_NE(graph, nullptr);
+    const auto* source = FindPassByNode(*graph, "source");
+    const auto* middle = FindPassByNode(*graph, "middle");
+    ASSERT_NE(source, nullptr);
+    ASSERT_NE(middle, nullptr);
+    EXPECT_FALSE(source->desc().node->Visible());
+    EXPECT_FALSE(middle->desc().node->Visible());
+    EXPECT_EQ(source->desc().output, LayerCompositeTargetKey(159));
+    EXPECT_EQ(middle->desc().output, LayerCompositeTargetKey(160));
+    EXPECT_LT(PassIndexByNode(*graph, "source"), PassIndexByNode(*graph, "middle"));
+    EXPECT_LT(PassIndexByNode(*graph, "middle"), PassIndexByNode(*graph, "consumer"));
+}
+
 TEST(LayerTextureReference, ProducerRunsBeforeConsumer) {
     fs::VFS vfs;
     auto    parsed = ParseScene(vfs, R"([
@@ -624,6 +651,61 @@ TEST(CameraFraming, AFullscreenLayerCoversTheScreenWhateverTheShot) {
     ASSERT_NE(post, nullptr);
     ASSERT_NE(post, backdrop);
     ExpectCardFillsItsTarget(*parsed, *post, { 32.0, 16.0 });
+}
+
+TEST(CameraFraming, OpaqueGeometryPrecedesTransparentCardsOnlyWhenRequested) {
+    for (const bool enabled : { false, true }) {
+        fs::VFS vfs;
+        MountFiles(vfs, {
+            { "/opaque.json", R"({"width":64,"height":32,"material":"opaque_mat.json"})" },
+            { "/opaque_mat.json",
+              R"({"passes":[{"shader":"genericimage","blending":"disabled","depthtest":"enabled","depthwrite":"enabled","textures":["solid"]}]})" },
+        });
+        auto json = nlohmann::json::parse(SceneJson(R"([
+            {"id":1,"name":"glow","image":"image.json"},
+            {"id":2,"name":"background","image":"opaque.json"}
+          ])"));
+        json["general"]["orthogonalprojection"] = nullptr;
+        json["general"]["transparentsorting"] = enabled;
+        audio::SoundManager sound;
+        WPSceneParser parser;
+        auto scene = parser.Parse("opaque-before-glow", json.dump(), vfs, sound);
+        ASSERT_NE(scene, nullptr);
+        const auto graph = sceneToRenderGraph(*scene);
+        ASSERT_NE(graph, nullptr);
+        ASSERT_NE(FindPassByNode(*graph, "glow"), nullptr);
+        ASSERT_NE(FindPassByNode(*graph, "background"), nullptr);
+        EXPECT_EQ(PassIndexByNode(*graph, "background") < PassIndexByNode(*graph, "glow"),
+                  enabled);
+    }
+}
+
+TEST(CameraFraming, AFullscreenEffectCoversAPerspectiveScene) {
+    fs::VFS vfs;
+    auto extra = CopyEffectFiles();
+    extra["/post.json"] = R"({"fullscreen":true,"passthrough":true,"material":"mat.json"})";
+    MountFiles(vfs, std::move(extra));
+    auto json = nlohmann::json::parse(SceneJson(R"([
+        {"id":9,"name":"shot","camera":"default","origin":[2,1,6],"fov":50},
+        {"id":2,"name":"post","image":"post.json",
+         "effects":[{"file":"effects/copy/effect.json","visible":true}]}
+      ])"));
+    json["general"]["orthogonalprojection"] = nullptr;
+    audio::SoundManager sound;
+    WPSceneParser parser;
+    auto parsed = parser.Parse("perspective-post", json.dump(), vfs, sound);
+    ASSERT_NE(parsed, nullptr);
+    ASSERT_TRUE(parsed->activeCamera->IsPerspective());
+    const auto graph = sceneToRenderGraph(*parsed);
+    ASSERT_NE(graph, nullptr);
+    const auto* post = FindPassByOutput(*graph, SpecTex_Default);
+    ASSERT_NE(post, nullptr);
+    const Eigen::Vector2d half_extent(parsed->scene_extent[0] / 2.0,
+                                      parsed->scene_extent[1] / 2.0);
+    ExpectCardFillsItsTarget(*parsed, *post, half_extent);
+    parsed->activeCamera->SetFov(75);
+    parsed->activeCamera->Update();
+    ExpectCardFillsItsTarget(*parsed, *post, half_extent);
 }
 
 // The static-result cache reuses a target's pixels while every pass writing it

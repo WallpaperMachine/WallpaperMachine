@@ -540,9 +540,10 @@ json DumpWorkshop(const std::string& workshop_dir, std::string& err) {
         jm["mdlv"]          = mdl.mdlv;
         jm["mdls"]          = mdl.mdls;
         jm["mdla"]          = mdl.mdla;
-        jm["mat_json_file"] = mdl.mat_json_file;
-        jm["vertex_count"]  = static_cast<int>(mdl.vertexs.size());
-        jm["index_count"]   = static_cast<int>(mdl.indices.size());
+        const auto* first_mesh = mdl.meshes.empty() ? nullptr : &mdl.meshes.front();
+        jm["mat_json_file"] = first_mesh != nullptr ? first_mesh->mat_json_file : "";
+        jm["vertex_count"]  = first_mesh != nullptr ? static_cast<int>(first_mesh->positions.size()) : 0;
+        jm["index_count"]   = first_mesh != nullptr ? static_cast<int>(first_mesh->indices.size()) : 0;
         jm["bones"]         = ok && mdl.puppet ? static_cast<int>(mdl.puppet->bones.size()) : 0;
         jm["anims"]         = ok && mdl.puppet ? static_cast<int>(mdl.puppet->anims.size()) : 0;
         if (ok && mdl.puppet) {

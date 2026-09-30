@@ -466,6 +466,10 @@ SceneRuntimeContext::~SceneRuntimeContext() { StopTextWorker(); }
 void SceneRuntimeContext::Tick(double frame_time) {
     m_host_context->frame_time = frame_time;
     m_host_context->runtime_seconds += frame_time;
+    // Loading a script-created template can register more scripts. Newly added
+    // programs start next tick, and no iterator survives a loader callback.
+    const auto scripted_value_count = m_scripted_values.size();
+    const auto scene_script_count = m_scene_scripts.size();
     for (auto& [texture_key, playback] : m_video_texture_playback) {
         (void)texture_key;
         if (playback.paused) continue;
@@ -476,7 +480,8 @@ void SceneRuntimeContext::Tick(double frame_time) {
     for (auto& binding : m_scalar_animations) binding.playback->Advance(frame_time);
     // Property scripts initialize lazily on their first evaluation, so markers
     // crossed by this very tick are delivered to an initialized script.
-    for (auto* value : m_scripted_values) {
+    for (std::size_t index = 0; index < scripted_value_count; ++index) {
+        auto* value = m_scripted_values[index];
         if (value != nullptr) value->reevaluate();
     }
     DispatchPendingAnimationEvents();
@@ -530,8 +535,9 @@ void SceneRuntimeContext::Tick(double frame_time) {
         SyncEffectFinalNode(*binding.node, *binding.layer);
     }
     for (auto& binding : m_material_constants) ApplyMaterialConstantBinding(binding);
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->Tick(*m_host_context);
+    for (std::size_t index = 0; index < scene_script_count; ++index) {
+        auto* script = m_scene_scripts[index].script.get();
+        if (script != nullptr) script->Tick(*m_host_context);
     }
     ApplySceneZoomAnimation();
     // After every visibility and origin writer of this tick, scripts included,
@@ -691,19 +697,19 @@ void SceneRuntimeContext::EnqueueTextLayerPreparation(std::string name, const Te
         std::lock_guard lock { m_text_worker_mutex };
         if (m_queued_text_revisions[name] == state.cache_revision) return;
 
-        m_pending_text_jobs.erase(
-            std::remove_if(m_pending_text_jobs.begin(),
-                           m_pending_text_jobs.end(),
-                           [&name](const RuntimePendingTextLayerJob& job) {
-                               return job.name == name;
-                           }),
-            m_pending_text_jobs.end());
-        m_pending_text_jobs.push_back(RuntimePendingTextLayerJob {
-            .name     = name,
-            .revision = state.cache_revision,
-            .state    = state,
-        });
-        m_pending_text_jobs.back().state.raster_size = layer.rasterSize();
+        auto job = std::find_if(m_pending_text_jobs.begin(), m_pending_text_jobs.end(),
+                                [&name](const RuntimePendingTextLayerJob& pending) {
+                                    return pending.name == name;
+                                });
+        if (job == m_pending_text_jobs.end()) {
+            m_pending_text_jobs.push_back(RuntimePendingTextLayerJob { .name = name });
+            job = std::prev(m_pending_text_jobs.end());
+        }
+        // Updating a queued caption keeps its place. A busy readout cannot
+        // indefinitely outrank an older clock/date update.
+        job->revision = state.cache_revision;
+        job->state = state;
+        job->state.raster_size = layer.rasterSize();
         m_queued_text_revisions[name] = state.cache_revision;
     }
     m_text_worker_cv.notify_one();
@@ -751,8 +757,8 @@ void SceneRuntimeContext::TextWorkerLoop() {
                 return m_stop_text_worker || ! m_pending_text_jobs.empty();
             });
             if (m_stop_text_worker) return;
-            job = std::move(m_pending_text_jobs.back());
-            m_pending_text_jobs.pop_back();
+            job = std::move(m_pending_text_jobs.front());
+            m_pending_text_jobs.pop_front();
         }
 
         auto prepared =
@@ -828,7 +834,42 @@ bool SceneRuntimeContext::ApplyPreparedTextLayer(const RuntimePreparedTextLayerI
             effect_iterator->second.node != nullptr &&
             effect_iterator->second.node->Mesh() != nullptr &&
             effect_iterator->second.layer != nullptr) {
-            const auto& target_frame = effect_iterator->second.target_frame;
+            auto& target_frame = effect_iterator->second.target_frame;
+            const auto& bounds = prepared.render_frame.bounds;
+            if (bounds.left < target_frame.bounds.left ||
+                bounds.right > target_frame.bounds.right ||
+                bounds.bottom < target_frame.bounds.bottom ||
+                bounds.top > target_frame.bounds.top) {
+                Eigen::Vector2f capacity = target_frame.size;
+                for (int axis = 0; axis < 2; ++axis) {
+                    while (capacity[axis] < prepared.render_frame.size[axis] &&
+                           capacity[axis] < 4096.0f)
+                        capacity[axis] = std::min(4096.0f, capacity[axis] * 2.0f);
+                }
+                const bool grew = ! SizeNearlyEqual(capacity, target_frame.size, 1.0f);
+                target_frame = TextLayerRenderFrameForCapacity(
+                    prepared.state, prepared.raster_size, capacity);
+                auto& binding = effect_iterator->second;
+                auto camera = m_scene->cameras.at(binding.node->Camera());
+                camera->SetWidth(capacity.x());
+                camera->SetHeight(capacity.y());
+                camera->GetAttachedNode()->SetTranslate(
+                    Eigen::Vector3f(target_frame.center.x(), target_frame.center.y(), 0.0f));
+                camera->Update();
+                if (grew) {
+                    const auto& first = binding.layer->FirstTarget();
+                    for (auto& [key, target] : m_scene->renderTargets) {
+                        if (key != first && (! target.bind.enable || target.bind.name != first))
+                            continue;
+                        const double scale = key == first ? 1.0 : target.bind.scale;
+                        target.width = target.authored_width =
+                            std::max(4, static_cast<int32_t>(std::lround(capacity.x() * scale)));
+                        target.height = target.authored_height =
+                            std::max(4, static_cast<int32_t>(std::lround(capacity.y() * scale)));
+                    }
+                    m_scene_graph_mutated = true;
+                }
+            }
             const auto  final_frame =
                 TextLayerRenderFrameClampedToTarget(prepared.render_frame, target_frame);
             const auto texture_bounds = TextLayerTextureBoundsForRenderTarget(
@@ -1124,6 +1165,11 @@ void SceneRuntimeContext::RegisterLayerTemplate(std::string                templ
     }
 }
 
+void SceneRuntimeContext::SetLayerTemplateLoader(std::function<bool(std::string_view)> loader) {
+    m_layer_template_loader = std::move(loader);
+    m_failed_layer_templates.clear();
+}
+
 void SceneRuntimeContext::RegisterNodeVisibility(std::string name, SceneNode* node,
                                                  std::unique_ptr<DynamicValue> value) {
     if (node == nullptr || value == nullptr) return;
@@ -1189,12 +1235,6 @@ void SceneRuntimeContext::RegisterTextLayer(std::string name, TextLayerState sta
     auto layer        = TextLayer(std::move(state));
     RegisterNodeSize(name, layer.size());
     m_text_layers.insert_or_assign(std::move(name), std::move(layer));
-}
-
-void SceneRuntimeContext::PrimeTextValue(DynamicValue& value) {
-    if (auto* scripted = dynamic_cast<ScriptedDynamicValue*>(&value); scripted != nullptr) {
-        scripted->reevaluate();
-    }
 }
 
 void SceneRuntimeContext::RegisterTextValue(std::string name,
@@ -1624,12 +1664,12 @@ int SceneRuntimeContext::NodeSiblingIndex(std::string_view name) const {
 }
 
 std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view requested_template_path,
-                                                         std::string_view current_layer_name,
-                                                         uint32_t create_slot) {
+                                                         std::string_view current_layer_name) {
     if (m_scene == nullptr || m_scene->sceneGraph == nullptr) return {};
 
     const std::string requested_path = NormalizeTemplatePath(requested_template_path);
     if (requested_path.empty()) return {};
+    std::string loading_path;
 
     auto template_iterator = m_layer_templates.find(requested_path);
     if (template_iterator == m_layer_templates.end()) {
@@ -1637,6 +1677,7 @@ std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view reques
             owner != m_node_template_paths.end()) {
             if (const auto alias = MakeWorkshopLocalAlias(owner->second);
                 ! alias.empty() && alias == requested_path) {
+                loading_path = owner->second;
                 template_iterator = m_layer_templates.find(owner->second);
             } else if (owner->second.starts_with("models/workshop/") &&
                        requested_path.starts_with("models/")) {
@@ -1644,16 +1685,33 @@ std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view reques
                 const std::size_t          workshop_begin = prefix.size();
                 const std::size_t          slash          = owner->second.find('/', workshop_begin);
                 if (slash != std::string::npos) {
-                    const std::string candidate =
-                        owner->second.substr(0, slash + 1) +
-                        requested_path.substr(std::string("models/").size());
-                    template_iterator = m_layer_templates.find(candidate);
+                    loading_path = owner->second.substr(0, slash + 1) +
+                                   requested_path.substr(std::string("models/").size());
+                    template_iterator = m_layer_templates.find(loading_path);
                 }
             }
         }
     }
+    const auto& resolved_path = loading_path.empty() ? requested_path : loading_path;
 
     if (template_iterator == m_layer_templates.end()) {
+        if (m_failed_layer_templates.contains(resolved_path) ||
+            m_loading_layer_templates.contains(resolved_path)) return {};
+        if (m_layer_template_loader) {
+            m_loading_layer_templates.insert(resolved_path);
+            struct LoadingGuard {
+                std::unordered_set<std::string>& paths;
+                const std::string& path;
+                ~LoadingGuard() { paths.erase(path); }
+            } loading_guard { m_loading_layer_templates, resolved_path };
+            const bool loaded = m_layer_template_loader(resolved_path);
+            template_iterator = loaded ? m_layer_templates.find(resolved_path)
+                                       : m_layer_templates.end();
+        }
+    }
+
+    if (template_iterator == m_layer_templates.end()) {
+        m_failed_layer_templates.insert(resolved_path);
         LOG_INFO("scene runtime createLayer template not found: current=\"%s\" template=\"%s\"",
                  std::string(current_layer_name).c_str(),
                  requested_path.c_str());
@@ -1668,22 +1726,6 @@ std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view reques
             std::string(current_layer_name).c_str(),
             binding.canonical_path.c_str());
         return {};
-    }
-
-    GeneratedLayerKey generated_key {
-        .current_layer_name = std::string(current_layer_name),
-        .template_path      = binding.canonical_path,
-        .update_scope_id    = create_slot >> 16U,
-        .create_slot        = create_slot,
-    };
-    const bool should_cache_generated_layer =
-        create_slot != std::numeric_limits<uint32_t>::max();
-    if (should_cache_generated_layer) {
-        if (const auto existing = m_generated_layers.find(generated_key);
-            existing != m_generated_layers.end()) {
-            if (m_nodes.contains(existing->second)) return existing->second;
-            m_generated_layers.erase(existing);
-        }
     }
 
     const std::string generated_name =
@@ -1707,6 +1749,13 @@ std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view reques
     RegisterNode(generated_name, generated.get());
     RegisterNodeSize(generated_name, binding.size);
     m_node_template_paths[generated_name] = binding.canonical_path;
+    if (generated->Mesh() != nullptr && generated->Mesh()->MaterialSlotPtr() != nullptr) {
+        const auto& values = generated->Mesh()->Material()->customShader.constValues;
+        const auto alpha = values.find("g_UserAlpha");
+        RegisterNodeAlpha(generated_name, generated->Mesh()->MaterialSlotPtr(),
+                          alpha != values.end() && alpha->second.size() > 0
+                              ? alpha->second[0] : 1.0f);
+    }
     const auto source_constant_count      = m_material_constants.size();
     for (const auto& material_binding : material_bindings) {
         if (material_binding.source_material == nullptr ||
@@ -1732,8 +1781,30 @@ std::string SceneRuntimeContext::CreateLayerFromTemplate(std::string_view reques
         }
     }
     m_scene_graph_mutated = true;
-    if (should_cache_generated_layer) m_generated_layers.emplace(std::move(generated_key), generated_name);
     return generated_name;
+}
+
+Eigen::Vector3f SceneRuntimeContext::NodeColor(std::string_view name) const {
+    const auto node = m_nodes.find(std::string(name));
+    if (node == m_nodes.end() || node->second == nullptr || node->second->Mesh() == nullptr ||
+        node->second->Mesh()->Material() == nullptr) return Eigen::Vector3f::Ones();
+    const auto& values = node->second->Mesh()->Material()->customShader.constValues;
+    const auto color = values.find("g_Color");
+    if (color == values.end() || color->second.size() < 3) return Eigen::Vector3f::Ones();
+    return Eigen::Vector3f(color->second[0], color->second[1], color->second[2]);
+}
+
+bool SceneRuntimeContext::SetNodeColor(std::string_view name, const Eigen::Vector3f& color) {
+    const auto node = m_nodes.find(std::string(name));
+    if (node == m_nodes.end() || node->second == nullptr || node->second->Mesh() == nullptr ||
+        node->second->Mesh()->Material() == nullptr) return false;
+    auto& values = node->second->Mesh()->Material()->customShader.constValues;
+    const auto color4 = values.find("g_Color4");
+    const float alpha = color4 != values.end() && color4->second.size() > 3
+                            ? color4->second[3] : 1.0f;
+    values["g_Color"] = std::array<float, 3> { color.x(), color.y(), color.z() };
+    values["g_Color4"] = std::array<float, 4> { color.x(), color.y(), color.z(), alpha };
+    return true;
 }
 
 bool SceneRuntimeContext::SortNode(std::string_view name, int index) {

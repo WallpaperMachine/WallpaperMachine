@@ -25,6 +25,7 @@
 #include "Presentation/WallpaperScaling.hpp"
 #include "Runtime/RuntimeImageSource.hpp"
 #include "Scene/SceneWallpaper.hpp"
+#include "Scene/WPShaderValueUpdater.hpp"
 #include "Platform/Apple/FfmpegVideoInterop.hpp"
 #include "Platform/Apple/SceneWallpaperBindings.h"
 #include "Shader/RustShaderBridge.hpp"
@@ -3164,29 +3165,47 @@ TEST_F(PlaybackGPU, AnAliasedCoverOutlivesTheNameItSharesBeingReplaced) {
 }
 } // namespace
 
-// Material constants are written after the value updater, from the live
-// material, every frame. A binding or script may add a constant only after the
-// pass was prepared, and later change it in place; both must reach the uniform
-// the very next frame, and the constant keeps precedence over the updater.
-TEST_F(PlaybackGPU, MaterialConstantsAddedOrChangedAfterPrepareReachTheNextFrame) {
-    updater->color = {0,1,0,1};
-    auto& pass = Pass(false, true);
-    auto* material = nodes.back()->Mesh()->MaterialForSlot(0);
-    ASSERT_NE(material, nullptr);
-    auto& constants = material->customShader.constValues;
-    ASSERT_FALSE(constants.contains("g_TestColor"));
-    Draw(pass); ExpectSolid(Read(pass.desc().vk_output), {0,255,0,255});
-
-    constants["g_TestColor"] = std::array<float,4> {1,0,0,1};
-    Draw(pass); ExpectSolid(Read(pass.desc().vk_output), {255,0,0,255});
-
-    constants.find("g_TestColor")->second = std::array<float,4> {0,0,1,1};
-    Draw(pass); ExpectSolid(Read(pass.desc().vk_output), {0,0,255,255});
-
-    // A key the shader does not declare changes the map's shape, not the pass.
-    constants["g_NotInShader"] = 1.0f;
-    constants.find("g_TestColor")->second = std::array<float,4> {1,1,0,1};
-    Draw(pass); ExpectSolid(Read(pass.desc().vk_output), {255,255,0,255});
+TEST_F(PlaybackGPU, LiveTexelSizeOverridesParseDefaultsWhileMaterialValuesStayLive) {
+    auto values = std::make_unique<WPShaderValueUpdater>(&scene);
+    auto* live = values.get();
+    scene.shaderValueUpdater = std::move(values);
+    scene.cameras["global"] = std::make_shared<SceneCamera>(32, 32, -1.0f, 1.0f);
+    scene.cameras["global"]->AttatchNode(std::make_shared<SceneNode>());
+    scene.activeCamera = scene.cameras.at("global").get();
+    shader::RustShaderRequest request;
+    request.shader_name = "live-raster-uniforms";
+    request.scene_id = "synthetic";
+    request.cache_enabled = false;
+    request.stages = {
+        { ShaderType::VERTEX,
+          "attribute vec2 a_Position;\n"
+          "void main() { gl_Position = vec4(a_Position, 0.0, 1.0); }\n" },
+        { ShaderType::FRAGMENT,
+          "uniform vec2 g_TexelSize;\nuniform float u_Tint;\n"
+          "void main() { gl_FragColor = vec4(g_TexelSize, u_Tint, 1.0); }\n" },
+    };
+    shader::RustShaderOutput compiled;
+    ASSERT_TRUE(shader::CompileRustShaderProgram(request, compiled));
+    auto program = std::make_shared<SceneShader>();
+    program->name = request.shader_name;
+    program->codes = std::move(compiled.codes);
+    program->rust_reflection_json = std::move(compiled.reflection_json);
+    auto& pass = Pass(false, false, {}, false, VK_SAMPLE_COUNT_1_BIT, program,
+                      [](CustomShaderPass::Desc& desc) {
+                          desc.node->Mesh()->Material()->customShader.constValues["g_TexelSize"] =
+                              std::array<float, 2> { 1.0f / 1920.0f, 1.0f / 1080.0f };
+                      });
+    live->SetTexelSize(0.25f, 0.5f);
+    Draw(pass);
+    ExpectSolid(Read(pass.desc().vk_output), { 64, 128, 0, 255 });
+    auto& constants = nodes.back()->Mesh()->Material()->customShader.constValues;
+    constants["u_Tint"] = 0.5f;
+    live->SetTexelSize(0.5f, 0.25f);
+    Draw(pass);
+    ExpectSolid(Read(pass.desc().vk_output), { 128, 64, 128, 255 });
+    constants["u_Tint"] = 1.0f;
+    Draw(pass);
+    ExpectSolid(Read(pass.desc().vk_output), { 128, 64, 255, 255 });
 }
 
 // A texture slot whose name joins the runtime image source after prepare is

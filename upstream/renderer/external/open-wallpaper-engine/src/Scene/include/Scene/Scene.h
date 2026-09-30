@@ -125,6 +125,10 @@ public:
     /// move the letterbox or the hit test. Zero means "not latched"; the
     /// resolver then falls back to the default render target, then `ortho`.
     i32                  scene_extent[2] { 0, 0 };
+    /// Perspective scenes have no authored pixel canvas. Their raster and
+    /// presentation follow the output surface instead of the 2D fallback size.
+    bool                 display_sized { false };
+    bool                 opaque_first { false };
     /// Internal rasterization scale in (0, 1]. Multiplies the size of the
     /// render targets the scene draws into; it never touches the swapchain,
     /// the camera frustum or the presentation viewport, so output size and

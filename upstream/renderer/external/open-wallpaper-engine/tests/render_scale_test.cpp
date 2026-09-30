@@ -56,6 +56,32 @@ TEST(RenderScale, FullScaleLeavesEveryTargetAtTheAuthoredSize) {
     EXPECT_EQ(scene.renderTargets["_rt_bloom_mip1"].width, 960);
 }
 
+TEST(RenderScale, PerspectiveRasterFollowsTheSurfaceWithoutChangingTheCanvasFallback) {
+    Scene scene;
+    InstallAuthoredTargets(scene, 1920, 1080);
+    scene.display_sized = true;
+    scene.cameras["global_perspective"] =
+        std::make_shared<SceneCamera>(16.0f / 9.0f, 0.01f, 1000.0f, 50.0f);
+    for (const auto output : { kOutput, VkExtent2D { 1800, 1200 } }) {
+        for (const double scale : { 1.0, 0.5, 1.0 }) {
+            scene.render_scale = scale;
+            const auto extents = ResolveScreenBoundRenderTargetSizes(scene, output);
+            EXPECT_EQ(extents.source.width, output.width);
+            EXPECT_EQ(extents.source.height, output.height);
+            EXPECT_EQ(extents.raster.width, output.width * scale);
+            EXPECT_EQ(extents.raster.height, output.height * scale);
+            EXPECT_EQ(scene.renderTargets[std::string(SpecTex_Default)].width,
+                      output.width * scale);
+            EXPECT_EQ(scene.renderTargets["_rt_bloom_mip1"].width, output.width * scale / 2);
+            EXPECT_DOUBLE_EQ(scene.cameras.at("global_perspective")->Aspect(),
+                             double(output.width) / output.height);
+            EXPECT_FLOAT_EQ(scene.cameras.at("global_perspective")->Fov(), 50.0f);
+            EXPECT_EQ(scene.scene_extent[0], 1920);
+            EXPECT_EQ(scene.scene_extent[1], 1080);
+        }
+    }
+}
+
 TEST(RenderScale, HalfScaleHalvesTheRasterButNotTheAuthoredCanvas) {
     Scene scene;
     InstallAuthoredTargets(scene, 1920, 1080);

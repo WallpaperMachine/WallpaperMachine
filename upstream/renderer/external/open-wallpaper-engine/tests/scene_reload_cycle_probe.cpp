@@ -81,7 +81,7 @@ void ParseOnce(const std::string& project, const std::string& assets,
     auto source = vfs.Open("/assets/" + paths.pkg_entry);
     Check(source != nullptr, "scene source");
     WPSceneParser      parser;
-    audio::SoundManager sound; // Never Init/Play.
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
     auto                scene = parser.Parse(SceneParseRequest {
                           .scene_id           = paths.scene_id,
                           .project_path       = project,
