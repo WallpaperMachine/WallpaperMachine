@@ -214,13 +214,26 @@ final class PanelFixture {
   /// window would answer through `controller.signInToPixiv`.
   let pixivSessions = PixivMemorySessionStore()
   let theme: AppThemeStore
+  /// The feature stores the panel edits, each over this fixture's own defaults, library and
+  /// support folder, so no test reaches the app's shared instances.
+  let playlists: PlaylistStore
+  let collections: WallpaperCollectionStore
+  let presets: WallpaperPresetStore
+  let backup: WallpaperBackupStore
+  let imagePlacement: StillImagePlacementStore
+  let compatibility: WallpaperCompatibilityStore
+  /// What the backup file panels would answer; nil declines, as Cancel does.
+  let pickers = PanelPickers()
   let controller: WebPanelController
   var web: WKWebView
   let executable: URL
+  /// `ClientPaths.libraryURL` while this fixture's home is in effect.
+  let library: URL
 
   init(store: BridgeStore, bridge: LayoutSnapshotBridge, displayTitles: DisplayTitleResolver) throws {
     self.store = store
     self.bridge = bridge
+    library = root.appendingPathComponent("Library", isDirectory: true)
     defaults = try XCTUnwrap(UserDefaults(suiteName: root.lastPathComponent))
     defaults.set(root.appendingPathComponent("missing").path, forKey: "WallpaperMachineSteamCMDPath")
     previousHome = ProcessInfo.processInfo.environment["WALLPAPER_MACHINE_HOME"]
@@ -269,10 +282,23 @@ final class PanelFixture {
     })
     pixiv = PixivStore(
       service: PixivService(transport: transport, minimumInterval: .zero),
-      packager: PixivWallpaperPackager(library: root.appendingPathComponent("Library", isDirectory: true)),
+      packager: PixivWallpaperPackager(library: library),
       sessions: pixivSessions)
     let visibility = self.visibility
     theme = AppThemeStore(defaults: defaults)
+    playlists = PlaylistStore(defaults: defaults)
+    collections = WallpaperCollectionStore(defaults: defaults)
+    presets = WallpaperPresetStore(
+      defaults: defaults, managed: ManagedUserAssetStore(root: root.appendingPathComponent("UserAssets")))
+    let pickers = self.pickers
+    backup = WallpaperBackupStore(
+      service: WallpaperBackupService(supportRoot: root), defaults: defaults,
+      exportDestination: { await pickers.exportBackup() }, restoreSource: { await pickers.restoreBackup() })
+    imagePlacement = StillImagePlacementStore(defaults: defaults, library: library)
+    let sceneAssets = root.appendingPathComponent("SceneAssets", isDirectory: true)
+    compatibility = WallpaperCompatibilityStore(
+      service: WallpaperCompatibilityService(
+        libraryURL: library, assetsURL: { sceneAssets }))
     controller = WebPanelController(
       store: store, navigation: navigation, workshop: workshop, pixiv: pixiv,
       isPresentationVisible: { visibility.visible }, theme: theme, displayTitles: displayTitles,
@@ -280,7 +306,9 @@ final class PanelFixture {
       assets: WebPanelAssets(
         pixivThumbnailCache: WorkshopThumbnailCache(
           directory: root.appendingPathComponent("pixiv-thumbnails"), fetcher: PreviewFetcher { _ in image })),
-      appLanguage: .english())
+      appLanguage: .english(), playback: PlaybackPreferences(defaults: defaults), playlists: playlists,
+      hotKeys: HotKeyPreferences(defaults: defaults), collections: collections, presets: presets,
+      backup: backup, imagePlacement: imagePlacement, compatibility: compatibility)
     controller.signInToPixiv = { nil }
     web = controller.makeWebView()
     web.setFrameSize(NSSize(width: 960, height: 640))
@@ -289,6 +317,15 @@ final class PanelFixture {
   func start() async throws {
     try await waitUntil(timeout: 15) { self.controller.isReady && !self.workshop.steamCMDSetup.isBusy }
     try await quiet()
+    // Native "ready" only acknowledges the message. The page can still reject its first
+    // snapshot, so require a real render and report its error before any feature flow begins.
+    try await waitJS("""
+      (() => {
+        const error = document.getElementById('error-banner');
+        if (error && !error.hidden) throw new Error(`Panel startup failed: ${error.textContent.trim()}`);
+        return Boolean(document.querySelector('.tabs [aria-current="page"]'));
+      })()
+      """)
     try await installRecorder()
   }
 
@@ -336,8 +373,8 @@ final class PanelFixture {
     do {
       return try await web.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
     } catch {
-      // On CI, WebKit has dropped calls unanswered ("InvalidTransition … failed(deinit)").
-      // Say whether the page reloaded or the view changed meanwhile, so a failure names it.
+      // Tie JavaScript failures to the document they ran in. AppKit run-loop errors during
+      // native view teardown are separate and do not pass through this catch.
       let webView = controller.webView === web ? "current" : "replaced"
       throw WorkshopFailure(
         message: "JavaScript call failed: \(error) (page generation \(generation) → "
@@ -404,10 +441,19 @@ final class PanelFixture {
   }
 
   func shutdown() async {
+    hide()
+    let inFlightPush = controller.updateTask
+    _ = try? await js("""
+      if (window.powerProbe) {
+        powerProbe.hold = false;
+        while (powerProbe.pending.length) powerProbe.pending.shift()();
+      }
+      """)
     controller.stop()
-    _ = try? await js("if (window.powerProbe) while (powerProbe.pending.length) powerProbe.pending.shift()()")
+    compatibility.select(nil)
     for pending in bridge.pendingOptions { pending.resume(throwing: CancellationError()) }
     bridge.pendingOptions.removeAll()
+    await inFlightPush?.value
     await workshop.downloader.shutdown()
     await workshop.steamCMDSetup.shutdown()
     await pixiv.downloads.shutdown()
@@ -452,3 +498,13 @@ struct PanelRuntime: SteamCMDRuntimeProviding {
   func prepare(executable: URL, staging: URL) async throws -> URL { executable }
   func validate(at root: URL) async throws {}
 }
+
+/// The native file panels of the backup card, answered by a test instead of a window.
+@MainActor
+final class PanelPickers {
+  /// Where Export… writes the package; nil is the save panel's Cancel.
+  var exportBackup: () async -> URL? = { nil }
+  /// The package Choose backup… opens; nil is the open panel's Cancel.
+  var restoreBackup: () async -> URL? = { nil }
+}
+

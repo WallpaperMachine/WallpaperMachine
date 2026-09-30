@@ -5,6 +5,10 @@ import { t, applyStaticText, setLanguage, language } from './i18n.js';
 import { renderPropertyLabel } from './property-label.js';
 import { createPixivPage } from './pixiv.js';
 import { createSupportPrompt } from './support-prompt.js';
+import { createCollections } from './collections.js';
+import { createPresets } from './presets.js';
+import { createPlacement } from './placement.js';
+import { createCompatibility } from './compatibility.js';
 
 const $ = (id) => document.getElementById(id);
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -205,6 +209,9 @@ function receive(snapshot) {
   state = snapshot;
   if (selection.size) { const ids = new Set((snapshot.wallpapers || []).map(item => item.id)); for (const id of selection) if (!ids.has(id)) selection.delete(id); }
   if (selectionAnchor && !selection.has(selectionAnchor)) selectionAnchor = null;
+  // Page-side choices that name something in the snapshot (a collection on show, a picked
+  // preset, a placement being dragged) follow what the snapshot still has.
+  collections.sync(snapshot); presets.sync(snapshot); placement.sync(snapshot); compatibilityCard.sync(snapshot);
   window.appTheme.apply(snapshot.theme);
   // Every string is translated where it is drawn, so a language change only needs the
   // static markup refreshed before the render below redraws the rest.
@@ -218,6 +225,9 @@ function receive(snapshot) {
   render();
 }
 window.wallpaperUI = { receive, energy: showEnergyUsage };
+// A sentence for screen readers about something that changed without moving focus; the text is
+// cleared first so the same sentence twice is read twice.
+function announce(text) { const node = $('announcer'); node.textContent = ''; node.textContent = text; }
 function renderError() {
   const error = localError || state?.error || state?.downloadError;
   if (!state && error) morph($('browser-empty'), `<h1>${escapeHTML(t('Native connection unavailable'))}</h1><p>${escapeHTML(t('Open this panel in WallpaperMachine. Use Reconnect above to try again.'))}</p>`);
@@ -260,7 +270,7 @@ const filtersCollapsed = () => Boolean(state?.filtersCollapsed?.[state.page]);
 // defaults, so the count reads zero right after Clear.
 function filterCount(discover) {
   const draft = filterDraft(discover), defaults = filterDefaults(discover);
-  return draft.tags.length + defaults.filter(tag => !draft.excludedTags.includes(tag)).length + draft.excludedTags.filter(tag => !defaults.includes(tag)).length;
+  return draft.tags.length + defaults.filter(tag => !draft.excludedTags.includes(tag)).length + draft.excludedTags.filter(tag => !defaults.includes(tag)).length + (!discover && collections.active() ? 1 : 0);
 }
 const filterCountPill = (count) => count ? `<span class="filter-count" title="${escapeHTML(t('{count} active', { count }))}">${count}</span>` : '';
 // The one control that opens and closes the sidebar: a filled button so it reads as the
@@ -308,7 +318,7 @@ function renderFilters(discover) {
     const head = title || quick ? `<div class="filter-section-head">${title ? `<h4>${escapeHTML(t(title))}</h4>` : ''}${quick ? `<span class="filter-quick">${button(t('All'), 'includeSection', { section: key }, { className: 'link', disabled: onCount === values.length })}${button(t('None'), 'excludeSection', { section: key }, { className: 'link', disabled: onCount === 0 })}</span>` : ''}</div>` : '';
     return `<div class="filter-section" ${keyAttr(key)}>${head}${values.map(({ tag, label }) => `<label class="check-label" ${keyAttr(tag)}><input type="checkbox" data-change="filterExclude" value="${escapeHTML(tag)}"${checked(!draft.excludedTags.includes(tag))}><span>${escapeHTML(t(label))}</span></label>`).join('')}</div>`;
   };
-  morph($('filter-sidebar'), `${filterHeading(filterCount(discover), discover ? 'clearWorkshop' : 'clearInstalled')}${filterGroup('show-only', 'Show only', `${showOnly.map(tag => required(tag)).join('')}${other.length ? `<div class="filter-section" ${keyAttr('other')}><div class="filter-section-head"><h4>${escapeHTML(t('Other selected tags'))}</h4></div>${other.map(tag => required(tag)).join('')}</div>` : ''}`, true, draft.tags.length)}${(discover ? excludeGroups : installedGroups).map(group => filterGroup(group.key, group.title, group.sections.map(section).join(''), true, groupCount(group))).join('')}`);
+  morph($('filter-sidebar'), `${filterHeading(filterCount(discover), discover ? 'clearWorkshop' : 'clearInstalled')}${discover ? '' : collections.sidebarGroup()}${filterGroup('show-only', 'Show only', `${showOnly.map(tag => required(tag)).join('')}${other.length ? `<div class="filter-section" ${keyAttr('other')}><div class="filter-section-head"><h4>${escapeHTML(t('Other selected tags'))}</h4></div>${other.map(tag => required(tag)).join('')}</div>` : ''}`, true, draft.tags.length)}${(discover ? excludeGroups : installedGroups).map(group => filterGroup(group.key, group.title, group.sections.map(section).join(''), true, groupCount(group))).join('')}`);
 }
 function setExcluded(draft, tags, excluded) {
   const set = new Set(draft.excludedTags);
@@ -357,7 +367,7 @@ function compareInstalled(a, b) {
 }
 function visibleWallpapers() {
   const target = (state.displays || []).find(display => display.id === state.targetDisplayID);
-  return (state.wallpapers || []).filter(item => (!installed.text || `${item.title} ${(item.tags || []).join(' ')}`.toLocaleLowerCase().includes(installed.text.toLocaleLowerCase())) && matchesInstalledFilters(item, target)).sort(compareInstalled);
+  return (state.wallpapers || []).filter(item => collections.matches(item) && (!installed.text || `${item.title} ${(item.tags || []).join(' ')}`.toLocaleLowerCase().includes(installed.text.toLocaleLowerCase())) && matchesInstalledFilters(item, target)).sort(compareInstalled);
 }
 function emptyRecovery(discover) {
   // A source Steam does not search ignores the search text, so only filters can hide its items.
@@ -367,6 +377,9 @@ function emptyRecovery(discover) {
     description: t('Import a wallpaper folder or find something on the Workshop.'),
     actions: `${button(t('Import wallpapers'), 'openImport', {}, { icon: 'plus' })}${button(t('Browse Workshop'), 'navigate', { page: 'discover' }, { className: 'primary' })}`,
   };
+  // An empty collection is empty, not filtered away.
+  const emptyCollection = discover ? null : collections.emptyState();
+  if (emptyCollection) return emptyCollection;
   if (draft.text && count) return {
     description: discover ? t('Try a different search or remove some filters. Every selected tag must match.') : t('Change your search or clear filters to see more wallpapers.'),
     actions: button(t('Clear search and filters'), discover ? 'clearWorkshopSearch' : 'clearInstalledSearch'),
@@ -397,7 +410,7 @@ function renderGrid(discover) {
   const sweepTip = !discover && items.length > 1 && !state.dragSelectLearned ? `<span class="selection-tip" role="note">${icon('mousePointerClick', 14)}<span>${escapeHTML(t('Tip: hold a tile, then drag across others to select them all at once.'))}</span>${button(t('Got it'), 'dragSelectLearned', {}, { className: 'link' })}</span>` : '';
   // Subscriptions offer to download what the library lacks, and the way to sign out again.
   const subscriptionTools = discover && workshopSource().key === 'subscriptions' && workshop.steamSignedIn ? `${button(t('Download the ones not in your library'), 'workshopDownloadSubscribed', {}, { icon: 'download', className: 'link', title: t('Downloads every wallpaper you subscribe to that isn’t in your library yet'), disabled: busy('workshopDownloadSubscribed') })}${button(t('Sign out of Steam'), 'steamWebSignOut', {}, { className: 'link', title: t('Forgets the Steam session this app read your subscriptions with') })}` : '';
-  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? `<div class="selection-bar"><span>${escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop'))}</span>${subscriptionTools}</div>` : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Add to playlist') : t('Add {count} to playlist', { count: selection.size.toLocaleString() }), 'addSelectedToPlaylist', {}, { icon: 'listPlus', title: t('Adds them to the list of the target display’s playlist'), disabled: !target?.enabled || target.mode === 'mirror' || busy('playlistAdd') })}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${updateAll}${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
+  morph($('browser-summary'), loading ? escapeHTML(discover ? t('Searching Steam Workshop…') : t('Loading your library…')) : discover ? `<div class="selection-bar"><span>${escapeHTML(workshop.loaded ? t('{count} results', { count: Number(workshop.totalCount).toLocaleString() }) : t('Steam Workshop'))}</span>${subscriptionTools}</div>` : selection.size ? `<div class="selection-bar"><span class="selection-count">${escapeHTML(t('{count} selected', { count: selection.size.toLocaleString() }))}</span>${button(t('Select all'), 'selectAllVisible', {}, { className: 'link', disabled: items.every(item => selection.has(item.id)) })}${button(t('Clear'), 'clearSelection', {}, { className: 'link' })}${button(selection.size === 1 ? t('Add to playlist') : t('Add {count} to playlist', { count: selection.size.toLocaleString() }), 'addSelectedToPlaylist', {}, { icon: 'listPlus', title: t('Adds them to the list of the target display’s playlist'), disabled: !target?.enabled || target.mode === 'mirror' || busy('playlistAdd') })}${collections.selectionTools()}${button(selection.size === 1 ? t('Move to Trash') : t('Move {count} to Trash', { count: selection.size.toLocaleString() }), 'deleteSelected', {}, { icon: 'trash', className: 'danger', disabled: state.busy || busy('deleteMany') })}${sweepTip}</div>` : `<div class="selection-bar"><span>${escapeHTML(count)}</span>${updateAll}${items.length && selecting ? `${sweepTip ? '' : `<span class="muted">${escapeHTML(t('Click or drag across tiles to select them.'))}</span>`}${button(t('Select all'), 'selectAllVisible', {}, { className: 'link' })}${sweepTip}` : ''}</div>`);
   $('wallpaper-grid').classList.toggle('selecting', !discover && (selecting || selection.size > 0));
   // Animations belong to Discover. An installed wallpaper keeps its Workshop id, so a live entry
   // left over from Discover would mark its Installed tile as playing and hide that tile's still.
@@ -591,9 +604,10 @@ function renderInspector(discover) {
     ${download || request ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : ''}
     ${compatibility ? `<p class="inspector-compatibility muted"><small>${escapeHTML(compatibility)}</small></p>` : ''}${artworkLink}${reportLink}
     ${item.kind === 'Scene' && !state.settings.sceneAssetsReady ? `<div class="notice warning">${escapeHTML(t('Shared scene resources are required before playback.'))} ${button(t('Get shared resources'), 'requestAssets', {}, { className: 'link' })}</div>` : ''}${showInLibrary}
-    </div>${discover ? (item.summary ? `<section class="inspector-section"><p>${escapeHTML(item.summary)}</p></section>` : '') : options ? renderOptions(options) : `<section class="inspector-section"><p class="muted">${escapeHTML(t('Loading wallpaper options…'))}</p></section>`}
+    </div>${discover ? (item.summary ? `<section class="inspector-section"><p>${escapeHTML(item.summary)}</p></section>` : '') : `${isInstalled ? compatibilityCard.section(item, target) : ''}${isInstalled && packagedStill(item.id) ? placement.section(item) : ''}${options ? renderOptions(options) : `<section class="inspector-section"><p class="muted">${escapeHTML(t('Loading wallpaper options…'))}</p></section>`}${isInstalled ? collections.inspectorSection(item) : ''}`}
     </div>${options ? renderInspectorSave(options) : ''}</div>`);
   for (const image of $('inspector').querySelectorAll('img[data-label-height]')) image.style.height = `${Number(image.dataset.labelHeight)}px`;
+  placement.layout();
 }
 const draftKey = (id, propertyID) => `${id}\u0000${propertyID}`;
 // The audio and media status lines report the user's own setting and what it does not
@@ -626,24 +640,42 @@ function renderAudioAndMedia(options, lock) {
       : options.mediaAvailable === false
         ? t('On, but track information is unavailable: {reason}', { reason: options.mediaUnavailableReason || t('the system declined to report what is playing.') })
         : t('On. Apply the wallpaper to see whether track information is available.');
+  // How a web page's own sound is controlled: native sets the volume of the page's audio and
+  // video elements and can mute the page as a whole, but promises nothing about the level of
+  // sound made with Web Audio, which only whole-page mute reaches. Each is reported only as
+  // native has observed it; before the page runs, both are unknown.
+  const control = web && options.webAudioControl && typeof options.webAudioControl === 'object' ? options.webAudioControl : null;
+  const volumeStatus = !control ? '' : control.volume === 'mediaElements'
+    ? t('Volume sets the level of the audio and video the page plays through media elements. Sound the page makes with Web Audio does not follow it; only Mute does.')
+    : control.volume === 'unavailable'
+      ? t('Media volume cannot be changed for this page on this version of macOS.')
+      : t('How far Volume reaches is confirmed once the wallpaper is running.');
+  const muteStatus = !control ? '' : control.mute === 'available'
+    ? t('Mute silences the whole page, including sound made with Web Audio.')
+    : control.mute === 'unavailable'
+      ? t('Whole-page mute is not available on this version of macOS, so this page cannot be muted reliably.')
+      : t('Whether the whole page can be muted is confirmed once the wallpaper is running.');
   return check('audioResponseEnabled', t('Audio response'), options.audioResponseEnabled) + media
     + `<details class="inspector-help" ${keyAttr(`audio-help-${id}`)}><summary>${escapeHTML(t('Audio and media status'))}${icon('chevronRight', 12)}</summary><div class="section-content">`
     + note(t('Reactive wallpapers use sound playing in other apps. macOS may request system audio recording permission.'))
     + status(audioStatus)
     + (media ? note(t('Share song titles, artists and artwork from system Now Playing. Supports Spotify, Apple Music and compatible browsers and local players.')) + status(mediaStatus) : '')
+    + (control ? note(t('Output controls are separate from system-audio response.')) + status(volumeStatus) + status(muteStatus) : '')
     + '</div></details>';
 }
 function renderOptions(options) {
   const id = options.id;
   const lock = state.busy || busy('apply', { id }) || busy('revert', { id });
   const properties = (options.properties || []).map(property => renderProperty(id, property, lock)).join('');
+  // Presets count unsent page drafts as dirty too, as the Apply changes footer does.
+  const dirty = Boolean(options.dirty) || [...drafts.keys()].some(key => key.startsWith(`${id}\u0000`));
   return `${!options.supported ? `<section class="inspector-section"><p class="notice warning">${escapeHTML(t('This wallpaper cannot be rendered on this Mac.'))}</p></section>` : ''}
     <section class="inspector-section"><details open ${keyAttr(`general-${id}`)}><summary>${escapeHTML(t('General configuration'))}${icon('chevronRight', 14)}</summary><div class="section-content general-controls">
       <label class="check-label inspector-check">${icon('volume')}<span>${escapeHTML(t('Mute wallpaper audio'))}</span><input type="checkbox" data-change="wallpaperSetting" data-id="${escapeHTML(id)}" data-setting="muted"${checked(options.muted)}${disabled(lock)}></label>
       <div class="field inspector-row"><label for="wallpaper-volume">${icon('volume')}${escapeHTML(t('Volume'))}</label><div class="range-field"><input id="wallpaper-volume" type="range" min="0" max="100" step="1" value="${Number(options.volume) * 100}" data-change="wallpaperSetting" data-id="${escapeHTML(id)}" data-setting="volume"${disabled(lock || options.muted)}><output>${Math.round(options.volume * 100)}%</output></div></div>
       ${renderAudioAndMedia(options, lock)}
     </div></details></section>
-    ${properties ? `<section class="inspector-section"><details open ${keyAttr(`properties-${id}`)}><summary>${escapeHTML(t('Wallpaper properties'))}${icon('chevronRight', 14)}</summary><div class="section-content wallpaper-properties">${properties}</div></details></section>` : ''}
+    ${properties ? `<section class="inspector-section"><details open ${keyAttr(`properties-${id}`)}><summary>${escapeHTML(t('Wallpaper properties'))}${icon('chevronRight', 14)}</summary><div class="section-content wallpaper-properties">${presets.section({ id }, { dirty })}${properties}</div></details></section>` : ''}
     <section class="inspector-section"><details ${keyAttr(`displays-${id}`)}><summary>${escapeHTML(t('Displays'))}${icon('chevronRight', 14)}</summary><div class="section-content">${(options.displays || []).map(display => `<details class="display-options" open ${keyAttr(display.id)}><summary>${escapeHTML(display.title)}${icon('chevronRight', 13)}</summary><div class="section-content"><label class="check-label"><input type="checkbox" data-change="displayConfig" data-id="${escapeHTML(id)}" data-display-id="${escapeHTML(display.id)}" data-setting="enabled"${checked(display.enabled)}${disabled(lock)}>${escapeHTML(t('Enabled'))}</label><label class="field">${escapeHTML(t('Scaling mode'))}<select data-change="displayConfig" data-id="${escapeHTML(id)}" data-display-id="${escapeHTML(display.id)}" data-setting="scalingMode"${disabled(lock)}>${selectOptions([['none', t('Original size')], ['stretch', t('Stretch')], ['match', t('Fit')], ['fill', t('Fill')]], display.scalingMode)}</select></label><label class="field">${escapeHTML(t('Scale factor'))}<input type="number" min="${Number.MIN_VALUE}" step="any" value="${Number(display.scalingFactor)}" data-change="displayConfig" data-id="${escapeHTML(id)}" data-display-id="${escapeHTML(display.id)}" data-setting="scalingFactor"${disabled(lock)}></label><label class="field">${escapeHTML(t('Frame rate'))}<input type="number" min="1" max="${Number(display.maxFps) || 240}" step="1" value="${Number(display.fps)}" data-change="displayConfig" data-id="${escapeHTML(id)}" data-display-id="${escapeHTML(display.id)}" data-setting="fps"${disabled(lock)}></label>${(() => { const limited = performanceLimitedFps(display.fps, state.settings || {}); return limited == null ? '' : `<p class="muted field-note"><small>${escapeHTML(t('Limited to {fps} fps by Performance settings', { fps: limited }))}</small> ${button(t('Open Performance'), 'openPerformance', {}, { className: 'link' })}</p>`; })()}${button(t('Remove from display'), 'eject', { id, displayID: display.id }, { className: 'link', disabled: lock })}</div></details>`).join('') || `<p class="muted">${escapeHTML(t('Apply this wallpaper to a display to configure playback.'))}</p>`}</div></details></section>`;
 }
 function renderInspectorSave(options) {
@@ -1064,6 +1096,9 @@ async function continueDownload(includeResources) {
 }
 async function handleAction(action, data, element) {
   if (action.startsWith('pixiv')) return pixiv.handleAction(action, data);
+  // Collections and presets keep their own page state; anything they do not own falls through.
+  if (action.startsWith('collection') && await collections.handleAction(action, data)) return;
+  if ((action.startsWith('preset') || action.startsWith('wallpaperPreset')) && await presets.handleAction(action, data)) return;
   const deliver = element?.closest('#download-dialog') ? sendDialog : send;
   const id = data.id;
   switch (action) {
@@ -1088,7 +1123,7 @@ async function handleAction(action, data, element) {
     case 'changeAccount': await deliver('changeDownloadAccount', { id }); openDialog(id, element); return;
     case 'removeDownloadRequest': if (dialogTarget === id) closeDialog(); await deliver(action, { id }); return;
     case 'clearInstalledSearch': installed.text = ''; // falls through to reset filters
-    case 'clearInstalled': installed.tags = []; installed.excludedTags = []; render(); return;
+    case 'clearInstalled': installed.tags = []; installed.excludedTags = []; collections.clearFilter(); render(); return;
     case 'toggleSelect': toggleSelection(id); return;
     case 'toggleSelecting': selecting = !selecting; if (!selecting) { selection.clear(); selectionAnchor = null; } render(); return;
     case 'selectAllVisible': for (const item of visibleWallpapers()) selection.add(item.id); selectionAnchor ??= [...selection][0] ?? null; renderGrid(false); return;
@@ -1263,6 +1298,7 @@ document.addEventListener('click', event => {
 document.addEventListener('input', event => {
   const element = event.target;
   if (element.closest('#settings-content, #welcome')) return;
+  if (collections.handleInput(element) || presets.handleInput(element) || placement.handleInput(element)) return;
   if (element.type === 'range') { const output = element.parentElement.querySelector('output'); if (output) output.textContent = element.dataset.setting === 'volume' ? `${element.value}%` : element.value; }
   if (element.dataset.input === 'property') { drafts.set(draftKey(element.dataset.id, element.dataset.propertyId), element.value); renderInspector(false); }
   if (element.dataset.input === 'account' && dialogAccount) { dialogAccount.account = element.value; renderDialog(); }
@@ -1279,6 +1315,9 @@ document.addEventListener('change', event => {
   const value = element.type === 'checkbox' ? element.checked : element.type === 'number' || element.type === 'range' ? Number(element.value) : element.value;
   if (element.id === 'import-duplicates') { importDuplicates = value; renderPopover(); return; }
   if (change?.startsWith('pixiv')) { run(pixiv.handleChange(element)); return; }
+  if (change?.startsWith('collection')) { run(collections.handleChange(element)); return; }
+  if (change === 'presetPick') { presets.handleChange(element); return; }
+  if (change === 'placement') { run(placement.handleChange(element)); return; }
   if (change === 'target') run(send('target', { id: value }));
   else if (change === 'workshopSource') { run(send('workshopSource', { source: value })); $('wallpaper-grid').scrollTop = 0; }
   else if (change === 'property') run(commitProperty(element));
@@ -1298,6 +1337,8 @@ document.addEventListener('submit', event => {
   if (form.closest('#settings-content, #welcome')) return;
   event.preventDefault();
   if (form.dataset.form?.startsWith('pixiv') && state?.page === 'pixiv') { run(pixiv.handleSubmit(form)); return; }
+  if (form.dataset.form === 'collectionName') { run(collections.handleSubmit(form)); return; }
+  if (form.dataset.form === 'presetName') { run(presets.handleSubmit(form)); return; }
   if (form.dataset.form === 'search' && state.page === 'discover') run(searchWorkshop());
   if (form.dataset.form === 'workshopPage' && state.page === 'discover') {
     const input = form.elements.page;
@@ -1319,9 +1360,13 @@ document.addEventListener('keydown', event => {
   if (event.target.closest('#settings-content, #welcome, #support-dialog')) return;
   if (event.key === 'Escape') {
     endSweep();
+    // An inline name field gives itself up first, as its own Cancel would.
+    const editing = event.target.closest('form[data-cancel]');
+    if (editing) { event.preventDefault(); run(handleAction(editing.dataset.cancel, {}, editing)); return; }
     if (popover) closePopover(true);
     else if ((selection.size || selecting) && !dialogTarget) { selection.clear(); selectionAnchor = null; selecting = false; render(); }
   }
+  if (placement.handleKeydown(event)) return;
   if (['Delete', 'Backspace'].includes(event.key) && state?.page === 'installed' && !state.busy && event.target.closest('.wallpaper-tile')) {
     const id = event.target.closest('.wallpaper-tile')?.dataset.key;
     const ids = selection.size ? [...selection] : id ? [id] : [];
@@ -1343,7 +1388,7 @@ document.addEventListener('keydown', event => {
 });
 $('download-dialog').addEventListener('cancel', event => { event.preventDefault(); closeDialog(); });
 $('download-dialog').addEventListener('close', () => { if (dialogTarget !== null && !$('download-dialog').open) closeDialog(); });
-window.addEventListener('resize', () => { if (popover) renderPopover(); queueLivePreviews(); });
+window.addEventListener('resize', () => { if (popover) renderPopover(); queueLivePreviews(); placement.layout(); });
 // A Discover page is one Steam page of 30 tiles, at most 1,000 pages deep. Nothing here measures
 // the grid: CSS alone decides how many columns the tiles fill, and a page scrolls for the rest,
 // so a window resize only reflows the tiles and never asks the native side for anything.
@@ -1484,6 +1529,13 @@ const pixiv = createPixivPage({
   $, send, run, escapeHTML, icon, button, morph, keyAttr, checked, disabled, selectOptions, safeImage, safeLink, preview, tags, bytes, tileRing, filterButton, filterGroup, filterHeading,
   activate: (id) => handleAction('activate', { id }),
 });
+// Installed's collections, the inspector's presets, picture placement and compatibility card
+// draw with the panel's helpers into the same page; each keeps only its own page state.
+const collections = createCollections({ send, render, announce, escapeHTML, icon, button, keyAttr, checked, disabled, busy, filterGroup, selection, filtersCollapsed });
+const presets = createPresets({ send, render, escapeHTML, icon, button, keyAttr, disabled, busy });
+const placement = createPlacement({ send, render, escapeHTML, icon, button, keyAttr, disabled, busy, safeImage });
+const compatibilityCard = createCompatibility({ escapeHTML, icon, button, keyAttr, busy });
+placement.bind($('inspector'));
 const supportPrompt = createSupportPrompt({
   container: $('support-dialog'), send, escapeHTML, icon, morph,
   canPresent: () => !welcome.isOpen() && !popover && dialogTarget === null && !state?.busy

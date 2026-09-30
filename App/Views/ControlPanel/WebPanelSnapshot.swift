@@ -63,6 +63,8 @@ extension WebPanelController {
     _ = setup.retainedCandidateURL
     let downloader = workshop.downloader
     trackPixivDependencies()
+    trackBackupDependencies()
+    trackCompatibilityDependencies()
     _ = updater.state
     _ = downloader.savedAccount
     _ = downloader.rememberSessionWhileRunning
@@ -497,14 +499,9 @@ extension WebPanelController {
     var playlistSnapshot: [String: Any] = [:]
     for (display, playlist) in playlists.playlists {
       let next = playlists.nextChange[display].map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null
-      playlistSnapshot[display] = [
-        "mode": playlist.mode.rawValue, "source": playlist.source.rawValue,
-        "order": playlist.order.rawValue, "interval": playlist.interval,
-        "wallpaperIDs": playlist.wallpaperIDs,
-        "dayWallpaperID": playlist.dayWallpaperID as Any? ?? null,
-        "nightWallpaperID": playlist.nightWallpaperID as Any? ?? null,
-        "dayStart": playlist.dayStart, "nightStart": playlist.nightStart, "nextChange": next,
-      ] as [String: Any]
+      var value = Self.organizationPlaylistSnapshot(playlist)
+      value["nextChange"] = next
+      playlistSnapshot[display] = value
     }
     let updateCheck = workshop.updates
     let updatesSnapshot: [String: Any] = [
@@ -555,6 +552,11 @@ extension WebPanelController {
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
       "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
+      "libraryOrganization": libraryOrganizationSnapshot(),
+      "wallpaperPresets": wallpaperPresetsSnapshot(),
+      "backup": backupSnapshot(),
+      "imagePlacement": imagePlacementSnapshot(),
+      "wallpaperCompatibility": compatibilitySnapshot()["wallpaperCompatibility"] ?? null,
       "options": options ?? null,
       "settings": settingsSnapshot,
       "workshop": workshopSnapshot, "workshopUpdates": updatesSnapshot,
@@ -779,6 +781,13 @@ extension WebPanelController {
             delivered["mediaAvailable"] = false
             delivered["mediaUnavailableReason"] = reason
         }
+    }
+    if value.kind == .webpage {
+      let controls = delivery?.audioOutputControls[value.wallpaperId]
+      delivered["webAudioControl"] = [
+        "volume": controls.map { $0.mediaVolume ? "mediaElements" : "unavailable" } ?? "unknown",
+        "mute": controls.map { $0.pageMute ? "available" : "unavailable" } ?? "unknown",
+      ]
     }
     var payload: [String: Any] = [
       "id": value.wallpaperId, "kind": kind(value.kind), "supported": value.supported,

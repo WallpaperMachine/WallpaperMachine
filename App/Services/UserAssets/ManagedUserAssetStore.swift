@@ -28,6 +28,12 @@ struct ManagedUserAssetProperty: Codable, Equatable, Sendable {
     var kind: Kind
     /// The file or folder the user picked.
     var sourcePath: String
+    /// Backup provenance is not permission to access the original. Missing in older
+    /// locally-created manifests means the original selection remains authorized.
+    var originalSourceUnauthorized: Bool?
+    /// Explicit reselection scope prevents late callbacks for a departed source
+    /// from granting access to that original again. Never trusted from a backup.
+    var authorizedSourcePath: String?
     /// Stored files, ordered by file name.
     var assets: [ManagedUserAsset]
     /// True when the source folder held more matching files than the limit allowed.
@@ -141,6 +147,16 @@ final class ManagedUserAssetStore {
         try data.write(to: directory.appendingPathComponent(UserAssetManifest.fileName), options: .atomic)
     }
 
+    /// Called only after an explicit user selection, including selecting the same
+    /// original again. Runtime reconstruction must never grant this authority.
+    func authorizeSelection(wallpaperId: String, propertyId: String, selectedSourcePath: String) throws {
+        var value = manifest(wallpaperId: wallpaperId)
+        guard var property = value.properties[propertyId] else { return }
+        property.originalSourceUnauthorized = nil
+        property.authorizedSourcePath = URL(fileURLWithPath: selectedSourcePath).standardizedFileURL.path
+        value.properties[propertyId] = property
+        try write(value)
+    }
     // MARK: - Import
 
     /// Copies the bytes at `readingFrom` into the store unless an entry with the

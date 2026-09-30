@@ -192,6 +192,30 @@ async fn muting_a_web_wallpaper_does_not_stop_its_audio_response() {
 }
 
 #[tokio::test]
+async fn web_output_policy_mute_preserves_saved_mute_and_audio_response() {
+    let engine = FakeEngineFacade::default();
+    let bridge = web_bridge(&engine).await;
+    bridge.play_all().await.unwrap();
+    bridge.set_web_audio_subscribed("300".into(), 7, true).await.unwrap();
+    bridge.set_volume("300".into(), 0.25).await.unwrap();
+
+    bridge.set_audio_suppressed(true).await.unwrap();
+    let wallpaper = bridge.web_wallpapers().await.unwrap().remove(0);
+    assert!(wallpaper.muted);
+    assert!(!wallpaper.paused);
+    assert_eq!(wallpaper.volume, 0.25);
+    assert_eq!(audio_consumers(&bridge).await, 1);
+
+    bridge.set_audio_suppressed(false).await.unwrap();
+    assert!(!bridge.web_wallpapers().await.unwrap()[0].muted);
+    bridge.set_muted("300".into(), true).await.unwrap();
+    bridge.set_audio_suppressed(true).await.unwrap();
+    bridge.set_audio_suppressed(false).await.unwrap();
+    assert!(bridge.web_wallpapers().await.unwrap()[0].muted);
+    assert_eq!(audio_consumers(&bridge).await, 1);
+}
+
+#[tokio::test]
 async fn turning_audio_response_off_removes_a_subscribed_web_page_as_a_consumer() {
     let engine = FakeEngineFacade::default();
     let bridge = web_bridge(&engine).await;

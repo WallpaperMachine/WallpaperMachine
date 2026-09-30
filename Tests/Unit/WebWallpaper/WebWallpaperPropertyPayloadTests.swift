@@ -161,8 +161,10 @@ final class WebWallpaperPropertyPayloadTests: XCTestCase {
       try png.write(to: source.appendingPathComponent("a b+c.png"))
       try png.write(to: source.appendingPathComponent("second.png"))
       wallpaper = BridgeWebWallpaper(
-        displayId: 1, wallpaperId: "w", title: "Test", projectPath: project.path,
-        entryFile: "index.html", fps: 30, paused: false, audioResponseEnabled: false,
+        displayId: 1, displayKey: "1", audioSourceDisplayId: 1,
+        wallpaperId: "w", title: "Test", projectPath: project.path,
+        entryFile: "index.html", fps: 30, paused: false, volume: 1, muted: false,
+        audioResponseEnabled: false,
         mediaIntegrationEnabled: false,
         propertiesJson: """
           {

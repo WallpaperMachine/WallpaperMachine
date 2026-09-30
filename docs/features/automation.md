@@ -56,6 +56,12 @@ without building a shortcut ("Play or pause WallpaperMachine", "Next wallpaper i
 WallpaperMachine", "Apply a wallpaper with WallpaperMachine"). The actions run in
 the app's own process; if it is not running, macOS starts it first.
 
+**Next Wallpaper** and **Apply Wallpaper** have an optional **Display** picker.
+It lists connected, enabled independent displays using the same stable identities
+as the panel; leaving it empty keeps the panel-target behavior. Execution checks
+eligibility again, including when a queued command gets its turn. A disconnected
+or mirrored target is rejected rather than silently redirected to another screen.
+
 ## Links
 
 `Info.plist` claims the `wallpapermachine` scheme (`CFBundleURLTypes`). The

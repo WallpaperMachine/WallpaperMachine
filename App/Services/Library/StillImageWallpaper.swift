@@ -68,6 +68,58 @@ enum StillImageWallpaper {
     /// the image file the packager chose. The host replays `applyUserProperties` to a listener
     /// registered after load, and `data-fit` covers the first paint before that.
     static func page(showing file: String, fit: Fit) -> String {
+        let original = legacyPage(showing: file, fit: fit)
+        guard let start = original.range(of: "<script>"),
+              let end = original.range(of: "</script>") else {
+            preconditionFailure("The frozen still-image template must contain its property listener.")
+        }
+        let script = """
+        <script>
+        (() => {
+          const fits = new Set(\(fitList));
+          const art = document.getElementById('art');
+          let placement = null;
+          function renderPlacement() {
+            art.style.cssText = '';
+            if (!placement || !art.naturalWidth || !art.naturalHeight) return;
+            const width = window.innerWidth, height = window.innerHeight;
+            const fit = document.body.dataset.fit;
+            const base = fit === 'center' ? 1 : Math[fit === 'fit' || fit === 'blur' ? 'min' : 'max'](
+              width / art.naturalWidth, height / art.naturalHeight);
+            const w = art.naturalWidth * base * placement.zoom;
+            const h = art.naturalHeight * base * placement.zoom;
+            Object.assign(art.style, {
+              inset: 'auto', width: `${w}px`, height: `${h}px`, objectFit: 'fill',
+              left: `${(width - w) * placement.x}px`, top: `${(height - h) * placement.y}px`,
+            });
+          }
+          art.addEventListener('load', renderPlacement);
+          window.addEventListener('resize', renderPlacement);
+          window.wallpaperPropertyListener = {
+            applyUserProperties(properties) {
+              const fit = properties.fit && String(properties.fit.value);
+              if (fits.has(fit)) document.body.dataset.fit = fit;
+              const rgb = properties.background && String(properties.background.value).trim().split(/\\s+/).map(Number);
+              if (rgb && rgb.length === 3 && rgb.every(Number.isFinite)) {
+                document.body.style.background = `rgb(${rgb.map(part => Math.round(Math.min(1, Math.max(0, part)) * 255)).join(', ')})`;
+              }
+              const p = properties.\(StillImagePlacement.propertyKey)?.value;
+              if (p) {
+                placement = p.customized === true && [p.x, p.y, p.zoom].every(Number.isFinite)
+                  && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1 && p.zoom >= 1 && p.zoom <= 3 ? p : null;
+              }
+              renderPlacement();
+            },
+          };
+        })();
+        </script>
+        """
+        return original.replacingCharacters(in: start.lowerBound..<end.upperBound, with: script)
+    }
+
+    /// Recognition of old app-generated pages is exact, not a substring or an ID-prefix
+    /// heuristic. Keep this template frozen so an author's edited page is never rewritten.
+    static func legacyPage(showing file: String, fit: Fit) -> String {
         """
         <!doctype html>
         <html>
@@ -87,8 +139,8 @@ enum StillImageWallpaper {
         </style>
         </head>
         <body data-fit="\(fit.rawValue)">
-        <img id="backdrop" src="\(file)" alt="">
-        <img id="art" src="\(file)" alt="">
+        <img id="backdrop" src="\(escapedAttribute(file))" alt="">
+        <img id="art" src="\(escapedAttribute(file))" alt="">
         <script>
         (() => {
           const fits = new Set(\(fitList));
@@ -109,6 +161,13 @@ enum StillImageWallpaper {
 
         """
     }
+    private static func escapedAttribute(_ value: String) -> String {
+        value.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
 
     private static var fitList: String {
         "[" + Fit.allCases.map { "'\($0.rawValue)'" }.joined(separator: ", ") + "]"

@@ -109,6 +109,66 @@ final class UserAssetStoreTests: XCTestCase {
         }
     }
 
+    func testLegacyManifestDecodesWithoutRetainedOnlyState() throws {
+        let source = try writeSource("legacy.png")
+        _ = try makeStore().importFile(at: source, propertyId: "background", filter: .image)
+        let managed = ManagedUserAssetStore()
+        var saved = managed.manifest(wallpaperId: "2001")
+        saved.properties["background"]?.originalSourceUnauthorized = true
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(saved)) as? [String: Any])
+        var properties = try XCTUnwrap(object["properties"] as? [String: [String: Any]])
+        properties["background"]?.removeValue(forKey: "originalSourceUnauthorized")
+        object["properties"] = properties
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let legacy = try decoder.decode(UserAssetManifest.self, from: JSONSerialization.data(withJSONObject: object))
+        try managed.write(legacy)
+        try Data("changed legacy bytes".utf8).write(to: source)
+        let asset = try makeStore().importFile(at: source, propertyId: "background", filter: .image)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: asset.stagedPath)), Data("changed legacy bytes".utf8))
+    }
+
+    func testRetainedOnlyDirectoryDoesNotScanOrWatchExistingOriginalUntilReselected() throws {
+        let folder = root.appendingPathComponent("original", isDirectory: true)
+        let original = try writeSource("selected #%.png", bytes: "retained", in: folder)
+        let importing = makeStore()
+        _ = try importing.importDirectory(at: folder, propertyId: "gallery", filter: .image, limit: 100)
+        importing.clearAll()
+        let managed = ManagedUserAssetStore()
+        var saved = managed.manifest(wallpaperId: "2001")
+        saved.properties["gallery"]?.originalSourceUnauthorized = true
+        try managed.write(saved)
+        try Data("changed original".utf8).write(to: original)
+        try writeSource("new.png", bytes: "new", in: folder)
+        var watches = 0
+        var watcher: ManualDirectoryWatcher?
+        let store = makeStore(watcher: { url, callback in
+            watches += 1
+            let made = ManualDirectoryWatcher(url: url, trigger: callback)
+            watcher = made
+            return made
+        })
+        let retained = try store.importDirectory(at: folder, propertyId: "gallery", filter: .image, limit: 100)
+        XCTAssertEqual(retained.map { URL(fileURLWithPath: $0.stagedPath).lastPathComponent }, ["selected #%.png"])
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path(fromPageValue: try XCTUnwrap(retained.first).pageValue))), Data("retained".utf8))
+        XCTAssertEqual(watches, 0)
+        let replacement = try writeSource("replacement.png", bytes: "new selection")
+        try managed.authorizeSelection(wallpaperId: "2001", propertyId: "gallery", selectedSourcePath: replacement.path)
+        let stale = try store.importDirectory(at: folder, propertyId: "gallery", filter: .image, limit: 100)
+        XCTAssertEqual(stale.map { URL(fileURLWithPath: $0.stagedPath).lastPathComponent }, ["selected #%.png"])
+        XCTAssertEqual(watches, 0)
+        try managed.authorizeSelection(wallpaperId: "2001", propertyId: "gallery", selectedSourcePath: folder.path)
+        let selected = try store.importDirectory(at: folder, propertyId: "gallery", filter: .image, limit: 100)
+        XCTAssertEqual(Set(selected.map { URL(fileURLWithPath: $0.stagedPath).lastPathComponent }), ["new.png", "selected #%.png"])
+        XCTAssertEqual(watches, 1)
+        try writeSource("later.png", in: folder)
+        try XCTUnwrap(watcher).fire()
+        XCTAssertEqual(storedFiles(wallpaperId: "2001", propertyId: "gallery").map(\.lastPathComponent), ["later.png", "new.png", "selected #%.png"])
+        XCTAssertNil(managed.manifest(wallpaperId: "2001").properties["gallery"]?.originalSourceUnauthorized)
+    }
+
     // MARK: - Single file
 
     func testImportedFileIsReadableThroughItsPageValueWithoutASecondCopyOfTheBytes() throws {
@@ -296,6 +356,37 @@ final class UserAssetStoreTests: XCTestCase {
 
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: staged.stagedPath)),
                        Data("after-the-replacement".utf8))
+    }
+
+    func testDepartedDirectoryCallbacksCannotReplaceOrPruneCurrentSelection() throws {
+        let departed = root.appendingPathComponent("departed", isDirectory: true)
+        let current = root.appendingPathComponent("current", isDirectory: true)
+        let original = try writeSource("a.png", bytes: "departed bytes", in: departed)
+        let replacement = try writeSource("a.png", bytes: "current bytes", in: current)
+        var watchers: [ManualDirectoryWatcher] = []
+        let retiredStore = makeStore(watcher: { url, callback in
+            let watcher = ManualDirectoryWatcher(url: url, trigger: callback)
+            watchers.append(watcher)
+            return watcher
+        })
+        _ = try retiredStore.importDirectory(at: departed, propertyId: "gallery", filter: .image, limit: 100)
+        let repeated = try retiredStore.importDirectory(at: departed, propertyId: "gallery", filter: .image, limit: 100)
+        // A queued callback from an earlier watcher cannot act for its replacement,
+        // even when both watched the same directory.
+        try Data("unobserved departure".utf8).write(to: original, options: .atomic)
+        watchers[0].fire()
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(repeated.first).stagedPath)), Data("departed bytes".utf8))
+
+        let currentStore = makeStore()
+        let selected = try currentStore.importDirectory(at: current, propertyId: "gallery", filter: .image, limit: 100)
+        let currentManifest = manifest()
+        try FileManager.default.removeItem(at: departed)
+        watchers[1].fire()
+        XCTAssertEqual(manifest(), currentManifest)
+        XCTAssertEqual(currentStore.stagedFiles(propertyId: "gallery"), selected)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(selected.first).stagedPath)), Data("current bytes".utf8))
+        XCTAssertEqual(try Data(contentsOf: replacement), Data("current bytes".utf8))
+        XCTAssertTrue(watchers[1].isStopped)
     }
 
     // MARK: - Random selection

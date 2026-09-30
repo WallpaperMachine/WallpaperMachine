@@ -38,13 +38,34 @@ final class PlaylistPlannerTests: XCTestCase {
 
     func testCandidatesSkipWhatCannotPlay() {
         let library = ["a", "b", "c"]
-        XCTAssertEqual(PlaylistPlanner.candidates(for: playlist(.all), library: library, favorites: []), library)
+        XCTAssertEqual(PlaylistPlanner.candidates(for: playlist(.all), library: library, favorites: [], collectionIDs: []), library)
         XCTAssertEqual(
-            PlaylistPlanner.candidates(for: playlist(.favorites), library: library, favorites: ["c", "a", "gone"]),
+            PlaylistPlanner.candidates(for: playlist(.favorites), library: library, favorites: ["c", "a", "gone"], collectionIDs: []),
             ["a", "c"], "favorites follow the library order and skip what left it")
         XCTAssertEqual(
-            PlaylistPlanner.candidates(for: playlist(.list, list: ["c", "gone", "a", "c"]), library: library, favorites: []),
+            PlaylistPlanner.candidates(for: playlist(.list, list: ["c", "gone", "a", "c"]), library: library, favorites: [], collectionIDs: []),
             ["c", "a"], "a list keeps its own order, once each, without missing wallpapers")
+    }
+
+    func testCollectionUsesLiveMembershipWithoutFallingBackToDisplayList() {
+        let configuration = playlist(.collection, list: ["a"])
+        XCTAssertEqual(PlaylistPlanner.candidates(
+            for: configuration, library: ["a", "b", "c"], favorites: [],
+            collectionIDs: ["c", "missing", "b", "c"]), ["c", "b"])
+        XCTAssertEqual(PlaylistPlanner.candidates(
+            for: configuration, library: ["a", "b", "c"], favorites: [], collectionIDs: []), [])
+    }
+
+    func testOlderPlaylistDataRetainsItsSelectionsWhenNewFieldsAreMissing() throws {
+        let decoded = try JSONDecoder().decode(DisplayPlaylist.self, from: Data(
+            #"{"mode":"rotate","source":"list","order":"shuffle","interval":60,"wallpaperIDs":["b","a"]}"#.utf8))
+        XCTAssertEqual(decoded.mode, .rotate)
+        XCTAssertEqual(decoded.source, .list)
+        XCTAssertEqual(decoded.order, .shuffle)
+        XCTAssertEqual(decoded.interval, 60)
+        XCTAssertEqual(decoded.wallpaperIDs, ["b", "a"])
+        XCTAssertNil(decoded.collectionID)
+        XCTAssertNil(decoded.planID)
     }
 
     func testInOrderWrapsAndStartsFromTheTop() {

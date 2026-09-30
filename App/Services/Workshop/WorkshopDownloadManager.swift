@@ -84,7 +84,7 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
   static let defaultConcurrentDownloads = 3
   /// The choices Settings offers. More sessions mean more Steam sign-ins per minute, so the
   /// ceiling stays at what a real account has been seen to sustain.
-  static let concurrentDownloadRange = 1...6
+  nonisolated static let concurrentDownloadRange = 1...6
   /// Id of the sign-in-only job; there is at most one, like the shared-assets job.
   static let signInID = "steam-sign-in"
 

@@ -25,6 +25,7 @@ pub use power::handle_power_change;
 mod tests;
 
 pub use api::{
+    validate_backup_renderer_configuration,
     BridgeAppSnapshot, BridgeAudioSpectrum, BridgeComboOption, BridgeDirectoryMode,
     BridgeDisplayConfigRow, BridgeDisplayMode, BridgeDisplayMutationBundle,
     BridgeDisplaySettingsRow, BridgeError, BridgeErrorKind, BridgeFileFilter,

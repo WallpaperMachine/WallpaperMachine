@@ -16,11 +16,12 @@ final class PlaylistScheduler {
     typealias Activate = @MainActor (_ display: String, _ choose: @MainActor () -> String?) async throws -> String?
 
     private let store: PlaylistStore
+    private let collections: WallpaperCollectionStore
     private let displays: @MainActor () -> [String]
     private let library: @MainActor () -> [String]
     private let favorites: @MainActor () -> Set<String>
     private let current: @MainActor (String) -> String?
-    private let isRunning: @MainActor () -> Bool
+    private let isRunning: @MainActor (String) -> Bool
     private let activate: Activate
     private let now: @MainActor () -> Date
     private let calendar: Calendar
@@ -34,16 +35,17 @@ final class PlaylistScheduler {
     /// The day or night period each display was last brought into line with, and the playlist
     /// it was brought into line under: a wallpaper the user applies by hand stays until the next
     /// period, and choosing a different day or night wallpaper applies at once.
-    private var settledPeriods: [String: (period: Date, playlist: DisplayPlaylist)] = [:]
+    private var settledPeriods: [String: (period: Date, revision: UInt64)] = [:]
     private var random = SystemRandomNumberGenerator()
 
     init(
         store: PlaylistStore,
+        collections: WallpaperCollectionStore,
         displays: @escaping @MainActor () -> [String],
         library: @escaping @MainActor () -> [String],
         favorites: @escaping @MainActor () -> Set<String>,
         current: @escaping @MainActor (String) -> String?,
-        isRunning: @escaping @MainActor () -> Bool,
+        isRunning: @escaping @MainActor (String) -> Bool,
         activate: @escaping Activate,
         now: (@MainActor () -> Date)? = nil,
         calendar: Calendar = .autoupdatingCurrent,
@@ -55,6 +57,7 @@ final class PlaylistScheduler {
         }
     ) {
         self.store = store
+        self.collections = collections
         self.displays = displays
         self.library = library
         self.favorites = favorites
@@ -76,6 +79,7 @@ final class PlaylistScheduler {
         // the user edits a playlist or a change is dated.
         let names: [(Notification.Name, AnyObject?)] = [
             (PlaylistStore.didChangeNotification, store),
+            (WallpaperCollectionStore.didChangeNotification, collections),
             (.NSSystemClockDidChange, nil),
             (.NSSystemTimeZoneDidChange, nil),
         ]
@@ -99,10 +103,10 @@ final class PlaylistScheduler {
     func evaluate() {
         guard !observers.isEmpty else { return }
         let date = now()
-        let running = isRunning()
         var earliest: Date?
         for display in displays() {
             let playlist = store.playlist(for: display)
+            let running = isRunning(display)
             switch playlist.mode {
             case .off:
                 store.schedule(display, at: nil)
@@ -126,7 +130,7 @@ final class PlaylistScheduler {
                 store.schedule(display, at: until)
                 earliest = min(earliest ?? until, until)
                 let settled = settledPeriods[display]
-                guard settled?.period != until || settled?.playlist != playlist else { continue }
+                guard settled?.period != until || settled?.revision != (store.revisions[display] ?? 0) else { continue }
                 guard running, !inFlight.contains(display) else { continue }
                 follow(display, phase: phase, period: until, playlist: playlist)
             }
@@ -138,7 +142,7 @@ final class PlaylistScheduler {
     func canSkip(_ display: String) -> Bool {
         let playlist = store.playlist(for: display)
         guard playlist.mode == .rotate else { return false }
-        let candidates = PlaylistPlanner.candidates(for: playlist, library: library(), favorites: favorites())
+        let candidates = candidates(for: playlist)
         return candidates.contains { $0 != current(display) }
     }
 
@@ -148,61 +152,89 @@ final class PlaylistScheduler {
     @discardableResult
     func skip(_ display: String) -> Bool {
         let playlist = store.playlist(for: display)
-        guard playlist.mode == .rotate, !inFlight.contains(display) else { return false }
+        guard playlist.mode == .rotate, !inFlight.contains(display), displays().contains(display), isRunning(display) else { return false }
         rotate(display, playlist: playlist)
         return true
     }
 
     private func rotate(_ display: String, playlist: DisplayPlaylist) {
+        let revision = store.revisions[display] ?? 0
         inFlight.insert(display)
         Task {
+            var attempted = false
             defer {
                 inFlight.remove(display)
-                store.schedule(display, at: now().addingTimeInterval(Self.seconds(playlist.interval)))
+                if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
+                    store.schedule(display, at: now().addingTimeInterval(Self.seconds(playlist.interval)))
+                } else {
+                    evaluate()
+                }
             }
             var candidates: [String] = []
             do {
                 let applied = try await activate(display) { [self] in
-                    // Chosen when the switch's turn comes, from what the display shows then.
+                    guard (store.revisions[display] ?? 0) == revision,
+                        displays().contains(display), isRunning(display) else { return nil }
+                    attempted = true
+                    // Resolve membership when the command runs, not when its timer fired.
                     let latest = store.playlist(for: display)
-                    candidates = PlaylistPlanner.candidates(for: latest, library: library(), favorites: favorites())
+                    candidates = self.candidates(for: latest)
                     return PlaylistPlanner.next(
                         after: current(display), in: candidates, order: latest.order,
                         recent: store.recent[display] ?? [], using: &random)
                 }
-                if let applied {
+                if let applied, (store.revisions[display] ?? 0) == revision {
                     store.recordPick(applied, on: display, candidates: candidates)
                     AppLog.info("playlist changed display \(display) to \(applied)")
                 }
             } catch {
+                // A failed command is one attempt, not a new immediate retry loop.
+                attempted = true
                 AppLog.warn("playlist could not change display \(display): \(error.localizedDescription)")
             }
         }
     }
-
     private func follow(_ display: String, phase: PlaylistPlanner.Phase, period: Date, playlist: DisplayPlaylist) {
+        let revision = store.revisions[display] ?? 0
         let target = phase == .day ? playlist.dayWallpaperID : playlist.nightWallpaperID
         guard let target, library().contains(target), current(display) != target else {
-            settledPeriods[display] = (period, playlist)
+            settledPeriods[display] = (period, revision)
             return
         }
         inFlight.insert(display)
         Task {
-            defer { inFlight.remove(display) }
+            var attempted = false
+            defer {
+                inFlight.remove(display)
+                if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
+                    settledPeriods[display] = (period, revision)
+                }
+                evaluate()
+            }
             do {
                 let applied = try await activate(display) { [self] in
-                    current(display) == target ? nil : target
+                    guard (store.revisions[display] ?? 0) == revision,
+                        displays().contains(display), isRunning(display), library().contains(target),
+                        PlaylistPlanner.phase(at: now(), dayStart: playlist.dayStart,
+                            nightStart: playlist.nightStart, calendar: calendar).until == period
+                    else { return nil }
+                    attempted = true
+                    return current(display) == target ? nil : target
                 }
                 if applied != nil {
                     AppLog.info("playlist switched display \(display) to its \(phase.rawValue) wallpaper")
                 }
             } catch {
+                attempted = true
                 AppLog.warn("playlist could not switch display \(display) to its \(phase.rawValue) wallpaper: \(error.localizedDescription)")
             }
-            // One attempt per period: a failure is not retried on every evaluation, and a
-            // wallpaper the user applied instead while this one waited stays.
-            settledPeriods[display] = (period, playlist)
         }
+    }
+
+    private func candidates(for playlist: DisplayPlaylist) -> [String] {
+        let ids = playlist.collectionID.flatMap { collections.collection(id: $0)?.wallpaperIDs } ?? []
+        return PlaylistPlanner.candidates(
+            for: playlist, library: library(), favorites: favorites(), collectionIDs: ids)
     }
 
     private func arm(_ date: Date?) {

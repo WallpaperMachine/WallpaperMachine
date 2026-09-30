@@ -72,6 +72,8 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     private struct CommittedState {
         var propertiesJSON: String?
         var fps: UInt32?
+        var volume: Float = 1
+        var muted = false
         var userPaused = false
         var presentationSuspended = false
 
@@ -91,6 +93,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     /// were issued for, so a late completion cannot write into a newer document.
     private(set) var documentGeneration: UInt64 = 0
     private var committed = CommittedState()
+    private(set) var audioOutputCapabilities: WebWallpaperAudioOutput.Capabilities?
     private let surface: RuntimeSurfaceKey
     private let counters: RuntimeCounters
     private let recovery: RecoveryPolicy
@@ -249,6 +252,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         documentGeneration += 1
         lastLoadFinished = nil
         forgetDocumentState()
+        deliverAudioOutput()
         webView.loadFileURL(entryURL, allowingReadAccessTo: projectURL)
     }
 
@@ -261,6 +265,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         documentGeneration += 1
         isLoaded = false
         forgetDocumentState()
+        _ = WebWallpaperAudioOutput.apply(volume: committed.volume, muted: true, to: webView)
         messageProxy.page = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: WebWallpaperProtocol.messageHandlerName)
         webView.stopLoading()
@@ -291,6 +296,15 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     func applyGeneralProperties(fps: UInt32) {
         committed.fps = fps
         deliverGeneralProperties()
+    }
+
+    func applyAudioOutput(volume: Float, muted: Bool) {
+        guard committed.volume != volume || committed.muted != muted || audioOutputCapabilities == nil else {
+            return
+        }
+        committed.volume = volume
+        committed.muted = muted
+        deliverAudioOutput()
     }
 
     func setPaused(_ paused: Bool) {
@@ -420,6 +434,11 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
             arguments: ["general": ["fps": Int(fps)]])
     }
 
+    private func deliverAudioOutput() {
+        audioOutputCapabilities = WebWallpaperAudioOutput.apply(
+            volume: committed.volume, muted: committed.muted || committed.volume == 0, to: webView)
+    }
+
     private func deliverPaused() {
         guard isLoaded else { return }
         run("window.__mweWallpaperHost.setPaused(paused)", arguments: ["paused": committed.isPaused])
@@ -430,6 +449,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     /// changed, so nothing would be sent and the page would start blank.
     private func replayCommittedState() {
         counters.record(.webStateReplayed, for: surface)
+        deliverAudioOutput()
         deliverUserProperties()
         deliverGeneralProperties()
         deliverPaused()

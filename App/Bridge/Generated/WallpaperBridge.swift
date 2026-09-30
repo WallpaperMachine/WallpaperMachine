@@ -7083,6 +7083,11 @@ public func FfiConverterTypeBridgeWallpaperOptionsSnapshot_lower(_ value: Bridge
  */
 public struct BridgeWebWallpaper {
     public var displayId: UInt32
+    public var displayKey: String
+    /**
+     * Source display of this assignment; independent instances of one project remain separate.
+     */
+    public var audioSourceDisplayId: UInt32
     public var wallpaperId: String
     public var title: String
     /**
@@ -7095,6 +7100,8 @@ public struct BridgeWebWallpaper {
     public var entryFile: String
     public var fps: UInt32
     public var paused: Bool
+    public var volume: Float
+    public var muted: Bool
     public var audioResponseEnabled: Bool
     /**
      * Whether this wallpaper opted in to system media integration. The host
@@ -7113,13 +7120,16 @@ public struct BridgeWebWallpaper {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(displayId: UInt32, wallpaperId: String, title: String, 
+    public init(displayId: UInt32, displayKey: String, 
+        /**
+         * Source display of this assignment; independent instances of one project remain separate.
+         */audioSourceDisplayId: UInt32, wallpaperId: String, title: String, 
         /**
          * Absolute project directory.
          */projectPath: String, 
         /**
          * Entry page relative to `project_path`.
-         */entryFile: String, fps: UInt32, paused: Bool, audioResponseEnabled: Bool, 
+         */entryFile: String, fps: UInt32, paused: Bool, volume: Float, muted: Bool, audioResponseEnabled: Bool, 
         /**
          * Whether this wallpaper opted in to system media integration. The host
          * still has to find a usable system media source; this is only the user's
@@ -7133,12 +7143,16 @@ public struct BridgeWebWallpaper {
          * directory properties.
          */propertiesJson: String) {
         self.displayId = displayId
+        self.displayKey = displayKey
+        self.audioSourceDisplayId = audioSourceDisplayId
         self.wallpaperId = wallpaperId
         self.title = title
         self.projectPath = projectPath
         self.entryFile = entryFile
         self.fps = fps
         self.paused = paused
+        self.volume = volume
+        self.muted = muted
         self.audioResponseEnabled = audioResponseEnabled
         self.mediaIntegrationEnabled = mediaIntegrationEnabled
         self.propertiesJson = propertiesJson
@@ -7150,6 +7164,12 @@ public struct BridgeWebWallpaper {
 extension BridgeWebWallpaper: Equatable, Hashable {
     public static func ==(lhs: BridgeWebWallpaper, rhs: BridgeWebWallpaper) -> Bool {
         if lhs.displayId != rhs.displayId {
+            return false
+        }
+        if lhs.displayKey != rhs.displayKey {
+            return false
+        }
+        if lhs.audioSourceDisplayId != rhs.audioSourceDisplayId {
             return false
         }
         if lhs.wallpaperId != rhs.wallpaperId {
@@ -7170,6 +7190,12 @@ extension BridgeWebWallpaper: Equatable, Hashable {
         if lhs.paused != rhs.paused {
             return false
         }
+        if lhs.volume != rhs.volume {
+            return false
+        }
+        if lhs.muted != rhs.muted {
+            return false
+        }
         if lhs.audioResponseEnabled != rhs.audioResponseEnabled {
             return false
         }
@@ -7184,12 +7210,16 @@ extension BridgeWebWallpaper: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(displayId)
+        hasher.combine(displayKey)
+        hasher.combine(audioSourceDisplayId)
         hasher.combine(wallpaperId)
         hasher.combine(title)
         hasher.combine(projectPath)
         hasher.combine(entryFile)
         hasher.combine(fps)
         hasher.combine(paused)
+        hasher.combine(volume)
+        hasher.combine(muted)
         hasher.combine(audioResponseEnabled)
         hasher.combine(mediaIntegrationEnabled)
         hasher.combine(propertiesJson)
@@ -7205,12 +7235,16 @@ public struct FfiConverterTypeBridgeWebWallpaper: FfiConverterRustBuffer {
         return
             try BridgeWebWallpaper(
                 displayId: FfiConverterUInt32.read(from: &buf), 
+                displayKey: FfiConverterString.read(from: &buf), 
+                audioSourceDisplayId: FfiConverterUInt32.read(from: &buf), 
                 wallpaperId: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
                 projectPath: FfiConverterString.read(from: &buf), 
                 entryFile: FfiConverterString.read(from: &buf), 
                 fps: FfiConverterUInt32.read(from: &buf), 
                 paused: FfiConverterBool.read(from: &buf), 
+                volume: FfiConverterFloat.read(from: &buf), 
+                muted: FfiConverterBool.read(from: &buf), 
                 audioResponseEnabled: FfiConverterBool.read(from: &buf), 
                 mediaIntegrationEnabled: FfiConverterBool.read(from: &buf), 
                 propertiesJson: FfiConverterString.read(from: &buf)
@@ -7219,12 +7253,16 @@ public struct FfiConverterTypeBridgeWebWallpaper: FfiConverterRustBuffer {
 
     public static func write(_ value: BridgeWebWallpaper, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.displayId, into: &buf)
+        FfiConverterString.write(value.displayKey, into: &buf)
+        FfiConverterUInt32.write(value.audioSourceDisplayId, into: &buf)
         FfiConverterString.write(value.wallpaperId, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.projectPath, into: &buf)
         FfiConverterString.write(value.entryFile, into: &buf)
         FfiConverterUInt32.write(value.fps, into: &buf)
         FfiConverterBool.write(value.paused, into: &buf)
+        FfiConverterFloat.write(value.volume, into: &buf)
+        FfiConverterBool.write(value.muted, into: &buf)
         FfiConverterBool.write(value.audioResponseEnabled, into: &buf)
         FfiConverterBool.write(value.mediaIntegrationEnabled, into: &buf)
         FfiConverterString.write(value.propertiesJson, into: &buf)
@@ -8861,6 +8899,32 @@ fileprivate struct FfiConverterSequenceTypeBridgeWebWallpaper: FfiConverterRustB
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
@@ -8907,6 +8971,16 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
+/**
+ * Validates an imported configuration before any restore publication; no engine is initialized.
+ */
+public func validateBackupRendererConfiguration(appConfig: String?, wallpaperConfigs: [String: String])throws  {try rustCallWithError(FfiConverterTypeBridgeError.lift) {
+    uniffi_wallpaper_bridge_fn_func_validate_backup_renderer_configuration(
+        FfiConverterOptionString.lower(appConfig),
+        FfiConverterDictionaryStringString.lower(wallpaperConfigs),$0
+    )
+}
+}
 
 private enum InitializationResult {
     case ok
@@ -8922,6 +8996,9 @@ private var initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_wallpaper_bridge_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_func_validate_backup_renderer_configuration() != 23980) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_all_snapshots() != 8659) {
         return InitializationResult.apiChecksumMismatch

@@ -680,6 +680,55 @@ progress:indeterminate::-webkit-progress-bar { background: transparent; }
 .notice.warning { color: var(--warning); }
 .output { white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, monospace; font-size: 11px; max-height: 180px; overflow: auto; padding: 8px; background: var(--well); }
 .import-controls { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+/* Collections in the sidebar: one radio per collection with its size at the trailing edge; the
+   current collection's Rename and Delete and New collection… follow the list as links. */
+.collection-list { display: grid; gap: 7px; }
+.collection-choice > span:first-of-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collection-count { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.collection-tools { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.collection-tools button.link, .preset-tools button.link { font-size: 12px; }
+/* The inline name field collections and presets share: the field, then Create or Save beside Cancel. */
+.inline-form { display: grid; gap: 7px; width: 100%; }
+.inline-form input[type="text"] { width: 100%; min-height: var(--control-height-compact); font-size: 12px; }
+.inline-form .actions > .primary { flex: 0 1 auto; }
+.inline-form button, .confirm-row button { min-height: var(--control-height-compact); font-size: 12px; padding: 3px 9px; }
+.confirm-row { display: grid; gap: 7px; }
+.confirm-row p { line-height: 1.35; }
+.selection-bar .collection-picker { min-height: var(--control-height-compact); font-size: 12px; padding: 2px 26px 2px 8px; max-width: 220px; }
+.selection-bar .inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; width: auto; }
+.selection-bar .inline-form input[type="text"] { width: 180px; }
+.collection-membership { display: grid; gap: 7px; }
+/* Presets lead the properties: the menu and Apply on one line, the rest as links beneath. */
+.preset-bar { display: grid; gap: 8px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.preset-row { display: flex; align-items: center; gap: 6px; }
+.preset-row select { flex: 1; min-width: 0; min-height: var(--control-height-compact); font-size: 12px; padding-top: 3px; padding-bottom: 3px; }
+.preset-row > .primary { flex: none; min-height: var(--control-height-compact); font-size: 12px; padding: 3px 10px; }
+.preset-tools { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+/* Picture placement: a frame in the display's proportions holds the picture the way the wallpaper
+   page lays it out; it is dragged by hand, the sliders and arrow keys move it by numbers. */
+.placement { gap: 10px; }
+.placement-stage { position: relative; width: 100%; aspect-ratio: var(--stage-aspect, 1.6); overflow: hidden; border-radius: var(--radius); background: var(--media-well); cursor: default; touch-action: none; user-select: none; -webkit-user-select: none; }
+.placement-stage::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--line-strong); pointer-events: none; }
+.placement-stage.pannable { cursor: grab; }
+.placement-stage.dragging { cursor: grabbing; }
+.placement-stage img { position: absolute; top: 0; left: 0; max-width: none; pointer-events: none; will-change: transform; }
+.placement-field label { font-size: 12px; }
+/* The compatibility card: a glyph per check in the status colours, its finding beneath the title. */
+.compat-heading { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.compat-summary { display: inline-flex; align-items: center; gap: 5px; font-weight: 400; color: var(--muted); }
+details[open] > summary .compat-summary svg { transform: none; }
+.compat-summary.checking svg { animation: compat-spin 1s linear infinite; }
+@keyframes compat-spin { to { rotate: 360deg; } }
+.compat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.compat-check { display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 12px; }
+.compat-glyph { display: grid; place-items: center; height: 17px; color: var(--muted); }
+.compat-check.ok .compat-glyph { color: var(--approved); }
+.compat-check.warning .compat-glyph { color: var(--warning); }
+.compat-check.unavailable .compat-glyph { color: var(--danger); }
+.compat-body { display: grid; gap: 2px; min-width: 0; }
+.compat-title { line-height: 1.35; overflow-wrap: anywhere; }
+.compat-detail { color: var(--muted); line-height: 1.35; overflow-wrap: anywhere; }
+.compat-backend { font-size: 12px; line-height: 1.35; }
 @media (max-width: 1040px) {
   .library-page { --filters-width: 160px; }
   .wallpaper-grid { padding-left: 12px; padding-right: 12px; }

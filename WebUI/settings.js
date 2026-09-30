@@ -1,4 +1,6 @@
 import { t, language } from './i18n.js';
+import { intervalLabel, sourceSelect, sourceNote, planRows, plansGroup } from './plans.js';
+import { backupGroup } from './backup.js';
 
 const views = new WeakMap();
 let liveView = null;
@@ -22,13 +24,6 @@ const hotkeyTitles = { togglePlayback: 'Play or pause wallpapers', nextWallpaper
 const automationLinks = ['wallpapermachine://toggle', 'wallpapermachine://play', 'wallpapermachine://pause', 'wallpapermachine://next', 'wallpapermachine://apply?id=…', 'wallpapermachine://open?page=settings'];
 const playlistModes = [['off', 'Off'], ['rotate', 'Rotate wallpapers'], ['dayNight', 'Day and night']];
 const playlistOrders = [['sequential', 'In order'], ['shuffle', 'Shuffle']];
-
-// Minutes as the interval menu names them.
-function intervalLabel(minutes) {
-  if (minutes === 60) return t('Every hour');
-  if (minutes === 1440) return t('Every day');
-  return minutes % 60 === 0 ? t('Every {count} hours', { count: minutes / 60 }) : t('Every {count} minutes', { count: minutes });
-}
 
 // A minute of the day as an <input type="time"> value, and back.
 const clockValue = (minute) => `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
@@ -244,11 +239,21 @@ export function showEnergyUsage(reading) {
 export function renderSettings(container, state, helpers) {
   let view = views.get(container);
   if (!view) {
-    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '', recording: null };
+    // `editor` is an inline name field in use (a saved playlist being named or renamed) and
+    // `armed` a Delete that has been pressed once and waits for its confirmation.
+    view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '', recording: null, editor: null, armed: '' };
     views.set(container, view);
     container.addEventListener('click', event => onClick(view, event));
     container.addEventListener('input', event => onInput(view, event));
     container.addEventListener('change', event => onChange(view, event));
+    container.addEventListener('submit', event => onSubmit(view, event));
+    // Escape in an inline name field gives the field up, as its Cancel does.
+    container.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !view.editor || !event.target.closest('form[data-form="name"]')) return;
+      event.preventDefault();
+      endEditing(view);
+      draw(view);
+    });
     compactNavigation.addEventListener('change', () => draw(view));
     // Recording a keyboard shortcut takes the next key press made in its row, before anything
     // else reads it; pressing Escape alone, or moving focus away, gives up.
@@ -316,6 +321,8 @@ function draw(view) {
   const section = (id, title, content, action = '') => `<section class="settings-page" id="settings-${id}" role="tabpanel" aria-labelledby="settings-tab-${id}" tabindex="0" data-key="page-${id}"${view.section === id ? '' : ' hidden'}><header class="settings-heading"><h2>${e(title)}</h2>${action}</header>${content}</section>`;
   const settingToggle = (key, label, off = false, note = '') => row(key, t(label), toggle(key, t(label), draft(key, settings[key]), `data-setting="${key}"${note ? ` aria-describedby="settings-note-${key}"` : ''}`, off || busy || unavailable), note, '', key);
   const paragraphs = (...texts) => texts.map(text => `<p>${e(text)}</p>`).join('');
+  // The helpers the saved-playlist and backup modules draw with, so their rows match these.
+  const ctx = { state, view, e, row, select, button, toggle, group, disclosure, error, draft, busy, unavailable };
   const lockUnavailable = unavailable || settings.lockScreenAvailable === false || settings.lockScreenStatus == null;
   const screenSaverUnavailable = unavailable || settings.screenSaverAvailable === false || settings.screenSaverStatus == null;
   // Language lives natively beside the theme, so it stays usable when renderer settings are unavailable.
@@ -435,7 +442,7 @@ function draw(view) {
       t('Change a quality setting below to compare energy use.')), 'settings-energy-help'));
   const playback = group('performance-playback', t('Playback'),
     row('desktop-covered', t('When windows cover the desktop'), select('desktopCoveredAction', t('When windows cover the desktop'), draft('desktopCoveredAction', settings.desktopCoveredAction || 'pause'), localizedOptions(desktopCoveredActions), 'data-setting="desktopCoveredAction"', busy || unavailable), t('Covered means windows hide everything but the menu bar and the screen edges. Pause keeps the last frame there. Wallpapers you can’t see at all always pause.'))
-    + row('other-audio', t('When another app plays sound'), select('otherAudioAction', t('When another app plays sound'), draft('otherAudioAction', settings.otherAudioAction || 'keepRunning'), localizedOptions(otherAudioActions), 'data-setting="otherAudioAction"', busy || unavailable), t('Mute affects scene and video wallpapers only. Web wallpapers have no mute channel, so Mute does not silence them. Pause applies to every wallpaper.'))
+    + row('other-audio', t('When another app plays sound'), select('otherAudioAction', t('When another app plays sound'), draft('otherAudioAction', settings.otherAudioAction || 'keepRunning'), localizedOptions(otherAudioActions), 'data-setting="otherAudioAction"', busy || unavailable), t('Mute silences scene and video wallpapers, and Web wallpapers when page-output mute is available. Pause applies to every wallpaper.'))
     + row('display-sleep', t('When displays sleep'), select('displaySleepAction', t('When displays sleep'), draft('displaySleepAction', settings.displaySleepAction || 'pause'), localizedOptions(displaySleepActions), 'data-setting="displaySleepAction"', busy || unavailable), t('Stop frees renderer memory and reloads the wallpaper when the display wakes. Pause keeps it loaded.'))
     + row('battery-mode', t('On battery'), select('batteryMode', t('On battery'), draft('batteryMode', settings.batteryMode || 'keepRunning'), localizedOptions(batteryModes), 'data-setting="batteryMode"', busy || unavailable), t('Reduced quality uses the scale and frame rate below instead of your usual quality settings. Pause stops wallpapers until you plug in.'))
     + (batteryReduced ? row('battery-scale', t('Render scale on battery'), select('batteryRenderScale', t('Render scale on battery'), draft('batteryRenderScale', batteryScale), scaleOptions(batteryScale), 'data-setting="batteryRenderScale" data-number', busy || unavailable))
@@ -471,7 +478,7 @@ function draw(view) {
     + disclosure('performance-advanced', t('Advanced'), videoGroup + sceneGroup + experimentalGroup, 'settings-group settings-performance-advanced', t('Renderers & experimental options'))
     + disclosure('performance-context', t('What these settings change'), paragraphs(
       t('Wallpapers you can’t see, such as behind a full-screen app, pause on their own. When windows cover the desktop, Pause keeps the last frame and Keep running keeps it moving in the gaps.'),
-      t('When another app plays sound, Mute silences scene and video wallpapers only. Web wallpapers have no mute channel. Pause stops every wallpaper until that sound ends.'),
+      t('When another app plays sound, Mute uses each wallpaper’s output mute channel. Web mute availability is shown in its details. Pause stops every wallpaper until that sound ends.'),
       t('When displays sleep, Pause keeps wallpapers loaded. Stop frees renderer memory and reloads them when the display wakes.'),
       t('On battery, Keep running leaves quality alone, Reduced quality uses the battery scale and frame rate, and Pause stops wallpapers until you plug in. None of these promises a measured power saving.'),
       t('App rules pause, mute or stop wallpapers while a chosen app is running or in front. Your own Play and Pause are not changed.'),
@@ -512,13 +519,13 @@ function draw(view) {
     const limited = performanceLimitedFps(playback.fps, settings);
     const number = (field, label, min, max, step, suffix = '') => `<input class="settings-number" data-key="${e(key(field))}" type="number" inputmode="decimal" aria-label="${e(name(label))}" min="${min}"${max == null ? '' : ` max="${max}"`} step="${step}" value="${e(draft(key(field), playback[field]))}" ${data(field)}${disabled(playbackOff)}>${suffix ? `<span class="settings-unit">${e(suffix)}</span>` : ''}`;
     // The display's playlist: off, a rotation, or a day and a night wallpaper.
-    const playlist = { mode: 'off', source: 'all', order: 'sequential', interval: 30, wallpaperIDs: [], dayWallpaperID: null, nightWallpaperID: null, dayStart: 420, nightStart: 1140, nextChange: null, ...((state.playlists || {})[id] || {}) };
+    const playlist = { mode: 'off', source: 'all', order: 'sequential', interval: 30, wallpaperIDs: [], collectionID: null, planID: null, dayWallpaperID: null, nightWallpaperID: null, dayStart: 420, nightStart: 1140, nextChange: null, ...((state.playlists || {})[id] || {}) };
     const playlistData = field => `data-playlist="${e(id)}" data-playlist-key="${field}"`;
     const listed = (playlist.wallpaperIDs || []).map(wallpaperID => (state.wallpapers || []).find(item => item.id === wallpaperID)).filter(Boolean);
     const playable = (state.wallpapers || []).filter(item => item.supported).sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
     const nextChange = playlist.nextChange != null && Number.isFinite(Number(playlist.nextChange)) ? changeTime(Number(playlist.nextChange)) : '';
     const clockInput = (field, label, minute) => `<input type="time" data-key="${e(key(`playlist-${field}`))}" aria-label="${e(name(label))}" value="${e(draft(key(`playlist-${field}`), clockValue(minute)))}" ${playlistData(field)}${disabled(off)}>`;
-    const rotateRows = row(key('playlist-source-row'), t('Wallpapers'), select(key('playlist-source'), name(t('Wallpapers')), draft(key('playlist-source'), playlist.source), [['all', t('All wallpapers')], ['favorites', t('Favorites')], ['list', t('This display’s list ({count})', { count: listed.length })]], playlistData('source'), off))
+    const rotateRows = row(key('playlist-source-row'), t('Wallpapers'), sourceSelect(ctx, key('playlist-source'), name(t('Wallpapers')), playlist, listed.length, playlistData('source'), off), sourceNote(ctx, playlist))
       + row(key('playlist-order-row'), t('Order'), select(key('playlist-order'), name(t('Order')), draft(key('playlist-order'), playlist.order), localizedOptions(playlistOrders), playlistData('order'), off))
       + row(key('playlist-interval-row'), t('How often'), select(key('playlist-interval'), name(t('How often')), draft(key('playlist-interval'), playlist.interval), (state.playlistIntervals || []).map(minutes => [minutes, intervalLabel(minutes)]), `${playlistData('interval')} data-number`, off))
       + (playlist.source === 'list' ? `<div class="settings-playlist" data-key="${e(key('playlist-list'))}">${listed.length ? listed.map(item => `<div class="settings-rule" data-key="${e(key(`playlist-item-${item.id}`))}"><span class="settings-rule-name">${e(item.title)}</span>${button(t('Remove'), 'playlistRemove', { id: item.id, displayID: id }, off)}</div>`).join('') : `<p class="settings-empty">${e(t('The list is empty. In Installed, select wallpapers and choose Add to playlist, or use the list button in a wallpaper’s details.'))}</p>`}</div>` : '')
@@ -532,7 +539,8 @@ function draw(view) {
     const playlistMode = playlistModes.find(([mode]) => mode === playlist.mode) || playlistModes[0];
     const playlistRows = mirror ? '' : disclosure(key('playlist'), playlist.mode === 'off' ? t('Playlist') : t('Playlist: {mode}', { mode: t(playlistMode[1]) }),
       row(key('playlist-mode-row'), t('Changes on its own'), select(key('playlist-mode'), name(t('Changes on its own')), draft(key('playlist-mode'), playlist.mode), localizedOptions(playlistModes), playlistData('mode'), off), t('Only while wallpapers play. A change that falls due while they are paused, the screen is locked or the displays sleep happens once they play again.'))
-      + (playlist.mode === 'rotate' ? rotateRows : playlist.mode === 'dayNight' ? dayNightRows : ''), 'settings-disclosure-rows');
+      + (playlist.mode === 'rotate' ? rotateRows : playlist.mode === 'dayNight' ? dayNightRows : '')
+      + planRows(ctx, display, playlist, off), 'settings-disclosure-rows');
     return `<section class="settings-display settings-group" data-key="display-${e(id)}" aria-labelledby="settings-group-display-${e(id)}"><h3 id="settings-group-display-${e(id)}">${e(display.title)}${primary ? `<span class="settings-note">${e(t('Primary display'))}</span>` : ''}</h3>`
       + row(key('enabled-row'), t('Enable wallpaper'), toggle(key('enabled'), name(t('Enable wallpaper')), draft(key('enabled'), display.enabled), data('enabled'), busy || primary))
       + row(key('mode-row'), t('Display mode'), select(key('mode'), name(t('Display mode')), draft(key('mode'), display.mode), localizedOptions([['standalone', 'Independent'], ['mirror', 'Mirror another display']]), data('mode'), off || primary))
@@ -545,6 +553,7 @@ function draw(view) {
         + row(key('muted-row'), t('Mute audio'), toggle(key('muted'), name(t('Mute audio')), draft(key('muted'), playback.muted), data('muted'), playbackOff))
         + row(key('volume-row'), t('Volume'), `<input data-key="${e(key('volume'))}" type="range" aria-label="${e(name(t('Volume')))}" min="0" max="1" step="0.01" value="${e(draft(key('volume'), playback.volume))}" ${data('volume')}${disabled(playbackOff || playback.muted)}><output class="settings-unit" data-value-for="${e(key('volume'))}">${Math.round(Number(draft(key('volume'), playback.volume || 0)) * 100)}%</output>`), 'settings-disclosure-rows') + '</section>';
   }).join('') || `<div class="settings-empty">${e(t('No displays connected.'))}</div>`;
+  const displaysPage = displays + plansGroup(ctx);
 
   const scenePending = Boolean(scene?.pending);
   const sceneRequest = (state.downloadRequests || []).find(request => request.id === 'scene-assets');
@@ -598,6 +607,7 @@ function draw(view) {
     + row('logs', t('Logs'), button(t('Show in Finder'), 'showLogs', {}, busy || unavailable) + button(t('Clear…'), 'clearLogs', {}, busy || unavailable || !settings.logBytes), bytes(settings.logBytes))
     + row('download-history', t('Completed downloads'), button(t('Clear history'), 'clearDownloads', {}, busy || !downloads.some(download => !download.pending)))
     + disclosure('storage-context', t('What gets removed'), paragraphs(t('Clearing the shader cache removes compiled shaders and render pipelines. They are rebuilt as wallpapers load, which can briefly slow playback. Clearing logs doesn’t affect wallpapers or settings. Clearing download history keeps the downloaded files.'), t('Files you chose in a wallpaper’s settings are copied to the folder above, so clearing caches or updating the wallpaper won’t remove them. To remove one, clear that setting on the wallpaper.'))))
+    + backupGroup(ctx, language())
     + group('storage-diagnostics', t('Troubleshooting'), settingToggle('verboseLogging', 'Detailed logging', false, t('Records extra detail from now on, including after a restart. Turn it off when you are done.'))
       + row('diagnostics-export', t('Diagnostics report'), button(t('Export…'), 'exportDiagnostics', {}, busy || unavailable), t('Saves recent logs, lock screen and crash reports and a system summary as one .zip file to attach to a bug report. Home folder paths, your Mac user name and Steam account names are replaced.')));
   const versionRow = (id, label, value) => row(id, label, `<span class="settings-version">${e(value || t('Unavailable'))}</span>`);
@@ -630,7 +640,7 @@ function draw(view) {
     + `<p class="settings-note settings-update-footnote">${e(update.footnote || t('Updates are checked against the latest published GitHub Release. Download and restart-install happen only after you confirm.'))}</p></section>`
     + group('about-credits', '', `<div class="settings-attribution">${e(t('Not affiliated with Wallpaper Engine or Valve. Built on the GPLv2-only open-source renderer. Workshop browsing is independently implemented. No warranty is provided.'))}</div>`
     + `<div class="settings-form-actions">${button(t('GNU General Public License v2'), 'openExternal', { url: 'https://www.gnu.org/licenses/old-licenses/gpl-2.0.html' })}</div>`);
-  const html = `<div class="settings-layout" data-key="settings-layout"><nav class="settings-nav" aria-label="${e(t('Settings categories'))}" role="tablist" aria-orientation="${compactNavigation.matches ? 'horizontal' : 'vertical'}" data-key="settings-nav">${sections.map(([id, title, glyph]) => `<button type="button" id="settings-tab-${id}" role="tab" aria-selected="${id === view.section}" aria-controls="settings-${id}" tabindex="${id === view.section ? '0' : '-1'}" data-key="nav-${id}" data-section="${id}">${helpers.icon(glyph, 16)}<span>${e(t(title))}</span></button>`).join('')}</nav><div class="settings-scroll" data-key="settings-scroll">${error('settings-action-error', view.error || state.error)}${unavailable ? `<div class="settings-notice" role="status">${e(t('Settings are unavailable. Try refreshing the library.'))}</div>` : ''}${section('general', t('General'), general)}${section('appearance', t('Appearance'), appearance)}${section('performance', t('Performance'), performance)}${section('displays', t('Displays'), displays, button(t('Refresh'), 'refreshDisplays', {}, busy))}${section('library', t('Library & Steam'), library)}${section('storage', t('Storage'), storage)}${section('about', t('About'), about)}</div></div>`;
+  const html = `<div class="settings-layout" data-key="settings-layout"><nav class="settings-nav" aria-label="${e(t('Settings categories'))}" role="tablist" aria-orientation="${compactNavigation.matches ? 'horizontal' : 'vertical'}" data-key="settings-nav">${sections.map(([id, title, glyph]) => `<button type="button" id="settings-tab-${id}" role="tab" aria-selected="${id === view.section}" aria-controls="settings-${id}" tabindex="${id === view.section ? '0' : '-1'}" data-key="nav-${id}" data-section="${id}">${helpers.icon(glyph, 16)}<span>${e(t(title))}</span></button>`).join('')}</nav><div class="settings-scroll" data-key="settings-scroll">${error('settings-action-error', view.error || state.error)}${unavailable ? `<div class="settings-notice" role="status">${e(t('Settings are unavailable. Try refreshing the library.'))}</div>` : ''}${section('general', t('General'), general)}${section('appearance', t('Appearance'), appearance)}${section('performance', t('Performance'), performance)}${section('displays', t('Displays'), displaysPage, button(t('Refresh'), 'refreshDisplays', {}, busy))}${section('library', t('Library & Steam'), library)}${section('storage', t('Storage'), storage)}${section('about', t('About'), about)}</div></div>`;
   const template = document.createElement('template');
   template.innerHTML = html;
   reconcile(view.container, template.content);
@@ -679,7 +689,7 @@ function onInput(view, event) {
   if (!input.matches('input[data-key]') || input.type === 'radio') return;
   const key = input.dataset.key;
   view.drafts.set(key, input.type === 'checkbox' ? input.checked : input.value);
-  if (input.dataset.local) draw(view);
+  if ('local' in input.dataset) draw(view);
   // Color pickers stream input events while the macOS picker is open; only the readout follows, never a redraw or a save.
   if (input.type === 'range' || input.type === 'color') {
     const output = Array.from(view.container.querySelectorAll('[data-value-for]')).find(node => node.dataset.valueFor === key);
@@ -689,7 +699,7 @@ function onInput(view, event) {
 
 async function onChange(view, event) {
   const input = event.target;
-  if (input.dataset.local) {
+  if ('local' in input.dataset) {
     view.drafts.set(input.dataset.key, input.type === 'checkbox' ? input.checked : input.value);
     draw(view);
     return;
@@ -721,14 +731,29 @@ async function onChange(view, event) {
     draw(view);
     return;
   }
+  if (input.dataset.planDisplay !== undefined) {
+    // Choosing a saved playlist applies it to the display; the blank entry only reports.
+    const planID = input.value;
+    if (!planID) { draw(view); return; }
+    const draftKey = input.dataset.key;
+    view.drafts.set(draftKey, planID);
+    await perform(view, draftKey, 'playlistPlanApply', { displayID: input.dataset.planDisplay, planID }, () => view.drafts.delete(draftKey));
+    view.drafts.delete(draftKey);
+    draw(view);
+    return;
+  }
   if (input.dataset.playlist !== undefined) {
-    const field = input.dataset.playlistKey;
+    let field = input.dataset.playlistKey;
     let value = input.value;
     if (field === 'interval') value = Number(value);
     if (field === 'dayStart' || field === 'nightStart') {
       value = clockMinute(value);
       if (value === null) { input.reportValidity(); return; }
     }
+    // A collection entry in the Wallpapers menu names the collection; native selects it and
+    // the collection source together.
+    if (field === 'source' && value.startsWith('collection:')) { field = 'collectionID'; value = value.slice('collection:'.length); }
+    else if (field === 'source' && value === 'collection') { draw(view); return; }
     const draftKey = input.dataset.key;
     view.drafts.set(draftKey, input.value);
     await perform(view, draftKey, 'playlistSetting', { displayID: input.dataset.playlist, key: field, value }, () => view.drafts.delete(draftKey));
@@ -797,10 +822,47 @@ async function onClick(view, event) {
   }
   if (action === 'hotkeyCancel') { view.recording = null; draw(view); return; }
   view.recording = null;
+  // Inline name fields and two-step deletes are page state until their form or button sends.
+  if (action === 'editBegin') {
+    view.editor = { key: String(args.key), name: String(args.name ?? '') };
+    view.armed = '';
+    draw(view);
+    view.container.querySelector(`[data-editor="${CSS.escape(view.editor.key)}"]`)?.focus();
+    return;
+  }
+  if (action === 'editCancel') { endEditing(view); draw(view); return; }
+  if (action === 'arm') {
+    view.armed = String(args.key);
+    endEditing(view);
+    draw(view);
+    view.container.querySelector(`[data-key="confirm-${CSS.escape(view.armed)}"] .settings-destructive`)?.focus();
+    return;
+  }
+  if (action === 'disarm') { view.armed = ''; draw(view); return; }
+  if (view.armed && view.armed === `plan-delete-${args.planID}`) view.armed = '';
   if (action === 'requestSceneAssets') { await view.helpers.requestAssets(button); return; }
   if (action === 'openSceneDialog') { view.helpers.openDownloadDialog('scene-assets', button); return; }
   if (action === 'openWelcome') { view.helpers.openWelcome(); return; }
   await perform(view, action, action, args);
+}
+
+function endEditing(view) {
+  if (view.editor) view.drafts.delete(`editor-${view.editor.key}`);
+  view.editor = null;
+}
+
+// An inline name form carries the native action and its arguments; the typed name joins them.
+// The browser's own required-field check runs first, so an empty name never gets this far.
+async function onSubmit(view, event) {
+  const form = event.target;
+  if (form.dataset.form !== 'name') return;
+  event.preventDefault();
+  const name = String(form.elements.name?.value || '').trim();
+  const key = form.dataset.editorKey;
+  if (!name || !key || view.pending.has(key)) return;
+  const args = { ...JSON.parse(form.dataset.args || '{}'), name };
+  await perform(view, key, form.dataset.action, args, () => { if (view.editor?.key === key) endEditing(view); });
+  draw(view);
 }
 
 async function perform(view, key, action, args, after) {

@@ -92,6 +92,24 @@ use crate::{
     power::{PowerSource, PowerWatcher, SystemPowerSource},
 };
 
+/// Validates an imported configuration before any restore publication; no engine is initialized.
+#[uniffi::export]
+pub fn validate_backup_renderer_configuration(
+    app_config: Option<String>,
+    wallpaper_configs: std::collections::HashMap<String, String>,
+) -> Result<(), BridgeError> {
+    if let Some(raw) = app_config {
+        ConfigStore::validate_app_config_text(&raw)?;
+    }
+    for (name, raw) in wallpaper_configs {
+        ConfigStore::validate_wallpaper_config_text(&raw).map_err(|error| BridgeError::Error {
+            kind: BridgeErrorKind::Config,
+            message: format!("{name}: {error}"),
+        })?;
+    }
+    Ok(())
+}
+
 pub(crate) fn bridge_log_status(status: crate::logging::LogStatus) -> BridgeLogStatus {
     BridgeLogStatus {
         logs_root: status.logs_root.to_string_lossy().into_owned(),

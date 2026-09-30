@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Content a `file` or `directory` wallpaper property accepts.
@@ -158,6 +159,16 @@ struct UserAssetError: LocalizedError, Equatable {
     func importFile(at url: URL, propertyId: String, filter: UserAssetFilter) throws -> UserAssetImport {
         _ = try bridgeDirectoryURL(propertyId)
         var manifest = managed.manifest(wallpaperId: wallpaperId)
+        let record = manifest.properties[propertyId]
+        if record?.originalSourceUnauthorized == true || (record?.authorizedSourcePath != nil && record?.authorizedSourcePath != url.standardizedFileURL.path) {
+            let restored = try restoreFromStore(
+                propertyId: propertyId, declaredSource: url.path, kind: .file,
+                filter: filter, limit: 1, manifest: &manifest)
+            guard let first = restored.first else {
+                throw UserAssetError(code: .sourceUnreadable, reason: String(localized: "The retained resource is unavailable. Select the original resource again."))
+            }
+            return first
+        }
         let source: URL
         do {
             source = try canonicalSource(url)
@@ -188,6 +199,7 @@ struct UserAssetError: LocalizedError, Equatable {
         manifest.properties[propertyId] = ManagedUserAssetProperty(
             kind: .file, sourcePath: source.path, assets: [asset],
             migratedLegacyPaths: previous?.migratedLegacyPaths ?? [])
+        manifest.properties[propertyId]?.authorizedSourcePath = previous?.authorizedSourcePath
         try managed.write(manifest)
         managed.pruneUnlisted(wallpaperId: wallpaperId, propertyId: propertyId, keeping: [asset])
 
@@ -198,6 +210,7 @@ struct UserAssetError: LocalizedError, Equatable {
         }
         var state = PropertyState(filter: filter, limit: 1)
         state.entries[name] = entry
+        properties[propertyId]?.watcher?.stop()
         properties[propertyId] = state
         return entry.asset
     }
@@ -210,6 +223,16 @@ struct UserAssetError: LocalizedError, Equatable {
     ) throws -> [UserAssetImport] {
         _ = try bridgeDirectoryURL(propertyId)
         var manifest = managed.manifest(wallpaperId: wallpaperId)
+        let record = manifest.properties[propertyId]
+        if record?.originalSourceUnauthorized == true || (record?.authorizedSourcePath != nil && record?.authorizedSourcePath != url.standardizedFileURL.path) {
+            let restored = try restoreFromStore(
+                propertyId: propertyId, declaredSource: url.path, kind: .directory,
+                filter: filter, limit: limit, manifest: &manifest)
+            guard !restored.isEmpty else {
+                throw UserAssetError(code: .sourceUnreadable, reason: String(localized: "The retained resource is unavailable. Select the original resource again."))
+            }
+            return restored
+        }
         let source: URL
         do {
             source = try canonicalSource(url)
@@ -243,6 +266,7 @@ struct UserAssetError: LocalizedError, Equatable {
         manifest.properties[propertyId] = ManagedUserAssetProperty(
             kind: .directory, sourcePath: source.path, assets: assets, truncated: scan.truncated,
             migratedLegacyPaths: previous?.migratedLegacyPaths ?? [])
+        manifest.properties[propertyId]?.authorizedSourcePath = previous?.authorizedSourcePath
         try managed.write(manifest)
         managed.pruneUnlisted(wallpaperId: wallpaperId, propertyId: propertyId, keeping: assets)
 
@@ -255,9 +279,11 @@ struct UserAssetError: LocalizedError, Equatable {
         state.entries = try publishBridge(propertyId: propertyId, assets: assets)
         // Watching the user's own folder, never the store and never the bridge: a change
         // the user makes to their own files is the only thing that should re-import.
+        let generation = state.generation
         state.watcher = makeWatcher(source) { [weak self] in
-            self?.directoryDidChange(propertyId: propertyId)
+            self?.directoryDidChange(propertyId: propertyId, generation: generation)
         }
+        properties[propertyId]?.watcher?.stop()
         properties[propertyId] = state
         return orderedAssets(state)
     }
@@ -317,10 +343,20 @@ struct UserAssetError: LocalizedError, Equatable {
 
     // MARK: - Directory changes
 
-    private func directoryDidChange(propertyId: String) {
-        guard var state = properties[propertyId], let source = state.sourceDirectory else { return }
+    private func directoryDidChange(propertyId: String, generation: UUID) {
+        guard var state = properties[propertyId], state.generation == generation,
+              let source = state.sourceDirectory else { return }
         var manifest = managed.manifest(wallpaperId: wallpaperId)
-        guard var record = manifest.properties[propertyId] else { return }
+        guard var record = manifest.properties[propertyId], record.kind == .directory,
+              record.sourcePath == source.path else {
+            state.watcher?.stop()
+            return
+        }
+        guard record.originalSourceUnauthorized != true,
+              record.authorizedSourcePath == nil || URL(fileURLWithPath: record.authorizedSourcePath!).resolvingSymlinksInPath().path == source.path else {
+            state.watcher?.stop()
+            return
+        }
         let scan = scanSource(source, filter: state.filter, limit: state.limit)
         if scan.truncated != state.truncated {
             AppLog.warn("user assets \(propertyId): folder \(scan.truncated ? "now exceeds" : "no longer exceeds") \(state.limit) files")
@@ -390,18 +426,20 @@ struct UserAssetError: LocalizedError, Equatable {
                 filter: filter, limit: limit, manifest: &manifest)
         }
         guard let record = manifest.properties[propertyId], !record.assets.isEmpty else { return [] }
+        guard record.kind == kind else { return [] }
         let present = record.assets.filter { asset in
             guard let url = try? managed.storedURL(
                 wallpaperId: wallpaperId, propertyId: propertyId, asset: asset) else { return false }
             return fileManager.fileExists(atPath: url.path)
         }
         guard !present.isEmpty else { return [] }
-        AppLog.warn("user assets \(propertyId): \(declaredSource) no longer resolves; serving \(present.count) file(s) from managed storage")
+        AppLog.warn("user assets \(propertyId): serving \(present.count) file(s) from managed storage without accessing the original")
 
         var state = PropertyState(filter: filter, limit: limit)
         state.truncated = record.truncated
         state.sourceMissing = true
         state.entries = try publishBridge(propertyId: propertyId, assets: present, pruning: false)
+        properties[propertyId]?.watcher?.stop()
         properties[propertyId] = state
         return orderedAssets(state)
     }
@@ -544,15 +582,19 @@ struct UserAssetError: LocalizedError, Equatable {
     }
 
     private func link(_ source: URL, to destination: URL) throws {
-        try? fileManager.removeItem(at: destination)
-        do {
-            // A hard link onto the store's own copy costs no space. WebKit refuses a
-            // symlink that leaves the read-access root, and resolves it before checking,
-            // so a link is the only zero-copy form a page can actually load.
-            try fileManager.linkItem(at: source, to: destination)
-        } catch {
-            // Hard links cannot cross volumes; a project on another disk needs a copy.
-            try fileManager.copyItem(at: source, to: destination)
+        let temporary = destination.deletingLastPathComponent()
+            .appendingPathComponent(".asset-\(UUID().uuidString)")
+        defer { unlink(temporary.path) }
+        // Prepare the replacement without unpublishing the current file. WebKit
+        // needs a real project-local file, not a symlink outside its read root.
+        if Darwin.link(source.path, temporary.path) != 0 {
+            let code = errno
+            guard code == EXDEV else { throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO) }
+            // Only a cross-volume project needs a byte copy instead of a hard link.
+            try fileManager.copyItem(at: source, to: temporary)
+        }
+        guard rename(temporary.path, destination.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
 
@@ -677,6 +719,7 @@ struct UserAssetError: LocalizedError, Equatable {
     }
 
     private struct PropertyState {
+        let generation = UUID()
         var filter: UserAssetFilter
         var limit: Int
         var sourceDirectory: URL?

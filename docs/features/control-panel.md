@@ -538,6 +538,15 @@ filters**. A Workshop response with no restrictions offers Refresh instead of
 an ineffective Clear. First loading, Workshop failure/Retry and an empty local
 library keep their own states; a refresh can leave existing results visible.
 
+### Local collections
+
+Installed's sidebar also has named local **Collections**, separate from Steam's
+Workshop collections and the author's tags. Create, rename or delete a group;
+add selected wallpapers through **Add to collection…**, remove selected members,
+or toggle membership in the inspector. A collection filter composes with search
+and the existing filters. Deleting a collection leaves its wallpapers installed.
+Collections can feed [playlists](playlists.md#collections-and-saved-playlists).
+
 ## Properties
 
 The inspector's compact **General configuration** section holds mute, volume,
@@ -600,6 +609,78 @@ stores the path, not a copy, so moving or deleting the file leaves that slot on
 the artwork the author shipped. A picture outside the app's own storage is not
 readable from the sandboxed lock-screen extension, which keeps the authored
 texture there.
+
+### Property presets
+
+**Wallpaper properties → Save current…** stores a named preset of the currently
+applied authored properties. Pending edits must first be applied or reverted.
+Choose a preset and **Apply**, rename/delete it, or export/import its versioned
+JSON document. Import saves a new preset; it never applies it automatically.
+These are wallpaper-specific property presets, not the Performance quality tiers.
+
+Application validates every saved property against current types, limits and
+choices before staging edits. Default markers follow the author's current
+default. File/directory edits join the same draft transaction, and a failed
+application restores draft and selection-permission state. Managed attachments
+are retained independently of the current property under `UserAssets/PresetAssets`;
+deleting a saved preset does not delete a directory still used by an applied
+wallpaper. Ordinary cache cleaning leaves these retained originals alone.
+
+Portable documents embed up to 32 MB of managed attachments, within a 48 MB
+document limit. Arbitrary external paths do not grant access on import: select
+external originals through the property editor. Missing resources, incompatible
+author changes, malformed documents and filesystem-aliasing filenames are errors,
+not partially applied presets.
+
+### Image placement
+
+App-generated imported pictures and saved pixiv pages show **Position on screen**.
+Drag the preview or use its keyboard/position controls and 100–300% zoom; each
+target display keeps its own placement. **Reset to Image fit** restores the
+existing Fit/Fill/top-aligned behavior. Original image bytes are unchanged.
+Changes reach the running page through properties without resetting its document.
+An older app-generated page is upgraded once only if its provenance, resources
+and exact unmodified template match; authored or modified HTML is not rewritten.
+
+### Compatibility check
+
+An installed wallpaper's **Compatibility check** reads entry/shared resources and,
+for video, asynchronously checks native admission for the selected display and
+frame-rate constraints. Checks are explicit and version/configuration-bound.
+Unknown scene shader/graph or Web runtime behavior remains **unknown**; readable
+files and video metadata are not proof of a displayed frame. The same card shows
+the actual running backend and fallback reason when the runtime reports them.
+
+### Local backup and restore
+
+**Settings → Storage → Backup** exports a versioned `.wmbackup` directory package
+containing renderer/wallpaper settings, allowlisted preferences (collections,
+plans, presets, favorites and image placements included), and retained UserAssets.
+**Include the wallpaper library** also copies installed projects. Login sessions,
+passwords, keychain entries, logs, caches and shared scene resources are excluded.
+The local scene-assets selection stays local and may need to be selected again.
+
+Choose a backup to preview its contents, conflicts and missing-resource warnings.
+**Keep what is on this Mac** preserves conflicting per-display playlists and their
+deadlines as whole records; independent records can be imported. **Replace with
+the backup** replaces conflicts. Confirmed restoration is staged for the next
+launch, before stores or the renderer read settings; nothing changes in the
+running session, and the app does not quit or restart automatically.
+
+Packages reject traversal, links, special files, ambiguous filenames, changed
+bytes and unsupported configuration schemas. Publication is journaled and rolls
+back on failure. A failed pending restore is shown in Storage and is not retried
+every launch without explicit reconfirmation; **Cancel restore** removes staging.
+Managed resource paths relocate, while ordinary property text stays unchanged.
+Backed-up copies are portable; original external files are read or watched only
+after a matching local authorization or an explicit reselection. Restoring metadata
+alone cannot authorize a wallpaper to read another folder on this Mac.
+Scene texture overrides and authored defaults that had only retained copies are
+rewritten to the exact validated retained file, because the scene renderer opens
+paths directly rather than going through the Web asset host. Original paths stay
+as provenance only. A retained directory without a directly usable scene resource,
+or a keep-existing asset tree missing the matching bytes, cannot authorize a
+scene reference and is rejected before publication.
 
 ## Downloads and import
 

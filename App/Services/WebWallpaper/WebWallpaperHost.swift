@@ -26,6 +26,7 @@ final class WebWallpaperHost {
     private let fetch: @MainActor () async throws -> [BridgeWebWallpaper]
     private let screens: @MainActor () -> [(id: UInt32, frame: NSRect)]
     private let frameCenter: NotificationCenter
+    private let imagePlacement: StillImagePlacementStore
     private var windows: [UInt32: WebWallpaperWindow] = [:]
     private lazy var mouse = WebWallpaperMouseForwarder { [weak self] in
         guard let self else { return [] }
@@ -33,6 +34,8 @@ final class WebWallpaperHost {
     }
     private var descriptors: [UInt32: BridgeWebWallpaper] = [:]
     private var posterObserver: NSObjectProtocol?
+    private var imagePlacementObserver: NSObjectProtocol?
+    private var placementDirtyDisplays = Set<UInt32>()
     private var reconcileInFlight = false
     private var reconcileRequested = false
     private var suspended = false
@@ -95,7 +98,8 @@ final class WebWallpaperHost {
         setAudioSubscribed: (@MainActor (String, UInt32, Bool) async throws -> Void)? = nil,
         mediaRelay: WebWallpaperMediaRelay? = nil,
         mediaProvider: (any SystemMediaProvider)? = nil,
-        assetStore: (@MainActor (URL, String) -> any WebWallpaperAssetSource)? = nil
+        assetStore: (@MainActor (URL, String) -> any WebWallpaperAssetSource)? = nil,
+        imagePlacement: StillImagePlacementStore? = nil
     ) {
         self.fetch = fetch
         self.screens = screens ?? { Self.systemScreens() }
@@ -105,6 +109,7 @@ final class WebWallpaperHost {
         self.setAudioSubscribed = setAudioSubscribed ?? { _, _, _ in }
         self.mediaRelay = mediaRelay ?? WebWallpaperMediaRelay(provider: mediaProvider ?? UnavailableSystemMediaProvider())
         self.makeAssetStore = assetStore
+        self.imagePlacement = imagePlacement ?? .shared
         self.audioPump.onSpectrum = { [weak self] spectrum in self?.broadcast(spectrum) }
         if mediaRelay != nil {
             self.mediaRelay.addListener(mediaListenerKey) { [weak self] event in self?.broadcast(event) }
@@ -158,6 +163,7 @@ final class WebWallpaperHost {
     /// however the toggle is set.
     struct DeliveryStatus: Equatable, Sendable {
         var audioSubscribedDisplayIDs: Set<UInt32> = []
+        var audioOutputControls: [String: WebWallpaperAudioOutput.Capabilities] = [:]
         /// Nil when a provider can supply media; otherwise why it cannot.
         var mediaUnavailableReason: String?
     }
@@ -165,12 +171,28 @@ final class WebWallpaperHost {
     var deliveryStatus: DeliveryStatus {
         DeliveryStatus(
             audioSubscribedDisplayIDs: audioSubscribedDisplayIDs,
+            audioOutputControls: audioOutputControls,
             mediaUnavailableReason: {
                 switch systemMediaAvailability {
                 case .available: nil
                 case let .unavailable(reason): reason
                 }
             }())
+    }
+
+    private var audioOutputControls: [String: WebWallpaperAudioOutput.Capabilities] {
+        var controls: [String: WebWallpaperAudioOutput.Capabilities] = [:]
+        for (displayID, window) in windows {
+            guard let wallpaper = descriptors[displayID], let value = window.page.audioOutputCapabilities else { continue }
+            if let previous = controls[wallpaper.wallpaperId] {
+                controls[wallpaper.wallpaperId] = .init(
+                    mediaVolume: previous.mediaVolume && value.mediaVolume,
+                    pageMute: previous.pageMute && value.pageMute)
+            } else {
+                controls[wallpaper.wallpaperId] = value
+            }
+        }
+        return controls
     }
 
     func start() {
@@ -181,6 +203,18 @@ final class WebWallpaperHost {
             MainActor.assumeIsolated { self?.answerPosterRequest(notification) }
         }
         stopped = false
+        imagePlacementObserver = NotificationCenter.default.addObserver(
+            forName: StillImagePlacementStore.didChangeNotification, object: imagePlacement, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard note.userInfo?["metadataOnly"] as? Bool != true,
+                    let wallpaperID = note.userInfo?["wallpaperID"] as? String
+                else { return }
+                self?.refreshImagePlacement(
+                    wallpaperID: wallpaperID, displayKey: note.userInfo?["displayID"] as? String,
+                    reloadUpgradedPage: note.userInfo?["pageUpgraded"] as? Bool == true)
+            }
+        }
     }
 
     /// Re-reads the committed web wallpapers and diffs them against open windows.
@@ -203,6 +237,16 @@ final class WebWallpaperHost {
             }
             do {
                 let wallpapers = try await self.fetch()
+                for wallpaper in wallpapers
+                where self.windows[wallpaper.displayId] == nil
+                    || self.descriptors[wallpaper.displayId]?.wallpaperId != wallpaper.wallpaperId {
+                    do { _ = try await self.imagePlacement.prepare(wallpaperID: wallpaper.wallpaperId) }
+                    catch {
+                        AppLog.error("image wallpaper preparation failed: \(error.localizedDescription)")
+                        self.onError?(error.localizedDescription)
+                    }
+                }
+                guard !self.reconcileRequested else { return }
                 guard !self.stopped else { return }
                 self.apply(wallpapers)
             } catch {
@@ -273,6 +317,7 @@ final class WebWallpaperHost {
                 page.onLoaded = { [weak self] in
                     self?.replayDirectories(displayID: displayID)
                     self?.scheduleSurfaceChange()
+                    self?.refreshAudioOutputs()
                     self?.refreshPointerMonitor()
                 }
                 page.onAudioDemandChanged = { [weak self, weak page] subscribed in
@@ -290,6 +335,7 @@ final class WebWallpaperHost {
                 let window = WebWallpaperWindow(frame: frame, page: page)
                 windows[displayID] = window
                 push(wallpaper, into: page, previous: nil)
+                page.applyAudioOutput(volume: wallpaper.volume, muted: true)
                 page.load()
                 window.orderFrontRegardless()
                 AppLog.info("web wallpaper \(wallpaper.wallpaperId) opened on display \(displayID)", load: load)
@@ -298,6 +344,7 @@ final class WebWallpaperHost {
         }
         pruneAssetState()
         refreshPointerMonitor()
+        refreshAudioOutputs()
         if changed { onSurfacesChanged?() }
     }
 
@@ -325,8 +372,18 @@ final class WebWallpaperHost {
         let staged = stageAssets(for: wallpaper)
         page.setAudioResponseEnabled(wallpaper.audioResponseEnabled)
         page.setMediaIntegrationEnabled(wallpaper.mediaIntegrationEnabled)
-        if previous?.propertiesJson != wallpaper.propertiesJson || staged.restaged {
-            page.applyUserProperties(json: staged.json)
+        if previous?.propertiesJson != wallpaper.propertiesJson || staged.restaged
+            || placementDirtyDisplays.remove(wallpaper.displayId) != nil {
+            do {
+                let json = imagePlacement.generatedImage(wallpaperID: wallpaper.wallpaperId) == nil
+                    ? staged.json
+                    : try imagePlacement.effectivePropertiesJSON(
+                        staged.json, wallpaperID: wallpaper.wallpaperId, displayID: wallpaper.displayKey)
+                page.applyUserProperties(json: json)
+            } catch {
+                AppLog.error("image wallpaper properties could not be applied: \(error.localizedDescription)")
+                onError?(error.localizedDescription)
+            }
         }
         if previous?.fps != wallpaper.fps {
             page.applyGeneralProperties(fps: wallpaper.fps)
@@ -335,6 +392,33 @@ final class WebWallpaperHost {
             page.setPaused(wallpaper.paused)
         }
         page.setPresentationSuspended(isSuspended(displayID: wallpaper.displayId))
+    }
+
+    private func refreshImagePlacement(wallpaperID: String, displayKey: String?, reloadUpgradedPage: Bool) {
+        for (displayID, wallpaper) in descriptors
+        where wallpaper.wallpaperId == wallpaperID && (displayKey == nil || wallpaper.displayKey == displayKey) {
+            guard let page = windows[displayID]?.page else { continue }
+            placementDirtyDisplays.insert(displayID)
+            push(wallpaper, into: page, previous: wallpaper)
+            if reloadUpgradedPage { page.load() }
+        }
+        refreshAudioOutputs()
+        scheduleSurfaceChange()
+    }
+
+    private func refreshAudioOutputs() {
+        let owners = WebWallpaperAudioOwnership.owners(in: descriptors) { displayID in
+            windows[displayID]?.page.isLoaded == true && !isSuspended(displayID: displayID)
+        }
+        // Retire the old audible page before enabling its replacement.
+        for (displayID, window) in windows {
+            guard let wallpaper = descriptors[displayID], owners[wallpaper.audioSourceDisplayId] != displayID else { continue }
+            window.page.applyAudioOutput(volume: wallpaper.volume, muted: true)
+        }
+        for displayID in owners.values {
+            guard let wallpaper = descriptors[displayID], let page = windows[displayID]?.page else { continue }
+            page.applyAudioOutput(volume: wallpaper.volume, muted: wallpaper.muted)
+        }
     }
 
     private func isSuspended(displayID: UInt32) -> Bool {
@@ -349,6 +433,7 @@ final class WebWallpaperHost {
             window.page.setPresentationSuspended(isSuspended(displayID: displayID))
         }
         refreshPointerMonitor()
+        refreshAudioOutputs()
     }
 
     /// Suspends the page on one display only. A window covering the wallpaper
@@ -361,6 +446,7 @@ final class WebWallpaperHost {
         }
         windows[displayID]?.page.setPresentationSuspended(isSuspended(displayID: displayID))
         refreshPointerMonitor()
+        refreshAudioOutputs()
     }
 
     /// Hover, click and scroll reach a page only while it is loaded and in the
@@ -376,6 +462,10 @@ final class WebWallpaperHost {
         if let posterObserver {
             frameCenter.removeObserver(posterObserver)
             self.posterObserver = nil
+        }
+        if let imagePlacementObserver {
+            NotificationCenter.default.removeObserver(imagePlacementObserver)
+            self.imagePlacementObserver = nil
         }
         mouse.setActive(false)
         // Each page drops its own subscriptions as it stops; the sweep after

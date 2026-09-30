@@ -65,27 +65,36 @@ struct ToggleWallpaperPlaybackIntent: AppIntent {
 struct NextWallpaperIntent: AppIntent {
     static let title: LocalizedStringResource = "Next Wallpaper"
     static let description: IntentDescription? = IntentDescription(
-        "Changes the target display to its next wallpaper: its playlist's next when it rotates, otherwise the next one in your library.")
+        "Changes a chosen display to its next wallpaper, or the target display when none is chosen.")
+
+    @Parameter(title: "Display")
+    var display: WallpaperDisplayEntity?
 
     func perform() async throws -> some IntentResult {
-        try await AppAutomation.shared.perform(.next(display: nil))
+        try await AppAutomation.shared.perform(.next(display: display?.id))
         return .result()
     }
 }
 
 struct ApplyWallpaperIntent: AppIntent {
     static let title: LocalizedStringResource = "Apply Wallpaper"
-    static let description: IntentDescription? = IntentDescription("Applies an installed wallpaper to the target display.")
+    static let description: IntentDescription? = IntentDescription(
+        "Applies an installed wallpaper to a chosen display, or the target display when none is chosen.")
 
     @Parameter(title: "Wallpaper")
     var wallpaper: WallpaperEntity
 
+    @Parameter(title: "Display")
+    var display: WallpaperDisplayEntity?
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Apply \(\.$wallpaper)")
+        Summary("Apply \(\.$wallpaper)") {
+            \.$display
+        }
     }
 
     func perform() async throws -> some IntentResult {
-        try await AppAutomation.shared.perform(.apply(wallpaperID: wallpaper.id, display: nil))
+        try await AppAutomation.shared.perform(.apply(wallpaperID: wallpaper.id, display: display?.id))
         return .result()
     }
 }
