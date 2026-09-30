@@ -129,8 +129,17 @@ Web projects remain unsupported for **Animate lock screen**.
 
 If the renderer fails, or misses the extension's own 30-second first-frame
 deadline, the extension writes the reason to its readiness file and the status
-row shows it. The generic "macOS did not load the lock-screen renderer" message
-means no answer arrived at all. The extension keeps a bounded log at
+row shows it. Configuration-loading failures and incompatible extension copies
+also produce a specific error, without waiting for the first-frame timeout.
+The app publishes `activation-request.json` alongside the manifest; the extension
+answers in `extension-status.json` with the activation revision, its bundle path,
+supported configuration version and any loading error. Reports for an earlier
+revision are ignored. A successful configuration report is not frame readiness.
+For older extensions that cannot send this report, a timed-out activation checks
+the current user's running extension paths and identifies a different app copy
+when one is found. Otherwise the generic "macOS did not load the lock-screen
+renderer" message means no matching frame acknowledgement arrived.
+The extension keeps a bounded log at
 `~/Library/Application Support/WallpaperMachine/LockScreenExchange/extension.log`.
 The app and extension exchange files only there, never through the extension's
 sandbox container, so macOS does not ask the app for access to another app's
@@ -147,6 +156,9 @@ After testing copied app bundles, unregister their `.appex` paths with
 `pluginkit -r` and stop keeping those copies as launchable `.app` bundles.
 Verify the running extension's executable path points inside the installed app;
 checking only the bundle identifier does not establish which copy macOS chose.
+Startup logs include the extension bundle path and supported configuration
+version. Detection reports the conflict and restores owned selections; it does
+not unregister copies, change which app is installed, or restart the app.
 
 ## Turning it off
 

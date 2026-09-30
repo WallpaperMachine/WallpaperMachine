@@ -152,13 +152,14 @@ enum WallpaperRuntime {
   }
 
   static func configuration() throws -> LockScreenConfiguration {
-    let url = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
-    let configuration = try JSONDecoder().decode(
-      LockScreenConfiguration.self, from: Data(contentsOf: url))
-    guard configuration.version == LockScreenConfiguration.supportedVersion else {
+    do {
+      return try LockScreenExtensionStatus.loadConfiguration(
+        exchange: exchange, bundleURL: Bundle.main.bundleURL,
+        reportWriteFailure: { log("Extension diagnostic failed: \($0.localizedDescription)") })
+    } catch LockScreenExtensionStatus.ConfigurationError.unsupportedVersion(let version) {
+      log("Configuration version=\(version), supported=\(LockScreenConfiguration.supportedVersion)")
       throw failure("Unsupported lock-screen configuration version.")
     }
-    return configuration
   }
 
   static func asset(_ relativePath: String) throws -> URL {

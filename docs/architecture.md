@@ -319,6 +319,16 @@ read-only exception for `/opt/homebrew/`, which is what lets the sandboxed proce
 Homebrew-provided renderer dylibs, and a read-write home-relative exception for the exchange
 directory only (`LockScreenConfiguration.exchangeRelativePath` must match it).
 
+`LockScreenExtensionStatus` defines a separate diagnostic exchange that can
+report a configuration error even when the scene schema cannot be decoded.
+The app writes a revision-only activation request after the manifest and before
+notification. The extension reports its bundle path, supported schema version
+and loading error against that request; publication transitions and stale replies
+are ignored. The app checks diagnostics during readiness polling and later
+monitor refreshes. On timeout it also inspects user-owned extension processes
+to identify older app copies that predate the diagnostic exchange. Configuration
+success never substitutes for a rendered-frame acknowledgement.
+
 The version-2 manifest includes independent `lockScreenEnabled` and
 `screenSaverEnabled` flags. The single service journals Desktop and Idle ownership
 separately; only Desktop ownership suspends desktop poster sync. An Idle-only

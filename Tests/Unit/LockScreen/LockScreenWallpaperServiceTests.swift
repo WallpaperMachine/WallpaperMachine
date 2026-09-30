@@ -1047,6 +1047,122 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
       from: Data(contentsOf: exchange.appendingPathComponent(LockScreenConfiguration.fileName)))
   }
 
+  @MainActor
+  func testConfigurationFailureRestoresSelectionWithoutWaitingForFrameTimeout() async throws {
+    let bundle = root.appendingPathComponent("extension.appex")
+    var record = scene()
+    record.displayId = 1
+    var loadFailed = false
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      guard let configuration = try? self.publishedConfiguration(), !configuration.scenes.isEmpty else { return }
+      do {
+        let invalid = ["version": 2, "revision": configuration.revision, "scenes": false] as [String: Any]
+        try JSONSerialization.data(withJSONObject: invalid).write(
+          to: self.exchange.appendingPathComponent(LockScreenConfiguration.fileName), options: .atomic)
+        _ = try LockScreenExtensionStatus.loadConfiguration(
+          exchange: self.exchange, bundleURL: bundle, reportWriteFailure: { XCTFail("\($0)") })
+      } catch { loadFailed = true }
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, expectedExtensionBundle: bundle,
+    runningExtensionBundles: { XCTFail("Should fail before the timeout"); return [] })
+    var handedBack = false
+    service.afterDeactivation = { handedBack = true }
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("configuration failure rollback", timeout: 3) { !service.isBusy }
+    XCTAssertTrue(loadFailed)
+    XCTAssertTrue(handedBack)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertFalse(defaults.bool(forKey: preference))
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testHealthyDiagnosticStillWaitsForPixelsAndIgnoresStaleFailures() async throws {
+    let bundle = root.appendingPathComponent("extension.appex")
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      _ = try? LockScreenExtensionStatus.loadConfiguration(
+        exchange: self.exchange, bundleURL: bundle, reportWriteFailure: { XCTFail("\($0)") })
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, expectedExtensionBundle: bundle)
+    try service.start()
+    service.setEnabled(true)
+    await waitFor("diagnostic") {
+      FileManager.default.fileExists(atPath: self.exchange.appendingPathComponent(LockScreenExtensionStatus.fileName).path)
+    }
+    XCTAssertTrue(service.isBusy)
+    XCTAssertFalse(service.isEnabled)
+    let stale = LockScreenExtensionStatus(
+      revision: "old", bundlePath: "/old.appex", supportedVersion: 1, error: "old failure")
+    try JSONEncoder().encode(stale).write(
+      to: exchange.appendingPathComponent(LockScreenExtensionStatus.fileName), options: .atomic)
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    await waitFor("frame readiness") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertNil(service.errorMessage)
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testLegacyExtensionTimeoutInspectsRunningCopyAndRestoresSelection() async throws {
+    var record = scene()
+    record.displayId = 1
+    var inspected = false
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, expectedExtensionBundle: root.appendingPathComponent("intended.appex"),
+    runningExtensionBundles: {
+      inspected = true
+      return [self.root.appendingPathComponent("old.appex")]
+    }, readinessTimeout: 0)
+    service.setEnabled(true)
+    await waitFor("legacy timeout") { !service.isBusy }
+    XCTAssertTrue(inspected)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testConfigurationVersionFailureAfterSaverSelectionRestoresIdle() async throws {
+    let bundle = root.appendingPathComponent("extension.appex")
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, expectedExtensionBundle: bundle)
+    try service.start()
+    service.setScreenSaverEnabled(true)
+    await waitFor("saver selection") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertThrowsError(try LockScreenExtensionStatus.loadConfiguration(
+      exchange: exchange, bundleURL: bundle, supportedVersion: 1,
+      reportWriteFailure: { XCTFail("\($0)") }))
+    try XCTUnwrap(timers.last).fire()
+    await waitFor("configuration failure after selection") { !service.isBusy }
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertNotNil(service.screenSaverError)
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
   private func selectedProvider(_ key: String) throws -> String? {
     let value = try XCTUnwrap(try PropertyListSerialization.propertyList(
       from: Data(contentsOf: store), format: nil) as? [String: Any])

@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — Lock-screen extension mismatch diagnostics
+
+- Added revision-scoped extension identity, schema-version and configuration-load diagnostics; legacy extension copies are identified by running bundle path after readiness timeout.
+- python3 scripts/test.py --only LockScreenExtensionDiagnosticsTests --only LockScreenWallpaperServiceTests: exit 0; 31 passed before the final screen-saver monitor regression was added.
+- python3 scripts/test.py: exit 0; all 226 Python tests passed; native gate 898 passed, 0 failed, 11 skipped of 909. Includes all 10 new diagnostic regressions.
+- Native skips: nine opt-in media/device tests and two live Workshop network tests. No asset-dependent renderer checks were run; renderer and bridge were unchanged by this task.
+- Covered incompatible schema before scene decoding, missing/malformed configuration, stale revisions, same-bundle symlinks, configuration success without frame readiness, failed diagnostic writes, legacy timeout restoration and later screen-saver configuration failure.
+- git diff --check: exit 0. XcodeGen regenerated the project through test.py; native localization checks passed in the gate.
+- python3 scripts/clean.py --dry-run: exit 0; broad cleanup deferred to preserve the shared workspace renderer evidence under artifacts.
+- No Release rebuild, app restart, registration changes or desktop tests. Live extension selection and lock-screen visuals remain unverified.
+
 ## 2026-09-30 — Restore per-display screen saver precedence
 
 - Read-only inspection on macOS 26.6.2 found AllSpacesAndDisplays.Type=idle with Provider=default despite WallpaperMachine being selected for each display.
@@ -111,13 +122,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - `python3 scripts/test.py` — first pass failed: 850 passed, 2 failed, 11 skipped. The broad sidebar sizing rule changed Discover width; it is now scoped to the Active row. The other failure was the documented WebKit InvalidTransition/deinit error.
 - `python3 scripts/test.py --serial` — exit 0; 852 passed, 0 failed, 11 skipped of 863; all Python script modules passed. Skips cover opt-in native media and live Workshop checks.
 - Mechanical UI scan returned no findings. No desktop screenshots or visual run; no Release rebuild.
-
-## 2026-09-30 — Consistent Settings spacing
-
-- Promoted Storage spacing to shared Settings rules; preserved ongoing import-picker changes and changed no settings actions or native APIs.
-- Offscreen Chrome: 140 layouts across seven Settings pages, four languages and five widths; no content overflow, narrow controls stack and switches remain inline, including expanded disclosures and long folder paths.
-- Additional narrow-display smoke: day/night playlists and mirror mode had no overflow.
-- Interaction smoke: keyboard disclosure toggling, snapshot-preserved slider draft and scroll, category navigation, full-width library path, action error recovery, and language/appearance availability without renderer settings observed using synthetic state.
-- Impeccable detector on WebUI/settings.css returned no findings.
-- python3 scripts/test.py --serial: passed, 855 passed, 0 failed, 11 skipped of 866; opt-in media/device and live Steam checks not run.
-- Live app visual presentation unverified; no screenshots captured, desktop operations performed or Release app rebuilt.

@@ -1,6 +1,15 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry." : {
+      "localizations" : {"en":{"stringUnit":{"state":"translated","value":"macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry."}},"ja":{"stringUnit":{"state":"translated","value":"macOSが別のWallpaperMachineのコピーからロック画面レンダラを読み込みました。使用するアプリのコピーだけを残してから、再試行してください。"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"macOS 从另一个 WallpaperMachine 副本加载了锁定屏幕渲染器。请只保留要使用的应用副本，然后重试。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"macOS 從另一個 WallpaperMachine 副本載入了鎖定畫面算繪器。請只保留要使用的 App 副本，然後重試。"}}}
+    },
+    "The app and the lock-screen renderer use incompatible configuration versions. Quit other copies of WallpaperMachine and reopen the intended app, then retry." : {
+      "localizations" : {"en":{"stringUnit":{"state":"translated","value":"The app and the lock-screen renderer use incompatible configuration versions. Quit other copies of WallpaperMachine and reopen the intended app, then retry."}},"ja":{"stringUnit":{"state":"translated","value":"アプリとロック画面レンダラの構成バージョンに互換性がありません。ほかのWallpaperMachineのコピーを終了し、使用するアプリを開き直してから、再試行してください。"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"应用与锁定屏幕渲染器使用的配置版本不兼容。请退出其他 WallpaperMachine 副本，重新打开要使用的应用，然后重试。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"App 與鎖定畫面算繪器使用的設定版本不相容。請結束其他 WallpaperMachine 副本，重新開啟要使用的 App，然後重試。"}}}
+    },
+    "The lock-screen renderer could not load its configuration: %@" : {
+      "localizations" : {"en":{"stringUnit":{"state":"translated","value":"The lock-screen renderer could not load its configuration: %@"}},"ja":{"stringUnit":{"state":"translated","value":"ロック画面レンダラが構成を読み込めませんでした：%@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"锁定屏幕渲染器无法加载其配置：%@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"鎖定畫面算繪器無法載入設定：%@"}}}
+    },
     "The import file picker could not open." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The import file picker could not open."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "読み込み用のファイル選択ウインドウを開けませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法打开导入文件选择窗口。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法開啟匯入檔案選擇視窗。"}}}
     },

@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Consistent Settings spacing
+
+- Promoted Storage spacing to shared Settings rules; preserved ongoing import-picker changes and changed no settings actions or native APIs.
+- Offscreen Chrome: 140 layouts across seven Settings pages, four languages and five widths; no content overflow, narrow controls stack and switches remain inline, including expanded disclosures and long folder paths.
+- Additional narrow-display smoke: day/night playlists and mirror mode had no overflow.
+- Interaction smoke: keyboard disclosure toggling, snapshot-preserved slider draft and scroll, category navigation, full-width library path, action error recovery, and language/appearance availability without renderer settings observed using synthetic state.
+- Impeccable detector on WebUI/settings.css returned no findings.
+- python3 scripts/test.py --serial: passed, 855 passed, 0 failed, 11 skipped of 866; opt-in media/device and live Steam checks not run.
+- Live app visual presentation unverified; no screenshots captured, desktop operations performed or Release app rebuilt.
+
 ## 2026-09-30 — Storage layout spacing
 
 - Offscreen Chrome smoke: long paths in English, Japanese, Simplified and Traditional Chinese; no content overflow at wide, minimum-window and narrow-container sizes; 12px path-to-note and 16px note-to-actions spacing.

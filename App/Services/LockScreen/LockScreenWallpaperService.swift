@@ -29,6 +29,9 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private let displayUUID: (UInt32) -> String?
   @ObservationIgnored private let persistConfiguration: (URL, Data) throws -> Void
   @ObservationIgnored private let notifyConfigurationChanged: () -> Void
+  @ObservationIgnored private let expectedExtensionBundle: URL
+  @ObservationIgnored private let runningExtensionBundles: () -> [URL]
+  @ObservationIgnored private let readinessTimeout: TimeInterval
   @ObservationIgnored private var work: Task<Void, Never>?
   @ObservationIgnored private var monitor: Timer?
   @ObservationIgnored private var generation: UInt64 = 0
@@ -64,7 +67,11 @@ final class LockScreenWallpaperService {
     displayUUID: @escaping (UInt32) -> String? = LockScreenWallpaperService.onlineDisplayUUID,
     persistConfiguration: @escaping (URL, Data) throws -> Void = { url, data in
       try data.write(to: url, options: .atomic)
-    }
+    },
+    expectedExtensionBundle: URL = Bundle.main.bundleURL.appendingPathComponent(
+      "Contents/Extensions/WallpaperMachineExtension.appex"),
+    runningExtensionBundles: @escaping () -> [URL] = LockScreenExtensionDiagnostics.runningExtensionBundles,
+    readinessTimeout: TimeInterval = 35
   ) {
     self.scenes = scenes
     self.selection = selection
@@ -74,6 +81,9 @@ final class LockScreenWallpaperService {
     self.displayUUID = displayUUID
     self.persistConfiguration = persistConfiguration
     self.notifyConfigurationChanged = notifyConfigurationChanged
+    self.expectedExtensionBundle = expectedExtensionBundle
+    self.runningExtensionBundles = runningExtensionBundles
+    self.readinessTimeout = readinessTimeout
   }
 
   nonisolated private static func onlineDisplayUUID(_ displayID: UInt32) -> String? {
@@ -379,6 +389,7 @@ final class LockScreenWallpaperService {
   }
 
   private func checkReadinessFailures(_ configuration: LockScreenConfiguration) throws {
+    try checkExtensionFailure(configuration)
     for scene in configuration.scenes {
       let file = exchange.appendingPathComponent("ready-\(scene.displayID).json")
       if let data = try? Data(contentsOf: file),
@@ -389,6 +400,16 @@ final class LockScreenWallpaperService {
         throw LockScreenWallpaperFailure(message: error)
       }
     }
+  }
+
+  private func checkExtensionFailure(_ configuration: LockScreenConfiguration) throws {
+    guard let data = try? Data(contentsOf: exchange.appendingPathComponent(LockScreenExtensionStatus.fileName)),
+      let status = try? JSONDecoder().decode(LockScreenExtensionStatus.self, from: data),
+      let failure = LockScreenExtensionDiagnostics.failure(
+        status: status, revision: configuration.revision, expectedBundle: expectedExtensionBundle)
+    else { return }
+    AppLog.error("Native extension: bundle=\(status.bundlePath) configurationVersion=\(status.supportedVersion) error=\(status.error ?? "none")")
+    throw failure
   }
 
   /// Restore the native selection and hand the desktop back to the poster
@@ -408,9 +429,10 @@ final class LockScreenWallpaperService {
   }
 
   private func awaitReadiness(_ configuration: LockScreenConfiguration) async throws {
-    let deadline = Date().addingTimeInterval(35)
+    let deadline = Date().addingTimeInterval(readinessTimeout)
     while Date() < deadline {
       try Task.checkCancellation()
+      try checkExtensionFailure(configuration)
       var ready = true
       for scene in configuration.scenes where scene.webEntryFile == nil {
         let file = exchange.appendingPathComponent("ready-\(scene.displayID).json")
@@ -425,6 +447,15 @@ final class LockScreenWallpaperService {
       }
       if ready { return }
       try await Task.sleep(for: .milliseconds(100))
+    }
+    try Task.checkCancellation()
+    try checkExtensionFailure(configuration)
+    let expected = expectedExtensionBundle.resolvingSymlinksInPath().standardizedFileURL
+    if let other = runningExtensionBundles().first(where: {
+      !LockScreenExtensionDiagnostics.isSameBundle($0, expected)
+    }) {
+      AppLog.error("Native extension timeout: running bundle=\(other.path), expected=\(expected.path)")
+      throw LockScreenWallpaperFailure(message: LockScreenExtensionDiagnostics.differentCopyMessage)
     }
     throw LockScreenWallpaperFailure(
       message:
@@ -468,6 +499,8 @@ final class LockScreenWallpaperService {
     encoder.outputFormatting = [.sortedKeys]
     try persistConfiguration(
       exchange.appendingPathComponent(LockScreenConfiguration.fileName), encoder.encode(configuration))
+    try encoder.encode(LockScreenExtensionRequest(revision: configuration.revision)).write(
+      to: exchange.appendingPathComponent(LockScreenExtensionRequest.fileName), options: .atomic)
     published = configuration
     notifyConfigurationChanged()
   }

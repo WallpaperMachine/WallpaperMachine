@@ -112,7 +112,8 @@ final class WallpaperMachineExtension: NSObject, AppExtension {
         }
       }
       DispatchQueue.main.async { WallpaperController.shared.start() }
-      WallpaperRuntime.log("Native wallpaper extension started.")
+      WallpaperRuntime.log(
+        "Native wallpaper extension started: bundle=\(Bundle.main.bundleURL.path) configurationVersion=\(LockScreenConfiguration.supportedVersion)")
     } catch { WallpaperRuntime.log("Unavailable: \(error.localizedDescription)") }
   }
   var configuration: some AppExtensionConfiguration { NativeWallpaperConfiguration() }
