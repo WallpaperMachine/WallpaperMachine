@@ -54,6 +54,38 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true), "Suppressed versions still advance the high-water mark")
     }
 
+    func testLanguageSelectionReplacesAllReleaseTranslationsAndCanSwitchBack() throws {
+        let history = try AppReleaseHistory(markdown: entry("1.1.0") + entry("1.2.0")
+            .replacingOccurrences(of: "Added a library filter.", with: "Fixed playback.")
+            .replacingOccurrences(of: "新增媒体库筛选功能。", with: "修复播放问题。"))
+        _ = store("1.0.0").announcement(history: history, existingUser: false)
+        let current = store("1.2.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        let controller = WhatsNewViewController(announcement: announcement, preferences: current, close: {})
+        _ = controller.view
+
+        func select(_ segment: Int) {
+            controller.languageControl.selectedSegment = segment
+            controller.languageControl.sendAction(controller.languageControl.action, to: controller.languageControl.target)
+        }
+        select(0)
+        let english = controller.notesView.string
+        XCTAssertTrue(english.contains("Fixed playback."))
+        XCTAssertTrue(english.contains("Added a library filter."))
+        XCTAssertFalse(english.contains("修复播放问题。"))
+        XCTAssertFalse(english.contains("新增媒体库筛选功能。"))
+        select(1)
+        let chinese = controller.notesView.string
+        XCTAssertTrue(chinese.contains("修复播放问题。"))
+        XCTAssertTrue(chinese.contains("新增媒体库筛选功能。"))
+        XCTAssertFalse(chinese.contains("Fixed playback."))
+        XCTAssertFalse(chinese.contains("Added a library filter."))
+        XCTAssertLessThan(try XCTUnwrap(chinese.range(of: "1.2.0")?.lowerBound),
+                          try XCTUnwrap(chinese.range(of: "1.1.0")?.lowerBound))
+        select(0)
+        XCTAssertEqual(controller.notesView.string, english)
+    }
+
     func testDowngradeAndReturnDoNotRepeatAnAnnouncement() throws {
         let history = try history()
         _ = store("1.2.0").announcement(history: history, existingUser: false)

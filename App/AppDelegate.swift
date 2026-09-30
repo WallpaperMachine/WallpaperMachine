@@ -949,7 +949,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 history: history, existingUser: UserDefaults.standard.bool(forKey: WebPanelController.welcomeSeenKey)
             ) else { return }
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 640, height: 660),
+                contentRect: NSRect(origin: .zero, size: WhatsNewViewController.defaultContentSize),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered, defer: false)
             window.title = String(localized: "What’s New")
@@ -958,7 +958,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             window.contentViewController = WhatsNewViewController(
                 announcement: announcement, preferences: whatsNewStore,
                 close: { [weak window] in window?.performClose(nil) })
-            window.contentMinSize = NSSize(width: 560, height: 400)
+            window.contentMinSize = NSSize(width: 600, height: 480)
+            // Installing a controller can resize the window to its content view's fitting size.
+            window.setContentSize(WhatsNewViewController.defaultContentSize)
             window.center()
             whatsNewWindow = window
             NSApp.setActivationPolicy(.regular)

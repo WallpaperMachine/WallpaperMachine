@@ -1,13 +1,15 @@
 import AppKit
 
-/// A native, nonmodal reading window; both translations remain visible without a language switch.
+/// A native, nonmodal reading window with a choice of release-note translation.
 @MainActor
 final class WhatsNewViewController: NSViewController {
+    static let defaultContentSize = NSSize(width: 760, height: 720)
     private let announcement: WhatsNewStore.Announcement
     private let preferences: WhatsNewStore
     private let close: () -> Void
     private(set) var suppressionCheckbox: NSButton!
     private(set) var notesView: NSTextView!
+    private(set) var languageControl: NSSegmentedControl!
 
     init(announcement: WhatsNewStore.Announcement, preferences: WhatsNewStore, close: @escaping () -> Void) {
         self.announcement = announcement
@@ -19,7 +21,7 @@ final class WhatsNewViewController: NSViewController {
     required init?(coder: NSCoder) { nil }
 
     override func loadView() {
-        view = NSView()
+        view = NSView(frame: NSRect(origin: .zero, size: Self.defaultContentSize))
         let title = NSTextField(labelWithString: String(localized: "What’s New"))
         title.font = .systemFont(ofSize: 24, weight: .bold)
         let version = NSTextField(labelWithString: "WallpaperMachine \(announcement.currentVersion)")
@@ -37,6 +39,12 @@ final class WhatsNewViewController: NSViewController {
         header.alignment = .leading
         header.spacing = 6
 
+        languageControl = NSSegmentedControl(
+            labels: ["English", "简体中文"], trackingMode: .selectOne,
+            target: self, action: #selector(changeLanguage))
+        languageControl.selectedSegment = Bundle.main.preferredLocalizations.first?.hasPrefix("zh") == true ? 1 : 0
+        languageControl.setAccessibilityLabel(String(localized: "Release notes language"))
+
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -53,8 +61,8 @@ final class WhatsNewViewController: NSViewController {
         notesView.textContainer?.widthTracksTextView = true
         notesView.textContainer?.lineFragmentPadding = 0
         notesView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        notesView.textStorage?.setAttributedString(Self.notesText(announcement))
-        notesView.setAccessibilityLabel(String(localized: "Release notes in English and Simplified Chinese"))
+        updateNotes()
+        notesView.setAccessibilityLabel(String(localized: "Release notes"))
         scroll.documentView = notesView
 
         suppressionCheckbox = NSButton(
@@ -66,7 +74,7 @@ final class WhatsNewViewController: NSViewController {
         closeButton.keyEquivalent = "\r"
         let divider = NSBox()
         divider.boxType = .separator
-        for child in [header, scroll, divider, suppressionCheckbox!, closeButton] {
+        for child in [header, languageControl!, scroll, divider, suppressionCheckbox!, closeButton] {
             child.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(child)
         }
@@ -74,7 +82,9 @@ final class WhatsNewViewController: NSViewController {
             header.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
             header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 16),
+            languageControl.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 16),
+            languageControl.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            scroll.topAnchor.constraint(equalTo: languageControl.bottomAnchor, constant: 12),
             scroll.leadingAnchor.constraint(equalTo: header.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: header.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: -16),
@@ -89,15 +99,24 @@ final class WhatsNewViewController: NSViewController {
         ])
     }
 
+    @objc private func changeLanguage() {
+        updateNotes()
+        notesView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+    }
+
+    private func updateNotes() {
+        notesView.textStorage?.setAttributedString(Self.notesText(announcement, chinese: languageControl.selectedSegment == 1))
+    }
+
     @objc private func changeSuppression() {
         preferences.isSuppressed = suppressionCheckbox.state == .on
     }
 
     @objc private func closeWindow() { close() }
 
-    private static func notesText(_ announcement: WhatsNewStore.Announcement) -> NSAttributedString {
+    private static func notesText(_ announcement: WhatsNewStore.Announcement, chinese: Bool) -> NSAttributedString {
         let text = NSMutableAttributedString(string: "")
-        func append(_ value: String, size: CGFloat = 13, weight: NSFont.Weight = .regular,
+        func append(_ value: String, size: CGFloat = 14, weight: NSFont.Weight = .regular,
                     before: CGFloat = 0, after: CGFloat = 6) {
             let paragraph = NSMutableParagraphStyle()
             paragraph.paragraphSpacingBefore = before
@@ -111,12 +130,10 @@ final class WhatsNewViewController: NSViewController {
         }
         for release in announcement.releases {
             append(release.version.display, size: 20, weight: .semibold, before: text.length == 0 ? 0 : 24)
-            for (language, notes) in [("English", release.english), ("简体中文", release.chinese)] {
-                append(language, size: 15, weight: .semibold, before: 12, after: 10)
-                for section in notes.sections {
-                    if !section.title.isEmpty { append(section.title, weight: .semibold, before: 8) }
-                    for item in section.items { append(item) }
-                }
+            let notes = chinese ? release.chinese : release.english
+            for section in notes.sections {
+                if !section.title.isEmpty { append(section.title, weight: .semibold, before: 12) }
+                for item in section.items { append(item) }
             }
         }
         return text

@@ -250,8 +250,12 @@ document, or running out of ready tiles stops it.
 
 On the first launch of a newer version, a separate, nonmodal **What’s New**
 window shows the installed version and every release since the last announced
-version, newest first. Each release includes **English and Simplified Chinese**
-together, regardless of the interface language. Notes come from the bundled
+version, newest first. The window opens with a 760 × 720-point content area and
+can resize down to 600 × 480 points without collapsing the notes viewport.
+**English / 简体中文** tabs display one translation at a time for every release.
+The initial tab follows the native interface language: Chinese uses Simplified
+Chinese; other languages use English. Switching tabs returns to the top of the
+notes and does not change the app’s interface language. Notes come from the bundled
 `CHANGELOG.md`, so they work offline and cannot accidentally describe a newer
 remote release. Release generation and translation are owned by
 [the release pipeline](../release.md#release-notes-and-the-changelog).
@@ -279,8 +283,8 @@ whole file and the window does not appear. Publishing rejects that file first.
 `WhatsNewTests` covers skipped releases, migration, first launch, interrupted
 presentation, downgrade/relaunch suppression, a missing current section that
 must not consume a later announcement, bilingual history validation, rejection
-of `## Unreleased` and headings inside notes, and the checkbox’s persisted
-effect across subsequent versions.
+of `## Unreleased` and headings inside notes, switching all release translations
+and back, and the checkbox’s persisted effect across subsequent versions.
 
 ## Thumbnail corner marks
 

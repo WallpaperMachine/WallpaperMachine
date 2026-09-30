@@ -25,6 +25,13 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Readable changelog window with language tabs
+
+- Offscreen native AppKit smoke with bundled release history — exit 0; English → 简体中文 → English at 760 × 720 and 600 × 480 points; first note visible, wrapping and scrolling exercised, scrolled switches reveal the first version, suppression persists. Temporary harness removed.
+- python3 scripts/test.py --only WhatsNewTests — exit 0; 9 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py — exit 0; 851 passed, 0 failed, 11 skipped of 862.
+- Desktop appearance and actual Window Server presentation unverified; no windows opened. No Release rebuild requested or performed.
+
 ## 2026-09-30 — First downloaded wallpaper support prompt
 
 - Added a persistent, once-only support offer after a successfully installed Workshop/pixiv wallpaper receives a successful explicit activation; failed applies, automatic rotation, restoration and local imports do not qualify.
@@ -114,13 +121,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - codesign --verify --deep --strict passed; diff -qr WebUI against the delivered Contents/Resources/WebUI returned no differences.
 - Temporary gate jobs were booted out; task-owned helper files and four suspended orphan test hosts from the failed launches were removed. No installed/running user app was replaced, launched or restarted.
 - Real external-primary/internal-secondary lock and wake visual timing remains for user verification. No desktop control, screen capture or wallpaper changes were performed.
-
-## 2026-09-29 — Preserve lock-screen surfaces through multi-display topology changes
-
-- Existing app/extension logs correlated display refresh bursts with manifests changing 2 -> 0 -> 1 -> 2; one empty manifest cleared every surface and its frame backing. Logs also include old registered extension binaries, so they do not establish a clean live visual result.
-- Standalone Swift publication smoke compiled the production service/selection with isolated bridge and user-asset adapters. Before: transitions to [1], [1,2] and [2] each published [] first (exit 1). After: each published only the complete destination set; explicit disable still cleared scenes (exit 0). No real wallpaper-store writes or WallpaperAgent signals.
-- Standalone offscreen GPU smoke compiled the production WallpaperController and WallpaperSurface against the real renderer and bundled video. Two synthetic display IDs kept distinct unhosted contexts; a secondary 1x-to-2x resize retained its context/backing until the 768x496 replacement frame, preserved the primary context and rejected invalid geometry without clearing the good frame.
-- New permanent topology regression executed through a temporary standalone XCTest bundle: 1 passed. Production service/selection were compiled into an isolated module; bridge and unused managed-user-asset dependencies were fixture adapters. This is not the full app-hosted gate.
-- python3 scripts/test.py: 215 Python passed; native app, extension and tests compiled, then Xcode aborted before executing native tests with IDELaunchServicesLauncher childPID > 0 (exit 250). Targeted parallel, serial, PTY and cleaned-launch-environment attempts hit the same launch failure. Debug bundle codesign --verify --deep --strict passed.
-- Native gate blocked, not passed: no commit or Release build. No app installation/restart, display reconfiguration, real lock/wake run or screen capture. Private XPC/compositor handoff timing remains visually unverified.
-- Removed task-owned smoke programs, XCTest bundle/module and shader cache through the cleanup helper; retained pre-existing artifacts and delivered apps.

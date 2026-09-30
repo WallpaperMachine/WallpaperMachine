@@ -13,8 +13,11 @@
     "Changes in this version" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes in this version"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンの変更点"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此版本的更新内容"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此版本的更新內容"}}}
     },
-    "Release notes in English and Simplified Chinese" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes in English and Simplified Chinese"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "英語と簡体字中国語のリリースノート"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "英文和简体中文更新说明"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "英文和簡體中文更新說明"}}}
+    "Release notes" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リリースノート"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新说明"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新說明"}}}
+    },
+    "Release notes language" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes language"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リリースノートの言語"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新说明语言"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新說明語言"}}}
     },
     "Don’t show this window after updates" : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Don’t show this window after updates"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "アップデート後にこのウインドウを表示しない"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "以后更新时不再显示此窗口"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "以後更新時不再顯示此視窗"}}}
