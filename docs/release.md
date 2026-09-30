@@ -204,10 +204,10 @@ again. A hand-pushed tag with no section is written once, by the model when
 `--ai` is set, into the working-tree `CHANGELOG.md` before anything is built, and
 the release page is that stored text: one generation, so the bundled history and
 the page cannot diverge. English-only or malformed current notes fail the run
-instead of being published. Then `<!-- release-notes-end -->`, the install,
-checksum and requirement footer, and every commit in the range folded into a
-`<details>` list, so whatever the notes leave out is still on the page. The
-marker is a contract: the updater shows everything above it and nothing below.
+instead of being published. Then `<!-- release-notes-end -->` and the install,
+checksum and requirement footer. Raw commit messages are not appended to the
+release page; the **Full changelog** link in the notes leads to the commit history.
+The marker is a contract: the updater shows everything above it and nothing below.
 The What's New window reads the bundled changelog, not that footer. A launch
 whose bundled history has no section for the installed version does not record
 that version as announced, so a later bundle can still show the window. See
@@ -592,8 +592,8 @@ from a real disk image.
    manifest's `digest` must equal the sidecar's checksum:
    `curl -sL https://github.com/WallpaperMachine/WallpaperMachine/releases/latest/download/WallpaperMachine-update.json`.
 4. Read the release body on the page: it should be the current `CHANGELOG.md`
-   section, both languages, with the folded commit list below the install footer,
-   not a bare compare link, and the `Built from` line must match
+   section, both languages, followed by the install footer without a raw commit
+   list. The **Full changelog** link opens the commit history; the `Built from` line must match
    `git rev-parse vx.y.z^{commit}`. For a hand-pushed tag the section in the
    built app is the text Build wrote into the working tree; it is the same text
    as the page.

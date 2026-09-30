@@ -15,6 +15,17 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Bilingual post-update What's New
+
+- Implemented native post-update window, persisted opt-out and version-range history; all 18 historical releases now contain English and Simplified Chinese.
+- Isolated swiftc smoke: actual native content laid out offscreen at 560×400; 1.0.2 → 1.1.0 includes both releases and their complete translations; checkbox persistence and Close callback passed. No windows opened.
+- python3 scripts/test.py --only WhatsNewTests: initial Background-session launcher failed with exit 250 before tests; same command through a temporary same-user Aqua launch job passed 7/7, exit 0.
+- python3 scripts/test.py through the Aqua job: 17 Python suites passed, including 51 release-note tests; native result 745 passed, 1 failed, 11 skipped of 757, exit 65.
+- Shared-workspace blocker: LockScreenWallpaperServiceTests.testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed while preserving enabled state and committed topology. This concurrently added test is absent from HEAD; its test and service edits were not changed by this task. Commit withheld because the full gate did not pass.
+- python3 scripts/release_notes.py --tag v1.1.0 --release-body --output <temporary-file>: exit 0; actual output matches the recorded current notes exactly, and all bundled historical sections passed bilingual publication validation.
+- History comparison: all 18 version/date headings, English notes and compare links preserved; translated bullet counts match. cmp confirmed Debug-bundled CHANGELOG.md is byte-identical to the source.
+- Skipped: 9 opt-in native-media and 2 live Workshop tests. No live release-note model call, desktop visual check, Release build, install or app restart performed. Temporary Aqua job removed.
+
 ## 2026-09-29 — Multi-display lock-screen fix gate and Release delivery
 
 - Resolved the previous native-launch blocker without changing the test command or product code: launchctl managername reported Background for the detached tool session; a temporary same-user launch job ran the existing gate in Aqua. Serial and environment-only changes had not resolved childPID > 0.

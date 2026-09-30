@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Remove raw commit messages from GitHub release pages
+
+- python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed.
+- Actual release_notes.py --tag v1.2.0 --release-body CLI before/after — exit 0; 8,079 → 6,433 bytes; bilingual notes and install/checksum footer unchanged, only raw commit appendix removed. Temporary previews removed; published release not edited.
+- python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped; ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit the documented WebKit InvalidTransition error.
+- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863.
+- No app-code change, Release rebuild, desktop test, or remote publication.
+
 ## 2026-09-30 — Changelog defaults to the app language
 
 - python3 scripts/test.py --only WhatsNewTests — exit 0; 10 passed, 0 failed, 0 skipped; covers saved language precedence and System matching.
@@ -107,14 +115,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - cargo test --release -p wallpaper-core --lib with the build.py cargo environment: exit 0; runner reported 222 passed. Opt-in desktop/private-asset cases were not enabled; this is not physical wake proof.
 - python3 scripts/check_renderer.py: exit 0; generated ten-scene pooled/isolated pixel comparisons matched, no diagnostics, and 8 projects x2 reload cycles passed. No user wallpaper corpus was requested.
 - Real external-primary lid/sleep/wake visual timing remains unverified. No Release app build, launch, install, desktop automation or screen capture; the running app still has its previous behavior.
-
-## 2026-09-29 — Bilingual post-update What's New
-
-- Implemented native post-update window, persisted opt-out and version-range history; all 18 historical releases now contain English and Simplified Chinese.
-- Isolated swiftc smoke: actual native content laid out offscreen at 560×400; 1.0.2 → 1.1.0 includes both releases and their complete translations; checkbox persistence and Close callback passed. No windows opened.
-- python3 scripts/test.py --only WhatsNewTests: initial Background-session launcher failed with exit 250 before tests; same command through a temporary same-user Aqua launch job passed 7/7, exit 0.
-- python3 scripts/test.py through the Aqua job: 17 Python suites passed, including 51 release-note tests; native result 745 passed, 1 failed, 11 skipped of 757, exit 65.
-- Shared-workspace blocker: LockScreenWallpaperServiceTests.testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed while preserving enabled state and committed topology. This concurrently added test is absent from HEAD; its test and service edits were not changed by this task. Commit withheld because the full gate did not pass.
-- python3 scripts/release_notes.py --tag v1.1.0 --release-body --output <temporary-file>: exit 0; actual output matches the recorded current notes exactly, and all bundled historical sections passed bilingual publication validation.
-- History comparison: all 18 version/date headings, English notes and compare links preserved; translated bullet counts match. cmp confirmed Debug-bundled CHANGELOG.md is byte-identical to the source.
-- Skipped: 9 opt-in native-media and 2 live Workshop tests. No live release-note model call, desktop visual check, Release build, install or app restart performed. Temporary Aqua job removed.

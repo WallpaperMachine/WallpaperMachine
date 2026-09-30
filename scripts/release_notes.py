@@ -14,7 +14,7 @@ Two writers read the same input, the commits in the range:
 
 A version's notes are written once, into its CHANGELOG.md section, when the version
 is cut. The app bundles that file. `--release-body` repeats the current section for
-the release page and adds the install footer and the full commit list. A hand-pushed
+the release page and adds the install footer. A hand-pushed
 tag with no section is written once, into the working tree, before the build, so the
 bundle and the release page are the same text. A recorded section is reused exactly.
 A `##` heading that is not `x.y.z` — `## Unreleased`, a prerelease token, or a
@@ -404,23 +404,9 @@ def install_footer(version, target=None, built_from=None):
     return "\n".join(lines)
 
 
-def commit_log(previous, revision, repo=None, cwd=ROOT):
-    """Every commit in the range, folded away on the release page, so nothing the notes
-    leave out is lost; empty when the range has none."""
-    entries = [f"- {' '.join(subject.split())} ({commit_link(sha, repo)})"
-               for sha, subject, _ in commits(previous, revision, cwd) if not BUMP_COMMIT.match(subject.strip())]
-    if not entries:
-        return ""
-    noun = "commit" if len(entries) == 1 else "commits"
-    return f"<details>\n<summary>{len(entries)} {noun} in this release</summary>\n\n" + "\n".join(entries) + "\n\n</details>"
-
-
-def release_body(notes, version, previous, revision, repo=None, built_from=None, cwd=ROOT):
-    """What the GitHub Release says: the notes, then the page-only footer and commit list."""
+def release_body(notes, version, built_from=None):
+    """What the GitHub Release says: the notes, then the page-only install footer."""
     parts = [notes.rstrip("\n"), install_footer(version, deployment_target(), built_from)]
-    log = commit_log(previous, revision, repo, cwd)
-    if log:
-        parts.append(log)
     return "\n\n".join(parts) + "\n"
 
 
@@ -919,7 +905,7 @@ def main(argv=None):
     parser.add_argument("--ai", action="store_true",
                         help=f"Have the release-notes model write English and Simplified Chinese (needs {API_KEY_VARIABLE}). Without it, commits are listed in English and are not published.")
     parser.add_argument("--release-body", action="store_true",
-                        help="The release page: the version's bilingual CHANGELOG.md section (generated once and written into the file when missing), the install footer and the commit list.")
+                        help="The release page: the version's bilingual CHANGELOG.md section (generated once and written into the file when missing) and the install footer.")
     parser.add_argument("--built-from", help="Revision the disk image was built from; recorded in the footer.")
     parser.add_argument("--output", help="Write the notes here instead of stdout.")
     parser.add_argument("--changelog", action="store_true", help="Write this version's bilingual section into CHANGELOG.md.")
@@ -956,7 +942,7 @@ def main(argv=None):
             CHANGELOG.write_text(updated, encoding="utf-8")
             print(f"{MARK.ok} Wrote bilingual notes for {version} into {CHANGELOG.relative_to(ROOT)} before publish", file=sys.stderr)
         recorded = notes
-        body = release_body(notes, version, earlier, revision, repo, args.built_from)
+        body = release_body(notes, version, args.built_from)
     else:
         if args.changelog:
             require_bundled_history(existing)
