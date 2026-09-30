@@ -74,7 +74,8 @@ jobs:
         # Before the long build, so a notes problem fails in seconds. A bilingual
         # CHANGELOG.md section is reused. A hand-pushed tag without one asks the model
         # once and writes that exact section into the working tree before the build
-        # bundles it, so the app and the release page match. English-only notes fail.
+        # bundles both languages. GitHub uses only the English notes and compare link.
+        # English-only source history fails.
         env:
           TAG: ${{ inputs.tag }}
           RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}

@@ -4,8 +4,8 @@ Every published version, newest first. Each section is written when its version 
 cut, by [`scripts/release_notes.py`](scripts/release_notes.py) from the commits
 between two version tags: a language model writes them up for users, where older
 sections list the commits. Each section states the same notes in English and
-Simplified Chinese. The GitHub Release body and the app's What's New window
-repeat that section, so they always say the same thing. See
+Simplified Chinese. The app's What's New window offers both translations; the
+GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
 ## 1.2.0 — 2026-09-29

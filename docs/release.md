@@ -58,13 +58,13 @@ which runs as part of `python3 scripts/test.py`.
 
 A version's notes are written once, when it is cut, into its
 [`CHANGELOG.md`](../CHANGELOG.md) section. The app bundles that file. The
-release page repeats the current section, so the history in the app and the
-page cannot disagree. [`scripts/release_notes.py`](../scripts/release_notes.py)
+release page uses only the English notes from the current section; the app keeps
+both translations. [`scripts/release_notes.py`](../scripts/release_notes.py)
 does both halves. `gh release --generate-notes` is not used: with no pull
 requests in the history it produces a bare compare link, which is all the
 thirteen releases through `v0.5.0` ever said before they were deleted.
 
-A published section is both languages, in this order, and nothing else at `###`:
+A bundled changelog section is both languages, in this order, and nothing else at `###`:
 
 ```markdown
 ### English
@@ -198,12 +198,13 @@ A local `--ai` run needs `RELEASE_NOTES_API_KEY` exported for that command only.
 newest released version below the target that the range's end descends from, so a
 gap in the numbering resolves correctly.
 
-`--release-body` is the release page. It reuses the version's `CHANGELOG.md`
-section when that section is already bilingual, and does not call the model
-again. A hand-pushed tag with no section is written once, by the model when
-`--ai` is set, into the working-tree `CHANGELOG.md` before anything is built, and
-the release page is that stored text: one generation, so the bundled history and
-the page cannot diverge. English-only or malformed current notes fail the run
+`--release-body` is the English-only GitHub release page. It reuses the version's
+bilingual `CHANGELOG.md` section without calling the model again, then selects
+only the English prose and preserves the **Full changelog** link. A hand-pushed
+tag with no section is written once, by the model when `--ai` is set, into the
+working-tree `CHANGELOG.md` before anything is built. The app bundles both
+translations; GitHub shows only the stored English notes, without regenerating
+or shortening them. English-only or malformed source history still fails the run
 instead of being published. Then `<!-- release-notes-end -->` and the install,
 checksum and requirement footer. Raw commit messages are not appended to the
 release page; the **Full changelog** link in the notes leads to the commit history.
@@ -227,8 +228,9 @@ ordering, reuse and rebuilding, and range resolution against a real throwaway
 repository; the model path against a fake gateway (what the model reads, how its
 streamed reply is parsed and rendered, each reply that must stop a release,
 including a missing language); publishing (recorded bilingual notes reused with
-no second request, generated notes stored once and used unchanged, English-only
-notes refused, and `## Unreleased`, a heading inside notes, a prerelease token
+no second request, generated bilingual notes stored once and GitHub showing only
+their English notes with the compare link, English-only source history refused,
+and `## Unreleased`, a heading inside notes, a prerelease token
 or a leading zero refused by the publish and rebuild paths rather than kept or
 dropped); and the real HTTP request against a local server (headers, the
 gateway's refusal message, the deadline).
@@ -316,10 +318,10 @@ target, and hands `Assets.car`, `AppIcon.icns` and the partial Info.plist to
    --built-from "$(git rev-parse HEAD)"` before anything is built. The current
    section must already be bilingual (`### English`, then `### 简体中文`); that
    text is reused and the model is not called again. A hand-pushed tag with no
-   section is written once, into the working-tree `CHANGELOG.md`, and that same
-   text is the release page, so the bundled history matches the page. English-only
-   or malformed current notes fail here, in seconds, rather than after the macOS
-   build;
+   section is written once into the working-tree `CHANGELOG.md`. The app bundles
+   both languages and the release page uses only its English notes and compare
+   link. English-only or malformed source history fails here, in seconds, rather
+   than after the macOS build;
 3. runs `prepare-build` (below) and downloads the `app-icon-<tag>` artifact;
 4. runs `python3 scripts/build.py --configuration Release --app-icon DIR`, which
    leaves `AppIcon.icon` out of the Xcode build, puts the compiled icon and catalog
@@ -460,9 +462,9 @@ Triggered by pushing a `v*.*.*` tag by hand. It only calls Build with
 `github.ref_name`, sharing the `publish-<tag>` concurrency group with Version's
 publish job so one tag is never built twice at once. A hand-pushed tag has no
 `CHANGELOG.md` section unless one was committed before tagging. Build then asks
-the model once, writes that exact section into the working tree before the app
-is built, and publishes that same text. A section that is present but not
-bilingual fails the build; it is not rewritten.
+the model once and writes that exact bilingual section into the working tree
+before the app is built. GitHub publishes only its English notes and compare
+link. A section that is present but not bilingual fails the build; it is not rewritten.
 
 ## What the in-app updater expects
 
@@ -584,19 +586,19 @@ from a real disk image.
    workflow with a spec.
 2. Confirm the Version run committed `chore: bump version to x.y.z` with the new
    `CHANGELOG.md` section and pushed `vx.y.z`. Read the section: it is `### English`
-   then `### 简体中文`, the model wrote both, and it is what the bundled history
-   and the release page will show.
+   then `### 简体中文`, and the model wrote both. The app bundles both translations;
+   the GitHub release page shows only the English notes.
 3. Confirm the called Build run passed the test gate, verified the mounted
    image, and published `WallpaperMachine-x.y.z-arm64.dmg` with its `.sha256`
    sidecar, `WallpaperMachine-update.json` and a provenance attestation. The
    manifest's `digest` must equal the sidecar's checksum:
    `curl -sL https://github.com/WallpaperMachine/WallpaperMachine/releases/latest/download/WallpaperMachine-update.json`.
-4. Read the release body on the page: it should be the current `CHANGELOG.md`
-   section, both languages, followed by the install footer without a raw commit
-   list. The **Full changelog** link opens the commit history; the `Built from` line must match
-   `git rev-parse vx.y.z^{commit}`. For a hand-pushed tag the section in the
-   built app is the text Build wrote into the working tree; it is the same text
-   as the page.
+4. Read the release body on the page: it should contain only the English notes
+   from the current `CHANGELOG.md` section, followed by the install footer,
+   without a Chinese section or raw commit list. The **Full changelog** link
+   opens the commit history; the `Built from` line must match
+   `git rev-parse vx.y.z^{commit}`. For a hand-pushed tag the app bundles the
+   bilingual text Build wrote into the working tree; GitHub uses its English part.
 5. Confirm Latest points at the highest published version. Re-running Build for a
    tag that is already published fails by design; if a published release is
    genuinely wrong, delete it deliberately rather than re-running.

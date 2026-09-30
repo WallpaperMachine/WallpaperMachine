@@ -419,11 +419,13 @@ class ModelRangeTests(unittest.TestCase):
             self.write(environ={})
         self.assertEqual(self.reply.requests, [])
 
-    def test_the_release_page_preserves_notes_and_links_without_raw_commit_messages(self):
+    def test_the_release_page_keeps_only_english_notes_and_links_without_raw_commit_messages(self):
         original = self.write()
         body = release_notes.release_body(original, "0.2.0", "abc1234")
         notes, page = body.split(release_notes.NOTES_END)
-        self.assertEqual(notes.rstrip(), original.rstrip())
+        self.assertIn("### English\n\n#### Fixed\n\n- Layers stay in place", notes)
+        self.assertNotIn("### 简体中文", notes)
+        self.assertNotIn("图层保持原位", notes)
         self.assertIn(f"https://github.com/{REPOSITORY}/compare/v0.1.0...v0.2.0", notes)
         self.assertIn("WallpaperMachine-0.2.0-arm64.dmg", page)
         self.assertIn("abc1234", page)
@@ -455,7 +457,7 @@ Layers stay in place.
 
 
 class PublishTests(unittest.TestCase):
-    """The release page and the bundled changelog are one text, or the publish stops."""
+    """Bilingual source notes are stored once; GitHub shows only their English part."""
 
     def changelog(self, body, version="0.2.0"):
         return release_notes.insert_section(
@@ -471,9 +473,10 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(notes, release_notes.recorded_notes(text, "0.2.0"))
         self.assertEqual(transport.requests, [])
         page = release_notes.release_body(notes, "0.2.0")
-        self.assertTrue(page.startswith(notes.rstrip("\n")))
+        self.assertIn("Layers stay in place.", page)
+        self.assertNotIn("图层保持原位", page)
 
-    def test_generated_notes_are_stored_once_and_published_unchanged(self):
+    def test_generated_bilingual_notes_are_stored_once_and_published_in_english(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -494,9 +497,10 @@ class PublishTests(unittest.TestCase):
         self.assertIn("- Layers stay in place", notes)
         self.assertIn("- 图层保持原位", notes)
         page = release_notes.release_body(notes, "0.2.0")
-        self.assertTrue(page.split(release_notes.NOTES_END, 1)[0].startswith(notes.rstrip("\n")))
+        self.assertIn("- Layers stay in place", page.split(release_notes.NOTES_END, 1)[0])
+        self.assertNotIn("图层保持原位", page)
 
-    def test_english_only_notes_are_not_published(self):
+    def test_english_only_history_is_not_published(self):
         listed = "### Fixed\n\n- Something\n"
         with self.assertRaises(release_notes.NotesError):
             release_notes.published_notes(

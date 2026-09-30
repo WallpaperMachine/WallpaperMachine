@@ -13,10 +13,10 @@ Two writers read the same input, the commits in the range:
   and an unrecognised commit lands under "Other changes", so none disappears silently.
 
 A version's notes are written once, into its CHANGELOG.md section, when the version
-is cut. The app bundles that file. `--release-body` repeats the current section for
-the release page and adds the install footer. A hand-pushed
-tag with no section is written once, into the working tree, before the build, so the
-bundle and the release page are the same text. A recorded section is reused exactly.
+is cut. The app bundles both languages. `--release-body` publishes only the English
+part and the compare link on GitHub, then adds the install footer. A hand-pushed
+tag with no section is written once, into the working tree, before the build.
+A recorded bilingual section is reused without another model request.
 A `##` heading that is not `x.y.z` — `## Unreleased`, a prerelease token, or a
 heading inside the notes — stops publishing. The app rejects that whole file, so
 the heading is not kept and not dropped.
@@ -103,8 +103,8 @@ Every published version, newest first. Each section is written when its version 
 cut, by [`scripts/release_notes.py`](scripts/release_notes.py) from the commits
 between two version tags: a language model writes them up for users, where older
 sections list the commits. Each section states the same notes in English and
-Simplified Chinese. The GitHub Release body and the app's What's New window
-repeat that section, so they always say the same thing. See
+Simplified Chinese. The app's What's New window offers both translations; the
+GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
 """
@@ -405,8 +405,11 @@ def install_footer(version, target=None, built_from=None):
 
 
 def release_body(notes, version, built_from=None):
-    """What the GitHub Release says: the notes, then the page-only install footer."""
-    parts = [notes.rstrip("\n"), install_footer(version, deployment_target(), built_from)]
+    """What GitHub shows: English notes, the compare link, then the install footer."""
+    english, chinese = language_blocks(require_bilingual(notes))
+    parts = [f"### English\n\n{english.strip()}"]
+    parts.extend(line for line in chinese.splitlines() if line.startswith("**Full changelog**:"))
+    parts.append(install_footer(version, deployment_target(), built_from))
     return "\n\n".join(parts) + "\n"
 
 
@@ -677,7 +680,7 @@ def language_blocks(text):
 
 
 def require_bilingual(text):
-    """Publishing contract: English, then 简体中文, categories at `####`, Chinese present.
+    """Bundled-history contract: English, then 简体中文, categories at `####`, Chinese present.
 
     Listed English notes, a missing language, or a `###` category heading fail.
     The compare link may follow the Chinese block.
@@ -778,12 +781,12 @@ def notes_for(version, previous, revision, repo=None, ai=False, cwd=ROOT, transp
 
 
 def published_notes(version, previous, revision, repo, changelog_text, day, ai=False, cwd=ROOT, transport=None, environ=None):
-    """Notes for the release page, and the changelog text the build must bundle.
+    """Bilingual source notes and the changelog text the build must bundle.
 
     A recorded bilingual section is returned unchanged and the model is not called.
-    A missing section is written once, with `--ai`, and inserted so the bundle and
-    the page are that same text. English-only notes are refused. A `##` heading the
-    app cannot parse is refused too: it is not kept and not dropped.
+    A missing section is written once, with `--ai`, and inserted before the build.
+    GitHub publishes its English part. English-only history and a `##` heading the
+    app cannot parse are refused: neither is kept nor dropped.
     Returns `(notes, changelog_text, generated)`.
     """
     require_bundled_history(changelog_text)
@@ -905,7 +908,7 @@ def main(argv=None):
     parser.add_argument("--ai", action="store_true",
                         help=f"Have the release-notes model write English and Simplified Chinese (needs {API_KEY_VARIABLE}). Without it, commits are listed in English and are not published.")
     parser.add_argument("--release-body", action="store_true",
-                        help="The release page: the version's bilingual CHANGELOG.md section (generated once and written into the file when missing) and the install footer.")
+                        help="The release page: only the English notes and compare link from the bilingual CHANGELOG.md section (generated once when missing), plus the install footer.")
     parser.add_argument("--built-from", help="Revision the disk image was built from; recorded in the footer.")
     parser.add_argument("--output", help="Write the notes here instead of stdout.")
     parser.add_argument("--changelog", action="store_true", help="Write this version's bilingual section into CHANGELOG.md.")

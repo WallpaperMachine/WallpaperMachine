@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — English-only GitHub release notes
+
+- python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed; bilingual history remains required and GitHub keeps only English plus the compare link.
+- Actual release_notes.py --tag v1.2.0 --release-body CLI — exit 0; English matches the published English section; Chinese omitted; compare link, download footer and build SHA preserved.
+- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 opt-in skips of 863.
+- gh release edit v1.2.0 --repo WallpaperMachine/WallpaperMachine --notes-file … — exit 0; live readback confirms English-only notes, no raw commit appendix, and unchanged assets, tag, title, publish date and release flags. Description reduced from 8,192 to 3,740 bytes.
+- The app’s bundled changelog remains bilingual. No app rebuild, install, or desktop test. Temporary previews removed.
+
 ## 2026-09-30 — Remove raw commit messages from GitHub release pages
 
 - python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed.
@@ -104,14 +112,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - codesign --verify --deep --strict on the Release bundle: exit 0.
 - cmp of source and Release-bundled CHANGELOG.md: exit 0; bilingual history is byte-identical. diff -qr of WebUI and bundled Contents/Resources/WebUI: exit 0.
 - Skipped: 9 opt-in native-media and 2 live Workshop cases; no desktop visual check, live release-note model call, install, launch or restart. Temporary Aqua launch job and helper removed.
-
-## 2026-09-29 — Retain wallpaper presentation across wake topology changes
-
-- Hidden-window Rust smoke: before the fix, three origin/primary/refresh updates performed 3 drawable-size writes and 3 forced AppKit redraws; afterward both counts were 0 with the same layer, and a real resize still produced a 256x144 window/drawable at scale 1. Window ordering was suppressed; no wallpaper or visible desktop window was changed. Temporary smoke removed.
-- LockScreenWallpaperServiceTests/testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed before the Swift fix and passed afterward; partial/all-display lookup gaps preserve manifest, native selection, provider ownership and the status monitor, then settled disconnect and last-wallpaper removal still reconcile.
-- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0, 14 passed, 0 failed, 0 skipped.
-- python3 scripts/test.py: exit 0; all 17 Python modules passed; native 746 passed, 0 failed, 11 skipped (9 opt-in media and 2 live Steam cases).
-- The initial targeted launch in Background exited 250 with IDELaunchServicesLauncher childPID > 0; the failing-before, passing-after and full native runs used a temporary same-user Aqua launch job. Jobs and temporary runners removed.
-- cargo test --release -p wallpaper-core --lib with the build.py cargo environment: exit 0; runner reported 222 passed. Opt-in desktop/private-asset cases were not enabled; this is not physical wake proof.
-- python3 scripts/check_renderer.py: exit 0; generated ten-scene pooled/isolated pixel comparisons matched, no diagnostics, and 8 projects x2 reload cycles passed. No user wallpaper corpus was requested.
-- Real external-primary lid/sleep/wake visual timing remains unverified. No Release app build, launch, install, desktop automation or screen capture; the running app still has its previous behavior.

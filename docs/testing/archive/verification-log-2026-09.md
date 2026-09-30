@@ -15,6 +15,17 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Retain wallpaper presentation across wake topology changes
+
+- Hidden-window Rust smoke: before the fix, three origin/primary/refresh updates performed 3 drawable-size writes and 3 forced AppKit redraws; afterward both counts were 0 with the same layer, and a real resize still produced a 256x144 window/drawable at scale 1. Window ordering was suppressed; no wallpaper or visible desktop window was changed. Temporary smoke removed.
+- LockScreenWallpaperServiceTests/testWakeDisplayLookupGapPreservesCommittedWallpapersAndRecovers failed before the Swift fix and passed afterward; partial/all-display lookup gaps preserve manifest, native selection, provider ownership and the status monitor, then settled disconnect and last-wallpaper removal still reconcile.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0, 14 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py: exit 0; all 17 Python modules passed; native 746 passed, 0 failed, 11 skipped (9 opt-in media and 2 live Steam cases).
+- The initial targeted launch in Background exited 250 with IDELaunchServicesLauncher childPID > 0; the failing-before, passing-after and full native runs used a temporary same-user Aqua launch job. Jobs and temporary runners removed.
+- cargo test --release -p wallpaper-core --lib with the build.py cargo environment: exit 0; runner reported 222 passed. Opt-in desktop/private-asset cases were not enabled; this is not physical wake proof.
+- python3 scripts/check_renderer.py: exit 0; generated ten-scene pooled/isolated pixel comparisons matched, no diagnostics, and 8 projects x2 reload cycles passed. No user wallpaper corpus was requested.
+- Real external-primary lid/sleep/wake visual timing remains unverified. No Release app build, launch, install, desktop automation or screen capture; the running app still has its previous behavior.
+
 ## 2026-09-29 — Bilingual post-update What's New
 
 - Implemented native post-update window, persisted opt-out and version-range history; all 18 historical releases now contain English and Simplified Chinese.
