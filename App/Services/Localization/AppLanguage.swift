@@ -35,9 +35,9 @@ struct AppLanguage: Equatable, Sendable {
 /// The user's language choice for this app: a shipped tag, or `system` to follow macOS.
 ///
 /// The choice reaches the panel at once through the snapshot and the injected user
-/// script. Native strings resolve through `Bundle.main`, which fixes its localization
-/// at launch, so the store also mirrors the choice into the app's `AppleLanguages`
-/// override and menus and dialogs follow on the next launch.
+/// script. Most native strings resolve through `Bundle.main` at launch, so the store
+/// mirrors the choice into the app's `AppleLanguages` override for menus and other
+/// dialogs on the next launch. Import uses a fresh picker helper when languages differ.
 @MainActor
 final class AppLanguageStore: ObservableObject {
   static let shared = AppLanguageStore()

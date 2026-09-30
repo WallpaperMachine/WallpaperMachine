@@ -21,9 +21,13 @@ labels, menus and dialogs. **Settings → General → Language** offers **System
   choice made in **System Settings → General → Language & Region →
   Applications** is honoured the same way.
 - Choosing a language switches the panel immediately, without a reload, and is
-  remembered. Native menus and dialogs use the new language the next time the
-  app is opened, because macOS fixes a process's localization at launch.
-  Returning to **System (Auto)** hands the choice back to macOS.
+  remembered. The **Import → Choose files** picker also follows immediately,
+  including a language chosen in the welcome guide. When its language differs
+  from the app's launch language, it opens as a separate native picker window;
+  otherwise it stays an attached sheet. Native menus and other dialogs use the
+  new language after fully quitting and reopening the app, because macOS fixes
+  a process's localization at launch. Returning to **System (Auto)** hands the
+  choice back to macOS.
 
 Steam's own language is not involved. Unsupported languages and missing keys
 fall back to English. Wallpaper titles, descriptions, creator names, custom

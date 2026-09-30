@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Import picker follows live app language
+
+- python3 scripts/test.py --only WallpaperImportPickerTests: 5 passed, 0 failed; child cancellation/reaping, activation failure cleanup, invalid handshake and failed exit.
+- python3 scripts/test.py: all 17 Python modules passed; native gate 883 passed, 0 failed, 11 skipped of 894. Skips: 9 opt-in native-video media cases and 2 live Workshop network cases.
+- Authorized signed smoke app compiled the production picker/helper sources: English parent opened Japanese helper, selected one image and received its URL; isPresenting was false after return. No import or wallpaper change performed.
+- Native helper cancellation returned no URLs; parent-pipe EOF before activation returned null and exited 0 without showing a picker.
+- Changed WebUI copy detector returned no findings; catalog parity and offscreen panel language tests passed in the gate.
+- No Release build or main-app desktop launch. Full real-app import, focus across Spaces and native picker visuals in every language were not exercised. Prior research covered all four native launch languages.
+
 ## 2026-09-30 — Perspective wallpaper fix delivered after gate recovery
 
 - The earlier app-gate blocker is cleared. Concurrent screensaver fixes were preserved: canonical asset URLs, denied-or-unavailable capture behavior and rendered content checks; this delivery added no changes to those files.
@@ -111,11 +120,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py: 851 passed, 1 failed, 11 skipped; hidden-panel sync test hit WebKit InvalidTransition teardown error.
 - python3 scripts/test.py --serial: passed, 852 passed, 0 failed, 11 skipped.
 - Live app visual presentation and desktop interaction unverified; no screenshots captured or Release app rebuilt.
-
-## 2026-09-30 — Clarify generic Workshop download failures
-
-- Temporary PTY smoke: python3 scripts/test.py --only DownloadFailureCopySmoke passed (1 test); all three generic failure forms emitted purchase/account recovery guidance without offering authentication retry. Temporary smoke removed afterward.
-- python3 scripts/test.py passed: 852 native tests passed, 0 failed, 11 skipped; all 17 Python test modules passed.
-- Skipped: 9 opt-in native video media cases and 2 live Steam Workshop cases.
-- Updated English, Japanese, Simplified Chinese, and Traditional Chinese native error catalogs and the Workshop download documentation.
-- Live non-owning Steam account and visual error layout not exercised. No Release rebuild or desktop interaction.

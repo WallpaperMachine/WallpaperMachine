@@ -57,6 +57,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let updater: AppUpdateStore
   /// Library imports, owned by the app so one outlives this page.
   let imports: LibraryImportStore
+  let importPicker = WallpaperImportPicker()
   let theme: AppThemeStore
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
@@ -307,6 +308,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
 
   func stop() {
     stopped = true
+    importPicker.cancel()
     energyUsage.setActive(false)
     pageGeneration &+= 1
     updateTask?.cancel()

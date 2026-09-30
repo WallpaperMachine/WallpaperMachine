@@ -34,6 +34,9 @@ rather than the whole file:
 
 `App/WallpaperEngineApp.swift` is the `@main` entry point. It is plain AppKit: it creates
 `NSApplication`, installs `AppDelegate`, and runs the loop — there is no SwiftUI `App` scene.
+The internal `--wallpaper-import-picker` mode instead runs `WallpaperImportPickerHelper`
+before `AppDelegate`: it presents a native picker in the current app language and returns
+URLs to the parent without starting wallpapers or library services.
 
 `App/AppDelegate.swift` owns process lifecycle: it configures the Vulkan ICD
 (`App/Bridge/BridgeEnvironment.swift` points `VK_ICD_FILENAMES` at the bundled

@@ -544,7 +544,7 @@ export default {
   'Refresh': '重新整理',
   'Unavailable': '無法使用',
   'Language': '語言',
-  'The interface switches at once. Menus and dialogs follow the next time you open the app.': '介面會立即切換，選單和對話框則會在下次開啟 App 時切換。',
+  'The interface and import picker switch at once. Quit and reopen the app to switch menus and other dialogs.': '介面與匯入檔案選擇視窗會立即切換。選單和其他對話框需要結束並重新開啟 App 後切換。',
   'Launch at login': '登入時啟動',
   'Move the app to Applications to enable.': '將 App 移到「應用程式」資料夾後即可啟用。',
   'Keep windows in place when clicking the wallpaper': '按一下桌布時讓視窗保持原位',

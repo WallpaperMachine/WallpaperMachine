@@ -544,7 +544,7 @@ export default {
   'Refresh': '更新',
   'Unavailable': '利用不可',
   'Language': '言語',
-  'The interface switches at once. Menus and dialogs follow the next time you open the app.': 'インターフェイスはすぐに切り替わります。メニューとダイアログは、次回Appを開いたときに切り替わります。',
+  'The interface and import picker switch at once. Quit and reopen the app to switch menus and other dialogs.': '画面と読み込み用のファイル選択ウインドウはすぐに切り替わります。メニューとその他のダイアログを切り替えるには、Appを終了して開き直してください。',
   'Launch at login': 'ログイン時に起動',
   'Move the app to Applications to enable.': '有効にするには、Appを「アプリケーション」フォルダに移動してください。',
   'Keep windows in place when clicking the wallpaper': '壁紙をクリックしたときにウインドウを移動しない',

@@ -15,6 +15,14 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Clarify generic Workshop download failures
+
+- Temporary PTY smoke: python3 scripts/test.py --only DownloadFailureCopySmoke passed (1 test); all three generic failure forms emitted purchase/account recovery guidance without offering authentication retry. Temporary smoke removed afterward.
+- python3 scripts/test.py passed: 852 native tests passed, 0 failed, 11 skipped; all 17 Python test modules passed.
+- Skipped: 9 opt-in native video media cases and 2 live Steam Workshop cases.
+- Updated English, Japanese, Simplified Chinese, and Traditional Chinese native error catalogs and the Workshop download documentation.
+- Live non-owning Steam account and visual error layout not exercised. No Release rebuild or desktop interaction.
+
 ## 2026-09-30 — Advanced performance settings refinement
 
 - Local WebUI preview: captured matching before/after views with illustrative wallpaper reports; exercised both renderer selectors and all five switches, keyboard disclosure controls, snapshot focus/open-state preservation, pending/rejection recovery, empty/shared-decode/fallback reports, and escaped long titles.

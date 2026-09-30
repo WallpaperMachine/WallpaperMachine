@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "The import file picker could not open." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The import file picker could not open."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "読み込み用のファイル選択ウインドウを開けませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法打开导入文件选择窗口。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法開啟匯入檔案選擇視窗。"}}}
+    },
     "This display uses a linked or unsupported native wallpaper configuration. Choose separate desktop and screen saver wallpapers in System Settings before enabling native wallpaper animation." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This display uses a linked or unsupported native wallpaper configuration. Choose separate desktop and screen saver wallpapers in System Settings before enabling native wallpaper animation."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このディスプレイは、リンクされた、または対応していないシステム壁紙の構成を使用しています。システム壁紙のアニメーションをオンにする前に、「システム設定」でデスクトップとスクリーンセーバの壁紙を別々に選択してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此显示器使用了关联或不受支持的原生墙纸配置。请先在“系统设置”中为桌面和屏幕保护程序分别选择墙纸，再启用原生墙纸动画。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此顯示器使用連動或不受支援的原生桌布設定。請先在「系統設定」中為桌面和螢幕保護程式分別選擇桌布，再啟用原生桌布動畫。"}}}
     },

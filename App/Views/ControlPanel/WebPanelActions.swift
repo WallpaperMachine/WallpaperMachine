@@ -985,27 +985,22 @@ extension WebPanelController {
   }
 
   func beginImport(_ request: WebPanelRequest) async throws {
-    guard !imports.isBusy else {
+    guard !imports.isBusy, !importPicker.isPresenting else {
       throw WallpaperActionError(message: String(localized: "An import is already running."))
     }
     let policy =
       (request.body["duplicates"] as? String) == "keepBoth"
       ? WallpaperImportService.DuplicatePolicy.keepBoth : .skip
-    let panel = NSOpenPanel()
-    panel.title = String(localized: "Import Wallpapers")
-    panel.message = String(
-      localized: "Choose videos, images, HTML files, project folders or a Steam library. Your original files are kept.")
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = true
-    panel.allowsMultipleSelection = true
-    panel.resolvesAliases = false
-    panel.allowedContentTypes =
+    guard let window = webView?.window else { return }
+    let types: [UTType] =
       [.folder]
       + WallpaperImportService.videoExtensions.union(WallpaperImportService.webExtensions)
       .union(WallpaperImportService.imageExtensions).sorted()
       .compactMap { UTType(filenameExtension: $0) }
-    guard await choose(panel) else { return }
-    try imports.start(panel.urls, duplicates: policy)
+    guard let urls = try await importPicker.choose(
+      for: window, language: appLanguage.effective.tag, allowedContentTypes: types), !stopped
+    else { return }
+    try imports.start(urls, duplicates: policy)
   }
 
   func choose(_ panel: NSSavePanel) async -> Bool {

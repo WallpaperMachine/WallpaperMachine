@@ -25,11 +25,26 @@ the app-domain `AppleLanguages` override (and removes it on **System**). That
 override is what makes `String(localized:)` — menus, alerts, notifications —
 follow the choice on the next launch; the panel does not need it.
 
+The **Import → Choose files** picker follows the effective language immediately,
+including a choice made in the welcome guide. `WallpaperImportPicker` keeps the
+existing attached sheet when the bundle's launch language matches. Otherwise it
+launches the same executable in `WallpaperImportPickerHelper` mode with a volatile
+`-AppleLanguages` argument. The helper's title, instructions and system file-browser
+controls all resolve in that fresh process; it uses a separate native picker window,
+not a sheet attached to the main process. The parent yields activation before the
+helper shows its picker, then receives the selected URLs as JSON. Cancelling or
+closing the panel stops the owned child; a pipe reaching EOF also dismisses the
+helper if the parent exits. This mode never starts `AppDelegate`, the renderer or
+library services. It preserves the picker filters, multiple selection, directory
+selection and the initiating window's light/dark appearance. Other native dialogs
+and menus still change after quit/reopen.
+
 ## Layers
 
 | Layer | Strings | Mechanism |
 | --- | --- | --- |
 | Native (menus, dialogs, errors, Info.plist) | `App/Resources/Localizable.xcstrings`, `App/Resources/InfoPlist.xcstrings` | `String(localized:)`; the bundle resolves at launch from the `AppleLanguages` override above |
+| Import file picker | `App/Resources/Localizable.xcstrings` plus macOS's native file-browser strings | Same-language sheet, or a short-lived helper whose launch language is the current effective app language |
 | Lock-screen extension (`Extension/`) | `Extension/Localizable.xcstrings` | `String(localized:)` against the extension's own bundle, which follows the macOS language list; literals reach it through `WallpaperRuntime.failure(_:)`, and text that is already final (the renderer's own errors) goes through `failure(detail:)` |
 | Web panel (`WebUI/`) | `WebUI/locales/<tag>.js`, one ES module per language, registered in `WebUI/i18n.js` | `t(source, params)` for JavaScript, `data-i18n` / `data-i18n-label` for static markup; `applyStaticText()` refreshes the latter |
 | Language picker | `AppLanguage.supported` | Each language is listed under its own name, untranslated, so it can be found from any interface language |

@@ -6,6 +6,7 @@ import AppKit
 struct WallpaperEngineApp {
     @MainActor
     static func main() {
+        if WallpaperImportPickerHelper.runIfRequested() { return }
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate

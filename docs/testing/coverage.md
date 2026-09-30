@@ -17,8 +17,13 @@ Swift tests cover, without starting the app:
   pictures: the still `web` project, the original's bytes kept, the file name
   kept out of the page, the fit chosen from the shape, a JPEG display copy for a
   TIFF, an undecodable file refused, **Keep both** keeping the `image-` prefix,
-  and `LibraryImportStore` refusing a second import and rescanning once. The
-  Finder/Dock hand-off in `AppDelegate` is not covered (it needs a running app).
+  and `LibraryImportStore` refusing a second import and rescanning once.
+  `WallpaperImportPickerTests` exercises real child processes: cancellation
+  before launch, reaping after cancellation, cleanup when activation fails,
+  invalid handshakes, and failed exits not being treated as user cancellation.
+  Native picker localization and the real selection-to-parent URL handoff
+  require a separately authorized desktop smoke; these tests open no picker.
+  The Finder/Dock hand-off in `AppDelegate` is not covered (it needs a running app).
 - **Workshop** — search and pagination beneath the UI, committed-query
   pagination, window-sized pages cut from cached Steam pages (including a size
   change while a page loads), superseded requests, cancellation, and exact
