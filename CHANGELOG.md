@@ -8,6 +8,70 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.1 — 2026-09-30
+
+### English
+
+This release adds an experimental option to use applied wallpapers as macOS screen savers, restores glow and live updates in scene wallpapers, and gives Settings a clearer, roomier layout
+
+#### New
+
+- Try an experimental setting on macOS 26 and later that shows applied scene, video, web and still wallpapers as screen savers and restores your previous choice when turned off
+- What's New opens in a larger window with English and Simplified Chinese tabs and starts in the app's current language
+- After you first apply a downloaded wallpaper, the app asks once whether you would like to star it on GitHub or become a Supporter, and is easy to dismiss
+
+#### Improved
+
+- All Settings pages have roomier spacing, cleaner separators and controls that stack in narrow windows, with library and installation paths shown full width
+- Advanced performance controls are split into video, scene and experimental groups, with renderer choices first and running status in collapsible Live diagnostics sections
+- The energy readout in Settings leads with total power and an energy grade, shows CPU and GPU separately and tucks details into an expandable section
+- Workshop download errors now explain that a Steam account that purchased Wallpaper Engine is required, with guidance on buying it or switching accounts
+- The experimental animated lock screen now shows a specific error when macOS loads an incompatible app copy or its configuration fails to load
+- Expand and collapse arrows in Settings are bolder and easier to read, turning accent-colored when open
+- The welcome guide's language picker has a balanced layout, with System (Auto) on its own row above equal language tiles
+
+#### Fixed
+
+- Scene wallpapers show bright glows, bloom and emissive highlights correctly again, and bloom no longer grows out of bounds
+- Scene wallpapers with clocks, text, audio bars and interactive properties update live again
+- Perspective scenes and full-screen effects render at the selected display resolution without losing texture detail, and translucent glows keep their backgrounds
+- Scene wallpapers that rely on scripted layers, templates, hidden textures or perspective particles display their full content again
+- Navigation in the control panel stays visible in full-screen and Split View, and the title bar returns normally on exit
+- The Import file picker now matches the app language right after you change it, without restarting wallpapers
+- The active display filter label in Installed stays on one line without being shrunk or cut off
+
+### 简体中文
+
+此版本新增实验性选项，可将已应用的壁纸用作 macOS 屏幕保护程序，恢复了场景壁纸的光晕效果与实时更新，并让设置页面布局更清晰、更宽松
+
+#### 新增
+
+- 在 macOS 26 及更高版本上可试用一项实验性设置，将已应用的场景、视频、网页和静态壁纸用作屏幕保护程序，关闭后恢复你之前的选择
+- 新功能窗口现在以更大的尺寸打开，提供英文和简体中文标签页，并默认显示应用当前的语言
+- 首次应用下载的壁纸后，应用会询问一次是否愿意在 GitHub 上加星或成为支持者，并且可以轻松关闭
+
+#### 改进
+
+- 所有设置页面的间距更宽松、分隔线更整洁，窄窗口中控件会纵向排列，壁纸库和安装路径以全宽显示
+- 高级性能控件分为视频、场景和实验性三组，渲染器选项排在最前，运行状态放在可折叠的实时诊断区域中
+- 设置中的能耗读数首先显示总功率和能耗等级，分别显示 CPU 和 GPU 读数，并将详细信息收进可展开的区域
+- Workshop 下载出错时会说明需要已购买 Wallpaper Engine 的 Steam 账户，并提供购买或切换账户的指引
+- 实验性动态锁定屏幕现在会在 macOS 加载了不兼容的应用副本或配置加载失败时显示具体错误
+- 设置中的展开和折叠箭头更粗、更易辨认，展开时会显示强调色
+- 欢迎向导中的语言选择器布局更均衡，“系统（自动）”单独占一行，下方为等宽的语言选项
+
+#### 修复
+
+- 场景壁纸重新正确显示明亮光晕、泛光和自发光高光，泛光也不再过度扩散
+- 带有时钟、文字、音频条和交互属性的场景壁纸重新能够实时更新
+- 透视场景和全屏效果按所选显示器分辨率渲染且不丢失纹理细节，半透明光晕后方的背景也得以保留
+- 依赖脚本图层、模板、隐藏纹理或透视粒子的场景壁纸重新完整显示内容
+- 控制面板的导航在全屏和分屏浏览中保持可见，退出后标题栏也会正常恢复
+- 更改应用语言后，导入文件选择器会立即使用新语言，且无需重启壁纸
+- 已安装中当前显示器筛选标签保持单行显示，不再被缩小或截断
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.0...v1.2.1
+
 ## 1.2.0 — 2026-09-29
 
 ### English
