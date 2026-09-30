@@ -114,7 +114,10 @@ float InverseScaleOrIdentity(float scale) {
 
 ParticleRenderScale ParticleSubSystem::RenderScale() const {
     auto owner = m_owner_node.lock();
-    if (! owner) {
+    // A 3D particle's size is in scene units: the model/projection transform
+    // must scale its billboard along with the emitter. Only authored 2D
+    // canvases compensate the owner scale to preserve their pixel-size policy.
+    if (! owner || m_sys.scene.display_sized) {
         ParticleRenderScale scale {};
         scale.rope_subdivision = m_rope_subdivision;
         scale.trail_fraction   = TrailPeriodFraction();

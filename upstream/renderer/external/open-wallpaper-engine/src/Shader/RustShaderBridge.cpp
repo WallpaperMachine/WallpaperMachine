@@ -291,6 +291,7 @@ nlohmann::json BuildRustShaderRequestJson(const RustShaderRequest& request)
                     { "compo1", texture.components[0] },
                     { "compo2", texture.components[1] },
                     { "compo3", texture.components[2] },
+                    { "compo4", texture.components[3] },
                 },
             },
         };

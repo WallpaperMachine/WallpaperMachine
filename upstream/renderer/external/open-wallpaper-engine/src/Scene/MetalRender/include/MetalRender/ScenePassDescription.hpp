@@ -40,6 +40,7 @@ enum class MetalPixelFormat : uint32_t
     RGBA8Unorm_sRGB = 71,
     BGRA8Unorm = 80,
     BGRA8Unorm_sRGB = 81,
+    RGBA16Float = 115,
     Depth32Float = 252,
 };
 

@@ -115,9 +115,9 @@ pub struct ShaderTextureInfo {
     is_enabled: bool,
     /// Backend format hint inferred from the material texture.
     format: TextureFormatHint,
-    /// Enabled state for RGB components used by material combo planning.
+    /// Enabled state for RGBA components used by material combo planning.
     #[cfg_attr(feature = "serde", serde(default))]
-    components: [TextureComponentState; 3],
+    components: [TextureComponentState; 4],
     /// Plane layout this slot is sampled through.
     #[cfg_attr(feature = "serde", serde(default))]
     video_planes: VideoPlaneLayout,
@@ -132,7 +132,7 @@ impl ShaderTextureInfo {
             is_present: true,
             is_enabled,
             format,
-            components: [TextureComponentState::disabled(); 3],
+            components: [TextureComponentState::disabled(); 4],
             video_planes: VideoPlaneLayout::None,
         }
     }
@@ -143,7 +143,7 @@ impl ShaderTextureInfo {
         slot: TextureSlot,
         is_enabled: bool,
         format: TextureFormatHint,
-        components: [TextureComponentState; 3],
+        components: [TextureComponentState; 4],
     ) -> Self {
         Self {
             slot,
@@ -162,7 +162,7 @@ impl ShaderTextureInfo {
         is_present: bool,
         is_enabled: bool,
         format: TextureFormatHint,
-        components: [TextureComponentState; 3],
+        components: [TextureComponentState; 4],
     ) -> Self {
         Self {
             slot,
@@ -207,7 +207,7 @@ impl ShaderTextureInfo {
 
     /// Returns per-component enabled state.
     #[must_use]
-    pub const fn components(&self) -> &[TextureComponentState; 3] {
+    pub const fn components(&self) -> &[TextureComponentState; 4] {
         &self.components
     }
 

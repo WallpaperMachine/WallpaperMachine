@@ -19,7 +19,7 @@ fn texture(slot: u8, is_enabled: bool) -> ShaderTextureInfo {
     )
 }
 
-fn texture_with_components(slot: u8, is_enabled: bool, components: [bool; 3]) -> ShaderTextureInfo {
+fn texture_with_components(slot: u8, is_enabled: bool, components: [bool; 4]) -> ShaderTextureInfo {
     ShaderTextureInfo::with_components(
         TextureSlot::new(slot).expect("valid texture slot"),
         is_enabled,
@@ -200,10 +200,10 @@ void main(){}
 fn records_texture_and_component_combos_from_enabled_texture_state() {
     let metadata = parse_metadata(
         r#"
-uniform sampler2D g_Texture0; // {"combo":"HASTEX","components":[{"combo":"HAS_R"},{"combo":"HAS_G"},{"combo":"HAS_B"}]}
+uniform sampler2D g_Texture0; // {"combo":"HASTEX","components":[{"combo":"HAS_R"},{"combo":"HAS_G"},{"combo":"HAS_B"},{"combo":"HAS_A"}]}
 void main(){}
 "#,
-        &[texture_with_components(0, true, [true, false, true])],
+        &[texture_with_components(0, true, [true, false, true, true])],
     );
 
     assert_eq!(
@@ -212,6 +212,7 @@ void main(){}
             ShaderComboValue::new(ComboName::new("HASTEX").expect("valid combo"), "1"),
             ShaderComboValue::new(ComboName::new("HAS_R").expect("valid combo"), "1"),
             ShaderComboValue::new(ComboName::new("HAS_B").expect("valid combo"), "1"),
+            ShaderComboValue::new(ComboName::new("HAS_A").expect("valid combo"), "1"),
         ]
     );
 }
@@ -243,7 +244,7 @@ fn disabled_present_texture_slots_produce_one_texture_combo_and_no_component_com
 uniform sampler2D g_Texture2; // {"combo":"MASK","components":[{"combo":"MASK_R"}]}
 void main(){}
 "#,
-        &[texture_with_components(2, false, [true, true, true])],
+        &[texture_with_components(2, false, [true, true, true, true])],
     );
 
     assert_eq!(

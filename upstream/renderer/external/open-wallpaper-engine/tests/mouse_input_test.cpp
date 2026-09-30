@@ -1,9 +1,12 @@
 #include "Presentation/WallpaperScaling.hpp"
 #include "Runtime/SceneRuntimeContext.hpp"
+#include "Runtime/SceneSettingResolver.hpp"
+#include "Scene/Scene.h"
 #include "Scripting/ScriptEngine.hpp"
 #include "Scene/SceneNode.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 namespace wallpaper
 {
@@ -536,6 +539,99 @@ TEST(MouseInput, GlobalReleaseRemainsObservableOutsidePresentedContentAndWindow)
     runtime->SetCursorEnter(true);
     runtime->DispatchCursorFrameEvents(false);
     EXPECT_FLOAT_EQ(marker->Translate().x(), 2.0f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(MouseInput, HiddenCallbackHelperDrivesOverlayAcrossProjectedOpaqueEnterAndExit) {
+    Scene scene;
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .canvas_width = 1920,
+        .canvas_height = 1080,
+    });
+    runtime->AttachScene(&scene);
+    auto camera_node = std::make_shared<SceneNode>();
+    camera_node->SetTranslate(Eigen::Vector3f(0, 0, 100));
+    auto lens = std::make_shared<SceneCamera>(1920.0f / 1080.0f, 0.1f, 500.0f, 45.0f);
+    lens->AttatchNode(camera_node);
+    scene.cameras["lens"] = lens;
+    auto canvas_camera = std::make_shared<SceneCamera>(1920, 1080, -5000.0f, 5000.0f);
+    scene.activeCamera = canvas_camera.get();
+
+    auto parent = std::make_shared<SceneNode>();
+    parent->SetTranslate(Eigen::Vector3f(12, 8, 0));
+    parent->SetScale(Eigen::Vector3f(1.3f, 0.8f, 1));
+    parent->SetRotation(Eigen::Vector3f(0, 0, 0.2f));
+    auto helper = std::make_shared<SceneNode>();
+    helper->SetTranslate(Eigen::Vector3f(3, -2, -5));
+    helper->SetRotation(Eigen::Vector3f(0.3f, 0, 0));
+    helper->SetCamera("lens");
+    parent->AppendChild(helper);
+    auto overlay = std::make_shared<SceneNode>();
+    runtime->RegisterNode("overlay", overlay.get());
+    runtime->RegisterNode("helper", helper.get());
+    runtime->RegisterNodeSize("helper", Eigen::Vector2f(20, 20));
+    runtime->RegisterNodeHitMask("helper", NodeHitMask {
+        .width = 2, .height = 1, .alpha = {255, 0},
+    });
+    runtime->RegisterNodeVisibility("helper", helper.get(), ResolveBoolSetting(*runtime, {
+        {"value", false}, {"script", R"JS(
+shared.highlighted = false;
+export function cursorEnter() {
+    shared.highlighted = true;
+    const overlay = thisScene.getLayer('overlay');
+    const origin = overlay.origin;
+    origin.x++;
+    overlay.origin = origin;
+}
+export function cursorLeave() {
+    shared.highlighted = false;
+    const overlay = thisScene.getLayer('overlay');
+    const origin = overlay.origin;
+    origin.y++;
+    overlay.origin = origin;
+}
+)JS"},
+    }, "helper"));
+    auto material = std::make_shared<SceneMaterial>();
+    material->customShader.constValues["g_Alpha"] = ShaderValue(0.0f);
+    runtime->BindMaterialAlpha(material, ResolveFloatSetting(*runtime, {
+        {"value", 0.0f}, {"script", R"JS(
+export function update(value) {
+    return value + ((shared.highlighted ? 1 : 0) - value) * 0.5;
+}
+)JS"},
+    }, "overlay"));
+    runtime->Tick(0.01);
+    EXPECT_FALSE(helper->Visible());
+    EXPECT_FLOAT_EQ(material->customShader.constValues.at("g_Alpha")[0], 0.0f);
+
+    bool was_in_window = false;
+    const auto pointer_at = [&](double local_x) {
+        helper->UpdateTrans();
+        const Eigen::Vector4d clip = lens->GetViewProjectionMatrix() *
+            helper->ModelTrans() * Eigen::Vector4d(local_x, 0, 0, 1);
+        runtime->SetCursorInput(static_cast<float>(0.5 + 0.5 * clip.x() / clip.w()),
+                                static_cast<float>(0.5 - 0.5 * clip.y() / clip.w()));
+        runtime->SetCursorEnter(true);
+        was_in_window = runtime->DispatchCursorFrameEvents(was_in_window);
+        runtime->Tick(0.01);
+        return material->customShader.constValues.at("g_Alpha")[0];
+    };
+    EXPECT_FLOAT_EQ(pointer_at(5), 0.0f); // Transparent part is not a hit.
+    EXPECT_FLOAT_EQ(pointer_at(-5), 0.5f);
+    EXPECT_TRUE(overlay->Translate().isApprox(Eigen::Vector3f(1, 0, 0)));
+    EXPECT_FLOAT_EQ(pointer_at(-5), 0.75f);
+    EXPECT_TRUE(overlay->Translate().isApprox(Eigen::Vector3f(1, 0, 0)));
+    EXPECT_FLOAT_EQ(pointer_at(5), 0.375f); // Crossing coverage exits once.
+    EXPECT_TRUE(overlay->Translate().isApprox(Eigen::Vector3f(1, 1, 0)));
+    EXPECT_FLOAT_EQ(pointer_at(-5), 0.6875f);
+    runtime->SetCursorEnter(false);
+    was_in_window = runtime->DispatchCursorFrameEvents(was_in_window);
+    runtime->Tick(0.01);
+    EXPECT_FALSE(was_in_window);
+    EXPECT_FLOAT_EQ(material->customShader.constValues.at("g_Alpha")[0], 0.34375f);
+    EXPECT_TRUE(overlay->Translate().isApprox(Eigen::Vector3f(2, 2, 0)));
+    EXPECT_FALSE(helper->Visible());
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Runtime/DynamicValue.hpp"
+#include "Project/ProjectProperties.hpp"
 
 #include <map>
 #include <string>
@@ -32,6 +33,8 @@ public:
     uint8_t CursorHandlerMask() const noexcept;
 
     void reevaluate();
+    void ApplyProjectProperties(const ProjectProperties& project_properties,
+                                const ProjectProperties& changed_properties);
     void DispatchCursorClick(const ScriptHostContext& host_context);
     void DispatchCursorDown(const ScriptHostContext& host_context);
     void DispatchCursorEnter(const ScriptHostContext& host_context);

@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -3035,6 +3036,10 @@ TEST(SceneSchema, ParserBuildsLdrBloomPostProcessWhenBloomEnabledWithoutHdr) {
     ASSERT_NE(mip1_rt, nullptr);
     ASSERT_NE(mip2_rt, nullptr);
     ASSERT_NE(combine_rt, nullptr);
+    EXPECT_EQ(default_rt->format, TextureFormat::RGBA8);
+    EXPECT_EQ(mip1_rt->format, TextureFormat::RGBA8);
+    EXPECT_EQ(mip2_rt->format, TextureFormat::RGBA8);
+    EXPECT_EQ(combine_rt->format, TextureFormat::RGBA8);
     EXPECT_TRUE(default_rt->bind.enable);
     EXPECT_TRUE(default_rt->bind.screen);
     EXPECT_EQ(default_rt->width, 640);
@@ -3056,19 +3061,16 @@ TEST(SceneSchema, ParserBuildsLdrBloomPostProcessWhenBloomEnabledWithoutHdr) {
     EXPECT_EQ(combine_rt->height, 360);
 }
 
-TEST(SceneSchema, ParserBuildsLdrBloomPostProcessWhenHdrBloomEnabled) {
+TEST(SceneSchema, HdrBloomRejectsMissingHdrMaterialsRatherThanFallingBackToLdr) {
     fs::VFS vfs;
     MountBloomSceneFiles(vfs);
-    audio::SoundManager sound_manager;
-    WPSceneParser       parser;
+    audio::SoundManager sound_manager { audio::SoundManager::OutputBackend::Null };
+    WPSceneParser parser;
 
-    auto parsed = parser.Parse("hdr-bloom", BloomSceneJson(true), vfs, sound_manager);
-    ASSERT_NE(parsed, nullptr);
-    ASSERT_EQ(parsed->post_processes.size(), 1u);
-    ASSERT_NE(parsed->post_processes[0], nullptr);
-    EXPECT_EQ(parsed->post_processes[0]->name, "__bloom");
-    EXPECT_NE(parsed->FindRenderTarget("_rt_bloom_mip1"), nullptr);
-    EXPECT_NE(parsed->FindRenderTarget("_rt_bloom_combine"), nullptr);
+    // A complete LDR pipeline cannot stand in for a missing HDR dependency:
+    // doing so clips the scene before extracting its overbright contribution.
+    EXPECT_THROW(parser.Parse("missing-hdr-bloom", BloomSceneJson(true), vfs, sound_manager),
+                 std::runtime_error);
 }
 
 TEST(SceneSchema, ParserDoesNotCommitPartialBloomStateWhenMaterialLoadFails) {

@@ -130,6 +130,10 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_TEXTURE_SURFACE` | `offscreen_scene_probe` | `<width>x<height>` opts into the production display-sized texture mip policy without changing raster extent; unset retains all source levels for before/after image and allocation comparisons. Native Metal uses its surface size automatically |
 | `WE_TEST_SURFACE` | `offscreen_scene_probe` | `<width>x<height>` physical output extent; defaults to `1920x1080`. Perspective scenes use it as their full-scale raster; authored 2D canvases keep their size |
 | `WE_TEST_CAPTURE_LAST=1` | `offscreen_scene_probe` | Draw every requested frame but save only the last, for long intro and text-update checks without thousands of images |
+| `WE_TEST_METAL_FRAME_STEP` | `metal_scene_draw_smoke` | Simulation delta in seconds; default `1/60`. Use `1/120` and twice as many frames for a matched-duration 120 FPS scenario |
+| `WE_TEST_INPUT_JSON` | both scene probes | Ordered synthetic pointer events: `[{"frame":600,"layer":42,"inside":true,"buttons":1},{"frame":601,"buttons":0}]`. `layer` follows that parsed node's projected centre; `x`/`y` supply normalized coordinates instead. An exit uses `inside:false`. No desktop input |
+| `WE_TEST_SAMPLE_FRAMES` | both scene probes | JSON array of frame indices. Saves each frame and `state-N.json` with live transforms, material values, text and script-error count |
+| `WE_TEST_AUDIO_AMPLITUDE` / `WE_TEST_AUDIO_NOISE=1` | both scene probes | Amplitude `0..1` (default `.025`) and optional deterministic broadband PCM instead of a sine, with `WE_TEST_AUDIO_HZ` set. A single tone cannot exercise scripts averaging several frequency bands |
 | `WE_TEST_SCENE_OPTIMIZATION=0` | `metal_scene_draw_smoke` | Turns static-result reuse off around the local-project loop, which is how a scene that looks wrong under it is compared with the same scene drawn every frame. Process-global, so it is restored afterwards |
 | `WE_TEST_METAL_DUMP_TARGETS` | `metal_scene_draw_smoke` | Colon-separated render target names, or `*` for every target the scene declares. Each is reported with its size and mean luma and, with `WE_TEST_OUTPUT` set, written as a PPM. Target names carry a per-run suffix, so `*` is the only way to name one across two processes |
 | `WE_TEST_EXPECT_WARM=1` | `text_object_runtime_test` | Assert zero shader compilations on a second run |
@@ -602,9 +606,12 @@ uploads (`MetalSceneDraw.TextStylingChangesPixelsWithoutRerasterizingGlyphs`).
 Text scripts first run on the normal ordered tick, not while objects are still
 being parsed. The layout queue is FIFO and coalesces updates in place;
 `AWaitingClockIsNotStarvedByNewerReadoutUpdates` blocks the worker deterministically
-to verify that newer readouts cannot overtake a waiting clock. An effect target
-grows geometrically, up to 4096 per dimension, only when its caption outgrows
-the current capacity; that size change requests a graph rebuild.
+to verify that newer readouts cannot overtake a waiting clock. Completed glyph
+images publish in revision order even when a newer value is pending; continuously
+changing labels must not remain blank waiting for an exact-current revision.
+The test compares the published glyph pixels before and after catching up.
+An effect target grows geometrically, up to 4096 per dimension, only when its
+caption outgrows the current capacity; that size change requests a graph rebuild.
 
 `CameraFraming.AFullscreenEffectCoversAPerspectiveScene` checks full-screen
 coverage independently of the perspective FOV. `RenderScale` covers physical
@@ -625,6 +632,42 @@ disposable `WE_TEST_CACHE`, then run with
 `WE_TEST_EXPECT_WARM=1` for a second run. It parses the package, ticks scripts
 and constructs the render graph; it does not initialize playback, capture the
 desktop, or modify the imported wallpaper.
+
+### HDR bloom, emissive masks and interactive scenes
+
+An authored `hdr` scene uses RGBA16F color intermediates on both backends.
+Masks and source media remain in their original formats; SDR scenes retain
+RGBA8. HDR shader combos are enabled before compilation, not approximated by
+raising final display brightness. The fourth texture-component flag (TEX bit23)
+travels through the C++/Rust compiler interface, so an alpha-channel emissive
+mask can enable its shader branch.
+
+HDR bloom uses the supplied downsample, additive upsample and SDR-combine
+materials. The pyramid is bounded to 12 levels, with source-sized sample
+offsets refreshed at prepare/resize. The general bounded model maps positive
+spread `s` to a coarse-level weight `s / (1 + s)` and divides extraction strength
+by the sum of the pyramid weights. Spread redistributes energy rather than
+amplifying a constant field. Zero strength disables the halo; negative spread
+has the same narrow kernel as zero. These are this renderer's defined semantics,
+not a verified reproduction of Wallpaper Engine's proprietary parameter mapping.
+`HdrSpreadPreservesEnergyAndStrengthScalesTheHalo` checks GPU pixels across live
+strength/spread changes, including large spread and zero strength.
+
+`ParsedHdrRadianceSurvivesEffectsLayerLinksAndBloom` uses an original bit23
+emissive texture through the real parser, effect chain and layer references.
+The native and Compatibility overbright regressions read pixels and unclamped
+radiance. Missing HDR materials fail rather than silently substituting LDR.
+
+`applyUserProperties` runs once initially, then only for changed properties,
+after the whole property set has been refreshed. Test clock clicks and hidden
+helper enter/leave through projected input, not by forcing overlay alpha.
+Likewise, a closed author menu and an audio-driven wave with no audio are not
+evidence that a rendered frame has exercised either feature.
+
+Perspective particle billboards keep object scale; authored 2D canvases retain
+their pixel-size compensation. Quantity remains the documented emission-rate
+factor, not a replacement for the authored maximum count. Tests cover both
+projection policies, hierarchy, depth and reflection.
 
 ### Textures, allocation and composition
 
@@ -971,6 +1014,11 @@ readback, busy coalescing, invalidation) and `metal_video_texture_test` (BGRA
 import and NV12 conversion against the CPU colour reference, from synthetic
 frames); all four run in the check, draw only into private textures and skip
 visibly without a Metal device.
+
+`unchanged_present_test` measures real-time frame cadence, including zero skipped
+baseline video frames. Run the renderer gate without concurrent builds or other
+benchmark jobs; a scheduling stall can fail that baseline even when generated
+pixel comparisons pass. Keep such failures visible rather than excluding the test.
 
 Useful filters:
 

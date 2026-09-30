@@ -16,6 +16,7 @@
 #include "WPSceneParser.hpp"
 #include "WPPkgFs.hpp"
 #include "SceneSourceResolver.hpp"
+#include "scene_probe_controls.hpp"
 #include <charconv>
 #include <cstdio>
 #include "SpecTexs.hpp"
@@ -131,45 +132,20 @@ void Begin(vvk::CommandBuffer& command) {
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT }) == VK_SUCCESS, "begin command");
 }
 
-void ReadImage(Device& device, RenderingResources& rr, const ImageParameters& image,
+void ReadImage(Device& device, RenderingResources&, const ImageParameters& image,
                const std::filesystem::path& path) {
-    auto& command = rr.command;
-    VmaBufferParameters buffer;
-    Check(CreateReadbackBuffer(device.vma_allocator(), image.extent.width * image.extent.height * 4, buffer), "readback allocation");
-    Check(device.tex_cache().BeginVideoFrameRecording(), "begin readback pin scope");
-    Begin(command);
-    VkImageMemoryBarrier barrier {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image.handle,
-        .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 },
-    };
-    command.PipelineBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, barrier);
-    VkBufferImageCopy region { .imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }, .imageExtent = image.extent };
-    command.CopyImageToBuffer(image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, *buffer.handle, spanone { region });
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    command.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, barrier);
-    Submit(device, rr);
-    void* bytes = nullptr;
-    Check(buffer.handle.MapMemory(&bytes) == VK_SUCCESS, "map readback");
-    Check(vmaInvalidateAllocation(device.vma_allocator(), buffer.handle.Allocation(), 0, VK_WHOLE_SIZE) == VK_SUCCESS, "invalidate readback");
-    Ppm(path, static_cast<const uint8_t*>(bytes), image.extent.width, image.extent.height);
+    std::vector<uint8_t> bytes;
+    std::string error;
+    Check(device.tex_cache().ReadbackImageSample(image, 0, 0,
+        image.extent.width, image.extent.height, &bytes, &error), error.c_str());
+    Ppm(path, bytes.data(), image.extent.width, image.extent.height);
     if (std::getenv("WE_TEST_DUMP_ALPHA") != nullptr) {
         auto alpha_path = path;
         alpha_path.replace_extension("");
         alpha_path += "-alpha.ppm";
-        PpmAlpha(alpha_path, static_cast<const uint8_t*>(bytes), image.extent.width,
+        PpmAlpha(alpha_path, bytes.data(), image.extent.width,
                  image.extent.height);
     }
-    buffer.handle.UnMapMemory();
 }
 
 // Feeds the scene the now-playing state the app would deliver, so a media
@@ -660,14 +636,27 @@ int main() {
         }
 
         const bool capture_last = std::getenv("WE_TEST_CAPTURE_LAST") != nullptr;
+        tests::SceneProbeControls controls;
+        scene->runtime->SetScreenResolution(
+            Eigen::Vector2f(surface_extent.width, surface_extent.height));
+        const auto cursor_layout = ComputeWallpaperScalingLayout(
+            WallpaperScalingMode::FILL, extents.source.width, extents.source.height,
+            surface_extent.width, surface_extent.height, 1.0, 1.0);
         for (int frame = 0; frame < frame_count; ++frame) {
+            if (controls.hasInput()) {
+                const auto& camera = *scene->cameras.at("global");
+                const auto position = camera.GetPosition();
+                controls.input(*scene, frame, ComputeWallpaperCursorMapping(
+                    cursor_layout, position.x(), position.y(),
+                    camera.VisibleWidth(), camera.VisibleHeight()));
+            }
             scene->shaderValueUpdater->FrameBegin();
             if (audio_hz_env) {
                 // Synthetic PCM only. Submit after GPU setup so the live-input
                 // timeout cannot expire while shaders/pipelines are compiling.
                 std::array<float, 2400> pcm {};
                 for (size_t i = 0; i < pcm.size(); ++i) {
-                    pcm[i] = 0.025f * std::sin(2.0 * 3.141592653589793 * audio_hz * i / 12000.0);
+                    pcm[i] = controls.audioSample(i, audio_hz);
                 }
                 const auto generation = audio::CurrentAudioSpectrumSnapshot().generation;
                 Check(audio::SubmitMonoAudioFrames(12000, pcm.size(), pcm.data(), &error),
@@ -752,8 +741,9 @@ int main() {
                 }
             }
             Submit(device, rr);
-            if (! capture_last || frame == frame_count - 1)
+            if (! capture_last || frame == frame_count - 1 || controls.sample(frame))
                 ReadImage(device, rr, *result, out / ("frame-" + std::to_string(frame) + ".ppm"));
+            if (controls.sample(frame)) controls.state(*scene, frame, out);
             // The same knob the Metal harness takes, so a target can be held
             // against its counterpart on the other backend instead of the two
             // being described from different code. Names carry a per-run

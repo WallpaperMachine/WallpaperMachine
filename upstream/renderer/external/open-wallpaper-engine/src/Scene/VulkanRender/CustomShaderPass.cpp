@@ -631,7 +631,7 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                 ResolveAttachmentLoadOp(m_desc.preserve_target_contents, m_desc.clear_on_first_use);
         }
         auto opt = CreateRenderPass(device.handle(),
-                                    VK_FORMAT_R8G8B8A8_UNORM,
+                                    ToVkType(scene.FindRenderTarget(m_desc.output)->format),
                                     loadOp,
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                     m_desc.sample_count,

@@ -53,6 +53,16 @@ public:
     float                bloomstrength { 0.0f };
     float                bloomthreshold { 0.0f };
     bool                 hdr { false };
+    float                bloomhdrstrength { 2.0f };
+    float                bloomhdrthreshold { 1.0f };
+    float                bloomhdrscatter { 1.0f };
+    float                bloomhdrfeather { 0.5f };
+    int32_t              bloomhdriterations { 6 };
+    nlohmann::json       bloomhdrstrength_setting;
+    nlohmann::json       bloomhdrthreshold_setting;
+    nlohmann::json       bloomhdrscatter_setting;
+    nlohmann::json       bloomhdrfeather_setting;
+    nlohmann::json       bloomhdriterations_setting;
     bool                 norecompile { false };
     std::array<float, 3> bloomtint { 1.0f, 1.0f, 1.0f };
     float                perspectiveoverridefov { 0.0f };

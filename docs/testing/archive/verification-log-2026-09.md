@@ -15,6 +15,13 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Keep the active-display filter on one line
+
+- Offscreen WKWebView smoke — exit 0; 24 cases across 760, 840, 841, 1040, 1041 and 1280px in English, Japanese, Simplified Chinese and Traditional Chinese. The full label occupies one line without overflow; checking and clearing Active filters the expected wallpapers. Discover widths and collapsed layout remain unchanged. Throwaway probe removed.
+- `python3 scripts/test.py` — first pass failed: 850 passed, 2 failed, 11 skipped. The broad sidebar sizing rule changed Discover width; it is now scoped to the Active row. The other failure was the documented WebKit InvalidTransition/deinit error.
+- `python3 scripts/test.py --serial` — exit 0; 852 passed, 0 failed, 11 skipped of 863; all Python script modules passed. Skips cover opt-in native media and live Workshop checks.
+- Mechanical UI scan returned no findings. No desktop screenshots or visual run; no Release rebuild.
+
 ## 2026-09-30 — Consistent Settings spacing
 
 - Promoted Storage spacing to shared Settings rules; preserved ongoing import-picker changes and changed no settings actions or native APIs.

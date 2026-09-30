@@ -404,6 +404,7 @@ private:
         bool               share_ready { false };
         bool               persist { false };
         TexHash            content_hash;
+        TextureFormat      format { TextureFormat::RGBA8 };
         VmaImageParameters image;
         Set<std::string>   query_keys;
     };

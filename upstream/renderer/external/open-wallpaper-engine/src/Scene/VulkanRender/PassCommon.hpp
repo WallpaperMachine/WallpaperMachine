@@ -326,6 +326,25 @@ inline void RefreshScreenBoundTextureResolutions(Scene& scene) {
             for (const auto& effect_node : effect->nodes) refresh(effect_node.sceneNode.get());
         }
     }
+    for (const auto& post : scene.post_processes) {
+        if (post == nullptr) continue;
+        for (const auto& step : post->steps) {
+            const auto* pass = std::get_if<ScenePostProcessPass>(&step);
+            if (pass == nullptr || pass->node == nullptr) continue;
+            refresh(pass->node.get());
+            auto* mesh = pass->node->Mesh();
+            if (mesh == nullptr) continue;
+            for (const auto& material : mesh->MaterialSlots()) {
+                if (material == nullptr || material->name != "hdr_downsample" ||
+                    material->textures.empty()) continue;
+                const auto* source = scene.FindRenderTarget(material->textures.front());
+                if (source == nullptr || source->width <= 0 || source->height <= 0) continue;
+                const float x = 0.5f / source->width, y = 0.5f / source->height;
+                material->customShader.constValues["g_RenderVar0"] =
+                    std::array<float, 4>{x, y, -x, -y};
+            }
+        }
+    }
 }
 
 inline SceneRasterExtents ResolveScreenBoundRenderTargetSizes(Scene&            scene,
@@ -483,7 +502,7 @@ inline TextureKey ToTexKey(wallpaper::SceneRenderTarget rt) {
         .width        = rt.width,
         .height       = rt.height,
         .usage        = {},
-        .format       = wallpaper::TextureFormat::RGBA8,
+        .format       = rt.format,
         .sample       = rt.sample,
         .mipmap_level = rt.mipmap_level,
         .sample_count = SampleCountFromValue(rt.sample_count),

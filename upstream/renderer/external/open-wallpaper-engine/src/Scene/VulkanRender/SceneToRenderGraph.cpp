@@ -225,6 +225,9 @@ static std::string IsolateReferencedLayerOutput(
         target.width      = defaults != nullptr ? defaults->width : std::max(1, scene.ortho[0]);
         target.height     = defaults != nullptr ? defaults->height : std::max(1, scene.ortho[1]);
         target.allowReuse = true;
+        target.format     = defaults != nullptr ? defaults->format
+                                               : (scene.hdr ? TextureFormat::RGBA16F
+                                                            : TextureFormat::RGBA8);
         scene.renderTargets[key] = target;
     }
     return key;

@@ -3117,6 +3117,28 @@ void PropertyScriptProgram::UpdateScriptProperties() {
     JS_FreeValue(context_handle, global_object);
 }
 
+void PropertyScriptProgram::ApplyProjectProperties(
+    const ProjectProperties& project_properties, const ProjectProperties& changed_properties) {
+    if (! m_valid) return;
+    auto* context_handle = static_cast<JSContext*>(m_impl_context);
+    if (context_handle == nullptr) return;
+    JSValue global_object = JS_GetGlobalObject(context_handle);
+    JS_SetPropertyStr(context_handle, global_object, "__sceneProps",
+                      CreateScenePropertiesObject(context_handle, project_properties));
+    SetEngineUserProperties(context_handle, global_object, project_properties);
+    JS_FreeValue(context_handle, global_object);
+    UpdateScriptProperties();
+    // Lazy initialization delivers the full initial snapshot once, not an
+    // additional changed-property event before the program has initialized.
+    if (! m_init_called || changed_properties.empty()) return;
+    JSValue changed = CreateChangedPropertiesObject(context_handle, changed_properties);
+    JSValueConst argv[] = { changed };
+    JSValue result = CallStoredExport(
+        context_handle, m_exports_object_name.c_str(), "applyUserProperties", 1, argv);
+    JS_FreeValue(context_handle, result);
+    JS_FreeValue(context_handle, changed);
+}
+
 DynamicValueUniquePtr PropertyScriptProgram::Evaluate(const ScriptHostContext& host_context,
                                                       const DynamicValue&      current_value) {
     auto* context_handle = static_cast<JSContext*>(m_impl_context);
@@ -3401,7 +3423,7 @@ void SceneScriptProgram::UpdateHostContext(const ScriptHostContext& host_context
     JS_FreeValue(context_handle, global_object);
 }
 
-void SceneScriptProgram::ApplyUserProperties(const ProjectProperties& project_properties) {
+void SceneScriptProgram::ApplyUserProperties(const ProjectProperties& property_changes) {
     auto* context_handle = static_cast<JSContext*>(m_impl_context);
     if (context_handle == nullptr) return;
 
@@ -3409,10 +3431,10 @@ void SceneScriptProgram::ApplyUserProperties(const ProjectProperties& project_pr
     JS_SetPropertyStr(context_handle,
                       global_object,
                       "__sceneProps",
-                      CreateScenePropertiesObject(context_handle, project_properties));
-    SetEngineUserProperties(context_handle, global_object, project_properties);
+                      CreateScenePropertiesObject(context_handle, m_project_properties));
+    SetEngineUserProperties(context_handle, global_object, m_project_properties);
 
-    JSValue changed_properties = CreateChangedPropertiesObject(context_handle, project_properties);
+    JSValue changed_properties = CreateChangedPropertiesObject(context_handle, property_changes);
     JSValueConst argv[]        = { changed_properties };
     JSValue      result        = CallStoredExport(
         context_handle, m_exports_object_name.c_str(), "applyUserProperties", 1, argv);
@@ -3421,9 +3443,11 @@ void SceneScriptProgram::ApplyUserProperties(const ProjectProperties& project_pr
     JS_FreeValue(context_handle, global_object);
 }
 
-void SceneScriptProgram::ApplyProjectProperties(const ProjectProperties& project_properties) {
+void SceneScriptProgram::ApplyProjectProperties(const ProjectProperties& project_properties,
+                                                const ProjectProperties& changed_properties) {
     m_project_properties = project_properties;
-    ApplyUserProperties(m_project_properties);
+    if (changed_properties.empty()) return;
+    ApplyUserProperties(changed_properties);
 }
 
 void SceneScriptProgram::Tick(const ScriptHostContext& host_context) {

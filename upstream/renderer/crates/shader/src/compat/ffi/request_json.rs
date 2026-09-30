@@ -257,14 +257,18 @@ struct TextureComponentsDto {
     /// Third component.
     #[serde(default)]
     compo3: bool,
+    /// Alpha component, including emissive masks.
+    #[serde(default)]
+    compo4: bool,
 }
 
-impl From<TextureComponentsDto> for [TextureComponentState; 3] {
+impl From<TextureComponentsDto> for [TextureComponentState; 4] {
     fn from(components: TextureComponentsDto) -> Self {
         [
             TextureComponentState::new(components.compo1),
             TextureComponentState::new(components.compo2),
             TextureComponentState::new(components.compo3),
+            TextureComponentState::new(components.compo4),
         ]
     }
 }

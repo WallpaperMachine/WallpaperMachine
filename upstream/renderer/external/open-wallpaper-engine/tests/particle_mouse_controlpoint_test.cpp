@@ -115,6 +115,103 @@ void AddSingleSizedParticleEmitter(ParticleSubSystem& subsystem, float size) {
     });
 }
 
+Eigen::Vector2d ProjectFirstBillboardExtent(const SceneMesh& mesh, SceneNode& owner,
+                                           const SceneCamera& camera) {
+    const auto& vertices = mesh.GetVertexArray(0);
+    const auto offsets = vertices.GetAttrOffsetMap();
+    const auto position = offsets.find(WE_IN_POSITION)->second.offset / sizeof(float);
+    const auto texcoord = offsets.find(WE_IN_TEXCOORDVEC4)->second.offset / sizeof(float);
+    owner.UpdateTrans();
+    const Eigen::Matrix4d mvp = camera.GetViewProjectionMatrix() * owner.RenderTrans();
+    Eigen::Vector2d minimum = Eigen::Vector2d::Constant(1.0e30);
+    Eigen::Vector2d maximum = -minimum;
+    for (std::size_t i = 0; i < 4; ++i) {
+        const float* vertex = vertices.Data() + i * vertices.OneSize();
+        // The unrotated genericparticle billboard expands its UV corners by
+        // ParticleSize before applying the model/view/projection transform.
+        const double half_size = vertex[texcoord + 3];
+        const Eigen::Vector4d corner {
+            vertex[position] + (vertex[texcoord] * 2.0 - 1.0) * half_size,
+            vertex[position + 1] + (vertex[texcoord + 1] * 2.0 - 1.0) * half_size,
+            vertex[position + 2],
+            1.0,
+        };
+        const Eigen::Vector4d clip = mvp * corner;
+        EXPECT_GT(clip.w(), 0.0);
+        const Eigen::Vector2d ndc = clip.head<2>() / clip.w();
+        minimum = minimum.cwiseMin(ndc);
+        maximum = maximum.cwiseMax(ndc);
+    }
+    return maximum - minimum;
+}
+
+TEST(ParticleMouseControlpoint, DisplaySizedBillboardsFollowObjectScaleAndPerspectiveDepth) {
+    Scene scene;
+    scene.display_sized = true;
+    scene.frameTime = 1.0 / 60.0;
+    SceneCamera camera(1.0f, 0.1f, 100.0f, 90.0f);
+    auto owner = std::make_shared<SceneNode>();
+    owner->SetTranslate(Eigen::Vector3f(0.0f, 0.0f, -10.0f));
+    auto mesh = MakeParticleMesh(1);
+    ParticleSystem system(scene);
+    system.gener = std::make_unique<WPParticleRawGener>();
+    auto subsystem = MakeTestSubsystem(system, mesh);
+    subsystem->SetOwnerNode(owner);
+    AddSingleSizedParticleEmitter(*subsystem, 2.0f);
+
+    for (float scale : { 0.25f, 0.75f, 1.0f }) {
+        owner->SetScale(Eigen::Vector3f::Constant(scale));
+        subsystem->Emitt();
+        const auto extent = ProjectFirstBillboardExtent(*mesh, *owner, camera);
+        EXPECT_NEAR(extent.x(), 0.2 * scale, 1.0e-6);
+        EXPECT_NEAR(extent.y(), 0.2 * scale, 1.0e-6);
+    }
+
+    owner->SetTranslate(Eigen::Vector3f(0.0f, 0.0f, -20.0f));
+    subsystem->Emitt();
+    const auto farther = ProjectFirstBillboardExtent(*mesh, *owner, camera);
+    EXPECT_NEAR(farther.x(), 0.1, 1.0e-6);
+    EXPECT_NEAR(farther.y(), 0.1, 1.0e-6);
+
+    auto parent = std::make_shared<SceneNode>();
+    parent->SetScale(Eigen::Vector3f(2.0f, 3.0f, 1.0f));
+    parent->AppendChild(owner);
+    owner->SetScale(Eigen::Vector3f(-0.5f, 0.5f, 1.0f));
+    subsystem->Emitt();
+    const auto inherited = ProjectFirstBillboardExtent(*mesh, *owner, camera);
+    EXPECT_NEAR(inherited.x(), 0.1, 1.0e-6);
+    EXPECT_NEAR(inherited.y(), 0.15, 1.0e-6);
+}
+
+TEST(ParticleMouseControlpoint, AuthoredCanvasBillboardsKeepPixelSizeWhenOwnerScaleChanges) {
+    Scene scene;
+    scene.display_sized = false;
+    scene.frameTime = 1.0 / 60.0;
+    SceneCamera camera(100, 100, 0.1f, 100.0f);
+    auto owner = std::make_shared<SceneNode>();
+    owner->SetTranslate(Eigen::Vector3f(0.0f, 0.0f, -10.0f));
+    auto mesh = MakeParticleMesh(1);
+    ParticleSystem system(scene);
+    system.gener = std::make_unique<WPParticleRawGener>();
+    auto subsystem = MakeTestSubsystem(system, mesh);
+    subsystem->SetOwnerNode(owner);
+    AddSingleSizedParticleEmitter(*subsystem, 2.0f);
+
+    for (float scale : { 0.25f, 0.75f, -1.5f }) {
+        owner->SetScale(Eigen::Vector3f(scale, scale, 1.0f));
+        subsystem->Emitt();
+        const auto extent = ProjectFirstBillboardExtent(*mesh, *owner, camera);
+        EXPECT_NEAR(extent.x(), 0.04, 1.0e-6);
+        EXPECT_NEAR(extent.y(), 0.04, 1.0e-6);
+        // An authored 2D canvas may opt into perspective particles without
+        // changing the layer's established scale compensation policy.
+        SceneCamera perspective(1.0f, 0.1f, 100.0f, 90.0f);
+        const auto perspective_extent = ProjectFirstBillboardExtent(*mesh, *owner, perspective);
+        EXPECT_NEAR(perspective_extent.x(), 0.2, 1.0e-6);
+        EXPECT_NEAR(perspective_extent.y(), 0.2, 1.0e-6);
+    }
+}
+
 TEST(ParticleMouseControlpoint, EmitterControlpointOffsetsBoxSpawnOrigin) {
     ParticleBoxEmitterArgs args {};
     args.directions    = { 0.0f, 0.0f, 0.0f };

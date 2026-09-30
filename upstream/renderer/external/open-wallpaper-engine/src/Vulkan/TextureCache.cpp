@@ -40,6 +40,7 @@ VkFormat ToVkType(TextureFormat tf) {
     case TextureFormat::RG8: return VK_FORMAT_R8G8_UNORM;
     case TextureFormat::RGB8: return VK_FORMAT_R8G8B8_UNORM;
     case TextureFormat::RGBA8: return VK_FORMAT_R8G8B8A8_UNORM;
+    case TextureFormat::RGBA16F: return VK_FORMAT_R16G16B16A16_SFLOAT;
     default: assert(false); return VK_FORMAT_R8G8B8A8_UNORM;
     }
 }
@@ -587,10 +588,16 @@ bool TextureCache::ReadbackImageSample(const ImageParameters& image, uint32_t x,
         return SetError(error, "readback sample origin is outside the image extent");
     }
 
+    const bool half_float = std::any_of(m_query_texs.begin(), m_query_texs.end(),
+        [&](const auto& target) {
+            return *target->image.handle == image.handle &&
+                   target->format == TextureFormat::RGBA16F;
+        });
     const uint32_t sample_width  = std::min(width, image.extent.width - x);
     const uint32_t sample_height = std::min(height, image.extent.height - y);
     const size_t   byte_count =
-        static_cast<size_t>(sample_width) * static_cast<size_t>(sample_height) * 4u;
+        static_cast<size_t>(sample_width) * static_cast<size_t>(sample_height) *
+        (half_float ? 8u : 4u);
     if (byte_count == 0) {
         return SetError(error, "readback sample region resolved to zero bytes");
     }
@@ -613,7 +620,7 @@ bool TextureCache::ReadbackImageSample(const ImageParameters& image, uint32_t x,
     const VkImageMemoryBarrier to_transfer_src {
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .pNext               = nullptr,
-        .srcAccessMask       = VK_ACCESS_MEMORY_READ_BIT,
+        .srcAccessMask       = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
         .dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
         .oldLayout           = original_layout,
         .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -711,9 +718,24 @@ bool TextureCache::ReadbackImageSample(const ImageParameters& image, uint32_t x,
         if (result != VK_SUCCESS) VVK_CHECK(result);
         return SetError(error, "failed to map Vulkan readback buffer");
     }
+    result = vmaInvalidateAllocation(m_device.vma_allocator(), readback_buffer.handle.Allocation(),
+                                     0, VK_WHOLE_SIZE);
+    if (result != VK_SUCCESS) {
+        readback_buffer.handle.UnMapMemory();
+        return SetError(error, "failed to invalidate Vulkan readback buffer");
+    }
 
-    out->resize(byte_count);
-    memcpy(out->data(), mapped_bytes, byte_count);
+    if (half_float) {
+        out->resize(byte_count / 2);
+        const auto* source = static_cast<const uint16_t*>(mapped_bytes);
+        for (size_t i = 0; i < out->size(); ++i) {
+            (*out)[i] = static_cast<uint8_t>(std::lround(
+                std::clamp(HalfFloatToFloat(source[i]), 0.0f, 1.0f) * 255.0f));
+        }
+    } else {
+        out->resize(byte_count);
+        memcpy(out->data(), mapped_bytes, byte_count);
+    }
     readback_buffer.handle.UnMapMemory();
     return true;
 }
@@ -1858,6 +1880,7 @@ std::optional<ImageParameters> TextureCache::Query(std::string_view key, Texture
 
     query.index        = (idx)m_query_texs.size() - 1;
     query.content_hash = tex_hash;
+    query.format       = content_hash.format;
     query.query_keys.insert(std::string(key));
     query.persist = persist;
     if (auto opt = CreateTex(content_hash); opt.has_value()) {
@@ -1916,12 +1939,11 @@ uint64_t TextureCache::RenderTargetBytes(std::string_view key) const {
     auto it = m_query_map.find(std::string(key));
     if (it == m_query_map.end() || it->second == nullptr) return 0;
     const auto& image = it->second->image;
-    // Derived from the extent and the mip chain, not queried from the
-    // allocator, and assuming four bytes per texel. It bounds the cache, it is
-    // not a measurement of physical residency.
+    // Derived from format, extent and mip chain, not physical residency.
     const uint64_t width  = image.extent.width;
     const uint64_t height = image.extent.height;
-    uint64_t       bytes  = width * height * 4ULL;
+    uint64_t bytes = width * height *
+        (it->second->format == TextureFormat::RGBA16F ? 8ULL : 4ULL);
     uint64_t       level  = bytes;
     for (uint32_t mip = 1; mip < image.mipmap_level; ++mip) {
         level /= 4ULL;

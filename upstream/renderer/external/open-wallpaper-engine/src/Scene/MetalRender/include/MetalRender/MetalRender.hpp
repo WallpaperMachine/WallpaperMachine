@@ -204,7 +204,8 @@ public:
     /// drawable is gone once it has been presented. Synchronous by nature,
     /// which is why it is not on the per-frame path.
     bool ReadRenderTargetForTests(const std::string& key, std::vector<uint8_t>& rgba,
-                                  uint32_t& width, uint32_t& height);
+                                  uint32_t& width, uint32_t& height,
+                                  std::vector<float>* radiance = nullptr);
 
     /// How many times pixels have been written into a replaceable image since
     /// this graph was compiled.

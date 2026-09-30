@@ -673,10 +673,14 @@ void TextLayer::SetText(std::string text) {
     MarkCacheDirty();
 }
 
-void TextLayer::ApplyPreparedLayout(Eigen::Vector2f layout_size, Eigen::Vector2f raster_size) {
-    m_state.layout_size    = layout_size;
-    m_state.raster_size    = raster_size;
-    m_state.layout_pending = false;
+bool TextLayer::ApplyPreparedLayout(uint64_t revision, Eigen::Vector2f layout_size,
+                                    Eigen::Vector2f raster_size) {
+    if (revision <= m_prepared_revision || revision > m_state.cache_revision) return false;
+    m_prepared_revision   = revision;
+    m_state.layout_size   = layout_size;
+    m_state.raster_size   = raster_size;
+    m_state.layout_pending = revision != m_state.cache_revision;
+    return true;
 }
 
 void TextLayer::ClearDirty() {

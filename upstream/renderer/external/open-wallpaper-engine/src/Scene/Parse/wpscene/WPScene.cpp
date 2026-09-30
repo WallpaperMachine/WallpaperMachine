@@ -42,6 +42,15 @@ bool HasDynamicSetting(const nlohmann::json& value) {
     return value.is_object() && (value.contains("script") || value.contains("user"));
 }
 
+template <typename T>
+void ReadScalarSetting(const nlohmann::json& json, const char* key, T& destination,
+                       nlohmann::json& setting) {
+    if (! json.contains(key)) return;
+    setting = json.at(key);
+    const auto& value = UnwrapSettingValue(setting);
+    if (value.is_number()) destination = value.get<T>();
+}
+
 void ReadVec3Setting(const nlohmann::json& json, const char* key, std::array<float, 3>* destination,
                      nlohmann::json* setting, bool* dynamic) {
     if (! json.contains(key) || destination == nullptr || setting == nullptr || dynamic == nullptr)
@@ -88,6 +97,11 @@ bool WPSceneGeneral::FromJson(const nlohmann::json& json, uint16_t pkg_version) 
     if (WantsVersion(pkg_version, 10)) {
 	    GET_JSON_NAME_VALUE_NOWARN(json, "hdr", hdr);
 	    GET_JSON_NAME_VALUE_NOWARN(json, "norecompile", norecompile);
+        ReadScalarSetting(json, "bloomhdrstrength", bloomhdrstrength, bloomhdrstrength_setting);
+        ReadScalarSetting(json, "bloomhdrthreshold", bloomhdrthreshold, bloomhdrthreshold_setting);
+        ReadScalarSetting(json, "bloomhdrscatter", bloomhdrscatter, bloomhdrscatter_setting);
+        ReadScalarSetting(json, "bloomhdrfeather", bloomhdrfeather, bloomhdrfeather_setting);
+        ReadScalarSetting(json, "bloomhdriterations", bloomhdriterations, bloomhdriterations_setting);
     }
     if (WantsVersion(pkg_version, 20)) {
 	    GET_JSON_NAME_VALUE_NOWARN(json, "bloomtint", bloomtint);

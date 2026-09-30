@@ -38,7 +38,8 @@ enum class WPTexFlagEnum : uint32_t
 
     compo1 = 20,
     compo2 = 21,
-    compo3 = 22
+    compo3 = 22,
+    compo4 = 23
 };
 using WPTexFlags = BitFlags<WPTexFlagEnum>;
 
@@ -171,6 +172,7 @@ void LoadHeader(fs::IBinaryStream& file, ImageHeader& header) {
         header.extraHeader["compo1"].val = flags[WPTexFlagEnum::compo1];
         header.extraHeader["compo2"].val = flags[WPTexFlagEnum::compo2];
         header.extraHeader["compo3"].val = flags[WPTexFlagEnum::compo3];
+        header.extraHeader["compo4"].val = flags[WPTexFlagEnum::compo4];
     }
 
     /*
@@ -463,6 +465,7 @@ ImageHeader BuildLooseAssetHeader(
     header.extraHeader["compo1"].val = 1;
     header.extraHeader["compo2"].val = 1;
     header.extraHeader["compo3"].val = 1;
+    header.extraHeader["compo4"].val = 1;
     SetHeaderPow2(header, width, height);
     return header;
 }

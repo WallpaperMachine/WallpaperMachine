@@ -3735,6 +3735,46 @@ TEST(TextObjectRuntime, AWaitingClockIsNotStarvedByNewerReadoutUpdates) {
     EXPECT_NE(updated->key, before->key);
     EXPECT_FALSE(runtime.NodeTextDirty("clock"));
     EXPECT_TRUE(runtime.NodeTextDirty("caption"));
+
+    // Complete "third", then change the requested value before publishing it.
+    // The readout must show the completed glyphs, not stay blank until it stops.
+    const auto third = runtime.NodeTextState("caption").value();
+    {
+        std::lock_guard lock(gate->mutex);
+        gate->released = 2;
+    }
+    gate->cv.notify_all();
+    ASSERT_TRUE(wait_for(3));
+    ASSERT_TRUE(runtime.SetNodeText("caption", "fourth"));
+    runtime.PumpTextLayerCache();
+    const auto expect_pixels = [&](const TextLayerState& state) {
+        const auto image = scene->imageParser->Parse(TextTextureName("caption"));
+        ASSERT_NE(image, nullptr);
+        ASSERT_FALSE(image->slots.empty());
+        ASSERT_FALSE(image->slots[0].mipmaps.empty());
+        const auto& mip = image->slots[0].mipmaps[0];
+        const auto size = TextLayerRasterSize(state);
+        ASSERT_EQ(mip.width, static_cast<int>(std::ceil(size.x())));
+        ASSERT_EQ(mip.height, static_cast<int>(std::ceil(size.y())));
+        std::vector<uint8_t> expected(static_cast<std::size_t>(mip.width) * mip.height * 4);
+        RasterizeTextLayer(state, mip.width, mip.height, expected);
+        ASSERT_NE(mip.data, nullptr);
+        EXPECT_TRUE(std::equal(expected.begin(), expected.end(), mip.data.get()));
+    };
+    expect_pixels(third);
+    EXPECT_EQ(runtime.NodeText("caption"), "fourth");
+    EXPECT_TRUE(runtime.NodeTextDirty("caption"));
+    EXPECT_TRUE(runtime.TextLayoutInFlight());
+    {
+        std::lock_guard lock(gate->mutex);
+        gate->released = 3;
+    }
+    gate->cv.notify_all();
+    ASSERT_TRUE(wait_for(4));
+    runtime.PumpTextLayerCache();
+    expect_pixels(runtime.NodeTextState("caption").value());
+    EXPECT_FALSE(runtime.NodeTextDirty("caption"));
+    EXPECT_FALSE(runtime.TextLayoutInFlight());
 }
 
 TEST(TextObjectRuntime, PreparedTextWakesWhoeverOwnsTheFrameClock) {

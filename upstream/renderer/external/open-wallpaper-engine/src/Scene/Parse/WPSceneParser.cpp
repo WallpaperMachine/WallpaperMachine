@@ -46,6 +46,7 @@
 #include <filesystem>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -1112,6 +1113,7 @@ WPShaderTexInfo BuildShaderTexInfo(Scene& scene,
             (bool)texh.extraHeader.at("compo1").val,
             (bool)texh.extraHeader.at("compo2").val,
             (bool)texh.extraHeader.at("compo3").val,
+            texh.extraHeader.contains("compo4") && texh.extraHeader.at("compo4").val != 0,
         },
     };
 }
@@ -1285,6 +1287,7 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
     for (const auto& el : wpmat.combos) {
         pWPShaderInfo->combos[el.first] = std::to_string(el.second);
     }
+    pWPShaderInfo->combos["HDR"] = pScene->hdr ? "1" : "0";
 
     if (exists(pWPShaderInfo->combos, "LIGHTING")) {
         // pWPShaderInfo->combos["PRELIGHTING"] =
@@ -2203,6 +2206,7 @@ void AttachEffectsToNode(ParseContext& context,
         .width      = render_extent[0],
         .height     = render_extent[1],
         .allowReuse = true,
+        .format = scene.hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
     };
     scene.renderTargets[effect_ppong_b] = scene.renderTargets.at(effect_ppong_a);
     scene.renderTargets[effect_ppong_b].bind = { .enable = true, .name = effect_ppong_a };
@@ -2228,6 +2232,7 @@ void AttachEffectsToNode(ParseContext& context,
                 .bind = { .enable = true, .name = effect_ppong_a,
                           .scale = preserve_effect_fbo_resolution ? 1.0
                                                                  : 1.0 / std::max(1u, fbo.scale) },
+                .format = scene.hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
             };
             fboMap[fbo.name] = rtname;
         }
@@ -2795,6 +2800,7 @@ void AddScreenRenderTarget(Scene& scene, std::string name, i32 render_width, i32
         .height     = std::max(1, static_cast<i32>(static_cast<double>(render_height) * scale)),
         .allowReuse = true,
         .bind       = { .enable = true, .screen = true, .scale = scale },
+        .format = scene.hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
     };
 }
 
@@ -2808,15 +2814,7 @@ struct StagedPostProcessNode {
 class BloomRenderTargetRollback {
 public:
     explicit BloomRenderTargetRollback(Scene& scene): m_scene(scene) {
-        for (const auto& name : kBloomRenderTargets) {
-            const std::string key(name);
-            const auto        it = m_scene.renderTargets.find(key);
-            if (it == m_scene.renderTargets.end()) {
-                m_previous.emplace_back(key, std::nullopt);
-            } else {
-                m_previous.emplace_back(key, it->second);
-            }
-        }
+        for (const auto& name : kBloomRenderTargets) Track(std::string(name));
     }
 
     ~BloomRenderTargetRollback() {
@@ -2831,6 +2829,12 @@ public:
     }
 
     void Commit() { m_committed = true; }
+    void Track(std::string name) {
+        const auto it = m_scene.renderTargets.find(name);
+        m_previous.emplace_back(std::move(name),
+            it == m_scene.renderTargets.end() ? std::nullopt
+                                             : std::optional<SceneRenderTarget>(it->second));
+    }
 
 private:
     static constexpr std::array<std::string_view, 3> kBloomRenderTargets {
@@ -2847,7 +2851,8 @@ private:
 std::optional<StagedPostProcessNode> BuildPostProcessNode(ParseContext&      context,
                                                           const std::string& material_path,
                                                           const std::vector<std::string>& textures,
-                                                          const wpscene::WPSceneGeneral&  general) {
+                                                          const wpscene::WPSceneGeneral& general,
+                                                          const ShaderValueMap* uniforms = nullptr) {
     nlohmann::json json;
     if (! PARSE_JSON(fs::GetFileContent(*context.vfs, "/assets/" + material_path), json)) {
         LOG_ERROR("load bloom material '%s' failed", material_path.c_str());
@@ -2869,6 +2874,9 @@ std::optional<StagedPostProcessNode> BuildPostProcessNode(ParseContext&      con
     WPShaderValueData sv_data;
     WPShaderInfo      shader_info;
     shader_info.baseConstSvs = context.global_base_uniforms;
+    if (uniforms != nullptr) {
+        for (const auto& [name, value] : *uniforms) shader_info.baseConstSvs[name] = value;
+    }
 
     auto node = std::make_shared<SceneNode>();
     node->SetName("__bloom_" + wpmat.shader);
@@ -2897,8 +2905,130 @@ std::optional<StagedPostProcessNode> BuildPostProcessNode(ParseContext&      con
     };
 }
 
+std::array<float, 4> HDRBloomBlend(float threshold, float feather) {
+    const float knee = std::max(0.0f, threshold * feather);
+    return { threshold, threshold - knee, 2.0f * knee, 0.25f / (knee + 1.0e-5f) };
+}
+
+float HDRBloomScatterGain(float spread) {
+    // Positive, unbounded scene spread becomes a bounded coarse-level weight.
+    return 1.0f - 1.0f / (1.0f + std::max(0.0f, spread));
+}
+
+float HDRBloomExtractionStrength(float strength, float spread, int levels) {
+    const float gain = HDRBloomScatterGain(spread);
+    float total = 1.0f, weight = 1.0f;
+    for (int i = 1; i < levels; ++i) {
+        weight *= gain;
+        total += weight;
+    }
+    return std::max(0.0f, strength) / total;
+}
+
+void BuildHDRBloomPostProcess(ParseContext& context, const wpscene::WPSceneGeneral& general) {
+    auto& scene = *context.scene;
+    const int levels = std::clamp(general.bloomhdriterations, 1, 12);
+    const int width = std::max(1, scene.ortho[0]), height = std::max(1, scene.ortho[1]);
+    BloomRenderTargetRollback rollback(scene);
+    std::vector<std::string> targets;
+    targets.reserve(levels);
+    for (int i = 0; i < levels; ++i) {
+        targets.push_back("_rt_hdr_bloom_" + std::to_string(i));
+        rollback.Track(targets.back());
+        AddScreenRenderTarget(scene, targets.back(), width, height, std::ldexp(1.0, -i - 1));
+    }
+    AddScreenRenderTarget(scene, "_rt_bloom_combine", width, height, 1.0);
+
+    auto bloom = std::make_shared<ScenePostProcess>();
+    bloom->name = "__hdr_bloom";
+    std::vector<StagedPostProcessNode> staged;
+    staged.reserve(levels * 2);
+    const auto append = [&](const char* material, std::vector<std::string> inputs,
+                            const std::string& output, const ShaderValueMap& uniforms) {
+        auto node = BuildPostProcessNode(context, material, inputs, general, &uniforms);
+        if (!node) throw std::runtime_error("Unable to compile authored HDR bloom material");
+        bloom->steps.push_back(ScenePostProcessPass { .node = node->node, .output = output });
+        staged.push_back(std::move(*node));
+    };
+    const ShaderValueMap extract {
+        { "g_BloomStrength", HDRBloomExtractionStrength(
+            general.bloomhdrstrength, general.bloomhdrscatter, levels) },
+        { "g_BloomBlendParams", HDRBloomBlend(general.bloomhdrthreshold, general.bloomhdrfeather) },
+        { "g_BloomTint", general.bloomtint },
+        { "g_RenderVar0", std::array<float, 4>{0, 0, 0, 0} },
+    };
+    append("materials/util/hdr_downsample_bloom.json", {SpecTex_Default.data()}, targets.front(), extract);
+    for (int i = 1; i < levels; ++i)
+        append("materials/util/hdr_downsample.json", {targets[i - 1]}, targets[i],
+               {{"g_RenderVar0", std::array<float, 4>{0, 0, 0, 0}}});
+    const ShaderValueMap scatter {
+        { "g_BloomScatter", HDRBloomScatterGain(general.bloomhdrscatter) },
+        { "g_RenderVar0", std::array<float, 4>{0, 0, 0, 0} },
+    };
+    for (int i = levels - 1; i > 0; --i)
+        append("materials/util/hdr_upsample.json", {targets[i]}, targets[i - 1], scatter);
+    append("materials/util/combine_hdr_upsample_linear.json",
+           {SpecTex_Default.data(), targets.front()}, "_rt_bloom_combine", {});
+    bloom->steps.push_back(ScenePostProcessCopy {
+        .src = "_rt_bloom_combine", .dst = SpecTex_Default.data(),
+    });
+    for (auto& node : staged)
+        context.shader_updater->SetNodeData(node.node.get(), node.shader_value_data);
+
+    if (scene.runtime != nullptr) {
+        auto& runtime = *scene.runtime;
+        const auto setting = [](const nlohmann::json& value, float fallback) {
+            return value.is_null() ? nlohmann::json(fallback) : value;
+        };
+        const auto first = staged.front().node->Mesh()->MaterialSlotPtr();
+        auto amount = std::make_shared<std::array<float, 2>>(
+            std::array<float, 2>{general.bloomhdrstrength, general.bloomhdrscatter});
+        std::vector<std::shared_ptr<SceneMaterial>> upsample_materials;
+        for (int i = levels; i < levels * 2 - 1; ++i)
+            upsample_materials.push_back(staged[i].node->Mesh()->MaterialSlotPtr());
+        runtime.RegisterDynamicValueListener(
+            ResolveFloatSetting(runtime, setting(general.bloomhdrstrength_setting,
+                                                 general.bloomhdrstrength)),
+            [first, amount, levels](const DynamicValue& value) {
+                (*amount)[0] = value.getFloat();
+                first->customShader.constValues["g_BloomStrength"] =
+                    HDRBloomExtractionStrength((*amount)[0], (*amount)[1], levels);
+            });
+        runtime.RegisterDynamicValueListener(
+            ResolveFloatSetting(runtime, setting(general.bloomhdrscatter_setting,
+                                                 general.bloomhdrscatter)),
+            [first, amount, levels, materials = std::move(upsample_materials)](const DynamicValue& value) {
+                (*amount)[1] = value.getFloat();
+                first->customShader.constValues["g_BloomStrength"] =
+                    HDRBloomExtractionStrength((*amount)[0], (*amount)[1], levels);
+                const float gain = HDRBloomScatterGain((*amount)[1]);
+                for (const auto& material : materials)
+                    material->customShader.constValues["g_BloomScatter"] = gain;
+            });
+        auto blend = std::make_shared<std::array<float, 2>>(
+            std::array<float, 2>{general.bloomhdrthreshold, general.bloomhdrfeather});
+        for (std::size_t i = 0; i < 2; ++i) {
+            const auto& source = i == 0 ? general.bloomhdrthreshold_setting
+                                        : general.bloomhdrfeather_setting;
+            runtime.RegisterDynamicValueListener(
+                ResolveFloatSetting(runtime, setting(source, (*blend)[i])),
+                [first, blend, i](const DynamicValue& value) {
+                    (*blend)[i] = value.getFloat();
+                    first->customShader.constValues["g_BloomBlendParams"] =
+                        HDRBloomBlend((*blend)[0], (*blend)[1]);
+                });
+        }
+    }
+    scene.post_processes.push_back(std::move(bloom));
+    rollback.Commit();
+}
+
 void BuildBloomPostProcess(ParseContext& context, const wpscene::WPScene& sc) {
     if (! sc.general.bloom) return;
+    if (sc.general.hdr) {
+        BuildHDRBloomPostProcess(context, sc.general);
+        return;
+    }
 
     const auto render_width =
         std::max(1, static_cast<i32>(context.scene->cameras.at("global")->Width()));
@@ -2986,6 +3116,7 @@ void RegisterImageComposite(ParseContext& context, const wpscene::WPImageObject&
     if (! context.scene->HasRenderTarget(key)) {
         context.scene->renderTargets[key] = SceneRenderTarget {
             .width = extent[0], .height = extent[1], .allowReuse = true,
+            .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
     }
     // A layer texture is its card, independent of its position in the scene.
@@ -3012,6 +3143,7 @@ void InitContext(ParseContext& context, fs::VFS& vfs, wpscene::WPScene& sc) {
     scene.ortho[1]     = sc.general.orthogonalprojection.height;
     scene.display_sized = ! sc.general.isOrtho;
     scene.opaque_first = ! sc.general.isOrtho && sc.general.transparentsorting;
+    scene.hdr = sc.general.hdr;
     if (context.request != nullptr && context.request->project_properties != nullptr) {
         SceneRuntimeBootstrap bootstrap {
             .canvas_width       = scene.ortho[0],
@@ -3418,6 +3550,7 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                 .width      = render_extent[0],
                 .height     = render_extent[1],
                 .allowReuse = true,
+                .format = scene.hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
             };
             if (wpimgobj.fullscreen) {
                 scene.renderTargets[effect_ppong_a].bind = { .enable = true, .screen = true };
@@ -3509,6 +3642,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                             .allowReuse = true
                         };
                     }
+                    scene.renderTargets[rtname].format =
+                        scene.hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8;
                     fboMap[wpfbo.name] = rtname;
                 }
             }
@@ -4667,12 +4802,14 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
             .authored_width  = render_width,
             .authored_height = render_height,
             .bind            = { .enable = true, .screen = true },
+            .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
         context.scene->renderTargets[WE_MIP_MAPPED_FRAME_BUFFER.data()] = {
             .width      = render_width,
             .height     = render_height,
             .has_mipmap = true,
-            .bind       = { .enable = true, .name = SpecTex_Default.data() }
+            .bind       = { .enable = true, .name = SpecTex_Default.data() },
+            .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
         context.scene->renderTargets["_rt_shadowAtlas"] = {
             .width      = render_width,
@@ -4684,16 +4821,19 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
                     .width      = std::max(1, render_width / 4),
                     .height     = std::max(1, render_height / 4),
                     .allowReuse = true,
+                    .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
         context.scene->renderTargets["_rt_8FrameBuffer"] = {
             .width      = std::max(1, render_width / 8),
             .height     = std::max(1, render_height / 8),
             .allowReuse = true,
+            .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
         context.scene->renderTargets["_rt_Bloom"] = {
             .width      = std::max(1, render_width / 8),
             .height     = std::max(1, render_height / 8),
             .allowReuse = true,
+            .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
     }
 

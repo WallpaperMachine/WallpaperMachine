@@ -106,6 +106,160 @@ export function cursorClick() { thisLayer.visible = !thisLayer.visible; }
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
+TEST(ScriptRuntimeCompat, CallbackOnlyMenuReceivesInitialAndChangedUserPropertiesOnce) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .canvas_width = 400,
+        .canvas_height = 200,
+        .project_properties = {
+            {"menu", RuntimeScalarValue::Bool(false)},
+            {"amount", RuntimeScalarValue::Float(1.0f)},
+            {"caption", RuntimeScalarValue::String("ready")},
+        },
+    });
+    auto button = std::make_shared<SceneNode>();
+    auto panel = std::make_shared<SceneNode>();
+    button->SetTranslate(Eigen::Vector3f(200, 100, 0));
+    panel->SetVisible(false);
+    runtime->RegisterNode("control", button.get());
+    runtime->RegisterNodeSize("control", Eigen::Vector2f(80, 40));
+    runtime->RegisterNode("panel", panel.get());
+    runtime->RegisterNodeVisibility("control", button.get(), ResolveBoolSetting(*runtime, {
+        {"value", true},
+        {"scriptproperties", {
+            {"enabled", {{"user", "menu"}, {"value", true}}},
+            {"amount", {{"user", "amount"}, {"value", 8.0}}},
+        }},
+        {"script", R"JS(
+export var scriptProperties = createScriptProperties()
+    .addCheckbox({name: 'enabled', value: true})
+    .addSlider({name: 'amount', value: 8})
+    .addText({name: 'fallback', value: 'ready'}).finish();
+let calls = 0;
+export function applyUserProperties(changed) {
+    calls++;
+    const panel = thisScene.getLayer('panel');
+    panel.visible = scriptProperties.enabled;
+    const keys = (changed.hasOwnProperty('menu') ? 1 : 0) +
+                 (changed.hasOwnProperty('amount') ? 2 : 0) +
+                 (changed.hasOwnProperty('caption') ? 4 : 0);
+    panel.scale = new Vec3(calls, scriptProperties.amount, keys);
+    if (scriptProperties.amount !== engine.userProperties.amount ||
+        scriptProperties.fallback !== engine.userProperties.caption) {
+        throw new Error('property snapshot is inconsistent');
+    }
+}
+export function cursorClick() {
+    const panel = thisScene.getLayer('panel');
+    panel.visible = !panel.visible;
+}
+)JS"},
+    }, "control"));
+
+    runtime->Tick(0.01);
+    EXPECT_FALSE(panel->Visible());
+    EXPECT_TRUE(panel->Scale().isApprox(Eigen::Vector3f(1, 1, 7)));
+    runtime->SetCursorInput(0.5f, 0.5f);
+    runtime->SetCursorEnter(true);
+    runtime->SetCursorButtons(0u, 1u, 1u);
+    runtime->DispatchCursorFrameEvents(false);
+    runtime->BeginFrame();
+    for (int frame = 0; frame < 4; ++frame) runtime->Tick(0.01);
+    EXPECT_TRUE(panel->Visible());
+    EXPECT_FLOAT_EQ(panel->Scale().x(), 1.0f);
+
+    const ProjectProperties overrides {
+        {"menu", RuntimeScalarValue::Bool(true)},
+        {"amount", RuntimeScalarValue::Float(3.0f)},
+    };
+    runtime->ApplyProjectPropertyOverride(overrides);
+    EXPECT_TRUE(panel->Visible());
+    EXPECT_TRUE(panel->Scale().isApprox(Eigen::Vector3f(2, 3, 3)));
+    runtime->SetCursorButtons(0u, 1u, 1u);
+    runtime->DispatchCursorFrameEvents(true);
+    runtime->BeginFrame();
+    EXPECT_FALSE(panel->Visible());
+    runtime->ApplyProjectPropertyOverride(overrides);
+    for (int frame = 0; frame < 4; ++frame) runtime->Tick(0.01);
+    EXPECT_FALSE(panel->Visible());
+    EXPECT_FLOAT_EQ(panel->Scale().x(), 2.0f);
+
+    runtime->ApplyProjectPropertyOverride({
+        {"menu", RuntimeScalarValue::Bool(true)},
+        {"amount", RuntimeScalarValue::Float(5.0f)},
+    });
+    EXPECT_TRUE(panel->Scale().isApprox(Eigen::Vector3f(3, 5, 2)));
+    runtime->ResetProjectPropertyOverride();
+    EXPECT_FALSE(panel->Visible());
+    EXPECT_TRUE(panel->Scale().isApprox(Eigen::Vector3f(4, 1, 3)));
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, UserOverrideBeforeFirstTickInitializesWithOneCompleteSnapshot) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .project_properties = {
+            {"enabled", RuntimeScalarValue::Bool(false)},
+            {"amount", RuntimeScalarValue::Float(1.0f)},
+        },
+    });
+    auto control = std::make_shared<SceneNode>();
+    runtime->RegisterNode("control", control.get());
+    runtime->RegisterNodeVisibility("control", control.get(), ResolveBoolSetting(*runtime, {
+        {"value", false},
+        {"scriptproperties", {
+            {"enabled", {{"user", "enabled"}, {"value", false}}},
+            {"amount", {{"user", "amount"}, {"value", 1.0}}},
+        }},
+        {"script", R"JS(
+export var scriptProperties = createScriptProperties()
+    .addCheckbox({name: 'enabled', value: false})
+    .addSlider({name: 'amount', value: 1}).finish();
+let calls = 0;
+export function applyUserProperties(changed) {
+    thisLayer.visible = scriptProperties.enabled;
+    thisLayer.scale = new Vec3(++calls, scriptProperties.amount,
+        changed.enabled === true && changed.amount === 4 ? 1 : 0);
+}
+)JS"},
+    }, "control"));
+    runtime->ApplyProjectPropertyOverride({
+        {"enabled", RuntimeScalarValue::Bool(true)},
+        {"amount", RuntimeScalarValue::Float(4.0f)},
+    });
+    runtime->Tick(0.01);
+    EXPECT_TRUE(control->Visible());
+    EXPECT_TRUE(control->Scale().isApprox(Eigen::Vector3f(1, 4, 1)));
+    for (int frame = 0; frame < 4; ++frame) runtime->Tick(0.01);
+    EXPECT_TRUE(control->Scale().isApprox(Eigen::Vector3f(1, 4, 1)));
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(ScriptRuntimeCompat, ScenePropertyCallbacksReceiveDeltasAndKeepTheFullLiveSnapshot) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .project_properties = {
+            {"enabled", RuntimeScalarValue::Bool(true)},
+            {"amount", RuntimeScalarValue::Float(1.0f)},
+        },
+    });
+    auto control = std::make_shared<SceneNode>();
+    runtime->RegisterNode("control", control.get());
+    runtime->RegisterSceneScript(R"JS(
+let calls = 0;
+export function applyUserProperties(changed) {
+    thisLayer.scale = new Vec3(++calls, engine.userProperties.amount,
+        changed.hasOwnProperty('enabled') ? 1 : 0);
+    thisLayer.visible = engine.userProperties.enabled;
+}
+)JS", "control");
+    EXPECT_TRUE(control->Scale().isApprox(Eigen::Vector3f(1, 1, 1)));
+    runtime->ApplyProjectPropertyOverride({{"amount", RuntimeScalarValue::Float(2.0f)}});
+    EXPECT_TRUE(control->Visible());
+    EXPECT_TRUE(control->Scale().isApprox(Eigen::Vector3f(2, 2, 0)));
+    runtime->ApplyProjectPropertyOverride({{"amount", RuntimeScalarValue::Float(2.0f)}});
+    for (int frame = 0; frame < 4; ++frame) runtime->Tick(0.01);
+    EXPECT_TRUE(control->Scale().isApprox(Eigen::Vector3f(2, 2, 0)));
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
 TEST(ScriptRuntimeCompat, HoverScaleInterpolatesAcrossFramesAndReversesWithoutSnapping) {
     Scene scene;
     auto runtime = MakeRuntimeWithScene(scene);

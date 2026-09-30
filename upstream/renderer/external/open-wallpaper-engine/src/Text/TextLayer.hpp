@@ -112,7 +112,8 @@ public:
     bool                  layoutPending() const { return m_state.layout_pending; }
 
     void SetText(std::string text);
-    void ApplyPreparedLayout(Eigen::Vector2f layout_size, Eigen::Vector2f raster_size);
+    bool ApplyPreparedLayout(uint64_t revision, Eigen::Vector2f layout_size,
+                             Eigen::Vector2f raster_size);
     void ClearDirty();
 
 private:
@@ -121,6 +122,7 @@ private:
     void MarkCacheDirty();
 
     TextLayerState m_state;
+    uint64_t m_prepared_revision { 0 };
 };
 
 Eigen::Vector2f EstimateTextLayerSize(std::string_view text, float point_size, float padding);

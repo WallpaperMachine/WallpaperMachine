@@ -81,6 +81,8 @@ public:
     const ScriptProgramCapabilities& Capabilities() const noexcept { return m_capabilities; }
     DynamicValueUniquePtr Evaluate(const ScriptHostContext& host_context,
                                    const DynamicValue&      current_value);
+    void                  ApplyProjectProperties(const ProjectProperties& project_properties,
+                                                  const ProjectProperties& changed_properties);
     void                  DispatchCursorClick(const ScriptHostContext& host_context);
     void                  DispatchCursorDown(const ScriptHostContext& host_context);
     void                  DispatchCursorEnter(const ScriptHostContext& host_context);
@@ -137,10 +139,11 @@ public:
     void               DispatchMediaThumbnailChanged(const Eigen::Vector3f& primary_color,
                                                      const Eigen::Vector3f& text_color);
     void               DispatchMediaEventJson(std::string_view event_json);
-    void               ApplyProjectProperties(const ProjectProperties& project_properties);
+    void               ApplyProjectProperties(const ProjectProperties& project_properties,
+                                               const ProjectProperties& changed_properties);
 
 private:
-    void ApplyUserProperties(const ProjectProperties& project_properties);
+    void ApplyUserProperties(const ProjectProperties& property_changes);
     void UpdateHostContext(const ScriptHostContext& host_context);
 
     SceneRuntimeContext* m_runtime = nullptr;

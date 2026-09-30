@@ -137,6 +137,7 @@ public:
         image->header.extraHeader["compo1"].val = 1;
         image->header.extraHeader["compo2"].val = 1;
         image->header.extraHeader["compo3"].val = 1;
+        image->header.extraHeader["compo4"].val = 1;
 
         Image::Slot slot;
         slot.width  = static_cast<int32_t>(width);

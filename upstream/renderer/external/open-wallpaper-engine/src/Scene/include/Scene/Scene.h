@@ -129,6 +129,7 @@ public:
     /// presentation follow the output surface instead of the 2D fallback size.
     bool                 display_sized { false };
     bool                 opaque_first { false };
+    bool                 hdr { false };
     /// Internal rasterization scale in (0, 1]. Multiplies the size of the
     /// render targets the scene draws into; it never touches the swapchain,
     /// the camera frustum or the presentation viewport, so output size and

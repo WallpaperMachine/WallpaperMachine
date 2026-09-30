@@ -93,6 +93,8 @@ static_assert((uint32_t)wallpaper::metal::MetalPixelFormat::RGBA8Unorm == MTLPix
 static_assert((uint32_t)wallpaper::metal::MetalPixelFormat::RGBA8Unorm_sRGB ==
                   MTLPixelFormatRGBA8Unorm_sRGB,
               "");
+static_assert((uint32_t)wallpaper::metal::MetalPixelFormat::RGBA16Float ==
+                  MTLPixelFormatRGBA16Float, "");
 static_assert((uint32_t)wallpaper::metal::MetalPixelFormat::BGRA8Unorm == MTLPixelFormatBGRA8Unorm,
               "");
 static_assert((uint32_t)wallpaper::metal::MetalPixelFormat::BGRA8Unorm_sRGB ==
@@ -128,11 +130,14 @@ constexpr NSUInteger kVertexBufferTopIndex = 30;
 constexpr MTLTextureUsage kRenderTargetUsage =
     MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
 
-/// The colour format every scene render target has. The compatibility backend's
-/// texture pool keys every target on `TextureFormat::RGBA8`, so matching it here
-/// is what makes an effect chain's intermediate values identical in the two
-/// backends rather than merely similar.
-constexpr MTLPixelFormat kSceneTargetFormat = MTLPixelFormatRGBA8Unorm;
+MTLPixelFormat SceneTargetFormat(TextureFormat format)
+{
+    switch (format) {
+    case TextureFormat::RGBA8: return MTLPixelFormatRGBA8Unorm;
+    case TextureFormat::RGBA16F: return MTLPixelFormatRGBA16Float;
+    default: return MTLPixelFormatInvalid;
+    }
+}
 
 /// Ceiling on the pixels this backend keeps alive only so they can be reused.
 /// The same number the compatibility backend uses, so the two report one
@@ -255,6 +260,10 @@ bool ToMetalImageFormat(TextureFormat format, bool block_compression, MTLPixelFo
     case TextureFormat::RGBA8:
         out             = MTLPixelFormatRGBA8Unorm;
         bytes_per_pixel = 4;
+        return true;
+    case TextureFormat::RGBA16F:
+        out             = MTLPixelFormatRGBA16Float;
+        bytes_per_pixel = 8;
         return true;
     case TextureFormat::RG8:
         out             = MTLPixelFormatRG8Unorm;
@@ -1152,7 +1161,7 @@ struct MetalRender::Impl
     /// Copies a scene target into another of its size and format texel for
     /// texel, as the first draw of a render pass. Built with the graph like
     /// every other pipeline, and kept, like them, across surface resets.
-    id<MTLRenderPipelineState> scene_copy_pipeline { nil };
+    std::unordered_map<uint32_t, id<MTLRenderPipelineState>> scene_copy_pipelines;
     MTLPixelFormat             drawable_format { MTLPixelFormatBGRA8Unorm };
 
     // ---- host services
@@ -1564,7 +1573,7 @@ struct MetalRender::Impl
     /// Decides which copies are replaced by a trade of textures. Called after
     /// the reuse table is built, because a reused image must keep its texture.
     void planFeedbackSwaps();
-    bool ensureSceneCopyPipeline();
+    bool ensureSceneCopyPipeline(MTLPixelFormat format);
     /// Whether the reader of copy `index` renders this frame. A reader that
     /// neither draws nor clears opens no render pass, so it could not copy
     /// the source in, and the copy is executed as a copy instead.
@@ -2243,7 +2252,7 @@ id<MTLTexture> MetalRender::Impl::newSceneTarget(const std::string&       name,
 {
     const NSUInteger levels = std::max<uint32_t>(1, target.mipmap_level);
     MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:kSceneTargetFormat
+        texture2DDescriptorWithPixelFormat:SceneTargetFormat(target.format)
                                      width:(NSUInteger)target.width
                                     height:(NSUInteger)target.height
                                  mipmapped:levels > 1];
@@ -2369,22 +2378,24 @@ bool MetalRender::Impl::passDraws(std::size_t index) const
             desc.target_key != wallpaper::SpecTex_Default);
 }
 
-bool MetalRender::Impl::ensureSceneCopyPipeline()
+bool MetalRender::Impl::ensureSceneCopyPipeline(MTLPixelFormat format)
 {
-    if (scene_copy_pipeline != nil) return true;
+    if (scene_copy_pipelines.contains(static_cast<uint32_t>(format))) return true;
     if (present_library == nil) return false;
     MTLRenderPipelineDescriptor* descriptor = [MTLRenderPipelineDescriptor new];
     descriptor.vertexFunction   = [present_library newFunctionWithName:@"owe_present_vertex"];
     descriptor.fragmentFunction = [present_library newFunctionWithName:@"owe_copy_fragment"];
-    descriptor.colorAttachments[0].pixelFormat = kSceneTargetFormat;
+    descriptor.colorAttachments[0].pixelFormat = format;
     NSError* error = nil;
-    scene_copy_pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
-    if (scene_copy_pipeline == nil) {
+    id<MTLRenderPipelineState> pipeline =
+        [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+    if (pipeline == nil) {
         // Not a failed scene: the copies are simply made as copies.
         LOG_ERROR("metal render: the scene copy pipeline failed to build: %s",
                   error != nil ? error.localizedDescription.UTF8String : "unknown error");
         return false;
     }
+    scene_copy_pipelines.emplace(static_cast<uint32_t>(format), pipeline);
     return true;
 }
 
@@ -2395,8 +2406,7 @@ void MetalRender::Impl::planFeedbackSwaps()
     opening_copies.clear();
     // Part of the copy plan, and switched with it: with scene optimisation off,
     // every copy the graph asks for is made as a copy.
-    if (! vulkan::SceneOptimizationEnabled() || FeedbackCopiesForcedByEnvironment() ||
-        ! ensureSceneCopyPipeline()) {
+    if (! vulkan::SceneOptimizationEnabled() || FeedbackCopiesForcedByEnvironment()) {
         return;
     }
 
@@ -2431,11 +2441,11 @@ void MetalRender::Impl::planFeedbackSwaps()
         id<MTLTexture> destination = exclusive(copy.target_key);
         if (source == nil || destination == nil) continue;
         if (source.width != destination.width || source.height != destination.height ||
-            source.pixelFormat != kSceneTargetFormat ||
-            destination.pixelFormat != kSceneTargetFormat || source.mipmapLevelCount != 1 ||
+            source.pixelFormat != destination.pixelFormat || source.mipmapLevelCount != 1 ||
             destination.mipmapLevelCount != 1) {
             continue;
         }
+        if (! ensureSceneCopyPipeline(destination.pixelFormat)) continue;
 
         // The next pass to touch the source has to be the one that draws into
         // it without reading it, and nothing before it may write the copy.
@@ -3453,18 +3463,20 @@ void MetalRender::Impl::planCopyElision(Scene& scene)
     for (const auto& desc : descriptions) {
         vulkan::ElisionPassDesc entry;
         switch (desc.kind) {
-        case MetalPassKind::Copy:
+        case MetalPassKind::Copy: {
             entry.kind   = vulkan::ElisionPassDesc::Kind::Copy;
             entry.writes = desc.target_key;
             entry.reads  = { desc.source_key };
-            // Every scene target this backend allocates carries one format, so
-            // the properties a blit does not convert reduce to extent and mip
-            // count. Both are checked, not assumed.
+            const auto* source = scene.FindRenderTarget(desc.source_key);
+            const auto* target = scene.FindRenderTarget(desc.target_key);
             entry.copy_compatible = desc.source_width == desc.target_width &&
                                     desc.source_height == desc.target_height &&
-                                    mip_levels(desc.source_key) == mip_levels(desc.target_key);
+                                    mip_levels(desc.source_key) == mip_levels(desc.target_key) &&
+                                    source != nullptr && target != nullptr &&
+                                    source->format == target->format;
             entry.copy_generates_mipmaps = desc.generate_mipmaps;
             break;
+        }
         case MetalPassKind::Clear:
             entry.kind   = vulkan::ElisionPassDesc::Kind::Clear;
             entry.writes = desc.target_key;
@@ -3705,11 +3717,9 @@ void MetalRender::Impl::compileStaticCache(Scene& scene)
         if (found == targets.end()) continue;
         const auto* target = scene.FindRenderTarget(key);
         if (target == nullptr || target->width <= 0 || target->height <= 0) continue;
-        // The same estimate the compatibility backend records, so one number in
-        // the settings panel means one thing: four bytes per texel over the mip
-        // chain, derived from the extent rather than asked of the allocator.
         uint64_t bytes = static_cast<uint64_t>(target->width) *
-                         static_cast<uint64_t>(target->height) * 4ULL;
+                         static_cast<uint64_t>(target->height) *
+                         (target->format == TextureFormat::RGBA16F ? 8ULL : 4ULL);
         if (found->second.mipmapLevelCount > 1) bytes += bytes / 3ULL;
         if (bytes == 0) continue;
         // Over budget the target simply re-renders; the frame is never blocked
@@ -4533,13 +4543,15 @@ bool MetalRender::drawFrame(Scene& scene, bool* presented)
                     [open.encoder setViewport:(MTLViewport) { 0.0, 0.0, (double)target.width,
                                                               (double)target.height, 0.0, 1.0 }];
                     [open.encoder setScissorRect:(MTLScissorRect) { 0, 0, target.width, target.height }];
-                    [open.encoder setRenderPipelineState:impl.scene_copy_pipeline];
+                    const auto copy_pipeline =
+                        impl.scene_copy_pipelines.at(static_cast<uint32_t>(target.pixelFormat));
+                    [open.encoder setRenderPipelineState:copy_pipeline];
                     [open.encoder setVertexBuffer:impl.present_vertices offset:0 atIndex:0];
                     [open.encoder setFragmentTexture:opening atIndex:0];
                     [open.encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip
                                      vertexStart:0
                                      vertexCount:4];
-                    open.pipeline = impl.scene_copy_pipeline;
+                    open.pipeline = copy_pipeline;
                     open.width    = static_cast<uint32_t>(target.width);
                     open.height   = static_cast<uint32_t>(target.height);
                 }
@@ -4876,7 +4888,8 @@ PosterServiceResult MetalRender::ServicePosterRequest(Scene& scene)
 
 #ifdef WESCENE_BUILD_TESTS
 bool MetalRender::ReadRenderTargetForTests(const std::string& key, std::vector<uint8_t>& rgba,
-                                           uint32_t& width, uint32_t& height)
+                                           uint32_t& width, uint32_t& height,
+                                           std::vector<float>* radiance)
 {
     @autoreleasepool {
         const auto found = pImpl->targets.find(key);
@@ -4884,7 +4897,8 @@ bool MetalRender::ReadRenderTargetForTests(const std::string& key, std::vector<u
         id<MTLTexture> texture = found->second;
         width  = static_cast<uint32_t>(texture.width);
         height = static_cast<uint32_t>(texture.height);
-        const NSUInteger bytes_per_row = texture.width * 4;
+        const bool half_float = texture.pixelFormat == MTLPixelFormatRGBA16Float;
+        const NSUInteger bytes_per_row = texture.width * (half_float ? 8 : 4);
         id<MTLBuffer>    staging       = [pImpl->device newBufferWithLength:bytes_per_row * texture.height
                                                             options:MTLResourceStorageModeShared];
         if (staging == nil) return false;
@@ -4906,8 +4920,19 @@ bool MetalRender::ReadRenderTargetForTests(const std::string& key, std::vector<u
         // a readback has no later point at which to observe completion.
         [command waitUntilCompleted];
 
-        rgba.assign(static_cast<const uint8_t*>(staging.contents),
-                    static_cast<const uint8_t*>(staging.contents) + bytes_per_row * texture.height);
+        const size_t samples = static_cast<size_t>(width) * height * 4;
+        rgba.resize(samples);
+        if (radiance != nullptr) radiance->resize(samples);
+        const auto* source = static_cast<const uint8_t*>(staging.contents);
+        for (size_t i = 0; i < samples; ++i) {
+            const float value = half_float
+                ? HalfFloatToFloat(reinterpret_cast<const uint16_t*>(source)[i])
+                : static_cast<float>(source[i]) / 255.0f;
+            if (radiance != nullptr) (*radiance)[i] = value;
+            rgba[i] = half_float
+                ? static_cast<uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f))
+                : source[i];
+        }
         return true;
     }
 }

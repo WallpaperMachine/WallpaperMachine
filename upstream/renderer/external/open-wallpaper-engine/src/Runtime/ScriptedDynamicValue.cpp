@@ -45,11 +45,16 @@ ScriptedDynamicValue::ScriptedDynamicValue(
 ScriptedDynamicValue::~ScriptedDynamicValue() = default;
 
 void ScriptedDynamicValue::reevaluate() {
-    if (m_program == nullptr || ! m_program->Valid()) return;
+    if (m_runtime->ProjectPropertiesChanging() || m_program == nullptr || ! m_program->Valid()) return;
 
     // update(value) continues from the previous result, including explicit property writes.
     auto result = m_program->Evaluate(m_runtime->hostContext(), *this);
     if (m_program->Capabilities().update && result != nullptr) DynamicValue::update(*result);
+}
+
+void ScriptedDynamicValue::ApplyProjectProperties(const ProjectProperties& project_properties,
+                                                 const ProjectProperties& changed_properties) {
+    if (m_program != nullptr) m_program->ApplyProjectProperties(project_properties, changed_properties);
 }
 
 uint8_t ScriptedDynamicValue::CursorHandlerMask() const noexcept {

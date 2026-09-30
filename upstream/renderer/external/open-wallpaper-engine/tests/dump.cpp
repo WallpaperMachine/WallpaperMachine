@@ -85,6 +85,7 @@ struct TexMeta {
     int32_t     compo1 { 0 };
     int32_t     compo2 { 0 };
     int32_t     compo3 { 0 };
+    int32_t     compo4 { 0 };
     int32_t     format { 0 };
     int32_t     image_type { 0 };
     int32_t     width { 0 };
@@ -136,6 +137,7 @@ TexMeta ReadTexMeta(wallpaper::fs::VFS& vfs, const std::string& pkg_path) {
     meta.compo1        = extra_val("compo1");
     meta.compo2        = extra_val("compo2");
     meta.compo3        = extra_val("compo3");
+    meta.compo4        = extra_val("compo4");
     meta.format        = static_cast<int32_t>(h.format);
     meta.image_type    = static_cast<int32_t>(h.type);
     meta.width         = h.width;
@@ -499,6 +501,7 @@ json DumpWorkshop(const std::string& workshop_dir, std::string& err) {
         jm["compo1"]        = m.compo1;
         jm["compo2"]        = m.compo2;
         jm["compo3"]        = m.compo3;
+        jm["compo4"]        = m.compo4;
         jm["format"]        = m.format;
         jm["image_type"]    = m.image_type;
         jm["width"]         = m.width;

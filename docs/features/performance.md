@@ -316,6 +316,21 @@ chain may remain above the limit. Loose images, videos, sprite atlases, multi-sl
 images and unknown encoded containers retain their original loading behavior.
 This is a texture-residency reduction, not a fixed ceiling on total process memory.
 
+Authored HDR scenes preserve overbright color in half-float targets and use
+HDR bloom; non-HDR scenes keep the existing 8-bit path. Half-float targets cost
+eight rather than four bytes per pixel, and the cache accounts for that actual
+size. A six-level bloom pyramid starting at half-resolution contains less than
+one third of a full-size target's pixels. This is real post-processing work,
+not a free brightness adjustment or supersampling.
+Spread uses bounded, normalized pyramid weights so widening a halo does not
+multiply overall brightness. This is a general energy-conserving model; exact
+Wallpaper Engine HDR parameter parity is not established.
+
+Wallpaper Engine's [Ultra post-processing](https://docs.wallpaperengine.io/en/scene/effects/bloom.html)
+enables HDR bloom. This app's High preset controls frame rate and render scale;
+increasing FPS alone cannot substitute for HDR rendering. Authored HDR data
+now selects the HDR path on either scene backend.
+
 Native Metal allocates render targets only when the compiled graph writes or
 samples them, plus the final output. Parser-provided shadow, mipmapped-frame and
 bloom buffers are metadata until a pass needs them. References from hidden passes

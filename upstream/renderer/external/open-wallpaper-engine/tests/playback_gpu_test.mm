@@ -829,6 +829,40 @@ protected:
     }
 };
 
+TEST_F(PlaybackGPU, OverbrightTargetsFeedBloomAndPreserveSdrColor) {
+    for (bool hdr : {false, true}) {
+        SCOPED_TRACE(hdr ? "HDR" : "LDR");
+        const auto source_name = Target();
+        const auto bloom_name = Target();
+        const auto copy_name = Target();
+        for (const auto& name : {source_name, bloom_name, copy_name})
+            scene.renderTargets.at(name).format =
+                hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8;
+        auto emitter_shader = Compile(false, false, false, "vec4(4.0,0.25,0.5,1.0)");
+        auto bloom_shader = Compile(true, false, false,
+            "vec4(max(texture2D(g_Texture0,v_Uv).r-2.0,0.0)*0.25,"
+            "texture2D(g_Texture0,v_Uv).g,texture2D(g_Texture0,v_Uv).b,1.0)");
+        auto& emitter = Pass(false, false, source_name, false, VK_SAMPLE_COUNT_1_BIT,
+                             emitter_shader);
+        auto& bloom = Pass(true, false, bloom_name, false, VK_SAMPLE_COUNT_1_BIT, bloom_shader);
+        ImageSlotsRef emission; emission.slots = {emitter.desc().vk_output}; Bind(bloom, emission);
+        auto copy = std::make_unique<CopyPass>(CopyPass::Desc {.src = bloom_name, .dst = copy_name});
+        copy->prepare(scene, device, rr);
+        ASSERT_TRUE(copy->prepared());
+        auto& output = Pass(true, false);
+        ImageSlotsRef blurred; blurred.slots = {copy->desc().vk_dst}; Bind(output, blurred);
+        std::array<VulkanPass*,4> sequence {&emitter, &bloom, copy.get(), &output};
+        for (bool batched : {false, true}) {
+            Frame(sequence, batched);
+            // Threshold two is unreachable after UNORM clipping. HDR must
+            // contribute half-intensity bloom, with no accidental gamma step.
+            ExpectSolid(Read(output.desc().vk_output),
+                        {static_cast<uint8_t>(hdr ? 128 : 0), 64, 128, 255});
+        }
+        auxiliary_passes.push_back(std::move(copy));
+    }
+}
+
 TEST_F(PlaybackGPU, ReleasingLargeFrameBufferDoesNotRetainAnOversizedEmptyBlock) {
     constexpr size_t frame_bytes = 40u * 1024 * 1024;
     {

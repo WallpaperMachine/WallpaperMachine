@@ -568,8 +568,27 @@ const ProjectProperties& SceneRuntimeContext::projectProperties() const {
 void SceneRuntimeContext::ApplyProjectPropertyOverride(
     const ProjectProperties& override_properties) {
     m_project_property_overrides = override_properties;
-    m_project_properties =
+    auto next_properties =
         MergeProjectProperties(m_default_project_properties, m_project_property_overrides);
+    ProjectProperties changed_properties;
+    for (const auto& [name, value] : next_properties) {
+        const auto previous = m_project_properties.find(name);
+        bool changed = previous == m_project_properties.end();
+        if (! changed) {
+            const auto& old = previous->second;
+            changed = old.kind != value.kind;
+            if (! changed) {
+                switch (value.kind) {
+                case RuntimeScalarValue::Kind::Bool: changed = old.bool_value != value.bool_value; break;
+                case RuntimeScalarValue::Kind::Float: changed = old.float_value != value.float_value; break;
+                case RuntimeScalarValue::Kind::String: changed = old.string_value != value.string_value; break;
+                }
+            }
+        }
+        if (changed) changed_properties.emplace(name, value);
+    }
+    m_project_properties = std::move(next_properties);
+    m_project_properties_changing = true;
 
     for (const auto& [name, value] : m_project_properties) {
         const auto it = m_property_values.find(name);
@@ -582,8 +601,18 @@ void SceneRuntimeContext::ApplyProjectPropertyOverride(
         it->second->update(*next_value);
     }
 
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->ApplyProjectProperties(m_project_properties);
+    m_project_properties_changing = false;
+    // A script may create layers from its callback: no registry iterator can
+    // survive one, and newly added programs receive their own initial event.
+    const auto scripted_value_count = m_scripted_values.size();
+    const auto scene_script_count = m_scene_scripts.size();
+    for (std::size_t index = 0; index < scripted_value_count; ++index) {
+        auto* value = m_scripted_values[index];
+        if (value != nullptr) value->ApplyProjectProperties(m_project_properties, changed_properties);
+    }
+    for (std::size_t index = 0; index < scene_script_count; ++index) {
+        auto* script = m_scene_scripts[index].script.get();
+        if (script != nullptr) script->ApplyProjectProperties(m_project_properties, changed_properties);
     }
 }
 
@@ -807,12 +836,15 @@ bool SceneRuntimeContext::ApplyPreparedTextLayer(const RuntimePreparedTextLayerI
     if (iterator == m_text_layers.end()) return false;
 
     auto& layer = iterator->second;
-    if (layer.state().cache_revision != prepared.revision) return false;
-    if (layer.text() != prepared.state.text) return false;
+    if (layer.state().texture_cache_key != prepared.state.texture_cache_key) return false;
     const bool raster_size_changed =
         ! SizeNearlyEqual(layer.rasterSize(), prepared.raster_size, 1.0e-3f);
     const bool layout_size_changed =
         ! SizeNearlyEqual(layer.size(), prepared.layout_size, 1.0e-3f);
+    // A continuously changing label can always be ahead of its worker. Publish
+    // completed revisions monotonically, keeping the newer request pending.
+    if (! layer.ApplyPreparedLayout(prepared.revision, prepared.layout_size,
+                                    prepared.raster_size)) return false;
 
     if (raster_size_changed) {
         const auto node_iterator = m_nodes.find(prepared.name);
@@ -884,7 +916,6 @@ bool SceneRuntimeContext::ApplyPreparedTextLayer(const RuntimePreparedTextLayerI
         }
     }
 
-    layer.ApplyPreparedLayout(prepared.layout_size, prepared.raster_size);
     RegisterNodeSize(prepared.name, prepared.layout_size);
     ApplyNodeTransform(prepared.name);
 
@@ -892,7 +923,7 @@ bool SceneRuntimeContext::ApplyPreparedTextLayer(const RuntimePreparedTextLayerI
         SetRuntimeTextTexture(
             *m_scene, prepared.state, prepared.width, prepared.height, prepared.rgba);
     }
-    layer.ClearDirty();
+    if (! layer.layoutPending()) layer.ClearDirty();
     return true;
 }
 

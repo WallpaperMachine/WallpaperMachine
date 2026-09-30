@@ -102,6 +102,9 @@ public:
     const ScriptHostContext& hostContext() const;
     const ProjectProperties& defaultProjectProperties() const;
     const ProjectProperties& projectProperties() const;
+    // Property bindings are refreshed as one transaction before script callbacks
+    // see the change, so callback-only programs never initialize on a partial set.
+    bool          ProjectPropertiesChanging() const { return m_project_properties_changing; }
     void          ApplyProjectPropertyOverride(const ProjectProperties& override_properties);
     void          ResetProjectPropertyOverride();
     void          AttachScene(Scene* scene);
@@ -458,6 +461,7 @@ private:
     ProjectProperties                                              m_default_project_properties;
     ProjectProperties                                              m_project_property_overrides;
     ProjectProperties                                              m_project_properties;
+    bool                                                           m_project_properties_changing { false };
     std::unordered_map<std::string, std::unique_ptr<DynamicValue>> m_property_values;
     std::vector<std::unique_ptr<DynamicValue>>                     m_owned_values;
     std::unordered_map<std::string, SceneNode*>                    m_nodes;

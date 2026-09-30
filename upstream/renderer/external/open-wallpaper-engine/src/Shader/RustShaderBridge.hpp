@@ -50,7 +50,7 @@ struct RustShaderTextureInfo {
     bool                  present { true };
     bool                  enabled { false };
     std::string           format { "rgba8" };
-    std::array<bool, 3>   components { false, false, false };
+    std::array<bool, 4>   components { false, false, false, false };
     RustShaderVideoPlanes video_planes { RustShaderVideoPlanes::None };
 };
 

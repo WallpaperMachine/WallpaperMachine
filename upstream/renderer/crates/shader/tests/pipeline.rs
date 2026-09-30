@@ -1708,7 +1708,7 @@ fn disabled_texture_slots_do_not_enable_texture_annotation_combos() {
                 false,
                 false,
                 TextureFormatHint::Unknown,
-                [shader::TextureComponentState::disabled(); 3],
+                [shader::TextureComponentState::disabled(); 4],
             ))
             .build()
             .expect("request should be valid");

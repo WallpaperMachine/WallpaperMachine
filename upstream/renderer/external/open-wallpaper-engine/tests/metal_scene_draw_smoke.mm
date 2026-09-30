@@ -51,6 +51,7 @@
 #include "WPPkgFs.hpp"
 #include "SceneSourceResolver.hpp"
 #include "synthetic_video.hpp"
+#include "scene_probe_controls.hpp"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -71,6 +72,7 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <utility>
 #include <time.h>
 
 using namespace wallpaper;
@@ -391,7 +393,339 @@ protected:
     std::filesystem::path root_;
 };
 
+// Entirely original shaders behind the ordinary authored material/effect
+// interfaces. The HDR combo changes emitted radiance, an effect halves it, and
+// two layer-as-texture consumers carry that result into the scene and bloom.
+std::filesystem::path WriteParsedRadianceFixture(const std::filesystem::path& root, bool hdr)
+{
+    const auto project = WriteFixture(root);
+    const std::string vertex =
+        "uniform mat4 g_ModelViewProjectionMatrix;\n"
+        "attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\n"
+        "varying vec2 v_TexCoord;\n"
+        "void main(){ gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position,1.0);"
+        "v_TexCoord=a_TexCoord; }\n";
+    const std::string sample =
+        "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+        "void main(){ gl_FragColor=texture(g_Texture0,v_TexCoord); }\n";
+    const std::string combine =
+        "uniform sampler2D g_Texture0;\nuniform sampler2D g_Texture1;\n"
+        "varying vec2 v_TexCoord;\nvoid main(){"
+        "gl_FragColor=vec4(texture(g_Texture0,v_TexCoord).rgb+"
+        "texture(g_Texture1,v_TexCoord).rgb,1.0); }\n";
+    const std::string extract =
+        "uniform sampler2D g_Texture0;\n"
+        "uniform float g_BloomStrength; // {\"material\":\"bloomstrength\",\"default\":1.0}\n"
+        "uniform vec4 g_BloomBlendParams;\n"
+        "uniform vec3 g_BloomTint; // {\"material\":\"bloomtint\",\"default\":\"1 1 1\"}\n"
+        "varying vec2 v_TexCoord;\n"
+        "vec3 bright(vec2 uv){ return max(texture(g_Texture0,uv).rgb-"
+        "vec3(g_BloomBlendParams.x),vec3(0.0)); }\n"
+        "void main(){ gl_FragColor=vec4((bright(v_TexCoord)+"
+        "bright(v_TexCoord+vec2(-0.125,0.0))+"
+        "bright(v_TexCoord+vec2(0.125,0.0)))*"
+        "(g_BloomStrength/3.0)*g_BloomTint,1.0); }\n";
+    const std::map<std::string, std::string> fragments {
+        { "parsed_emitter",
+          "uniform sampler2D g_Texture2; // {\"combo\":\"MASKS\",\"components\":[{\"combo\":\"M0\"},{\"combo\":\"M1\"},{\"combo\":\"M2\"},{\"combo\":\"EMISSIVE_MAP\"}]}\n"
+          "varying vec2 v_TexCoord;\nvoid main(){\n#if HDR && EMISSIVE_MAP\n"
+          "float radiance=4.0*texture(g_Texture2,v_TexCoord).a;\n#else\nfloat radiance=0.5;\n#endif\n"
+          "gl_FragColor=vec4(v_TexCoord.x<0.5?radiance:0.0,0.0,0.0,1.0); }\n" },
+        { "parsed_effect", "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+          "void main(){ gl_FragColor=vec4(texture(g_Texture0,v_TexCoord).rgb*0.5,1.0); }\n" },
+        { "parsed_sample", sample },
+        { "parsed_extract", extract },
+        { "parsed_upsample",
+          "uniform sampler2D g_Texture0;\nuniform float g_BloomScatter;\n"
+          "varying vec2 v_TexCoord;\nvoid main(){"
+          "gl_FragColor=vec4(texture(g_Texture0,v_TexCoord).rgb*g_BloomScatter,1.0); }\n" },
+        { "parsed_combine", combine },
+        { "parsed_ldr_extract",
+          "uniform sampler2D g_Texture0;\n"
+          "uniform float g_BloomStrength; // {\"material\":\"bloomstrength\",\"default\":1.0}\n"
+          "uniform float g_BloomThreshold; // {\"material\":\"bloomthreshold\",\"default\":0.0}\n"
+          "varying vec2 v_TexCoord;\nvoid main(){"
+          "gl_FragColor=vec4(max(texture(g_Texture0,v_TexCoord).rgb-"
+          "vec3(g_BloomThreshold),vec3(0.0))*g_BloomStrength,1.0); }\n" },
+    };
+    for (const auto& [name, fragment] : fragments) {
+        std::ofstream(root / ("shaders/" + name + ".vert")) << vertex;
+        std::ofstream(root / ("shaders/" + name + ".frag")) << fragment;
+    }
+    const auto material = [&](std::string_view path, std::string_view shader,
+                              const nlohmann::json& textures, bool additive = false) {
+        nlohmann::json pass {
+            { "shader", shader }, { "textures", textures },
+            { "blending", additive ? "additive" : "normal" }, { "cullmode", "nocull" },
+            { "depthtest", "disabled" }, { "depthwrite", "disabled" },
+        };
+        const auto destination = root / path;
+        std::filesystem::create_directories(destination.parent_path());
+        std::ofstream(destination) << nlohmann::json {
+            { "passes", nlohmann::json::array({ pass }) },
+        };
+    };
+    {
+        std::ofstream texture(root / "materials/emissive.tex", std::ios::binary);
+        const auto u32 = [&](uint32_t value) {
+            const char bytes[] { char(value), char(value >> 8), char(value >> 16), char(value >> 24) };
+            texture.write(bytes, sizeof(bytes));
+        };
+        texture.write("TEXV0005", 9);
+        texture.write("TEXI0001", 9);
+        u32(0); u32(1u << 23);
+        for (int i = 0; i < 4; ++i) u32(1);
+        u32(0);
+        texture.write("TEXB0002", 9);
+        u32(1); u32(1); u32(1); u32(1); u32(0); u32(0); u32(4);
+        const char rgba[] {0, 0, 0, char(255)};
+        texture.write(rgba, sizeof(rgba));
+    }
+    material("materials/emitter.json", "parsed_emitter", {nullptr, nullptr, "emissive"});
+    material("materials/effect.json", "parsed_effect", { nullptr });
+    material("materials/relay.json", "parsed_sample", { "_rt_imageLayerComposite_1_a" });
+    material("materials/consumer.json", "parsed_sample", { "_rt_imageLayerComposite_2_a" });
+    for (const auto* name : { "emitter", "relay", "consumer" }) {
+        std::ofstream(root / ("models/" + std::string(name) + ".json"))
+            << nlohmann::json { { "width", 384 }, { "height", 256 },
+                { "material", "materials/" + std::string(name) + ".json" } };
+    }
+    std::filesystem::create_directories(root / "effects");
+    std::ofstream(root / "effects/half.json")
+        << R"({"name":"halve radiance","passes":[{"material":"materials/effect.json","bind":[{"name":"previous","index":0}]}]})";
+    material("materials/util/hdr_downsample_bloom.json", "parsed_extract", { "_rt_default" });
+    material("materials/util/hdr_downsample.json", "parsed_sample", { "_rt_default" });
+    material("materials/util/hdr_upsample.json", "parsed_upsample", { "_rt_default" }, true);
+    material("materials/util/combine_hdr_upsample_linear.json", "parsed_combine",
+             { "_rt_default", "_rt_default" });
+    material("materials/util/downsample_quarter_bloom.json", "parsed_ldr_extract", { "_rt_default" });
+    material("materials/util/downsample_eighth_blur_v.json", "parsed_sample", { "_rt_bloom_mip1" });
+    material("materials/util/blur_h_bloom.json", "parsed_sample", { "_rt_bloom_mip2" });
+    material("materials/util/combine_ldr.json", "parsed_combine", { "_rt_default", "_rt_bloom_mip1" });
+
+    std::ifstream source(root / "layout.json");
+    auto layout = nlohmann::json::parse(source);
+    auto& general = layout["general"];
+    general["hdr"] = hdr;
+    general["bloom"] = true;
+    general["bloomstrength"] = 1.0;
+    general["bloomthreshold"] = 0.25;
+    general["bloomtint"] = { 1.0, 1.0, 1.0 };
+    general["bloomhdrstrength"] = 1.0;
+    general["bloomhdrthreshold"] = 0.25;
+    general["bloomhdrfeather"] = 0.0;
+    general["bloomhdriterations"] = 2;
+    general["bloomhdrscatter"] = 0.25;
+    layout["objects"] = nlohmann::json::array();
+    for (const auto& [id, name] : std::array<std::pair<int, const char*>, 3> {
+             std::pair { 1, "emitter" }, { 2, "relay" }, { 3, "consumer" } }) {
+        nlohmann::json object {
+            { "id", id }, { "name", name }, { "image", "models/" + std::string(name) + ".json" },
+            { "origin", { 192, 128, 0 } }, { "scale", { 1, 1, 1 } },
+            { "angles", { 0, 0, 0 } }, { "visible", id == 3 },
+        };
+        if (id > 1) object["dependencies"] = { id - 1 };
+        if (id == 1)
+            object["effects"] = nlohmann::json::array({
+                { { "file", "effects/half.json" }, { "visible", true } },
+            });
+        layout["objects"].push_back(std::move(object));
+    }
+    std::ofstream(root / "layout.json") << layout;
+    return project;
+}
+
 } // namespace
+
+TEST_F(MetalSceneDraw, ParsedHdrRadianceSurvivesEffectsLayerLinksAndBloom)
+{
+    // The last case exercises graph-created composite metadata as well as the
+    // parser-created targets. No hand-built passes or target format overrides.
+    for (const auto& [hdr, synthesize_composite] :
+         std::array<std::pair<bool, bool>, 3> {
+             std::pair { false, false }, { true, false }, { true, true } }) {
+        SCOPED_TRACE(hdr ? (synthesize_composite ? "HDR graph composite" : "HDR") : "SDR");
+        const auto directory = root_ /
+            (hdr ? (synthesize_composite ? "hdr-synthesized" : "hdr") : "sdr");
+        const auto project = WriteParsedRadianceFixture(directory, hdr);
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+        auto& scene = *loaded.scene;
+        ASSERT_TRUE(scene.layer_texture_error.empty()) << scene.layer_texture_error;
+        const auto find_emitter = [](auto&& self, SceneNode* node) -> SceneNode* {
+            if (node->Name() == "emitter" && node->HasMaterial()) return node;
+            for (const auto& child : node->GetChildren()) {
+                if (auto* found = self(self, child.get())) return found;
+            }
+            return nullptr;
+        };
+        auto* emitter = find_emitter(find_emitter, scene.sceneGraph.get());
+        ASSERT_NE(emitter, nullptr);
+        const auto camera = scene.cameras.find(emitter->Camera());
+        ASSERT_NE(camera, scene.cameras.end());
+        ASSERT_TRUE(camera->second->HasImgEffect());
+        const auto effect_input = scene.ResolveRenderTargetName(
+            camera->second->GetImgEffect()->FirstTarget());
+        if (synthesize_composite) scene.renderTargets.erase(LayerCompositeTargetKey(2));
+        const auto graph = sceneToRenderGraph(scene);
+        ASSERT_NE(graph, nullptr);
+
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+            ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+            const auto expect_radiance = [&](const std::string& key, float expected) {
+                std::vector<uint8_t> bytes;
+                std::vector<float> radiance;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(key, bytes, width, height, &radiance))
+                    << key;
+                ASSERT_EQ(width, 384u) << key;
+                ASSERT_EQ(height, 256u) << key;
+                EXPECT_NEAR(radiance[(128u * width + 96u) * 4], expected, 0.005f) << key;
+                const auto* target = scene.FindRenderTarget(key);
+                ASSERT_NE(target, nullptr);
+                EXPECT_EQ(target->format, hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8)
+                    << key;
+            };
+            expect_radiance(effect_input, hdr ? 4.0f : 0.5f);
+            expect_radiance(GenLinkTex(1), hdr ? 2.0f : 0.25f);
+            expect_radiance(LayerCompositeTargetKey(2), hdr ? 2.0f : 0.25f);
+            expect_radiance(GenLinkTex(2), hdr ? 2.0f : 0.25f);
+
+            std::vector<uint8_t> bytes;
+            std::vector<float> radiance;
+            uint32_t width = 0, height = 0;
+            for (const auto& key : { std::string(SpecTex_Default), std::string("_rt_bloom_combine"),
+                    std::string(hdr ? "_rt_hdr_bloom_0" : "_rt_bloom_mip1") }) {
+                const auto* target = scene.FindRenderTarget(key);
+                ASSERT_NE(target, nullptr) << key;
+                EXPECT_EQ(target->format, hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8)
+                    << key;
+            }
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                hdr ? "_rt_hdr_bloom_0" : "_rt_bloom_mip1", bytes, width, height, &radiance));
+            const size_t bloom_left = ((height / 2) * width + width / 4) * 4;
+            if (hdr) EXPECT_GT(radiance[bloom_left], 1.0f);
+            else EXPECT_NEAR(radiance[bloom_left], 0.0f, 0.005f);
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                scene.ResolveRenderTargetName(SpecTex_Default), bytes, width, height, &radiance));
+            ASSERT_EQ(width, 384u);
+            ASSERT_EQ(height, 256u);
+            const size_t left = (128u * width + 96u) * 4;
+            const size_t halo = (128u * width + 216u) * 4;
+            const size_t dark = (128u * width + 336u) * 4;
+            if (hdr) {
+                EXPECT_GT(radiance[left], 2.0f);
+                EXPECT_GT(radiance[halo], 0.1f);
+                EXPECT_GT(bytes[halo], 25u);
+            } else {
+                EXPECT_NEAR(radiance[left], 0.25f, 0.005f);
+                EXPECT_NEAR(bytes[left], 64, 1);
+                EXPECT_EQ(bytes[halo], 0u);
+            }
+            EXPECT_NEAR(radiance[dark], 0.0f, 0.005f);
+            render.destroy();
+        }
+    }
+}
+
+TEST_F(MetalSceneDraw, HdrSpreadPreservesEnergyAndStrengthScalesTheHalo)
+{
+    const auto directory = root_ / "bounded-bloom";
+    const auto project = WriteParsedRadianceFixture(directory, true);
+    std::ofstream(project) <<
+        R"({"title":"Bounded bloom","type":"scene","file":"layout.json","general":{"properties":)"
+        R"({"strength":{"type":"slider","value":1},"spread":{"type":"slider","value":0}}}})";
+    // A coarse kernel with known reach distinguishes spreading from gain.
+    std::ofstream(directory / "shaders/parsed_upsample.frag") <<
+        "uniform sampler2D g_Texture0;\nuniform float g_BloomScatter;\n"
+        "varying vec2 v_TexCoord;\nvoid main(){\n"
+        "gl_FragColor=vec4(texture(g_Texture0,v_TexCoord-vec2(0.125,0)).rgb"
+        "*g_BloomScatter,1); }\n";
+    {
+        std::ifstream input(directory / "layout.json");
+        auto layout = nlohmann::json::parse(input);
+        layout["general"]["bloomhdrstrength"] = {{"user", "strength"}, {"value", 1.0}};
+        layout["general"]["bloomhdrscatter"] = {{"user", "spread"}, {"value", 0.0}};
+        std::ofstream(directory / "layout.json") << layout;
+    }
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+    auto& scene = *loaded.scene;
+    const auto graph = sceneToRenderGraph(scene);
+    ASSERT_NE(graph, nullptr);
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        ASSERT_TRUE(render.init(MetalRenderInitInfo {
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        }));
+        ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+        const auto sample = [&](float strength, float spread, std::array<float, 2>& result) {
+            scene.runtime->ApplyProjectPropertyOverride({
+                {"strength", RuntimeScalarValue::Float(strength)},
+                {"spread", RuntimeScalarValue::Float(spread)},
+            });
+            scene.runtime->Tick(1.0 / 60.0);
+            ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+            std::vector<uint8_t> bytes;
+            std::vector<float> radiance;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                "_rt_hdr_bloom_0", bytes, width, height, &radiance));
+            ASSERT_GT(width, 0u);
+            result = {
+                radiance[((height / 2) * width + width / 4) * 4],
+                radiance[((height / 2) * width + width * 11 / 16) * 4],
+            };
+        };
+        std::array<float, 2> narrow {}, wide {}, stronger {}, extreme {}, off {};
+        sample(1.0f, 0.0f, narrow);
+        sample(1.0f, 4.0f, wide);
+        EXPECT_NEAR(narrow[0], 1.75f, 0.005f); // Constant field above the .25 threshold.
+        EXPECT_NEAR(wide[0], narrow[0], 0.005f);
+        EXPECT_NEAR(narrow[1], 0.0f, 0.005f);
+        EXPECT_GT(wide[1], narrow[1] + 0.02f); // Spread moves energy beyond the source.
+        sample(2.0f, 4.0f, stronger);
+        for (int i = 0; i < 2; ++i) EXPECT_NEAR(stronger[i], 2 * wide[i], 0.01f);
+        sample(1.0f, 1.0e6f, extreme);
+        EXPECT_NEAR(extreme[0], narrow[0], 0.005f);
+        EXPECT_LT(extreme[1], extreme[0]);
+        sample(0.0f, 4.0f, off);
+        for (float value : off) EXPECT_FLOAT_EQ(value, 0.0f);
+        render.destroy();
+    }
+}
+
+TEST_F(MetalSceneDraw, ParsedHdrMissingLayerSourceRetainsBackendRejection)
+{
+    const auto directory = root_ / "missing-hdr-source";
+    const auto project = WriteParsedRadianceFixture(directory, true);
+    std::ifstream source(directory / "layout.json");
+    auto layout = nlohmann::json::parse(source);
+    layout["objects"].erase(layout["objects"].begin());
+    std::ofstream(directory / "layout.json") << layout;
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+    ASSERT_FALSE(loaded.scene->layer_texture_error.empty());
+    EXPECT_EQ(SelectSceneBackend(*loaded.scene).backend, SceneBackend::LegacyVulkan);
+}
 
 TEST_F(MetalSceneDraw, TranslatedAuthorShaderCompilesAndDrawsTheScene)
 {
@@ -855,6 +1189,124 @@ TEST_F(MetalSceneDraw, RememberedPrepareFailureStopsTheBackendFlipFlopping)
 
     SetSceneRendererPreference(SceneRendererPreference::NativeMetalPreferred);
     EXPECT_EQ(SelectSceneBackend(*loaded.scene).backend, SceneBackend::NativeMetal);
+}
+
+TEST_F(MetalSceneDraw, OverbrightRadianceReachesBloomWithoutChangingLdrColor)
+{
+    const auto directory = root_ / "radiance";
+    const auto project = WriteFixture(directory);
+    const std::string vertex =
+        "uniform mat4 g_ModelViewProjectionMatrix;\n"
+        "attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\n"
+        "varying vec2 v_TexCoord;\n"
+        "void main(){ gl_Position=g_ModelViewProjectionMatrix*vec4(a_Position,1);"
+        "v_TexCoord=a_TexCoord; }\n";
+    // Original synthetic shaders: an emitter, thresholded neighboring bloom,
+    // and an SDR additive composition. A threshold above one makes clipping
+    // before bloom observable rather than merely a different intermediate.
+    const std::map<std::string, std::string> fragments {
+        { "emitter", "varying vec2 v_TexCoord;\nvoid main(){"
+          "gl_FragColor=vec4(v_TexCoord.x<0.5?vec3(4,0.25,0.5):vec3(0),1);}\n" },
+        { "bloom", "varying vec2 v_TexCoord;\nuniform sampler2D g_Texture0;\n"
+          "void main(){ float r=texture(g_Texture0,v_TexCoord+vec2(-0.125,0)).r;"
+          "r+=texture(g_Texture0,v_TexCoord).r;"
+          "r+=texture(g_Texture0,v_TexCoord+vec2(0.125,0)).r;"
+          "gl_FragColor=vec4(max(r/3.0-1.25,0.0)*0.25,0,0,1);}\n" },
+        { "compose", "varying vec2 v_TexCoord;\nuniform sampler2D g_Texture0;\n"
+          "uniform sampler2D g_Texture1;\nvoid main(){"
+          "gl_FragColor=vec4(clamp(texture(g_Texture0,v_TexCoord).rgb+"
+          "texture(g_Texture1,v_TexCoord).rgb,0.0,1.0),1);}\n" },
+    };
+    nlohmann::json objects = nlohmann::json::array();
+    int id = 0;
+    for (const auto& [name, fragment] : fragments) {
+        std::ofstream(directory / ("shaders/" + name + ".vert")) << vertex;
+        std::ofstream(directory / ("shaders/" + name + ".frag")) << fragment;
+        nlohmann::json pass {
+            { "shader", name }, { "blending", "normal" },
+            { "depthtest", "disabled" }, { "depthwrite", "disabled" },
+        };
+        if (name != "emitter") pass["textures"] = { "_rt_radiance" };
+        if (name == "compose") pass["textures"].push_back("_rt_bloom_probe");
+        std::ofstream(directory / ("materials/" + name + ".json"))
+            << nlohmann::json { { "passes", nlohmann::json::array({ pass }) } };
+        std::ofstream(directory / ("models/" + name + ".json"))
+            << R"({"width":384,"height":256,"material":"materials/)" << name << R"(.json"})";
+        objects.push_back({ { "id", ++id }, { "name", name },
+            { "image", "models/" + name + ".json" }, { "origin", { 192, 128, 0 } },
+            { "scale", { 1, 1, 1 } }, { "angles", { 0, 0, 0 } }, { "visible", true } });
+    }
+    std::ifstream layout_source(directory / "layout.json");
+    auto layout = nlohmann::json::parse(layout_source);
+    layout["objects"] = std::move(objects);
+    std::ofstream(directory / "layout.json") << layout;
+    const auto find_node = [](auto&& self, SceneNode* node, std::string_view name) -> SceneNode* {
+        if (node->Name() == name && node->HasMaterial()) return node;
+        for (const auto& child : node->GetChildren()) {
+            if (auto* found = self(self, child.get(), name)) return found;
+        }
+        return nullptr;
+    };
+    for (bool hdr : { false, true }) {
+        SCOPED_TRACE(hdr ? "HDR" : "LDR");
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, root_ / (hdr ? "cache-hdr" : "cache-ldr"), loaded, error))
+            << error;
+        auto& scene = *loaded.scene;
+        const auto format = hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8;
+        for (const auto& key : { "_rt_radiance", "_rt_bloom_probe" }) {
+            scene.renderTargets[key] = SceneRenderTarget {
+                .width = 384, .height = 256, .format = format,
+            };
+        }
+        auto* emitter = find_node(find_node, scene.sceneGraph.get(), "emitter");
+        auto* bloom = find_node(find_node, scene.sceneGraph.get(), "bloom");
+        auto* compose = find_node(find_node, scene.sceneGraph.get(), "compose");
+        ASSERT_NE(emitter, nullptr);
+        ASSERT_NE(bloom, nullptr);
+        ASSERT_NE(compose, nullptr);
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            rg::RenderGraph graph;
+            AddDraw(graph, emitter, "_rt_radiance", {});
+            AddDraw(graph, bloom, "_rt_bloom_probe", { "_rt_radiance" });
+            AddDraw(graph, compose, std::string(SpecTex_Default),
+                    { "_rt_radiance", "_rt_bloom_probe" });
+            ASSERT_TRUE(render.compileRenderGraph(scene, graph)) << render.lastError();
+            ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+            std::vector<uint8_t> bytes;
+            std::vector<float> radiance;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests("_rt_radiance", bytes, width, height,
+                                                        &radiance));
+            const size_t left = (128u * width + 96u) * 4;
+            EXPECT_NEAR(radiance[left], hdr ? 4.0f : 1.0f, 0.001f);
+            ASSERT_TRUE(render.ReadRenderTargetForTests("_rt_bloom_probe", bytes, width, height,
+                                                        &radiance));
+            EXPECT_NEAR(radiance[left], hdr ? 0.6875f : 0.0f, 0.001f);
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                scene.ResolveRenderTargetName(SpecTex_Default), bytes, width, height));
+            EXPECT_EQ(bytes[left], 255);
+            EXPECT_NEAR(bytes[left + 1], 64, 1);
+            EXPECT_NEAR(bytes[left + 2], 128, 1);
+            // Outside the emitter, one neighboring overbright tap contributes
+            // a visible red halo only when radiance survived the first target.
+            const size_t halo = (128u * width + 192u + 4u) * 4;
+            EXPECT_NEAR(bytes[halo], hdr ? 5 : 0, 1);
+            const size_t dark = (128u * width + 300u) * 4;
+            EXPECT_EQ(bytes[dark], 0);
+            render.destroy();
+        }
+    }
 }
 
 
@@ -3873,6 +4325,13 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                     frame_count >= 2 && frame_count <= 3600)
             << "WE_TEST_METAL_FRAMES must be 2..3600, not \"" << value << "\"";
     }
+    double frame_step = 1.0 / 60.0;
+    if (const char* value = std::getenv("WE_TEST_METAL_FRAME_STEP")) {
+        char* end = nullptr;
+        frame_step = std::strtod(value, &end);
+        ASSERT_TRUE(end != value && *end == '\0' && std::isfinite(frame_step) &&
+                    frame_step > 0.0 && frame_step <= 1.0);
+    }
 
     std::vector<std::string> projects;
     for (std::string_view rest = listed; ! rest.empty();) {
@@ -3982,6 +4441,22 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                 continue;
             }
             render.UpdateCameraFillMode(*loaded.scene, FillMode::ASPECTCROP);
+            tests::SceneProbeControls controls;
+            loaded.scene->runtime->SetScreenResolution(
+                Eigen::Vector2f(surface_width, surface_height));
+            const auto capture = [&](const std::string& filename) {
+                const char* output = std::getenv("WE_TEST_OUTPUT");
+                if (output == nullptr || *output == '\0') return;
+                uint32_t width = 0, height = 0;
+                std::vector<uint8_t> rgba;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    loaded.scene->ResolveRenderTargetName(SpecTex_Default), rgba, width, height));
+                std::filesystem::create_directories(output);
+                std::ofstream image(std::filesystem::path(output) / filename, std::ios::binary);
+                image << "P6\n" << width << " " << height << "\n255\n";
+                for (std::size_t i = 0; i < std::size_t(width) * height; ++i)
+                    image.write(reinterpret_cast<const char*>(rgba.data() + i * 4), 3);
+            };
 
             const char* audio_hz = std::getenv("WE_TEST_AUDIO_HZ");
             if (audio_hz != nullptr && loaded.scene->runtime != nullptr) {
@@ -3999,8 +4474,7 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                     std::array<float, 2400> pcm {};
                     const double hz = std::strtod(audio_hz, nullptr);
                     for (std::size_t i = 0; i < pcm.size(); ++i) {
-                        pcm[i] = 0.025f *
-                                 std::sin(2.0 * M_PI * hz * double(i) / 12000.0);
+                        pcm[i] = controls.audioSample(i, hz);
                     }
                     const auto generation = audio::CurrentAudioSpectrumSnapshot().generation;
                     std::string audio_error;
@@ -4014,9 +4488,11 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                         std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     }
                 }
+                if (controls.hasInput())
+                    controls.input(*loaded.scene, frame, render.CursorMapping(*loaded.scene));
                 loaded.scene->paritileSys->Emitt();
                 if (loaded.scene->runtime != nullptr) {
-                    loaded.scene->runtime->Tick(1.0 / 60.0);
+                    loaded.scene->runtime->Tick(frame_step);
                     loaded.scene->runtime->PumpTextLayerCache();
                     if (loaded.scene->runtime->ConsumeSceneGraphMutationFlag()) {
                         ASSERT_TRUE(render.clearLastRenderGraph()) << render.lastError();
@@ -4038,7 +4514,12 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                     ++measured;
                 }
                 if (frame == 0) first = ReadOutput(render, *loaded.scene);
-                loaded.scene->PassFrameTime(1.0 / 60.0);
+                if (controls.sample(frame)) {
+                    capture("frame-" + std::to_string(frame) + ".ppm");
+                    if (const char* output = std::getenv("WE_TEST_OUTPUT"))
+                        controls.state(*loaded.scene, frame, output);
+                }
+                loaded.scene->PassFrameTime(frame_step);
             }
             const auto last = ReadOutput(render, *loaded.scene);
             std::cout << "[ LOCAL    ] " << paths.scene_id << ": Native Metal, " << frame_count << " frames drawn, "
@@ -4059,23 +4540,7 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
                       << ": render target bytes=" << render.RenderTargetBytesForTests()
                       << " device allocated bytes=" << device.currentAllocatedSize << std::endl;
 
-            if (const char* output = std::getenv("WE_TEST_OUTPUT");
-                output != nullptr && *output != '\0' && ! last.empty()) {
-                uint32_t width  = 0;
-                uint32_t height = 0;
-                std::vector<uint8_t> rgba;
-                if (render.ReadRenderTargetForTests(loaded.scene->ResolveRenderTargetName(SpecTex_Default),
-                                                    rgba, width, height) &&
-                    width > 0 && height > 0) {
-                    std::filesystem::create_directories(output);
-                    std::ofstream image(std::filesystem::path(output) / ("metal-" + label + ".ppm"),
-                                        std::ios::binary);
-                    image << "P6\n" << width << " " << height << "\n255\n";
-                    for (std::size_t i = 0; i < std::size_t(width) * height; ++i) {
-                        image.write(reinterpret_cast<const char*>(rgba.data() + i * 4), 3);
-                    }
-                }
-            }
+            capture("metal-" + label + ".ppm");
 
             // Named intermediates, not just the final image. When this backend
             // and another disagree about a scene, the question is which pass

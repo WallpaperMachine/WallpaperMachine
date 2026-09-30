@@ -37,5 +37,7 @@ struct SceneRenderTarget {
                            TextureFilter::LINEAR };
     Bind          bind {};
     uint32_t      sample_count { 1 };
+    /// Authored color intermediates may exceed one; masks/media keep RGBA8.
+    TextureFormat format { TextureFormat::RGBA8 };
 };
 } // namespace wallpaper

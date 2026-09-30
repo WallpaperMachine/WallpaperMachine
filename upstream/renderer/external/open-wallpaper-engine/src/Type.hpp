@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <cstdint>
 
 namespace wallpaper
 {
@@ -53,9 +54,12 @@ enum class TextureFormat
     RGB8,
     RGBA8,
     RG8,
-    R8
+    R8,
+    RGBA16F
 };
 std::string ToString(const TextureFormat&);
+/// Decodes diagnostic readback samples without a platform half-float ABI.
+float HalfFloatToFloat(uint16_t bits);
 
 enum class BlendMode
 {
