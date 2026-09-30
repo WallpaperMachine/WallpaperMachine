@@ -6,8 +6,8 @@ struct LockScreenWallpaperFailure: LocalizedError {
   var errorDescription: String? { message }
 }
 
-/// Deliberately edits only explicit physical-display overrides. Global defaults and
-/// other displays belong to the user, even when they currently show our wallpaper.
+/// Journals physical-display choices and temporarily removes the global Idle
+/// override that would otherwise take precedence over those screen savers.
 @MainActor
 final class LockScreenWallpaperSelection {
   private struct Entry: Codable, Equatable {
@@ -23,6 +23,7 @@ final class LockScreenWallpaperSelection {
   }
 
   private static var lastReloadSignal: Date?
+  private static let globalPath = ["AllSpacesAndDisplays"]
 
   private let storeURL: URL
   private let journalURL: URL
@@ -119,7 +120,7 @@ final class LockScreenWallpaperSelection {
         throw LockScreenWallpaperFailure(
           message: String(localized: "The native wallpaper restoration journal is invalid."))
       }
-      originals[entry.path] = original.filter {
+      originals[entry.path] = entry.path == Self.globalPath ? original : original.filter {
         entry.ownedFields.contains($0.key) || ($0.key == "Type" && (entry.typeOwned ?? true))
       }
     }
@@ -233,7 +234,62 @@ final class LockScreenWallpaperSelection {
         changed = true
       }
     }
-    for entry in entries {
+    // AllSpacesAndDisplays overrides the per-display Idle choices. Its `idle`
+    // case must be removed entirely; `individual` contains both choices, so it
+    // becomes `desktop`. An empty `individual` is not a valid native enum case.
+    let globalEntry = entries.first { $0.path == Self.globalPath }
+    let global = Self.node(root, path: Self.globalPath)
+    if !screenSaverDisplays.isEmpty {
+      if let globalEntry {
+        guard global == nil || global?["Type"] as? String == "desktop" else {
+          throw LockScreenWallpaperFailure(
+            message: String(localized: "The system wallpaper was changed outside WallpaperMachine. Disable the affected wallpaper feature before enabling it again; external choices will be preserved."))
+        }
+        retained.append(globalEntry)
+      } else {
+        var replacement = global
+        if let global {
+          switch global["Type"] as? String {
+          case "idle": replacement = nil
+          case "individual":
+            replacement?.removeValue(forKey: "Idle")
+            replacement?["Type"] = "desktop"
+          case "desktop": break
+          default:
+            throw LockScreenWallpaperFailure(
+              message: String(localized: "This macOS wallpaper store format is unsupported. Native selection was not changed."))
+          }
+        }
+        let original = global ?? [:]
+        let entry = Entry(
+          path: Self.globalPath, original: try Self.encode(original), created: false,
+          fields: ["Idle"], typeOwned: false)
+        try record(entry, original: original)
+        retained.append(entry)
+        if (global as NSDictionary?) != (replacement as NSDictionary?) {
+          Self.setNode(&root, path: Self.globalPath, value: replacement)
+          changed = true
+        }
+      }
+    } else if let globalEntry,
+      let original = originals[globalEntry.path],
+      ["idle", "individual"].contains(original["Type"] as? String ?? ""),
+      global == nil || global?["Type"] as? String == "desktop"
+    {
+      // A later global screen saver belongs to the user. A desktop-only edit
+      // can coexist with restoring the saved Idle choice, including its Type.
+      var restored = global ?? original
+      restored["Idle"] = original["Idle"]
+      if global == nil {
+        restored.removeValue(forKey: "Desktop")
+        restored["Type"] = "idle"
+      } else {
+        restored["Type"] = "individual"
+      }
+      Self.setNode(&root, path: Self.globalPath, value: restored)
+      changed = true
+    }
+    for entry in entries where entry.path != Self.globalPath {
       try reconcile(entry, path: entry.path, observeOnly: entry.observeOnly == true)
     }
     // New Spaces may inherit copied choices just before one mode is disabled.

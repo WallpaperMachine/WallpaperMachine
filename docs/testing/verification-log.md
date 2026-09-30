@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Restore per-display screen saver precedence
+
+- Read-only inspection on macOS 26.6.2 found AllSpacesAndDisplays.Type=idle with Provider=default despite WallpaperMachine being selected for each display.
+- Native WallpaperAgent type metadata confirms an optional global selection and separate idle, desktop, individual and linked cases; no live store was changed.
+- python3 scripts/test.py --only LockScreenWallpaperTests: exit 0; 34 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0; 22 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py: exit 0; all Python modules passed; native suite 888 passed, 0 failed, 11 skipped (9 opt-in media tests and 2 live Workshop tests).
+- Isolated regressions cover global Idle removal, combined global choices, disable and crash recovery, reload failure, independent lock-screen operation and later System Settings edits.
+- git diff --check and owning-document local link checks passed. No Release build, installation, restart or desktop run; real idle playback and visual behavior remain unverified.
+
 ## 2026-09-30 — Import picker follows live app language
 
 - python3 scripts/test.py --only WallpaperImportPickerTests: 5 passed, 0 failed; child cancellation/reaping, activation failure cleanup, invalid handshake and failed exit.
@@ -111,12 +121,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Impeccable detector on WebUI/settings.css returned no findings.
 - python3 scripts/test.py --serial: passed, 855 passed, 0 failed, 11 skipped of 866; opt-in media/device and live Steam checks not run.
 - Live app visual presentation unverified; no screenshots captured, desktop operations performed or Release app rebuilt.
-
-## 2026-09-30 — Storage layout spacing
-
-- Offscreen Chrome smoke: long paths in English, Japanese, Simplified and Traditional Chinese; no content overflow at wide, minimum-window and narrow-container sizes; 12px path-to-note and 16px note-to-actions spacing.
-- Offscreen interaction smoke: keyboard disclosure toggle, disclosure preservation across snapshots, empty-cache/history disabled states, pending-action disabling and error recovery passed using synthetic state; no native storage operations invoked.
-- Impeccable detector: WebUI/settings.js and WebUI/settings.css returned no findings.
-- python3 scripts/test.py: 851 passed, 1 failed, 11 skipped; hidden-panel sync test hit WebKit InvalidTransition teardown error.
-- python3 scripts/test.py --serial: passed, 852 passed, 0 failed, 11 skipped.
-- Live app visual presentation and desktop interaction unverified; no screenshots captured or Release app rebuilt.

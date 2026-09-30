@@ -85,6 +85,14 @@ selection. The screen saver does not require the lock-screen switch. macOS still
 controls idle timing, password requirements and dismissal; the app changes none
 of those settings.
 
+macOS can also keep an all-displays Idle override, including its default screen
+saver, which takes precedence over the individual display choices. Enabling
+the screen saver journals and removes that override. A combined global
+Desktop/Idle choice becomes Desktop-only, preserving its desktop wallpaper.
+Disabling, quitting, or recovering after a crash restores the saved global
+Idle choice, while preserving any later global screen saver or desktop changes
+made in System Settings. Lock-screen-only activation leaves global Idle alone.
+
 “Selected” means the native choice was committed, not that a screen saver has
 already started rendering. macOS may acquire an Idle-only surface only when it
 starts the screen saver. A later renderer failure is shown beside the setting,

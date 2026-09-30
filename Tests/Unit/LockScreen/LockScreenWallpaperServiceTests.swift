@@ -822,6 +822,9 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testScreenSaverOnlySelectsIdleWithoutWaitingForAnActiveSurface() async throws {
     var record = scene()
     record.displayId = 1
+    var native = fixture()
+    native["AllSpacesAndDisplays"] = ["Type": "idle", "Idle": choice("default")]
+    try write(native)
     let original = try PropertyListSerialization.propertyList(
       from: Data(contentsOf: store), format: nil) as! NSDictionary
     let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
@@ -842,6 +845,10 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertEqual(configuration.scenes.map(\.displayID), [1])
     XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
     XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+    let selected = try PropertyListSerialization.propertyList(
+      from: Data(contentsOf: store), format: nil) as! [String: Any]
+    XCTAssertNil(selected["AllSpacesAndDisplays"],
+      "Selected must mean the default global screen saver no longer overrides the display")
 
     service.setScreenSaverEnabled(false)
     await waitFor("idle restoration") { !service.isBusy }
