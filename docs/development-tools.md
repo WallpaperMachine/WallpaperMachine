@@ -71,6 +71,12 @@ tests, target the PID of the exact executable under test and quit only that
 instance. Discard performance comparisons if another copy starts, foreground
 visibility changes unexpectedly, or the presentation policy suspends playback.
 
+For offscreen WebKit visual checks, use `WKWebView.takeSnapshot`. A hidden native
+host's `NSView.cacheDisplay` can capture an earlier WebKit frame even after DOM
+geometry has settled; do not treat that cached image as current window output.
+Pair the WebKit snapshot with native content bounds and hit-testing. Neither
+proves a live full-screen or Split View Space transition.
+
 For a performance comparison, use the same asset, display resolution, playback
 settings, power state, and observation duration. Separate cold load from warm
 shader-cache runs. Record CPU/GPU activity, memory growth, frame timing, and pause

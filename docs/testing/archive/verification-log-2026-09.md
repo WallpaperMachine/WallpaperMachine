@@ -15,6 +15,13 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Changelog defaults to the app language
+
+- python3 scripts/test.py --only WhatsNewTests — exit 0; 10 passed, 0 failed, 0 skipped; covers saved language precedence and System matching.
+- Offscreen native smoke — exit 0; en and ja initially show English, zh-Hans and zh-Hant show Simplified Chinese; manual switching remains reversible. Temporary harness removed.
+- python3 scripts/test.py — exit 0; 852 passed, 0 failed, 11 skipped of 863.
+- No new desktop capture or Release rebuild; running app unchanged.
+
 ## 2026-09-30 — Readable changelog window with language tabs
 
 - Offscreen native AppKit smoke with bundled release history — exit 0; English → 简体中文 → English at 760 × 720 and 600 × 480 points; first note visible, wrapping and scrolling exercised, scrolled switches reveal the first version, suppression persists. Temporary harness removed.

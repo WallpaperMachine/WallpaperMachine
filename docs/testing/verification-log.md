@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Issue #17 non-disruptive visual verification
+
+- User authorized visual verification and chose to keep the run non-disruptive rather than switch macOS Spaces.
+- python3 scripts/test.py --only Issue17VisualSmokeTests: temporary harness passed, 1 test, 0 failures, 0 skips; actual bundled WKWebView hosted by SwiftUI in the production ControlPanelWindow. Harness removed after capture.
+- Inspected 8 WKWebView snapshots: light/dark × windowed 760×560, full-screen layout 1920×1080, half-screen layout 960×1080, and restored windowed 760×560. All four navigation tabs remained visible.
+- Applied the production full-screen layout offscreen beneath an opaque native title bar; did not set the native full-screen style bit or call toggleFullScreen. Web content stayed inside the unobscured native bounds, with 32 successful native tab hit-tests and unchanged window frames.
+- Traffic-light inset restored to 79 points in windowed mode and cleared to 0 in the full-screen layout. Installed → Settings click-through succeeded. Foreground application PID was unchanged and the verification window was never shown.
+- Hidden native cacheDisplay captures contained stale WebKit frames and were discarded; visual inspection used WKWebView.takeSnapshot instead. Guidance recorded in docs/development-tools.md.
+- Peekaboo reported Screen Recording and Accessibility unavailable. No permissions requested, no desktop input, no Space switch, no existing app restart, and no wallpaper changes. Live full-screen/Split View transitions remain unverified by user choice.
+- Only the Debug test host was compiled. No Release rebuild; the running Release app and its bundle were left untouched. Local screenshots remain disposable and uncommitted.
+
 ## 2026-09-30 — Energy readout hierarchy and measurement disclosure
 
 - python3 scripts/test.py — exit 0; Python suites passed; native 853 passed, 0 failed, 11 skipped (9 opt-in media, 2 live Workshop). The shared tree includes unrelated concurrent window-sizing changes.
@@ -101,10 +112,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped; ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit the documented WebKit InvalidTransition error.
 - python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863.
 - No app-code change, Release rebuild, desktop test, or remote publication.
-
-## 2026-09-30 — Changelog defaults to the app language
-
-- python3 scripts/test.py --only WhatsNewTests — exit 0; 10 passed, 0 failed, 0 skipped; covers saved language precedence and System matching.
-- Offscreen native smoke — exit 0; en and ja initially show English, zh-Hans and zh-Hant show Simplified Chinese; manual switching remains reversible. Temporary harness removed.
-- python3 scripts/test.py — exit 0; 852 passed, 0 failed, 11 skipped of 863.
-- No new desktop capture or Release rebuild; running app unchanged.
