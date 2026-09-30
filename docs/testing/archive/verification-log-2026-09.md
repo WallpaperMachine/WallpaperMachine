@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Eye-friendly fallback during display wake
+
+- Offscreen production-layer smoke reproduced RGBA [255,255,255,255] before the fix and [0,0,0,255] after it for initial, resized and recreated surfaces; no window or drawable was created. Retained as wallpaper_background.
+- cargo test --release -p wallpaper-core --test wallpaper_background: exit 0; all three opaque-black pixel scenarios passed.
+- cargo test --release -p wallpaper-core --lib: exit 0; harness reported 222 passed. Opt-in AppKit window tests returned without running; not desktop evidence.
+- python3 scripts/test.py: exit 0; Python modules passed, native 824 passed / 0 failed / 11 skipped (9 media-device and 2 live-network cases).
+- python3 scripts/check_renderer.py: exit 0; ten synthetic pooled/isolated pixel comparisons matched with zero diagnostics; eight projects reloaded twice.
+- Physical external-display lid-close/wake timing remains unverified. Black replaces the app-owned white fallback; no guarantee is made about macOS-owned transitions.
+- No Release app rebuild, installation, desktop control or app restart; the running app retains its old behavior.
+
 ## 2026-09-29 — Merge origin/main and build Release
 
 - Merged origin/main 98e90a8 with six local commits; retained What's New and Dock/Finder import startup, adopted persistent import ownership, regenerated Xcode project and preserved both verification histories.

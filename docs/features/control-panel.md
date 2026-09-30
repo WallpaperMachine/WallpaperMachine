@@ -233,6 +233,12 @@ disables its switch; language and appearance remain usable if renderer settings
 are unavailable. Snapshot updates preserve active drafts, selection, disclosures
 and scrolling. About's update actions precede expanded release notes.
 
+Storage gives the wallpaper-file folder a full-width path and explanation,
+with Finder and cache-clearing actions in a separate footer below a divider.
+Its groups use wider insets and more row spacing; when the Storage content area
+is 480px wide or narrower, action rows stack their controls beneath the label
+rather than squeezing text beside buttons. Switch rows retain their inline layout.
+
 Settings text is non-selectable throughout the navigation and content, including
 version readouts, paths, color values, release notes and status/error messages.
 Form controls retain their normal editing and keyboard behavior.

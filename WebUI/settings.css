@@ -248,6 +248,26 @@ label.settings-label { cursor: pointer; }
 .settings-update-footnote { margin-bottom: 10px; }
 .settings-footnote { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 64ch; }
 
+/* Storage paths and explanations need their own measure, not a shared action row. */
+#settings-storage { container: settings-storage / inline-size; }
+#settings-storage .settings-group { padding: 8px 20px; }
+#settings-storage .settings-group > h3 { padding-top: 12px; }
+#settings-storage .settings-row { padding: 16px 0; column-gap: 20px; row-gap: 12px; }
+#settings-storage .settings-label { flex-basis: 180px; }
+#settings-storage .settings-control { gap: 8px; }
+#settings-storage [data-key="storage-user-assets"] { padding: 20px; }
+#settings-storage [data-key="storage-user-assets"] > h3 { padding-top: 0; margin-bottom: 8px; }
+#settings-storage .settings-path { margin: 0 0 12px; line-height: 1.6; }
+#settings-storage [data-key="user-assets-note"] { margin: 0; line-height: 1.6; }
+#settings-storage .settings-form-actions { gap: 8px; margin: 16px 0 0; padding-top: 16px; border-top: 1px solid var(--divider); }
+#settings-storage .settings-disclosure { margin: 16px 0 8px; }
+
+@container settings-storage (max-width: 480px) {
+  #settings-storage .settings-row:not(:has(.settings-switch)) { flex-direction: column; align-items: stretch; }
+  #settings-storage .settings-row:not(:has(.settings-switch)) > .settings-label { flex-basis: auto; }
+  #settings-storage .settings-row:not(:has(.settings-switch)) > .settings-control { margin-left: 0; justify-content: flex-start; }
+}
+
 @media (max-width: 800px) {
   .settings-layout { grid-template-columns: 172px minmax(0, 1fr); }
   .settings-nav { padding: 16px 8px; }

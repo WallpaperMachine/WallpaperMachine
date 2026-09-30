@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Storage layout spacing
+
+- Offscreen Chrome smoke: long paths in English, Japanese, Simplified and Traditional Chinese; no content overflow at wide, minimum-window and narrow-container sizes; 12px path-to-note and 16px note-to-actions spacing.
+- Offscreen interaction smoke: keyboard disclosure toggle, disclosure preservation across snapshots, empty-cache/history disabled states, pending-action disabling and error recovery passed using synthetic state; no native storage operations invoked.
+- Impeccable detector: WebUI/settings.js and WebUI/settings.css returned no findings.
+- python3 scripts/test.py: 851 passed, 1 failed, 11 skipped; hidden-panel sync test hit WebKit InvalidTransition teardown error.
+- python3 scripts/test.py --serial: passed, 852 passed, 0 failed, 11 skipped.
+- Live app visual presentation and desktop interaction unverified; no screenshots captured or Release app rebuilt.
+
 ## 2026-09-30 — Clarify generic Workshop download failures
 
 - Temporary PTY smoke: python3 scripts/test.py --only DownloadFailureCopySmoke passed (1 test); all three generic failure forms emitted purchase/account recovery guidance without offering authentication retry. Temporary smoke removed afterward.
@@ -101,13 +110,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Opt-in media-device and live-network cases skipped. No renderer code or bridge API changed; check_renderer.py not rerun.
 - Documented nonopaque-layer compositor cost as unmeasured, retained-frame resize/failure behavior, and missing-notes retry. Physical lid-close/wake, host acquire-error behavior and What's New presentation remain unverified.
 - No Release app rebuild, installation or restart; the running app retains its previous behavior.
-
-## 2026-09-29 — Eye-friendly fallback during display wake
-
-- Offscreen production-layer smoke reproduced RGBA [255,255,255,255] before the fix and [0,0,0,255] after it for initial, resized and recreated surfaces; no window or drawable was created. Retained as wallpaper_background.
-- cargo test --release -p wallpaper-core --test wallpaper_background: exit 0; all three opaque-black pixel scenarios passed.
-- cargo test --release -p wallpaper-core --lib: exit 0; harness reported 222 passed. Opt-in AppKit window tests returned without running; not desktop evidence.
-- python3 scripts/test.py: exit 0; Python modules passed, native 824 passed / 0 failed / 11 skipped (9 media-device and 2 live-network cases).
-- python3 scripts/check_renderer.py: exit 0; ten synthetic pooled/isolated pixel comparisons matched with zero diagnostics; eight projects reloaded twice.
-- Physical external-display lid-close/wake timing remains unverified. Black replaces the app-owned white fallback; no guarantee is made about macOS-owned transitions.
-- No Release app rebuild, installation, desktop control or app restart; the running app retains its old behavior.

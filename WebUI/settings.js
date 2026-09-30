@@ -581,8 +581,9 @@ function draw(view) {
   // Nil released-bytes means no purge has run this session; 0 means one ran and
   // found nothing. They read differently on purpose.
   const released = settings.userAssetsReleasedBytes;
-  const storage = group('storage-user-assets', '', row('user-assets', t('Wallpaper files you chose'), button(t('Show in Finder'), 'revealUserAssets', {}, busy || unavailable) + button(t('Clear unused caches…'), 'purgeUnreferencedUserAssets', {}, busy || unavailable), settings.userAssetsPath || t('Unavailable'))
-    + `<div class="settings-note" data-key="user-assets-note">${e(t('Files you pick in a wallpaper’s settings are copied here. “Clear unused caches” only removes caches that can be rebuilt, never files you added.'))}${released == null ? '' : ` ${e(t('Last clear released {size}.', { size: bytes(released) }))}`}</div>`)
+  const storage = group('storage-user-assets', t('Wallpaper files you chose'), `<p class="settings-path" data-key="user-assets-path">${e(settings.userAssetsPath || t('Unavailable'))}</p>`
+    + `<p class="settings-note" data-key="user-assets-note">${e(t('Files you pick in a wallpaper’s settings are copied here. “Clear unused caches” only removes caches that can be rebuilt, never files you added.'))}${released == null ? '' : ` ${e(t('Last clear released {size}.', { size: bytes(released) }))}`}</p>`
+    + `<div class="settings-form-actions">${button(t('Show in Finder'), 'revealUserAssets', {}, busy || unavailable)}${button(t('Clear unused caches…'), 'purgeUnreferencedUserAssets', {}, busy || unavailable)}</div>`)
     + group('storage-caches', '', row('shader-cache', t('Shader cache'), button(t('Clear…'), 'clearCache', {}, busy || unavailable || !settings.shaderCacheBytes), bytes(settings.shaderCacheBytes))
     + row('logs', t('Logs'), button(t('Show in Finder'), 'showLogs', {}, busy || unavailable) + button(t('Clear…'), 'clearLogs', {}, busy || unavailable || !settings.logBytes), bytes(settings.logBytes))
     + row('download-history', t('Completed downloads'), button(t('Clear history'), 'clearDownloads', {}, busy || !downloads.some(download => !download.pending)))
