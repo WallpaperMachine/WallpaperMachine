@@ -233,6 +233,10 @@ disables its switch; language and appearance remain usable if renderer settings
 are unavailable. Snapshot updates preserve active drafts, selection, disclosures
 and scrolling. About's update actions precede expanded release notes.
 
+Settings text is non-selectable throughout the navigation and content, including
+version readouts, paths, color values, release notes and status/error messages.
+Form controls retain their normal editing and keyboard behavior.
+
 Settings disclosures use a heavier chevron in a 24px rounded, bordered indicator.
 Closed sections use foreground ink; open sections use the theme's accent surface
 and a downward chevron. Hover strengthens the indicator's surface and border.

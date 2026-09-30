@@ -4,6 +4,8 @@
   height: 100%;
   color: var(--text);
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #settings-content *,
@@ -103,7 +105,7 @@ label.settings-label { cursor: pointer; }
 .settings-status { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .settings-list { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; text-align: left; overflow-wrap: anywhere; }
 .settings-list li + li { margin-top: 4px; }
-.settings-version { color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; user-select: text; }
+.settings-version { color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
 .settings-readout { display: block; }
 .settings-readout .settings-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .settings-readout .settings-control { margin: 0; justify-content: flex-start; width: 100%; font-variant-numeric: tabular-nums; }
@@ -172,7 +174,7 @@ label.settings-label { cursor: pointer; }
 #settings-content input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 #settings-content input[type="color"]::-webkit-color-swatch { border: 1px solid var(--line-strong); border-radius: 3px; }
 .settings-shortcut { min-width: 56px; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--sunken); color: var(--text); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; }
-.settings-hex { min-width: 62px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; text-align: right; user-select: text; }
+.settings-hex { min-width: 62px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; text-align: right; }
 .settings-icon-picker { margin: 20px 0 12px; padding: 0; border: 0; min-width: 0; }
 .settings-icon-picker legend { padding: 0; font-weight: 600; }
 .settings-icon-picker > .settings-note { margin: 4px 0 12px; max-width: 60ch; }
@@ -223,11 +225,11 @@ label.settings-label { cursor: pointer; }
 .settings-notes h4 { color: var(--text); font-size: 12px; font-weight: 600; margin: 0 0 5px; }
 .settings-notes h4 + ul { margin-top: 0; }
 .settings-notes ul { list-style: disc; color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 10px; padding-left: 16px; max-width: 64ch; }
-.settings-notes li { margin: 0 0 3px; overflow-wrap: anywhere; user-select: text; }
+.settings-notes li { margin: 0 0 3px; overflow-wrap: anywhere; }
 .settings-display .settings-disclosure-body { padding-top: 0; }
 .settings-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 10px 0; }
-.settings-error { color: var(--danger); background: var(--danger-surface); padding: 9px 10px; border-radius: var(--radius); margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; user-select: text; }
-.settings-notice { color: var(--text); font-size: 12px; line-height: 1.5; margin: 10px 0; overflow-wrap: anywhere; user-select: text; }
+.settings-error { color: var(--danger); background: var(--danger-surface); padding: 9px 10px; border-radius: var(--radius); margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; }
+.settings-notice { color: var(--text); font-size: 12px; line-height: 1.5; margin: 10px 0; overflow-wrap: anywhere; }
 .settings-empty { padding: 20px 0; color: var(--muted); }
 .settings-progress { display: block; width: 100%; height: 5px; margin: 12px 0; accent-color: var(--accent); }
 .settings-progress::-webkit-progress-bar { background: var(--track); border-radius: 3px; }
@@ -236,7 +238,7 @@ label.settings-label { cursor: pointer; }
 .settings-progress:indeterminate::-webkit-progress-bar { background: transparent; }
 .settings-inline { display: flex; align-items: center; gap: 7px; }
 .settings-inline input { flex: 1; }
-.settings-path { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; user-select: text; margin: 9px 0; }
+.settings-path { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; margin: 9px 0; }
 .settings-help-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .settings-product { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
 .settings-product-mark { display: flex; flex: none; color: var(--accent); }
