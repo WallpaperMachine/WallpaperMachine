@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — First downloaded wallpaper support prompt
+
+- Added a persistent, once-only support offer after a successfully installed Workshop/pixiv wallpaper receives a successful explicit activation; failed applies, automatic rotation, restoration and local imports do not qualify.
+- Initial targeted state/activation/panel run: 18 passed, 6 panel failures because windowless WebKit reports document.hidden. The offscreen fixture now simulates page visibility independently from native presentation, matching the existing Discover tests.
+- python3 scripts/test.py --only WebPanelSupportPromptTests: exit 0; 7 passed, 0 failed, 0 skipped. Covers actual display acknowledgment, persistence/reload, welcome/modal/hidden deferral, captured Star and localized Pricing URLs, link failure retry, Escape and body-focus restoration.
+- python3 scripts/test.py: exit 0; 226 Python tests passed; 861 native tests: 850 passed, 0 failed, 11 skipped. The full gate ran once after the targeted fix.
+- Skipped opt-in tests: 9 NativeVideoPlayerMediaTests requiring real media decoding and 2 live Steam Workshop queries. Renderer probes were not run; no renderer or generated binding changes.
+- Changed JavaScript syntax checks, native localization JSON parsing and git diff --check passed. English and Chinese Pricing destinations each returned HTTP 200. XcodeGen regenerated the project for the new Swift files.
+- Visual presentation and real desktop/VoiceOver behavior remain unverified; no windows, screenshots, wallpaper changes or external browser launches. No Release build, install, commit or push requested.
+
 ## 2026-09-30 — Release notes read squash merges per listed commit; CI serial cost corrected
 
 - Change: scripts/release_notes.py model_prompt splits a squash merge's body at its '* type(scope): subject' lines; each listed commit gets its own 1,500-character cut, internal ones only their subject line; Co-authored-by/Signed-off-by/Reviewed-by/Claude-Session trailers and GitHub's --- rule are dropped. Budget unchanged (120,000).

@@ -44,6 +44,12 @@ fit together and how to add a language: [Localization](../localization.md).
 | Inspector | Preview, title, kind, creator, actions, tags, and the selected wallpaper's options and properties. Its width is a function of the window width alone and cannot be dragged: 260px at the 760px minimum, `15vw + 146px` in between (290px at 960px, 386px at 1600px) and 420px from about 1830px on, the same on Discover and Installed. Nothing is stored, so a given window size always yields the same layout. Inside, the panel adapts to its own width: past 360px the insets widen and a display's scale factor and frame rate share a row |
 | Activity bar | Global pause/resume, import activity and unseen results, download progress (not a playback timeline). Playback remains available when any display has an assignment, even if the target display is empty; with no assignments it is disabled and reports **No wallpaper playing**. Long summaries truncate visually but keep their full accessible names |
 
+In full-screen mode and either Split View tile, the top bar stays in the content
+area below macOS's native chrome, and the empty toolbar used to align the
+windowed traffic lights is hidden. Exiting restores the unified title-bar layout
+without changing the restored window bounds. The layout switches only after a
+successful transition, so a canceled entry or exit leaves the current layout intact.
+
 The visual direction combines Wallpaper Engine's image-first gallery, filtering
 and right-hand property workflow with macOS-oriented window chrome and controls;
 it does not reproduce Windows window decorations or the Windows button skin.

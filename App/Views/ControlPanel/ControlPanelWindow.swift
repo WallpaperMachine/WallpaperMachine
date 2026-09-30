@@ -21,9 +21,9 @@ enum ControlPanelWindow {
             defer: false
         )
         window.title = "WallpaperMachine"
-        // The bundled page draws its own top bar in the title-bar strip. An empty unified
-        // toolbar only sizes that strip so the traffic lights sit on the tab row; the page
-        // reads their inset from the snapshot and handles dragging itself.
+        // In windowed mode, the page draws its top bar in the title-bar strip. An empty
+        // unified toolbar aligns the traffic lights with the tabs; the page reads their
+        // inset from the snapshot and handles dragging itself.
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
@@ -35,6 +35,23 @@ enum ControlPanelWindow {
         window.contentViewController = contentViewController
         window.contentMinSize = minimumContentSize
         return window
+    }
+
+    /// Keeps the web navigation out from under AppKit's opaque full-screen title bar,
+    /// including in Split View. Apply after a completed transition so cancellation
+    /// leaves the previous layout intact.
+    static func setFullScreenLayout(_ isFullScreen: Bool, for window: NSWindow) {
+        let frame = window.frame
+        if isFullScreen {
+            window.toolbar?.isVisible = false
+            window.styleMask.remove(.fullSizeContentView)
+        } else {
+            window.styleMask.insert(.fullSizeContentView)
+            window.toolbar?.isVisible = true
+        }
+        // Changing fullSizeContentView otherwise resizes the frame to preserve content
+        // height, which would move it outside its full-screen tile or restored bounds.
+        if window.frame != frame { window.setFrame(frame, display: false) }
     }
 
     /// The frame size the window may not shrink below: the minimum content size plus

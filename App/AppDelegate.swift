@@ -653,6 +653,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         return ControlPanelWindow.clampedFrameSize(frameSize, for: sender)
     }
 
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === controlPanelWindow else { return }
+        ControlPanelWindow.setFullScreenLayout(true, for: window)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === controlPanelWindow else { return }
+        ControlPanelWindow.setFullScreenLayout(false, for: window)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === whatsNewWindow {

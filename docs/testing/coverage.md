@@ -162,6 +162,11 @@ Swift tests cover, without starting the app:
   late-error isolation after reopening. Non-onboarding page scenarios finish the
   visible welcome flow first. These checks remain windowless; they do not prove
   desktop presentation or animation smoothness.
+  `ControlPanelWindowSizingTests` also exercises the native chrome offscreen at
+  full-screen, half-screen and minimum panel sizes: navigation hit-testing below
+  an opaque title bar, unobscured content bounds, and restoration of the windowed
+  title-bar layout without resizing the frame. It does not enter a full-screen
+  Space or verify the live Split View transition.
 - **Appearance** — preference recreation, rejection of invalid changes without
   overwriting saved values, recovery from a damaged saved accent, reset
   isolation, plus an offscreen appearance regression that commits the real

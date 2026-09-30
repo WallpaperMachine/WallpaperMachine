@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Control-panel full-screen navigation (#17)
+
+- python3 scripts/test.py --only ControlPanelWindowSizingTests: 2 passed, 0 failed, 0 skipped.
+- Temporary offscreen AppKit smoke executable: opaque title-bar chrome intercepted navigation before the layout change; the fixed layout and restored windowed layout both delivered hits to content and preserved the window frame.
+- Regression coverage exercises 1920×1080, 960×1080 and 760×560 bounds, unobscured content, navigation hit-testing and restoration of the unified title-bar layout.
+- python3 scripts/test.py: all 17 Python test modules passed; native gate 853 passed, 0 failed, 11 skipped of 864.
+- Skipped: 9 opt-in NativeVideoPlayerMediaTests and 2 live-network WorkshopTests; no asset-dependent skips.
+- Live full-screen and Split View transitions and visual presentation remain unverified; no window was shown or Space transition requested.
+- Release app not rebuilt; the running app remains unchanged. Unrelated concurrent WebUI and documentation edits were preserved.
+
 ## 2026-09-30 — Keep the active-display filter on one line
 
 - Offscreen WKWebView smoke — exit 0; 24 cases across 760, 840, 841, 1040, 1041 and 1280px in English, Japanese, Simplified Chinese and Traditional Chinese. The full label occupies one line without overflow; checking and clearing Active filters the expected wallpapers. Discover widths and collapsed layout remain unchanged. Throwaway probe removed.
@@ -97,13 +107,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py --only WhatsNewTests — exit 0; 9 passed, 0 failed, 0 skipped.
 - python3 scripts/test.py — exit 0; 851 passed, 0 failed, 11 skipped of 862.
 - Desktop appearance and actual Window Server presentation unverified; no windows opened. No Release rebuild requested or performed.
-
-## 2026-09-30 — First downloaded wallpaper support prompt
-
-- Added a persistent, once-only support offer after a successfully installed Workshop/pixiv wallpaper receives a successful explicit activation; failed applies, automatic rotation, restoration and local imports do not qualify.
-- Initial targeted state/activation/panel run: 18 passed, 6 panel failures because windowless WebKit reports document.hidden. The offscreen fixture now simulates page visibility independently from native presentation, matching the existing Discover tests.
-- python3 scripts/test.py --only WebPanelSupportPromptTests: exit 0; 7 passed, 0 failed, 0 skipped. Covers actual display acknowledgment, persistence/reload, welcome/modal/hidden deferral, captured Star and localized Pricing URLs, link failure retry, Escape and body-focus restoration.
-- python3 scripts/test.py: exit 0; 226 Python tests passed; 861 native tests: 850 passed, 0 failed, 11 skipped. The full gate ran once after the targeted fix.
-- Skipped opt-in tests: 9 NativeVideoPlayerMediaTests requiring real media decoding and 2 live Steam Workshop queries. Renderer probes were not run; no renderer or generated binding changes.
-- Changed JavaScript syntax checks, native localization JSON parsing and git diff --check passed. English and Chinese Pricing destinations each returned HTTP 200. XcodeGen regenerated the project for the new Swift files.
-- Visual presentation and real desktop/VoiceOver behavior remain unverified; no windows, screenshots, wallpaper changes or external browser launches. No Release build, install, commit or push requested.
