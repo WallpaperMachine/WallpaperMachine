@@ -383,9 +383,9 @@ restarting the app and without downloading that wallpaper again.
 
 ## Steam sign-in
 
-The requirement itself — a Steam account that owns Wallpaper Engine — is stated
-once, with registration and store links, on the panel's
-[first-run guide](control-panel.md#first-run); the download dialog only asks
+The first-run guide explains that downloads require a Steam account that owns
+Wallpaper Engine, with registration and store links
+([first-run guide](control-panel.md#first-run)); the download dialog only asks
 for what the current download still needs.
 
 The guide can also sign in ahead of any download. `WorkshopStore.requestSignIn`
@@ -455,6 +455,12 @@ asks: rejected requests are never reused, approval is never bypassed, and
 retries are never automatic. If Steam reports rate limiting, wait before
 retrying. Workshop content-access errors are a separate failure and offer no
 authentication retry.
+
+Generic Workshop download failures also explain the purchase requirement:
+buy Wallpaper Engine on Steam or sign in with an account that already owns it,
+then retry. If that account already owns it, check the wallpaper's Workshop
+page for private or removed content. A generic failure does not establish
+which of these caused the download to fail.
 
 ## Completion and recovery
 

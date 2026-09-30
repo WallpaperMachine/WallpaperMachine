@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Merge origin/main and build Release
+
+- Merged origin/main 98e90a8 with six local commits; retained What's New and Dock/Finder import startup, adopted persistent import ownership, regenerated Xcode project and preserved both verification histories.
+- Completed Japanese and Traditional Chinese translations for five What's New strings exposed by the merged localization gate.
+- Removed obsolete sidebar checkbox-count and default-list assertions; retained interaction, layout and persistence coverage. Targeted ControlPanelLibraryTests: 9 passed.
+- python3 scripts/test.py: all 17 Python suites passed; native 824 passed, 0 failed, 11 skipped of 835. Earlier attempts exposed missing translations and stale sidebar assertions, corrected before the passing gate.
+- python3 scripts/build.py --swift-only --configuration Release: passed; existing renderer and bindings reused, no incoming renderer changes.
+- codesign --verify --deep --strict: passed. diff -qr WebUI versus Release bundled WebUI and cmp bundled CHANGELOG.md: byte-identical.
+- No app launch, restart, installation or desktop visual verification; opt-in native-media and live Workshop checks remain skipped.
+
 ## 2026-09-29 — Bilingual What's New Release build
 
 - python3 scripts/test.py via a temporary same-user Aqua launch job: exit 0; all 17 Python suites passed, including 51 release-note tests; native 746 passed, 0 failed, 11 skipped of 757. The previous lock-screen recovery blocker now passes.

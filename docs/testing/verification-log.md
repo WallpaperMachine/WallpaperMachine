@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Clarify generic Workshop download failures
+
+- Temporary PTY smoke: python3 scripts/test.py --only DownloadFailureCopySmoke passed (1 test); all three generic failure forms emitted purchase/account recovery guidance without offering authentication retry. Temporary smoke removed afterward.
+- python3 scripts/test.py passed: 852 native tests passed, 0 failed, 11 skipped; all 17 Python test modules passed.
+- Skipped: 9 opt-in native video media cases and 2 live Steam Workshop cases.
+- Updated English, Japanese, Simplified Chinese, and Traditional Chinese native error catalogs and the Workshop download documentation.
+- Live non-owning Steam account and visual error layout not exercised. No Release rebuild or desktop interaction.
+
 ## 2026-09-30 — Advanced performance settings refinement
 
 - Local WebUI preview: captured matching before/after views with illustrative wallpaper reports; exercised both renderer selectors and all five switches, keyboard disclosure controls, snapshot focus/open-state preservation, pending/rejection recovery, empty/shared-decode/fallback reports, and escaped long titles.
@@ -103,13 +111,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/check_renderer.py: exit 0; ten synthetic pooled/isolated pixel comparisons matched with zero diagnostics; eight projects reloaded twice.
 - Physical external-display lid-close/wake timing remains unverified. Black replaces the app-owned white fallback; no guarantee is made about macOS-owned transitions.
 - No Release app rebuild, installation, desktop control or app restart; the running app retains its old behavior.
-
-## 2026-09-29 — Merge origin/main and build Release
-
-- Merged origin/main 98e90a8 with six local commits; retained What's New and Dock/Finder import startup, adopted persistent import ownership, regenerated Xcode project and preserved both verification histories.
-- Completed Japanese and Traditional Chinese translations for five What's New strings exposed by the merged localization gate.
-- Removed obsolete sidebar checkbox-count and default-list assertions; retained interaction, layout and persistence coverage. Targeted ControlPanelLibraryTests: 9 passed.
-- python3 scripts/test.py: all 17 Python suites passed; native 824 passed, 0 failed, 11 skipped of 835. Earlier attempts exposed missing translations and stale sidebar assertions, corrected before the passing gate.
-- python3 scripts/build.py --swift-only --configuration Release: passed; existing renderer and bindings reused, no incoming renderer changes.
-- codesign --verify --deep --strict: passed. diff -qr WebUI versus Release bundled WebUI and cmp bundled CHANGELOG.md: byte-identical.
-- No app launch, restart, installation or desktop visual verification; opt-in native-media and live Workshop checks remain skipped.
