@@ -1,8 +1,29 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このディスプレイに適用済みの壁紙はありません。WallpaperMachineで「ロック画面をアニメーション表示」をオンにしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这台显示器没有已应用的壁纸。请在 WallpaperMachine 中开启“锁定屏幕动态壁纸”。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此顯示器沒有可用的已套用桌布。請在 WallpaperMachine 中開啟「鎖定畫面動態桌布」。"}}}
+    "The web wallpaper entry or asset is outside its published folder." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web wallpaper entry or asset is outside its published folder."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Web壁紙のエントリまたはアセットが公開済みフォルダの外にあります。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "网页壁纸的入口或资源位于已发布的文件夹之外。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "網頁桌布的進入點或資源位於已發佈的資料夾之外。"}}}
+    },
+    "The published web wallpaper properties are invalid." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The published web wallpaper properties are invalid."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "公開済みWeb壁紙のプロパティが無効です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已发布的网页壁纸属性无效。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已發佈的網頁桌布屬性無效。"}}}
+    },
+    "This macOS version cannot host a live web screen saver." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This macOS version cannot host a live web screen saver."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンのmacOSではライブWebスクリーンセーバを実行できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此 macOS 版本无法运行实时网页屏幕保护程序。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此 macOS 版本無法執行即時網頁螢幕保護程式。"}}}
+    },
+    "The web screen saver did not produce a frame in time." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web screen saver did not produce a frame in time."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Webスクリーンセーバが時間内にフレームを生成しませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "网页屏幕保护程序未能及时输出画面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "網頁螢幕保護程式未能及時產生影格。"}}}
+    },
+    "The web screen saver frame is unavailable." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web screen saver frame is unavailable."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Webスクリーンセーバのフレームを利用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "网页屏幕保护程序的画面不可用。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "網頁螢幕保護程式的影格無法使用。"}}}
+    },
+    "The web screen saver stopped unexpectedly." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web screen saver stopped unexpectedly."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Webスクリーンセーバが予期せず停止しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "网页屏幕保护程序意外停止。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "網頁螢幕保護程式意外停止。"}}}
+    },
+    "The web screen saver could not suspend or resume playback." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web screen saver could not suspend or resume playback."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Webスクリーンセーバの再生を一時停止または再開できませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法暂停或恢复网页屏幕保护程序的播放。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法暫停或恢復網頁螢幕保護程式的播放。"}}}
+    },
+    "No applied wallpaper is available for this display. Enable Animate Lock Screen or Use wallpaper as screen saver in WallpaperMachine." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No applied wallpaper is available for this display. Enable Animate Lock Screen or Use wallpaper as screen saver in WallpaperMachine."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このディスプレイに適用済みの壁紙はありません。WallpaperMachineで「ロック画面をアニメーション表示」または「壁紙をスクリーンセーバに使用」をオンにしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这台显示器没有已应用的壁纸。请在 WallpaperMachine 中开启“锁定屏幕动态壁纸”或“将壁纸用作屏幕保护程序”。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此顯示器沒有可用的已套用桌布。請在 WallpaperMachine 中開啟「鎖定畫面動態桌布」或「將桌布用作螢幕保護程式」。"}}}
     },
     "Unsupported native wallpaper creation request." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Unsupported native wallpaper creation request."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "対応していないシステム壁紙の作成リクエストです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持的墙纸创建请求。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援的原生桌布建立請求。"}}}
@@ -37,8 +58,8 @@
     "Wallpaper snapshot timed out." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper snapshot timed out."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙のスナップショットがタイムアウトしました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "墙纸快照超时。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布快照逾時。"}}}
     },
-    "Applied wallpaper, animated on the lock screen" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applied wallpaper, animated on the lock screen"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "適用中の壁紙をロック画面でアニメーション表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "当前壁纸，在锁定屏幕上动态显示"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "目前套用的桌布，在鎖定畫面上以動態顯示"}}}
+    "Applied wallpaper on the lock screen and screen saver" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applied wallpaper on the lock screen and screen saver"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "適用中の壁紙をロック画面とスクリーンセーバに表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "在锁定屏幕和屏幕保护程序中显示当前壁纸"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "在鎖定畫面和螢幕保護程式中顯示目前套用的桌布"}}}
     },
     "macOS rejected the wallpaper provider description." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS rejected the wallpaper provider description."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSが壁紙プロバイダの説明を拒否しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒绝了墙纸提供程序的描述。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "macOS 拒絕了桌布提供者描述。"}}}

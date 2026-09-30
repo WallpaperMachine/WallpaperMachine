@@ -506,6 +506,104 @@ fn write_clip(temp: &tempfile::TempDir, id: &str) {
 }
 
 #[tokio::test]
+async fn native_export_keeps_all_wallpaper_kinds_and_mirrors_with_playback_and_power_policy() {
+    let temp = tempfile::tempdir().unwrap();
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot((7..=14).map(|id| display(id, None)).collect());
+    let bridge = bridge_with(&engine, &temp);
+    bridge.set_video_backend("native_preferred".into()).await.unwrap();
+    for (id, title, project, display_id) in [
+        ("100", "Scene", r#"{"type":"scene","file":"scene.pkg","general":{"properties":{
+            "speed":{"type":"slider","value":1,"min":0,"max":10}}}}"#, "7"),
+        ("400", "Clip", r#"{"type":"video","file":"clip.mp4"}"#, "8"),
+        ("300", "Web", r#"{"type":"web","file":"index.html","general":{"properties":{
+            "speed":{"type":"slider","value":1,"min":0,"max":10}}}}"#, "9"),
+        ("500", "Still", r#"{"type":"web","file":"index.html","general":{"properties":{
+            "image":{"type":"file","fileType":"image","value":"poster.png"}}}}"#, "10"),
+    ] {
+        commit(&bridge, id, title, project, display_id).await;
+    }
+    bridge
+        .edit_property("300".into(), "speed".into(), crate::BridgePropertyValue::Number { value: 2.0 })
+        .await
+        .unwrap();
+    bridge.apply_wallpaper_options("300".into()).await.unwrap();
+    bridge
+        .edit_property("100".into(), "speed".into(), crate::BridgePropertyValue::Number { value: 3.0 })
+        .await
+        .unwrap();
+    bridge.apply_wallpaper_options("100".into()).await.unwrap();
+    for (mirror, source) in [("11", "7"), ("12", "8"), ("13", "9"), ("14", "10")] {
+        bridge
+            .set_display_mode(mirror.into(), crate::BridgeDisplayMode::Mirror)
+            .await
+            .unwrap();
+        bridge.set_mirror_target(mirror.into(), source.into()).await.unwrap();
+        bridge.set_mirror_target_fps(mirror.into(), 45).await.unwrap();
+        bridge.set_display_presentation_suspended(mirror.into(), true).await.unwrap();
+    }
+    bridge.set_mirror_scaling_factor("12".into(), 1.25).await.unwrap();
+    bridge.set_presentation_suspended(true).await.unwrap();
+
+    let desktop_scenes = engine.rendered_scenes();
+    assert_eq!(
+        desktop_scenes.iter().map(|scene| scene.display.display_id).collect::<Vec<_>>(),
+        vec![7, 11]
+    );
+    assert!(desktop_scenes.iter().all(|scene| scene.scene_path.contains("/100/")));
+    assert_eq!(bridge.native_video_wallpapers().await.unwrap().len(), 2);
+    assert_eq!(bridge.web_wallpapers().await.unwrap().len(), 4);
+    let exported = bridge.lock_screen_scenes().await.unwrap();
+    let by_display = exported.iter().map(|row| (row.display_id, row)).collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(by_display.keys().copied().collect::<Vec<_>>(), (7..=14).collect::<Vec<_>>());
+    for (source, mirror, wallpaper) in [(7, 11, "100"), (8, 12, "400"), (9, 13, "300"), (10, 14, "500")] {
+        for row in [by_display[&source], by_display[&mirror]] {
+            assert_eq!(row.wallpaper_id, wallpaper);
+            assert!(std::path::Path::new(&row.project_path).is_absolute());
+            assert!(std::path::Path::new(&row.assets_path).is_absolute());
+            assert!(!row.paused, "desktop suspension must not pause native presentations");
+        }
+        assert_eq!(by_display[&source].project_path, by_display[&mirror].project_path);
+        assert_eq!(by_display[&source].properties_json, by_display[&mirror].properties_json);
+        assert_eq!(by_display[&mirror].fps, 45);
+    }
+    assert_eq!(by_display[&12].scaling_factor, 1.25);
+    let scene: serde_json::Value =
+        serde_json::from_str(by_display[&11].properties_json.as_deref().unwrap()).unwrap();
+    assert_eq!(scene["speed"], 3.0, "renderer options remain flat");
+    for display_id in [9, 10, 13, 14] {
+        assert_eq!(by_display[&display_id].scaling_mode, crate::BridgeScalingMode::Fill);
+        assert_eq!(by_display[&display_id].scaling_factor, 1.0);
+        assert!(by_display[&display_id].project_path.ends_with("/project.json"));
+    }
+    let web: serde_json::Value =
+        serde_json::from_str(by_display[&13].properties_json.as_deref().unwrap()).unwrap();
+    assert_eq!(web["speed"]["value"], 2.0);
+    let still: serde_json::Value =
+        serde_json::from_str(by_display[&14].properties_json.as_deref().unwrap()).unwrap();
+    assert_eq!(still["image"]["value"], "poster.png");
+
+    bridge.set_presentation_unloaded(true).await.unwrap();
+    assert_eq!(bridge.lock_screen_scenes().await.unwrap(), exported);
+    bridge.set_video_backend("compatibility".into()).await.unwrap();
+    assert_eq!(bridge.lock_screen_scenes().await.unwrap(), exported);
+    bridge.pause_all().await.unwrap();
+    assert!(bridge.lock_screen_scenes().await.unwrap().iter().all(|row| row.paused));
+    bridge.play_all().await.unwrap();
+    bridge.set_battery_mode(BridgeBatteryMode::Pause).await.unwrap();
+    bridge.set_power_source_for_test(PowerSource::Battery).await;
+    assert!(bridge.lock_screen_scenes().await.unwrap().iter().all(|row| row.paused));
+    bridge.set_power_source_for_test(PowerSource::External).await;
+    assert!(bridge.lock_screen_scenes().await.unwrap().iter().all(|row| !row.paused));
+    bridge.set_battery_quality_profile(0.5, 24).await.unwrap();
+    bridge.set_battery_mode(BridgeBatteryMode::ReducedQuality).await.unwrap();
+    bridge.set_power_source_for_test(PowerSource::Battery).await;
+    assert!(bridge.lock_screen_scenes().await.unwrap().iter().all(|row| row.fps == 24));
+    bridge.set_frame_rate_cap(Some(15)).await.unwrap();
+    assert!(bridge.lock_screen_scenes().await.unwrap().iter().all(|row| row.fps == 15));
+}
+
+#[tokio::test]
 async fn unload_closes_scenes_and_host_lists_and_reload_restores_them() {
     let temp = tempfile::tempdir().unwrap();
     let engine = FakeEngineFacade::default();
@@ -543,7 +641,7 @@ async fn unload_closes_scenes_and_host_lists_and_reload_restores_them() {
     assert!(!engine.rendered_scenes().is_empty());
     assert_eq!(bridge.web_wallpapers().await.unwrap().len(), 1);
     assert_eq!(bridge.native_video_wallpapers().await.unwrap().len(), 1);
-    assert_eq!(bridge.lock_screen_scenes().await.unwrap().len(), 1);
+    assert_eq!(bridge.lock_screen_scenes().await.unwrap().len(), 3);
     let active = bridge.app_snapshot().await.unwrap().active_wallpaper_ids;
     assert!(active.iter().any(|id| id == "100"));
 
@@ -554,7 +652,7 @@ async fn unload_closes_scenes_and_host_lists_and_reload_restores_them() {
     assert!(bridge.native_video_wallpapers().await.unwrap().is_empty());
     assert_eq!(
         bridge.lock_screen_scenes().await.unwrap().len(),
-        1,
+        3,
         "the lock screen is not a desktop presentation"
     );
     assert_eq!(

@@ -25,6 +25,11 @@ for them.
   wallpaper* turns off macOS's "Click wallpaper to reveal desktop" option (the
   same value System Settings › Desktop & Dock writes) so a click no longer
   slides every window aside.
+- On macOS 26+, **Use wallpaper as screen saver** can present web and still-image
+  projects through the native extension. It uses committed properties and isolated
+  file copies, without audio, capture or interaction. See
+  [Screen saver](lock-screen.md#use-wallpaper-as-screen-saver) for activation,
+  independent selection and verification limits.
 
 ## Host protocol
 

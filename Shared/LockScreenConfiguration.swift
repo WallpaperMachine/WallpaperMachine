@@ -6,7 +6,7 @@ struct LockScreenConfiguration: Codable, Equatable {
   static let extensionIdentifier = "app.wallpapermachine.wallpaper-extension"
   static let changedNotification = "app.wallpapermachine.lock-screen.changed"
   static let fileName = "configuration.json"
-  static let supportedVersion = 1
+  static let supportedVersion = 2
   /// Home-relative exchange directory. The app publishes here and the extension
   /// reads here and writes readiness and its log back. It lies outside both
   /// sandbox containers because macOS asks "would like to access data from other
@@ -33,6 +33,8 @@ struct LockScreenConfiguration: Codable, Equatable {
   var version: Int = supportedVersion
   var revision: String = UUID().uuidString
   var scenes: [LockScreenScene]
+  var lockScreenEnabled: Bool = true
+  var screenSaverEnabled: Bool = false
 }
 
 struct LockScreenScene: Codable, Equatable {
@@ -48,6 +50,8 @@ struct LockScreenScene: Codable, Equatable {
   var scalingFactor: Double
   var propertiesJSON: String?
   var paused: Bool
+  /// A project-relative HTML entry; nil selects the scene/video renderer.
+  var webEntryFile: String? = nil
 }
 
 /// Written once a non-preview surface has GPU-ready pixels, or with `error` when

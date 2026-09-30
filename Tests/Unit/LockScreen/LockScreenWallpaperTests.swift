@@ -79,7 +79,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     let original = fixture()
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     let selected = try readStore()
     let displays = try XCTUnwrap(selected["Displays"] as? [String: [String: Any]])
     XCTAssertEqual(
@@ -94,7 +94,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     XCTAssertEqual(
       selected["AllSpacesAndDisplays"] as? NSDictionary,
       original["AllSpacesAndDisplays"] as? NSDictionary)
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
     XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
   }
@@ -109,9 +109,9 @@ final class LockScreenWallpaperTests: XCTestCase {
     var reloads = 0
     let selection = LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: { reloads += 1 })
-    try selection.synchronize(displays: ["one"], revision: "wallpaper-a")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "wallpaper-a")
     let first = try readStore()
-    try selection.synchronize(displays: ["one"], revision: "wallpaper-b")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "wallpaper-b")
     let second = try readStore()
     func configurations(_ root: [String: Any]) throws -> [Data] {
       let displays = try XCTUnwrap(root["Displays"] as? [String: [String: Any]])
@@ -134,7 +134,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     let after = try configurations(second)
     for (old, new) in zip(before, after) { XCTAssertNotEqual(old, new) }
     XCTAssertEqual(reloads, 2)
-    try selection.synchronize(displays: ["one"], revision: "wallpaper-b")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "wallpaper-b")
     XCTAssertEqual(reloads, 2, "Unchanged publication must not reload WallpaperAgent")
     XCTAssertEqual(try readStore() as NSDictionary, second as NSDictionary)
     let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
@@ -146,15 +146,15 @@ final class LockScreenWallpaperTests: XCTestCase {
   func testExternalDesktopEditSurvivesWhileOwnedIdleSelectionRestores() throws {
     try write(fixture())
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     var external = try readStore()
     var displays = try XCTUnwrap(external["Displays"] as? [String: [String: Any]])
     displays["one"]?["Desktop"] = choice("user-selected")
     displays["one"]?["Unrelated"] = "new-user-value"
     external["Displays"] = displays
     try write(external)
-    XCTAssertThrowsError(try selection.synchronize(displays: ["one"]))
-    try selection.synchronize(displays: [])
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     let restored = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
     XCTAssertEqual(provider(restored, key: "Desktop"), "user-selected")
     XCTAssertEqual(provider(restored, key: "Idle"), "display-one-idle")
@@ -168,7 +168,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     let failing = LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: { throw CocoaError(.executableRuntimeMismatch) }
     )
-    XCTAssertThrowsError(try failing.synchronize(displays: ["one"]))
+    XCTAssertThrowsError(try failing.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
     XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
     let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
     try recovered.recover()
@@ -182,8 +182,8 @@ final class LockScreenWallpaperTests: XCTestCase {
     original["Spaces"] = ["space-a": ["Default": node("default-a"), "Displays": [String: Any]()]]
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
   }
   @MainActor
@@ -191,7 +191,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     let original = fixture()
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     var systemChanged = try readStore()
     let owned = try XCTUnwrap((systemChanged["Displays"] as? [String: [String: Any]])?["one"])
     var copied = try XCTUnwrap(systemChanged["SystemDefault"] as? [String: Any])
@@ -200,7 +200,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     systemChanged["SystemDefault"] = copied
     systemChanged["AllSpacesAndDisplays"] = ["Linked": choice("another-app"), "Type": "linked"]
     try write(systemChanged)
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     let restored = try readStore()
     XCTAssertEqual(
       restored["SystemDefault"] as? NSDictionary, original["SystemDefault"] as? NSDictionary)
@@ -235,7 +235,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     original["Spaces"] = spaces
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
     try recovered.recover()
     let restoredSpaces = try XCTUnwrap(try readStore()["Spaces"] as? [String: [String: Any]])
@@ -255,7 +255,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     let original = fixture()
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     var copied = try readStore()
     var spaces = try XCTUnwrap(copied["Spaces"] as? [String: [String: Any]])
     var fallback = node("default-a")
@@ -282,7 +282,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     original["AllSpacesAndDisplays"] = ["Idle": choice("another-app-idle"), "Type": "idle"]
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
 
     var copied = try readStore()
     let owned = try XCTUnwrap((copied["Displays"] as? [String: [String: Any]])?["one"])
@@ -298,8 +298,8 @@ final class LockScreenWallpaperTests: XCTestCase {
     copied["Spaces"] = spaces
     try write(copied)
 
-    try selection.synchronize(displays: ["one"])
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
 
     let restored = try readStore()
     XCTAssertEqual(
@@ -324,7 +324,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     original["AllSpacesAndDisplays"] = ["Idle": choice("another-app-idle"), "Type": "idle"]
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
 
     var copied = try readStore()
     let owned = try XCTUnwrap((copied["Displays"] as? [String: [String: Any]])?["one"])
@@ -340,7 +340,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     copied["Spaces"] = spaces
     try write(copied)
 
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
 
     let restored = try readStore()
     XCTAssertEqual(
@@ -367,7 +367,7 @@ final class LockScreenWallpaperTests: XCTestCase {
     original["Displays"] = ["one": display]
     try write(original)
     let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
-    XCTAssertThrowsError(try selection.synchronize(displays: ["one"]))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
     XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
     XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
   }
@@ -385,18 +385,18 @@ final class LockScreenWallpaperTests: XCTestCase {
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
         if data == nil { removes += 1 } else { writes += 1 }
       })
-    try selection.synchronize(displays: ["one"], revision: "first")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "first")
     let journalBytes = try Data(contentsOf: journal)
     let firstStore = try Data(contentsOf: store)
-    try selection.synchronize(displays: ["one"], revision: "first")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "first")
     XCTAssertEqual(try Data(contentsOf: store), firstStore)
-    try selection.synchronize(displays: ["one"], revision: "second")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "second")
     XCTAssertNotEqual(try Data(contentsOf: store), firstStore)
     XCTAssertEqual(try Data(contentsOf: journal), journalBytes)
     XCTAssertEqual(writes, 1)
     XCTAssertEqual(reloads, 2)
-    try selection.synchronize(displays: [])
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     XCTAssertEqual(writes, 1)
     XCTAssertEqual(removes, 1)
     XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
@@ -423,17 +423,17 @@ final class LockScreenWallpaperTests: XCTestCase {
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
         writes += 1
       })
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     storeBeforeCommit = try Data(contentsOf: store)
     let firstJournal = try Data(contentsOf: journal)
     failExpansion = true
-    XCTAssertThrowsError(try selection.synchronize(displays: ["one", "two"]))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["one", "two"], screenSaverDisplays: ["one", "two"]))
     XCTAssertEqual(try Data(contentsOf: store), storeBeforeCommit)
     XCTAssertEqual(try Data(contentsOf: journal), firstJournal)
     XCTAssertEqual(reloads, 1)
     try assertDiskRecovery(restores: original)
     failExpansion = false
-    try selection.synchronize(displays: ["one", "two"])
+    try selection.synchronize(desktopDisplays: ["one", "two"], screenSaverDisplays: ["one", "two"])
     XCTAssertEqual(writes, 2)
     XCTAssertEqual(reloads, 2)
     let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
@@ -453,7 +453,7 @@ final class LockScreenWallpaperTests: XCTestCase {
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
         try self.write(external)
       })
-    XCTAssertThrowsError(try selection.synchronize(displays: ["one"]))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
     XCTAssertEqual(reloads, 0)
     XCTAssertEqual(try readStore() as NSDictionary, external as NSDictionary)
     XCTAssertTrue(FileManager.default.fileExists(atPath: journal.path))
@@ -480,12 +480,12 @@ final class LockScreenWallpaperTests: XCTestCase {
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
         writes += 1
       })
-    XCTAssertThrowsError(try selection.synchronize(displays: ["one"]))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
     let committedStore = try Data(contentsOf: store)
     let committedJournal = try Data(contentsOf: journal)
     try assertDiskRecovery(restores: original)
     failReload = false
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     XCTAssertEqual(reloads, 2)
     XCTAssertEqual(writes, 1)
     XCTAssertEqual(try Data(contentsOf: store), committedStore)
@@ -510,10 +510,10 @@ final class LockScreenWallpaperTests: XCTestCase {
         }
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
       })
-    try selection.synchronize(displays: ["one", "two"])
+    try selection.synchronize(desktopDisplays: ["one", "two"], screenSaverDisplays: ["one", "two"])
     let union = try Data(contentsOf: journal)
     failPrune = true
-    XCTAssertThrowsError(try selection.synchronize(displays: ["two"]))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: ["two"], screenSaverDisplays: ["two"]))
     XCTAssertEqual(try Data(contentsOf: journal), union)
     let displays = try XCTUnwrap(try readStore()["Displays"] as? [String: [String: Any]])
     XCTAssertEqual(provider(try XCTUnwrap(displays["one"]), key: "Idle"), "display-one-idle")
@@ -542,14 +542,14 @@ final class LockScreenWallpaperTests: XCTestCase {
         }
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
       })
-    try selection.synchronize(displays: ["one"])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
     let union = try Data(contentsOf: journal)
-    XCTAssertThrowsError(try selection.synchronize(displays: []))
+    XCTAssertThrowsError(try selection.synchronize(desktopDisplays: [], screenSaverDisplays: []))
     XCTAssertEqual(try Data(contentsOf: journal), union)
     XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
     try assertDiskRecovery(restores: original)
     failRemove = false
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     XCTAssertEqual(removeAttempts, 2)
     XCTAssertEqual(reloads, 2, "Retrying journal removal alone must not reload the store")
     XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
@@ -565,13 +565,13 @@ final class LockScreenWallpaperTests: XCTestCase {
         try LockScreenWallpaperSelection.persistJournalFile(url, data)
         if data != nil { writes += 1 }
       })
-    try selection.synchronize(displays: ["one"], revision: "same")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "same")
     var changed = try readStore()
     var spaces = try XCTUnwrap(changed["Spaces"] as? [String: Any])
     spaces["space-b"] = ["Default": node("new-default"), "Displays": [String: Any]()]
     changed["Spaces"] = spaces
     try write(changed)
-    try selection.synchronize(displays: ["one"], revision: "same")
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "same")
     XCTAssertEqual(writes, 2)
     var selected = try readStore()
     var selectedSpaces = try XCTUnwrap(selected["Spaces"] as? [String: [String: Any]])
@@ -582,8 +582,8 @@ final class LockScreenWallpaperTests: XCTestCase {
     selectedSpaces.removeValue(forKey: "space-a")
     selected["Spaces"] = selectedSpaces
     try write(selected)
-    try selection.synchronize(displays: ["one"], revision: "same")
-    try selection.synchronize(displays: [])
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "same")
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
     let restoredSpaces = try XCTUnwrap(try readStore()["Spaces"] as? [String: [String: Any]])
     XCTAssertNil(restoredSpaces["space-a"])
     XCTAssertEqual(
@@ -612,6 +612,259 @@ final class LockScreenWallpaperTests: XCTestCase {
     XCTAssertThrowsError(try selection.recover())
     XCTAssertEqual(try Data(contentsOf: journal), malformed)
     XCTAssertEqual(removes, 1)
+  }
+
+  @MainActor
+  func testSaverOnlyPreservesDesktopAndMetadataAcrossRevisionAndRecovery() throws {
+    var original = fixture()
+    var displays = try XCTUnwrap(original["Displays"] as? [String: [String: Any]])
+    displays["one"]?["Unknown"] = ["nested": "keep"]
+    original["Displays"] = displays
+    try write(original)
+    let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: ["one"], revision: "first")
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: ["one"], revision: "second")
+    let selected = try readStore()
+    let selectedDisplays = try XCTUnwrap(selected["Displays"] as? [String: [String: Any]])
+    var actual = try XCTUnwrap(selectedDisplays["one"])
+    XCTAssertEqual(provider(actual, key: "Idle"), LockScreenConfiguration.extensionIdentifier)
+    actual["Idle"] = displays["one"]?["Idle"]
+    XCTAssertEqual(actual as NSDictionary, displays["one"] as NSDictionary?)
+    let spaces = try XCTUnwrap(selected["Spaces"] as? [String: [String: Any]])
+    let spaceDisplays = try XCTUnwrap(spaces["space-a"]?["Displays"] as? [String: [String: Any]])
+    XCTAssertEqual(provider(try XCTUnwrap(spaceDisplays["one"]), key: "Desktop"), "space-one-desktop")
+    try assertDiskRecovery(restores: original)
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+    XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+  }
+
+  @MainActor
+  func testDesktopOnlyDoesNotClaimOrRepairIdle() throws {
+    var original = fixture()
+    original["SystemDefault"] = [:] as [String: Any]
+    original["AllSpacesAndDisplays"] = [:] as [String: Any]
+    original["Spaces"] = [:] as [String: Any]
+    var display = node("display-one")
+    display["Idle"] = choice(LockScreenConfiguration.extensionIdentifier)
+    original["Displays"] = ["one": display]
+    try write(original)
+    let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: [])
+    let selected = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+    XCTAssertEqual(selected["Idle"] as? NSDictionary, display["Idle"] as? NSDictionary)
+    try assertDiskRecovery(restores: original)
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+    XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+  }
+
+  @MainActor
+  func testBothModesCanBeEnabledAndDisabledInEitherOrder() throws {
+    for firstSaver in [false, true] {
+      for remainingSaver in [false, true] {
+        let original = fixture()
+        try write(original)
+        let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+        try selection.synchronize(
+          desktopDisplays: firstSaver ? [] : ["one"],
+          screenSaverDisplays: firstSaver ? ["one"] : [])
+        try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+        try assertDiskRecovery(restores: original)
+        try selection.synchronize(
+          desktopDisplays: remainingSaver ? [] : ["one"],
+          screenSaverDisplays: remainingSaver ? ["one"] : [])
+        let selected = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+        XCTAssertEqual(
+          provider(selected, key: "Desktop"),
+          remainingSaver ? "display-one-desktop" : LockScreenConfiguration.extensionIdentifier)
+        XCTAssertEqual(
+          provider(selected, key: "Idle"),
+          remainingSaver ? LockScreenConfiguration.extensionIdentifier : "display-one-idle")
+        try assertDiskRecovery(restores: original)
+        try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+        XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+      }
+    }
+  }
+
+  @MainActor
+  func testUnmanagedExternalFieldCanChangeAndItsLatestChoiceIsJournaledOnActivation() throws {
+    for saver in [false, true] {
+      try write(fixture())
+      let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+      try selection.synchronize(
+        desktopDisplays: saver ? [] : ["one"], screenSaverDisplays: saver ? ["one"] : [])
+      let externalKey = saver ? "Desktop" : "Idle"
+      var external = try readStore()
+      var displays = try XCTUnwrap(external["Displays"] as? [String: [String: Any]])
+      displays["one"]?[externalKey] = choice("latest-user-choice")
+      displays["one"]?["Unrelated"] = "latest-user-metadata"
+      external["Displays"] = displays
+      try write(external)
+      try selection.synchronize(
+        desktopDisplays: saver ? [] : ["one"], screenSaverDisplays: saver ? ["one"] : [],
+        revision: "refresh")
+      let refreshed = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+      XCTAssertEqual(provider(refreshed, key: externalKey), "latest-user-choice")
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+      try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+      let restored = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+      XCTAssertEqual(provider(restored, key: externalKey), "latest-user-choice")
+      XCTAssertEqual(provider(restored, key: saver ? "Idle" : "Desktop"),
+        saver ? "display-one-idle" : "display-one-desktop")
+      XCTAssertEqual(restored["Unrelated"] as? String, "latest-user-metadata")
+    }
+  }
+
+  @MainActor
+  func testExternalOwnedFieldCanBeReleasedWhileOtherModeContinues() throws {
+    for saver in [false, true] {
+      try write(fixture())
+      let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+      let externalKey = saver ? "Desktop" : "Idle"
+      var external = try readStore()
+      var displays = try XCTUnwrap(external["Displays"] as? [String: [String: Any]])
+      displays["one"]?[externalKey] = choice("foreign-choice")
+      external["Displays"] = displays
+      try write(external)
+      XCTAssertThrowsError(
+        try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
+      try selection.synchronize(
+        desktopDisplays: saver ? [] : ["one"], screenSaverDisplays: saver ? ["one"] : [],
+        revision: "other-mode-keeps-running")
+      let selected = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+      XCTAssertEqual(provider(selected, key: externalKey), "foreign-choice")
+      XCTAssertEqual(provider(selected, key: saver ? "Idle" : "Desktop"),
+        LockScreenConfiguration.extensionIdentifier)
+      try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+      let restored = try XCTUnwrap((try readStore()["Displays"] as? [String: [String: Any]])?["one"])
+      XCTAssertEqual(provider(restored, key: externalKey), "foreign-choice")
+      XCTAssertEqual(provider(restored, key: saver ? "Idle" : "Desktop"),
+        saver ? "display-one-idle" : "display-one-desktop")
+    }
+  }
+
+  @MainActor
+  func testNewSpaceFallbackCopiesRestoreOneModeAtATime() throws {
+    for remainingSaver in [false, true] {
+      let original = fixture()
+      try write(original)
+      let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+      var copied = try readStore()
+      let owned = try XCTUnwrap((copied["Displays"] as? [String: [String: Any]])?["one"])
+      var system = try XCTUnwrap(copied["SystemDefault"] as? [String: Any])
+      system["Desktop"] = owned["Desktop"]
+      system["Idle"] = owned["Idle"]
+      copied["SystemDefault"] = system
+      var spaces = try XCTUnwrap(copied["Spaces"] as? [String: Any])
+      var inherited = node("new-space")
+      inherited["Desktop"] = owned["Desktop"]
+      inherited["Idle"] = owned["Idle"]
+      spaces["new"] = ["Default": inherited, "Displays": ["one": inherited]]
+      copied["Spaces"] = spaces
+      try write(copied)
+      try selection.synchronize(
+        desktopDisplays: remainingSaver ? [] : ["one"],
+        screenSaverDisplays: remainingSaver ? ["one"] : [])
+      let newSpace = try XCTUnwrap((try readStore()["Spaces"] as? [String: [String: Any]])?["new"])
+      let newDisplay = try XCTUnwrap((newSpace["Displays"] as? [String: [String: Any]])?["one"])
+      let newDefault = try XCTUnwrap(newSpace["Default"] as? [String: Any])
+      let removedKey = remainingSaver ? "Desktop" : "Idle"
+      XCTAssertEqual(provider(newDisplay, key: removedKey),
+        remainingSaver ? "display-one-desktop" : "display-one-idle")
+      XCTAssertEqual(provider(newDefault, key: removedKey),
+        remainingSaver ? "system-desktop" : "system-idle")
+      XCTAssertEqual(provider(newDisplay, key: remainingSaver ? "Idle" : "Desktop"),
+        LockScreenConfiguration.extensionIdentifier)
+      let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+      try recovered.recover()
+      let restoredSpace = try XCTUnwrap((try readStore()["Spaces"] as? [String: [String: Any]])?["new"])
+      let restoredDisplay = try XCTUnwrap((restoredSpace["Displays"] as? [String: [String: Any]])?["one"])
+      let restoredDefault = try XCTUnwrap(restoredSpace["Default"] as? [String: Any])
+      XCTAssertEqual(provider(restoredDisplay, key: "Desktop"), "display-one-desktop")
+      XCTAssertEqual(provider(restoredDisplay, key: "Idle"), "display-one-idle")
+      XCTAssertEqual(provider(restoredDefault, key: "Desktop"), "system-desktop")
+      XCTAssertEqual(provider(restoredDefault, key: "Idle"), "system-idle")
+      XCTAssertEqual(restoredDisplay["Unrelated"] as? String, "new-space")
+    }
+  }
+
+  @MainActor
+  func testLegacyBothFieldJournalRecoversWithoutClaimingExternalChanges() throws {
+    let original = fixture()
+    try write(original)
+    let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+    var legacy = try XCTUnwrap(
+      PropertyListSerialization.propertyList(from: Data(contentsOf: journal), format: nil)
+        as? [[String: Any]])
+    for index in legacy.indices {
+      legacy[index].removeValue(forKey: "fields")
+      legacy[index].removeValue(forKey: "typeOwned")
+      let path = try XCTUnwrap(legacy[index]["path"] as? [String])
+      var saved = original
+      for key in path { saved = try XCTUnwrap(saved[key] as? [String: Any]) }
+      legacy[index]["original"] = try PropertyListSerialization.data(
+        fromPropertyList: saved.filter { ["Desktop", "Idle", "Type"].contains($0.key) },
+        format: .binary, options: 0)
+    }
+    try PropertyListSerialization.data(fromPropertyList: legacy, format: .binary, options: 0)
+      .write(to: journal, options: .atomic)
+    var expected = original
+    var external = try readStore()
+    var displays = try XCTUnwrap(external["Displays"] as? [String: [String: Any]])
+    displays["one"]?["Desktop"] = choice("foreign-choice")
+    external["Displays"] = displays
+    try write(external)
+    var expectedDisplays = try XCTUnwrap(expected["Displays"] as? [String: [String: Any]])
+    expectedDisplays["one"]?["Desktop"] = choice("foreign-choice")
+    expected["Displays"] = expectedDisplays
+    let recovered = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+    try recovered.recover()
+    XCTAssertEqual(try readStore() as NSDictionary, expected as NSDictionary)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+  }
+
+  @MainActor
+  func testSameDisplayFieldExpansionReloadFailureRetainsBothRestorationChoices() throws {
+    let original = fixture()
+    try write(original)
+    var failReload = false
+    let selection = LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal,
+      reload: { if failReload { throw CocoaError(.executableRuntimeMismatch) } })
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: ["one"])
+    failReload = true
+    XCTAssertThrowsError(
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"]))
+    try assertDiskRecovery(restores: original)
+    failReload = false
+    try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"])
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: ["one"])
+    try assertDiskRecovery(restores: original)
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+    XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+  }
+
+  @MainActor
+  func testNonIndividualDisplayConfigurationIsRejectedWithoutChangingEitherChoice() throws {
+    for type in ["linked", "idle", "unknown"] {
+      for saver in [false, true] {
+        var original = fixture()
+        var displays = try XCTUnwrap(original["Displays"] as? [String: [String: Any]])
+        displays["one"]?["Type"] = type
+        displays["one"]?["Linked"] = choice("effective-linked-choice")
+        original["Displays"] = displays
+        try write(original)
+        let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+        XCTAssertThrowsError(try selection.synchronize(
+          desktopDisplays: saver ? [] : ["one"], screenSaverDisplays: saver ? ["one"] : []))
+        XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+      }
+    }
   }
 
 }

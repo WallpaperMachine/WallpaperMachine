@@ -17,6 +17,8 @@ final class WallpaperSurface {
   var activity = "active"
   private var layer: CAMetalLayer?
   private var renderer: OpaquePointer?
+  private var web: ScreenSaverWebSurface?
+  private var contentError: Error?
   private var frameObserver: NSObjectProtocol?
   private var firstFrameReply: ((Error?) -> Void)?
   private var readyWaiters: [(Error?) -> Void] = []
@@ -25,7 +27,7 @@ final class WallpaperSurface {
   private var snapshotDeadline: Task<Void, Never>?
   private var latestSnapshot: IOSurface?
   private var stopped = false
-  var hasContent: Bool { renderer != nil }
+  var hasContent: Bool { renderer != nil || (web != nil && contentError == nil) }
   private var rendererPaused = false
   /// When this surface started presenting, set once its first frame arrived.
   /// Kept apart from readiness so rendering one frame for a snapshot or a
@@ -72,13 +74,18 @@ final class WallpaperSurface {
   }
 
   func start(completion: @escaping (Error?) -> Void) {
-    guard !stopped, renderer == nil else {
+    guard !stopped, renderer == nil, web == nil else {
       completion(WallpaperRuntime.failure("Wallpaper surface is not available."))
       return
     }
     do {
       let project = try WallpaperRuntime.asset(scene.projectPath)
       let assets = try WallpaperRuntime.asset(scene.assetsPath)
+      contentError = nil
+      if let entry = scene.webEntryFile {
+        try startWeb(project: project, entry: entry, completion: completion)
+        return
+      }
       guard scene.fps > 0, (0...3).contains(scene.scalingMode), scene.scalingFactor.isFinite,
         scene.scalingFactor > 0
       else {
@@ -173,21 +180,7 @@ final class WallpaperSurface {
       let snapshot = try Self.snapshot(data, width: width, height: height, bgra: bgra)
       try LockScreenFrameBacking.install(snapshot, on: root)
       latestSnapshot = snapshot
-      if let reply = firstFrameReply {
-        firstFrameReply = nil
-        deadline?.cancel()
-        deadline = nil
-        presentingSince = ContinuousClock.now
-        counters.record(.readinessFrameRendered, for: surfaceKey)
-        applyPolicy()
-        WallpaperRuntime.log(
-          "Frame ready display=\(scene.displayID) context=\(context.contextId) pixels=\(width)x\(height)"
-        )
-        reply(nil)
-        let waiters = readyWaiters
-        readyWaiters.removeAll()
-        waiters.forEach { $0(nil) }
-      }
+      contentFrameReady()
       finishSnapshots(error: nil)
     } catch {
       if let reply = firstFrameReply {
@@ -198,6 +191,60 @@ final class WallpaperSurface {
       finishSnapshots(error: error)
     }
   }
+  private func contentFrameReady() {
+    guard let reply = firstFrameReply else { return }
+    firstFrameReply = nil
+    deadline?.cancel()
+    deadline = nil
+    presentingSince = ContinuousClock.now
+    counters.record(.readinessFrameRendered, for: surfaceKey)
+    applyPolicy()
+    reply(nil)
+    let waiters = readyWaiters
+    readyWaiters.removeAll()
+    waiters.forEach { $0(nil) }
+  }
+
+  private func startWeb(project: URL, entry: String, completion: @escaping (Error?) -> Void) throws {
+    let page = try ScreenSaverWebSurface(
+      projectURL: project.deletingLastPathComponent(), entryFile: entry,
+      readAccessURL: project.deletingLastPathComponent(),
+      size: size, scale: scale, propertiesJSON: scene.propertiesJSON ?? "{}", fps: scene.fps,
+      paused: !WallpaperPresentationAuthority.suspensionReasons(for: authorityRequest).isEmpty)
+    web = page
+    firstFrameReply = completion
+    page.onFrame = { [weak self] image in
+      guard let self, !self.stopped else { throw CancellationError() }
+      guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        throw ScreenSaverWebSurface.Failure.noFrame
+      }
+      let frame = try Self.snapshot(pixels)
+      try LockScreenFrameBacking.install(frame, on: self.root)
+      self.latestSnapshot = frame
+    }
+    page.onFailure = { [weak self] error in
+      guard let self, !self.stopped else { return }
+      self.contentError = error
+      let waiters = self.readyWaiters
+      self.readyWaiters.removeAll()
+      waiters.forEach { $0(error) }
+      self.finishSnapshots(error: error)
+      WallpaperController.shared.acknowledge(surface: self, error: error)
+    }
+    try page.attach(to: root)
+    page.start { [weak self] error in
+      guard let self, !self.stopped else { return }
+      if let error {
+        self.contentError = error
+        let reply = self.firstFrameReply
+        self.firstFrameReply = nil
+        reply?(error)
+      } else {
+        self.contentFrameReady()
+      }
+    }
+  }
+
 
   private static func snapshot(_ data: Data, width: Int, height: Int, bgra: Bool) throws
     -> IOSurface
@@ -214,7 +261,16 @@ final class WallpaperSurface {
       let image = CGImage(
         width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: bitmap),
-        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    else { throw CocoaError(.fileReadCorruptFile) }
+    return try snapshot(image)
+  }
+
+  private static func snapshot(_ image: CGImage) throws -> IOSurface {
+    let width = image.width
+    let height = image.height
+    guard width > 0, height > 0, width <= 16_384, height <= 16_384,
+      width * height <= 32 * 1024 * 1024,
       let surface = IOSurface(properties: [
         .width: width, .height: height, .bytesPerElement: 4,
         .pixelFormat: kCVPixelFormatType_32BGRA,
@@ -240,6 +296,16 @@ final class WallpaperSurface {
         WallpaperRuntime.log(error.localizedDescription)
       }
     }
+    if let web {
+      do {
+        try web.update(propertiesJSON: scene.propertiesJSON ?? "{}", fps: scene.fps,
+          paused: !WallpaperPresentationAuthority.suspensionReasons(for: authorityRequest).isEmpty)
+      } catch {
+        contentError = error
+        web.stop()
+        WallpaperController.shared.acknowledge(surface: self, error: error)
+      }
+    }
     applyPolicy()
   }
 
@@ -260,11 +326,14 @@ final class WallpaperSurface {
       presentationMode: presentation,
       hostActivity: activity == "suspended" ? .suspended : .active,
       presentedFor: presentingSince.map { ContinuousClock.now - $0 },
-      continuousPreviewRequested: continuousPreviewRequested)
+      continuousPreviewRequested: continuousPreviewRequested,
+      lockScreenEnabled: scene.webEntryFile == nil
+        && (WallpaperController.shared.configuration?.lockScreenEnabled ?? false),
+      screenSaverEnabled: WallpaperController.shared.configuration?.screenSaverEnabled ?? false)
   }
 
   func applyPolicy() {
-    guard firstFrameReply == nil, !stopped, let renderer else { return }
+    guard firstFrameReply == nil, !stopped, renderer != nil || web != nil else { return }
     let request = authorityRequest
     // Keep the last drawable and scene state through unlock/sleep. Replacing
     // them with a poster forces a cold load after the display is already lit.
@@ -273,7 +342,11 @@ final class WallpaperSurface {
     schedulePreviewExpiry(for: request)
     guard shouldPause != rendererPaused else { return }
     do {
-      try check(owe_scene_wallpaper_set_paused(renderer, shouldPause))
+      if let web {
+        web.setPaused(shouldPause)
+      } else if let renderer {
+        try check(owe_scene_wallpaper_set_paused(renderer, shouldPause))
+      }
       rendererPaused = shouldPause
       counters.record(shouldPause ? .presentationSuspended : .presentationAuthorized, for: surfaceKey)
       WallpaperRuntime.log(
@@ -299,6 +372,21 @@ final class WallpaperSurface {
   }
 
   func snapshot(reply: @escaping (Any?, Error?) -> Void) {
+    if let web, !web.isPaused, !rendererPaused, !stopped {
+      web.snapshot { [weak self] result in
+        guard let self else { reply(nil, CancellationError()); return }
+        do {
+          let image = try result.get()
+          guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw ScreenSaverWebSurface.Failure.noFrame
+          }
+          let frame = try Self.snapshot(pixels)
+          self.latestSnapshot = frame
+          reply(try WallpaperRuntime.snapshotReply(frame), nil)
+        } catch { reply(nil, error) }
+      }
+      return
+    }
     if rendererPaused || stopped {
       do {
         guard let latestSnapshot else {
@@ -339,7 +427,9 @@ final class WallpaperSurface {
   func whenReady(_ reply: @escaping (Error?) -> Void) {
     if stopped {
       reply(CancellationError())
-    } else if latestSnapshot != nil {
+    } else if let contentError {
+      reply(contentError)
+    } else if latestSnapshot != nil, firstFrameReply == nil {
       reply(nil)
     } else {
       readyWaiters.append(reply)
@@ -379,6 +469,9 @@ final class WallpaperSurface {
     presentingSince = nil
     if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
     frameObserver = nil
+    web?.stop()
+    web = nil
+    contentError = nil
     if let renderer {
       _ = owe_scene_wallpaper_begin_surface_reconfigure(renderer)
       _ = owe_scene_wallpaper_shutdown(renderer)

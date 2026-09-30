@@ -39,22 +39,22 @@ final class WebWallpaperRecoveryTests: XCTestCase {
 
   func testANestedEntryIsIdentifiedByItsResolvedPathNotItsFileName() throws {
     let nested = try XCTUnwrap(
-      WebWallpaperPage.canonicalEntryURL(projectURL: project, entryFile: "sub/index.html"))
+      WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: "sub/index.html"))
     let top = try XCTUnwrap(
-      WebWallpaperPage.canonicalEntryURL(projectURL: project, entryFile: "index.html"))
+      WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: "index.html"))
     XCTAssertNotEqual(nested, top, "two entries sharing a file name are different pages")
     XCTAssertEqual(
       nested,
-      WebWallpaperPage.canonicalEntryURL(projectURL: project, entryFile: "./sub/index.html"),
+      WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: "./sub/index.html"),
       "a differently spelled path names the same page")
     XCTAssertEqual(
-      top, WebWallpaperPage.canonicalEntryURL(projectURL: project, entryFile: "sub/../index.html"))
+      top, WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: "sub/../index.html"))
   }
 
   func testAnEntryOutsideTheProjectFolderIsRejected() {
     for escape in ["../outside.html", "sub/../../outside.html", "/etc/hosts", ""] {
       XCTAssertNil(
-        WebWallpaperPage.canonicalEntryURL(projectURL: project, entryFile: escape),
+        WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: escape),
         "entry \(escape) is not a project-relative entry inside the folder")
     }
   }

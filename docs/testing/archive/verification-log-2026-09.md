@@ -15,6 +15,14 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Remove raw commit messages from GitHub release pages
+
+- python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed.
+- Actual release_notes.py --tag v1.2.0 --release-body CLI before/after — exit 0; 8,079 → 6,433 bytes; bilingual notes and install/checksum footer unchanged, only raw commit appendix removed. Temporary previews removed; published release not edited.
+- python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped; ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit the documented WebKit InvalidTransition error.
+- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863.
+- No app-code change, Release rebuild, desktop test, or remote publication.
+
 ## 2026-09-30 — Changelog defaults to the app language
 
 - python3 scripts/test.py --only WhatsNewTests — exit 0; 10 passed, 0 failed, 0 skipped; covers saved language precedence and System matching.

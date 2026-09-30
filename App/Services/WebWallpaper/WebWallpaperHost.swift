@@ -231,7 +231,7 @@ final class WebWallpaperHost {
             // Identity is the resolved entry path, not its last component: a
             // nested entry compared by file name alone never matches itself, so
             // every reconcile would discard a working page and build a new one.
-            guard let canonicalEntry = WebWallpaperPage.canonicalEntryURL(
+            guard let canonicalEntry = WebWallpaperProtocol.canonicalEntryURL(
                 projectURL: projectURL, entryFile: wallpaper.entryFile) else {
                 AppLog.error("""
                     web wallpaper \(wallpaper.wallpaperId): entry file \(wallpaper.entryFile) \

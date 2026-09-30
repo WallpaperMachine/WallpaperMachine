@@ -4,7 +4,7 @@ import AppKit
 final class WallpaperController {
   static let shared = WallpaperController()
   private var surfaces: [UUID: WallpaperSurface] = [:]
-  private var configuration: LockScreenConfiguration?
+  private(set) var configuration: LockScreenConfiguration?
   private var revisions: [UUID: UInt64] = [:]
   private var observers: [NSObjectProtocol] = []
   private(set) var displaysAsleep = false
@@ -57,6 +57,7 @@ final class WallpaperController {
         }
         if surface.hasContent, surface.scene.projectPath == scene.projectPath,
           surface.scene.assetsPath == scene.assetsPath,
+          surface.scene.webEntryFile == scene.webEntryFile,
           surface.scene.propertiesJSON == scene.propertiesJSON,
           surface.scene.scalingMode == scene.scalingMode,
           surface.scene.scalingFactor == scene.scalingFactor
@@ -136,7 +137,7 @@ final class WallpaperController {
       reload()
       guard let scene = selectScene(displayID: displayID) else {
         throw WallpaperRuntime.failure(
-          "No applied wallpaper is available for this display. Enable Animate Lock Screen in WallpaperMachine."
+          "No applied wallpaper is available for this display. Enable Animate Lock Screen or Use wallpaper as screen saver in WallpaperMachine."
         )
       }
       if !preview { acquiring = scene }

@@ -291,7 +291,7 @@ process; the app cannot call into it directly.
 | `WallpaperExtension.swift` | `@main AppExtension`; XPC handler for `acquire`/`update`/`invalidate`/`snapshot`/`provideSettingsViewModels`/`isChoiceDownloaded`/`selectedChoicesDidChange`, and connection acceptance |
 | `WallpaperRuntime.swift` | Loads and checks the private hosting ABI, verifies the caller's code signature via its audit token, resolves `CAContext`, reads the published configuration and asset paths, logging |
 | `WallpaperController.swift` | Singleton surface registry; reacts to screen sleep/wake, `com.apple.screenIsLocked`/`Unlocked`, and the Darwin notification `app.wallpapermachine.lock-screen.changed` |
-| `WallpaperSurface.swift` | One `WallpaperID` to one `CAContext`/`CAMetalLayer` surface with bounded dimensions, first-frame and snapshot waiters |
+| `WallpaperSurface.swift` | One `WallpaperID` to one `CAContext` with a scene/video `CAMetalLayer` or live WebKit layer tree; bounded geometry, readiness and snapshots |
 | `WallpaperSettingsProvider.swift` | Encodes the private wallpaper settings view-model payload |
 | `WallpaperExtensionBridge.h` | Objective-C bridging header declaring the private `CAContext`, `NSXPCConnection.auditToken` and the XPC protocol; also includes `SceneWallpaperBindings.h` |
 
@@ -315,6 +315,20 @@ external URLs. `Extension/WallpaperExtension.entitlements` enables the App Sandb
 read-only exception for `/opt/homebrew/`, which is what lets the sandboxed process load the
 Homebrew-provided renderer dylibs, and a read-write home-relative exception for the exchange
 directory only (`LockScreenConfiguration.exchangeRelativePath` must match it).
+
+The version-2 manifest includes independent `lockScreenEnabled` and
+`screenSaverEnabled` flags. The single service journals Desktop and Idle ownership
+separately; only Desktop ownership suspends desktop poster sync. An Idle-only
+selection is committed without waiting for an unshown surface to be acquired.
+The bridge exports committed scenes, videos and web projects independently of
+desktop routing/suspension. A `LockScreenScene.webEntryFile` selects
+`Shared/ScreenSaverWebSurface.swift`; the shared author protocol is in
+`Shared/WebWallpaperProtocol.swift`. WebKit receives a project-specific file
+grant, never the common revisions directory. Its un-ordered scheduling window
+does not present on the desktop; the existing remote context owns its live
+layer tree. Suspension freezes that tree, including accelerated content.
+Network-client access allows wallpaper resources, but capture, audio and author
+dialogs are disabled. Web surface errors enter the existing readiness channel.
 
 See [features/lock-screen.md](features/lock-screen.md) for the user-facing behaviour.
 

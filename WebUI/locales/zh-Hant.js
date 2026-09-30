@@ -556,8 +556,13 @@ export default {
   'Updating': '正在更新',
   'Experimental. Applies right away.': '實驗性功能，會立即生效。',
   'Compatibility & permissions': '相容性與權限',
-  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over the desktop and idle wallpaper on displays that are playing a wallpaper, and reloads the macOS wallpaper service. Turning it off or quitting restores what the app changed and keeps any other wallpaper changes.': '鎖定畫面動畫使用 macOS 私有 API，macOS 更新後可能會失效。開啟時，本 App 會接管正在播放桌布之顯示器的桌面與閒置桌布，並重新載入 macOS 桌布服務。關閉此功能或結束 App 時，會還原本 App 所做的變更，並保留其他桌布變更。',
+  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over only the Desktop wallpaper selection on displays with an applied scene or video wallpaper, and reloads the macOS wallpaper service. The screen saver is a separate choice below. Turning this off restores the Desktop choices; quitting restores all choices the app changed and keeps other wallpaper changes.': '鎖定畫面動畫使用 macOS 私有 API，macOS 更新後可能會失效。開啟時，本 App 只接管已套用場景或影片桌布之顯示器的 Desktop（桌面）桌布選項，並重新載入 macOS 桌布服務。螢幕保護程式可在下方獨立設定。關閉此功能會還原桌面選項；結束 App 會還原本 App 變更的所有選項，並保留其他桌布變更。',
   'It keeps separate copies of wallpaper files, which uses extra disk space, and may not render on every macOS version. Pause and battery settings still apply.': '此功能會另存一份桌布檔案，因此會佔用額外的磁碟空間，且不一定能在每個 macOS 版本上顯示。暫停與電池設定仍然適用。',
+  'Screen saver': '螢幕保護程式',
+  'Use wallpaper as screen saver': '將桌布用作螢幕保護程式',
+  'Screen saver status': '螢幕保護程式狀態',
+  'Requires macOS 26 or later. Uses each display’s applied wallpaper as its screen saver, including scenes, videos, web wallpapers and still images. This experimental feature uses private macOS APIs and may stop working after an update.': '需要 macOS 26 或以上版本。將各顯示器目前套用的桌布用作螢幕保護程式，包含場景、影片、網頁桌布及靜態圖片。此實驗性功能使用 macOS 私有 API，系統更新後可能會失效。',
+  'The screen saver choice is independent of lock screen animation. It changes only the Idle wallpaper selection and reloads the macOS wallpaper service. Turning it off restores the previous screen saver without changing the Desktop selection, and keeps screen saver changes made elsewhere. Pause and battery settings still apply.': '螢幕保護程式與鎖定畫面動畫可獨立選擇。此功能只變更 Idle（閒置）桌布選項，並重新載入 macOS 桌布服務。關閉後會還原原本的螢幕保護程式，不會變更 Desktop（桌面）選項，並保留你在其他地方變更的螢幕保護程式設定。暫停與電池設定仍然適用。',
 
   // Settings: performance
   'Playback': '播放',

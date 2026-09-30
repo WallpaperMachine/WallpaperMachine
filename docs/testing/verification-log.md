@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Independent native wallpaper screen saver
+
+- `python3 scripts/test.py --serial` — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 skipped (9 opt-in media/device and 2 live Steam checks).
+- `cargo test --release -p wallpaper-bridge --lib` with scripts/build.py cargo environment — exit 0; 361 passed.
+- `python3 scripts/check_renderer.py` — exit 0; generated pooled/isolated pixels equal, no diagnostics; eight-project reload cycles passed. Private wallpaper corpus not exercised.
+- Offscreen native CAContext/WebKit smoke — rendered expected pixels, advanced canvas frames, preserved committed properties and paused/resumed; no window ordered or live selection changed.
+- Isolated settings browser smoke — screen-saver toggle left lock-screen toggle unchanged; busy state disabled the control. Impeccable detector returned no findings.
+- Isolated regressions cover independent selection/restoration, topology gaps, native-video exports, web properties/files, capture denial, readiness and paused teardown.
+- Real idle transitions, lock/password UI, multi-monitor compositor delivery and sleep/wake visuals remain unverified. No Release app rebuild, activation or restart.
+- The shared workspace contained unrelated import-picker and renderer changes; those are excluded from this feature commit.
+
 ## 2026-09-30 — Issue #17 non-disruptive visual verification
 
 - User authorized visual verification and chose to keep the run non-disruptive rather than switch macOS Spaces.
@@ -104,11 +115,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 opt-in skips of 863.
 - gh release edit v1.2.0 --repo WallpaperMachine/WallpaperMachine --notes-file … — exit 0; live readback confirms English-only notes, no raw commit appendix, and unchanged assets, tag, title, publish date and release flags. Description reduced from 8,192 to 3,740 bytes.
 - The app’s bundled changelog remains bilingual. No app rebuild, install, or desktop test. Temporary previews removed.
-
-## 2026-09-30 — Remove raw commit messages from GitHub release pages
-
-- python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed.
-- Actual release_notes.py --tag v1.2.0 --release-body CLI before/after — exit 0; 8,079 → 6,433 bytes; bilingual notes and install/checksum footer unchanged, only raw commit appendix removed. Temporary previews removed; published release not edited.
-- python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped; ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit the documented WebKit InvalidTransition error.
-- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863.
-- No app-code change, Release rebuild, desktop test, or remote publication.

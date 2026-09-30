@@ -52,9 +52,8 @@ enum WallpaperPresentationAuthority {
     var displaysAsleep: Bool
     /// Whether the login session is showing the lock screen.
     var sessionLocked: Bool
-    /// The host's presentation mode string for this surface, lowercased by the
-    /// caller. `locked` and `idle` are the modes in which the lock screen is
-    /// what the user is looking at.
+    /// The host's native mode name. Idle playback belongs to the screen saver,
+    /// even when macOS has also locked the login session.
     var presentationMode: String
     var hostActivity: HostActivity
     /// How long this surface has been presenting since its first frame, or nil
@@ -63,6 +62,8 @@ enum WallpaperPresentationAuthority {
     /// An explicit request to keep a preview animating for as long as it exists,
     /// for a UI that really does want continuous motion.
     var continuousPreviewRequested: Bool
+    var lockScreenEnabled: Bool
+    var screenSaverEnabled: Bool
 
     init(
       role: SurfaceRole,
@@ -72,7 +73,9 @@ enum WallpaperPresentationAuthority {
       presentationMode: String = "active",
       hostActivity: HostActivity = .active,
       presentedFor: Duration? = nil,
-      continuousPreviewRequested: Bool = false
+      continuousPreviewRequested: Bool = false,
+      lockScreenEnabled: Bool = true,
+      screenSaverEnabled: Bool = true
     ) {
       self.role = role
       self.userPaused = userPaused
@@ -82,6 +85,8 @@ enum WallpaperPresentationAuthority {
       self.hostActivity = hostActivity
       self.presentedFor = presentedFor
       self.continuousPreviewRequested = continuousPreviewRequested
+      self.lockScreenEnabled = lockScreenEnabled
+      self.screenSaverEnabled = screenSaverEnabled
     }
   }
 
@@ -89,9 +94,6 @@ enum WallpaperPresentationAuthority {
   /// to show what the wallpaper does, short enough that a settings window left
   /// open does not render indefinitely.
   static let previewBudget: Duration = .seconds(10)
-
-  /// Presentation modes in which the lock screen is what the display shows.
-  static let presentingModes: Set<String> = ["locked", "idle"]
 
   /// Every reason this surface may not keep presenting. An empty set means it
   /// may. Producing the first frame is never one of the reasons: readiness has
@@ -105,8 +107,13 @@ enum WallpaperPresentationAuthority {
 
     switch request.role {
     case .lockScreen:
-      let showing =
-        request.sessionLocked || presentingModes.contains(request.presentationMode)
+      let showing: Bool
+      if request.presentationMode == "idle" {
+        showing = request.screenSaverEnabled
+      } else {
+        showing = request.lockScreenEnabled
+          && (request.sessionLocked || request.presentationMode == "locked")
+      }
       if !showing { reasons.insert(.noConsumer) }
     case .preview:
       // A preview is its own consumer while the user is looking at it, so it is

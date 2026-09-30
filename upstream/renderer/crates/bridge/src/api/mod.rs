@@ -927,8 +927,9 @@ impl WallpaperBridge {
         self.actor.ask(GetLibrarySnapshot).await
     }
 
-    /// Returns committed active scenes for the currently connected displays.
-    /// Draft options and the library selection do not affect these inputs.
+    /// Returns committed wallpaper inputs for native lock-screen and screen-saver
+    /// displays, including web projects, native-preferred videos and mirrors.
+    /// Drafts and transient desktop suspension/unload do not affect these inputs.
     ///
     /// # Errors
     ///

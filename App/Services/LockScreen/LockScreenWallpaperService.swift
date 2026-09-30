@@ -11,21 +11,24 @@ final class LockScreenWallpaperService {
   private(set) var isBusy = false
   private(set) var status = String(localized: "Off")
   private(set) var errorMessage: String?
+  private(set) var screenSaverRequested = false
+  private(set) var screenSaverEnabled = false
+  private(set) var screenSaverStatus = String(localized: "Off")
+  private(set) var screenSaverError: String?
+  var anyRequested: Bool { isRequested || screenSaverRequested }
   @ObservationIgnored var beforeActivation: (() throws -> Void)?
   @ObservationIgnored var afterDeactivation: (() throws -> Void)?
 
   private static let preference = "WallpaperMachineAnimateLockScreen"
+  private static let screenSaverPreference = "WallpaperMachineUseWallpaperAsScreenSaver"
   @ObservationIgnored private let scenes: () async throws -> [BridgeLockScreenScene]
-  /// Whether any applied wallpaper is a web wallpaper. Web has no lock-screen
-  /// renderer, so the app has to be able to say "not applicable" instead of
-  /// leaving the user waiting for something that will never arrive.
-  @ObservationIgnored private let webWallpapersApplied: () async -> Bool
   @ObservationIgnored private let selection: LockScreenWallpaperSelection
   @ObservationIgnored private let exchange: URL
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let scheduleMonitor: (@escaping @MainActor () -> Void) -> Timer
   @ObservationIgnored private let displayUUID: (UInt32) -> String?
   @ObservationIgnored private let persistConfiguration: (URL, Data) throws -> Void
+  @ObservationIgnored private let notifyConfigurationChanged: () -> Void
   @ObservationIgnored private var work: Task<Void, Never>?
   @ObservationIgnored private var monitor: Timer?
   @ObservationIgnored private var generation: UInt64 = 0
@@ -33,20 +36,27 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private var stopping = false
   @ObservationIgnored private(set) var ownsDesktopProvider = false
   @ObservationIgnored private var lastInputs: [LockScreenPublishInput]?
+  @ObservationIgnored private var lastLockScreenRequested = false
+  @ObservationIgnored private var lastScreenSaverRequested = false
+  @ObservationIgnored private var lastHasWebWallpapers = false
   @ObservationIgnored private var published: LockScreenConfiguration?
 
   convenience init(bridge: WallpaperBridge) {
     self.init(
+      notifyConfigurationChanged: {
+        CFNotificationCenterPostNotification(
+          CFNotificationCenterGetDarwinNotifyCenter(),
+          CFNotificationName(LockScreenConfiguration.changedNotification as CFString), nil, nil, true)
+      },
       scenes: { try await bridge.lockScreenScenes() },
-      webWallpapersApplied: { ((try? await bridge.webWallpapers()) ?? []).isEmpty == false },
       selection: LockScreenWallpaperSelection(
         folder: ClientPaths.supportURL.appendingPathComponent("LockScreen")),
       exchange: LockScreenConfiguration.exchangeDirectory)
   }
 
   init(
+    notifyConfigurationChanged: @escaping () -> Void,
     scenes: @escaping () async throws -> [BridgeLockScreenScene],
-    webWallpapersApplied: @escaping () async -> Bool = { false },
     selection: LockScreenWallpaperSelection, exchange: URL,
     defaults: UserDefaults = .standard,
     scheduleMonitor: @escaping (@escaping @MainActor () -> Void) -> Timer =
@@ -57,13 +67,13 @@ final class LockScreenWallpaperService {
     }
   ) {
     self.scenes = scenes
-    self.webWallpapersApplied = webWallpapersApplied
     self.selection = selection
     self.exchange = exchange
     self.defaults = defaults
     self.scheduleMonitor = scheduleMonitor
     self.displayUUID = displayUUID
     self.persistConfiguration = persistConfiguration
+    self.notifyConfigurationChanged = notifyConfigurationChanged
   }
 
   nonisolated private static func onlineDisplayUUID(_ displayID: UInt32) -> String? {
@@ -77,13 +87,21 @@ final class LockScreenWallpaperService {
   func start() throws {
     defer { updateMonitor() }
     isRequested = defaults.bool(forKey: Self.preference)
+    screenSaverRequested = defaults.bool(forKey: Self.screenSaverPreference)
     do {
       try selection.recover()
       recovered = true
       if isRequested { status = String(localized: "Waiting for committed wallpapers…") }
+      if screenSaverRequested {
+        screenSaverStatus = String(localized: "Waiting for committed wallpapers…")
+      }
     } catch {
       errorMessage = error.localizedDescription
       status = String(localized: "Recovery failed — action required")
+      if screenSaverRequested {
+        screenSaverError = error.localizedDescription
+        screenSaverStatus = status
+      }
       throw error
     }
   }
@@ -93,6 +111,14 @@ final class LockScreenWallpaperService {
     isRequested = enabled
     updateMonitor()
     if !enabled { defaults.set(false, forKey: Self.preference) }
+    refresh()
+  }
+
+  func setScreenSaverEnabled(_ enabled: Bool) {
+    guard !stopping else { return }
+    screenSaverRequested = enabled
+    updateMonitor()
+    if !enabled { defaults.set(false, forKey: Self.screenSaverPreference) }
     refresh()
   }
 
@@ -111,15 +137,15 @@ final class LockScreenWallpaperService {
   }
 
   private func updateMonitor() {
-    guard isRequested, recovered, !stopping, errorMessage == nil else {
+    guard anyRequested, recovered, !stopping, errorMessage == nil, screenSaverError == nil else {
       monitor?.invalidate()
       monitor = nil
       return
     }
     guard monitor == nil else { return }
     monitor = scheduleMonitor { [weak self] in
-      guard let self, self.isRequested, !self.stopping, !self.isBusy,
-        self.errorMessage == nil
+      guard let self, self.anyRequested, !self.stopping, !self.isBusy,
+        self.errorMessage == nil, self.screenSaverError == nil
       else { return }
       // The bridge applies battery policy without opening the control panel.
       self.refresh()
@@ -142,17 +168,24 @@ final class LockScreenWallpaperService {
     do {
       try restoreNativeSelection()
       isEnabled = false
+      screenSaverEnabled = false
       isBusy = false
     } catch {
       stopping = false
       isBusy = false
       errorMessage = error.localizedDescription
       status = String(localized: "Restoration failed — quit cancelled")
+      if screenSaverRequested {
+        screenSaverError = error.localizedDescription
+        screenSaverStatus = status
+      }
       throw error
     }
   }
 
   private func update(revision: UInt64) async {
+    let affectedLockScreen = isRequested || ownsDesktopProvider
+    let affectedScreenSaver = screenSaverRequested || screenSaverEnabled
     defer {
       if generation == revision {
         isBusy = false
@@ -164,11 +197,37 @@ final class LockScreenWallpaperService {
         try selection.recover()
         recovered = true
       }
-      guard isRequested else {
+      // A disable must not wait for a waking display to regain its UUID.
+      // Use the last committed mapping to relinquish only the disabled mode.
+      if var committed = published, let lastInputs,
+        (committed.lockScreenEnabled && !isRequested)
+          || (committed.screenSaverEnabled && !screenSaverRequested)
+      {
+        committed.revision = UUID().uuidString
+        committed.lockScreenEnabled = committed.lockScreenEnabled && isRequested
+        committed.screenSaverEnabled = committed.screenSaverEnabled && screenSaverRequested
+        if !committed.screenSaverEnabled {
+          committed.scenes.removeAll { $0.webEntryFile != nil }
+        }
+        if !committed.lockScreenEnabled && !committed.screenSaverEnabled {
+          committed.scenes.removeAll()
+        }
+        try publish(committed)
+        try applySelection(committed, inputs: lastInputs)
+        if !committed.lockScreenEnabled, ownsDesktopProvider {
+          ownsDesktopProvider = false
+          try afterDeactivation?()
+        }
+        updateStatuses(committed, hasWebWallpapers: lastHasWebWallpapers)
+      }
+      guard anyRequested else {
         status = String(localized: "Restoring system wallpapers…")
+        screenSaverStatus = status
         try deactivate()
         errorMessage = nil
+        screenSaverError = nil
         status = String(localized: "Off")
+        screenSaverStatus = status
         return
       }
       let records = try await scenes()
@@ -177,15 +236,14 @@ final class LockScreenWallpaperService {
       var inputs: [LockScreenPublishInput] = []
       for record in records {
         guard let uuid = displayUUID(record.displayId) else {
-          // Core Graphics and the bridge settle independently during wake and
-          // clamshell changes. This is not a failed wallpaper: keep the entire
-          // committed mapping until the existing monitor gets a coherent one.
-          // A real earlier error stays. updateMonitor stops while one is set, so
-          // clearing it would restart polling without a successful explicit retry.
-          if errorMessage == nil {
+          // Keep the last complete mapping while Core Graphics settles during wake.
+          if isRequested, errorMessage == nil {
             status = String(localized: "Waiting for committed wallpapers…")
           }
-          AppLog.debug("Lock screen topology pending: display \(record.displayId) is not online")
+          if screenSaverRequested, screenSaverError == nil {
+            screenSaverStatus = String(localized: "Waiting for committed wallpapers…")
+          }
+          AppLog.debug("Native wallpaper topology pending: display \(record.displayId) is not online")
           return
         }
         let mode: Int32
@@ -204,81 +262,132 @@ final class LockScreenWallpaperService {
           propertiesJSON: record.propertiesJson, paused: record.paused))
       }
       inputs.sort { $0.displayID < $1.displayID }
+      if inputs == lastInputs, let published,
+        lastLockScreenRequested == isRequested,
+        lastScreenSaverRequested == screenSaverRequested
+      {
+        try checkReadinessFailures(published)
+        try applySelection(published, inputs: inputs)
+        updateStatuses(published, hasWebWallpapers: lastHasWebWallpapers)
+        return
+      }
       guard !inputs.isEmpty else {
         try deactivate()
-        // A web wallpaper has no lock-screen renderer at all, so this is not a
-        // failure and not something the user can act on: it is the combination
-        // being unsupported. Anything else means nothing eligible is applied yet.
-        status = await webWallpapersApplied()
-          ? String(localized: "Not applicable — web wallpapers have no lock-screen support")
-          : String(localized: "Waiting for an applied video or live scene on a connected display")
-        errorMessage = nil
+        updateStatuses(LockScreenConfiguration(scenes: []))
         return
       }
-      if inputs == lastInputs, isEnabled, let published {
-        // Reconcile new Spaces using the same native choice identity. Ordinary
-        // snapshots must not invalidate thumbnails or reload WallpaperAgent,
-        // and must not re-read the wallpaper store: compatibility was checked
-        // when this selection was published, and a changed input set checks it
-        // again below.
-        try selection.synchronize(
-          displays: Set(inputs.map(\.displayUUID)), revision: published.revision)
-        status = String(localized: "Enabled for \(inputs.count) display(s)")
-        errorMessage = nil
-        return
-      }
-      // Keep the committed surfaces while staging the next complete mapping.
-      // An empty intermediate manifest clears every display's renderer and
-      // backing frame, including screens unaffected by an external display waking.
-      // A cancelled replacement must not disable the still-committed mapping.
-      // Readiness commits success; deactivate() rolls back an actual failure.
       try selection.checkCompatibility()
-      status = String(localized: "Preparing committed wallpapers…")
+      if isRequested { status = String(localized: "Preparing committed wallpapers…") }
+      if screenSaverRequested { screenSaverStatus = String(localized: "Preparing committed wallpapers…") }
       let root = exchange
       let userAssets = UserAssetStorage.managedRootURL
+      let includeWeb = screenSaverRequested
       let staging = Task.detached(priority: .utility) {
         try LockScreenAssetPublisher.prepare(
-          inputs: inputs, exchange: root, userAssets: userAssets)
+          inputs: inputs, exchange: root, userAssets: userAssets, includeWeb: includeWeb)
       }
       let prepared = try await withTaskCancellationHandler {
         try await staging.value
       } onCancel: {
         staging.cancel()
       }
-      let configuration = prepared.configuration
       try Task.checkCancellation()
-      guard generation == revision, isRequested else { return }
-      if !ownsDesktopProvider {
+      guard generation == revision, anyRequested else { return }
+      var configuration = prepared.configuration
+      configuration.lockScreenEnabled = isRequested
+        && configuration.scenes.contains { $0.webEntryFile == nil }
+      configuration.screenSaverEnabled = screenSaverRequested && !configuration.scenes.isEmpty
+      if configuration.lockScreenEnabled, !ownsDesktopProvider {
         try beforeActivation?()
         ownsDesktopProvider = true
       }
       try publish(configuration)
-      // After the configuration naming the new revisions is on disk, never before:
-      // a revision is only unreferenced once nothing published points at it.
       LockScreenAssetPublisher.collectGarbage(
         exchange: root, keeping: prepared.referencedRevisions)
-      try selection.synchronize(
-        displays: Set(inputs.map(\.displayUUID)), revision: configuration.revision)
-      status = String(localized: "Waiting for the system wallpaper renderer…")
-      try await awaitReadiness(configuration)
+      try applySelection(configuration, inputs: inputs)
+      if !configuration.lockScreenEnabled, ownsDesktopProvider {
+        ownsDesktopProvider = false
+        try afterDeactivation?()
+      }
+      // Idle-only selections need not be acquired until macOS starts the saver.
+      // Report selection, not rendered readiness; lock-screen activation still
+      // waits for its desktop-backed surfaces to produce real pixels.
+      if configuration.lockScreenEnabled {
+        status = String(localized: "Waiting for the system wallpaper renderer…")
+        try await awaitReadiness(configuration)
+      }
       try Task.checkCancellation()
-      guard generation == revision, isRequested else { return }
+      guard generation == revision, anyRequested else { return }
       lastInputs = inputs
-      isEnabled = true
-      defaults.set(true, forKey: Self.preference)
-      status = String(localized: "Enabled for \(inputs.count) display(s)")
-      errorMessage = nil
+      lastLockScreenRequested = isRequested
+      lastScreenSaverRequested = screenSaverRequested
+      lastHasWebWallpapers = prepared.hasWebWallpapers
+      updateStatuses(configuration, hasWebWallpapers: prepared.hasWebWallpapers)
+      if isEnabled { defaults.set(true, forKey: Self.preference) }
+      if screenSaverEnabled { defaults.set(true, forKey: Self.screenSaverPreference) }
     } catch is CancellationError {
-      // A newer snapshot/disable owns the next publication and final status.
+      // A newer request owns the next publication; keep the committed surfaces.
     } catch {
       guard generation == revision else { return }
       var message = error.localizedDescription
       do { try deactivate() } catch {
         message += " " + String(localized: "Restoration also failed: \(error.localizedDescription)")
       }
-      errorMessage = message
-      status = String(localized: "Not enabled — action required")
-      AppLog.error("Lock screen wallpaper: \(message)")
+      if affectedLockScreen || !affectedScreenSaver {
+        errorMessage = message
+        status = String(localized: "Not enabled — action required")
+      }
+      if affectedScreenSaver {
+        screenSaverError = message
+        screenSaverStatus = String(localized: "Not enabled — action required")
+      }
+      AppLog.error("Native wallpaper: \(message)")
+    }
+  }
+
+  private func applySelection(
+    _ configuration: LockScreenConfiguration, inputs: [LockScreenPublishInput]
+  ) throws {
+    let lockIDs = Set(configuration.scenes.lazy.filter { $0.webEntryFile == nil }.map(\.displayID))
+    let allIDs = Set(configuration.scenes.lazy.map(\.displayID))
+    try selection.synchronize(
+      desktopDisplays: configuration.lockScreenEnabled
+        ? Set(inputs.lazy.filter { lockIDs.contains($0.displayID) }.map(\.displayUUID)) : [],
+      screenSaverDisplays: configuration.screenSaverEnabled
+        ? Set(inputs.lazy.filter { allIDs.contains($0.displayID) }.map(\.displayUUID)) : [],
+      revision: configuration.revision)
+  }
+
+  private func updateStatuses(
+    _ configuration: LockScreenConfiguration, hasWebWallpapers: Bool = false
+  ) {
+    let lockCount = configuration.scenes.reduce(0) { $0 + ($1.webEntryFile == nil ? 1 : 0) }
+    isEnabled = isRequested && configuration.lockScreenEnabled && lockCount > 0
+    screenSaverEnabled = screenSaverRequested && configuration.screenSaverEnabled
+      && !configuration.scenes.isEmpty
+    status = !isRequested ? String(localized: "Off") : isEnabled
+      ? String(localized: "Enabled for \(lockCount) display(s)")
+      : hasWebWallpapers
+        ? String(localized: "Not applicable — web wallpapers have no lock-screen support")
+        : String(localized: "Waiting for an applied video or live scene on a connected display")
+    let count = configuration.scenes.count
+    screenSaverStatus = !screenSaverRequested ? String(localized: "Off") : screenSaverEnabled
+      ? String(localized: "Selected for \(count) display(s) — starts when macOS is idle")
+      : String(localized: "Waiting for an applied wallpaper on a connected display")
+    errorMessage = nil
+    screenSaverError = nil
+  }
+
+  private func checkReadinessFailures(_ configuration: LockScreenConfiguration) throws {
+    for scene in configuration.scenes {
+      let file = exchange.appendingPathComponent("ready-\(scene.displayID).json")
+      if let data = try? Data(contentsOf: file),
+        let state = try? JSONDecoder().decode(LockScreenReadiness.self, from: data),
+        state.revision == configuration.revision, state.displayID == scene.displayID,
+        let error = state.error
+      {
+        throw LockScreenWallpaperFailure(message: error)
+      }
     }
   }
 
@@ -287,6 +396,7 @@ final class LockScreenWallpaperService {
   /// the poster sync suspended; the first error is rethrown afterwards.
   private func deactivate() throws {
     isEnabled = false
+    screenSaverEnabled = false
     lastInputs = nil
     var firstError: Error?
     do { try restoreNativeSelection() } catch { firstError = error }
@@ -302,7 +412,7 @@ final class LockScreenWallpaperService {
     while Date() < deadline {
       try Task.checkCancellation()
       var ready = true
-      for scene in configuration.scenes {
+      for scene in configuration.scenes where scene.webEntryFile == nil {
         let file = exchange.appendingPathComponent("ready-\(scene.displayID).json")
         guard let data = try? Data(contentsOf: file),
           let state = try? JSONDecoder().decode(LockScreenReadiness.self, from: data),
@@ -327,7 +437,7 @@ final class LockScreenWallpaperService {
     do { try clearManifest() } catch { manifestError = error }
     // A full disk or inaccessible exchange directory must never prevent restoring the
     // user's native selections. Preserve both errors when recovery also fails.
-    do { try selection.synchronize(displays: []) } catch {
+    do { try selection.synchronize(desktopDisplays: [], screenSaverDisplays: []) } catch {
       if let manifestError {
         throw LockScreenWallpaperFailure(
           message:
@@ -359,9 +469,7 @@ final class LockScreenWallpaperService {
     try persistConfiguration(
       exchange.appendingPathComponent(LockScreenConfiguration.fileName), encoder.encode(configuration))
     published = configuration
-    CFNotificationCenterPostNotification(
-      CFNotificationCenterGetDarwinNotifyCenter(),
-      CFNotificationName(LockScreenConfiguration.changedNotification as CFString), nil, nil, true)
+    notifyConfigurationChanged()
   }
 }
 
@@ -394,13 +502,15 @@ private enum LockScreenAssetPublisher {
   struct Prepared {
     var configuration: LockScreenConfiguration
     var referencedRevisions: Set<String>
+    var hasWebWallpapers: Bool
   }
 
   static func prepare(
-    inputs: [LockScreenPublishInput], exchange: URL, userAssets: URL
+    inputs: [LockScreenPublishInput], exchange: URL, userAssets: URL, includeWeb: Bool
   ) throws -> Prepared {
     var sources: [String: String] = [:]
     var scenes: [LockScreenScene] = []
+    var hasWebWallpapers = false
     for input in inputs {
       try Task.checkCancellation()
       guard input.projectPath.hasPrefix("/"), input.assetsPath.hasPrefix("/") else {
@@ -420,12 +530,29 @@ private enum LockScreenAssetPublisher {
         throw LockScreenWallpaperFailure(
           message: String(localized: "The committed wallpaper does not declare a project type."))
       }
-      guard ["video", "scene"].contains(type.lowercased()) else {
+      let isWeb = type.lowercased() == "web"
+      hasWebWallpapers = hasWebWallpapers || isWeb
+      if isWeb && !includeWeb { continue }
+      guard ["video", "scene", "web"].contains(type.lowercased()) else {
         throw LockScreenWallpaperFailure(
-          message: String(localized: "Only committed video and live scene projects support Animate Lock Screen."))
+          message: String(localized: "This wallpaper type cannot be presented by the native wallpaper provider."))
       }
-      let projectRevision = try snapshot(source: source, exchange: exchange, reused: &sources)
-      let assetsRevision: String
+      let webEntry: String?
+      if isWeb {
+        guard let file = metadata["file"] as? String,
+          let entry = WebWallpaperProtocol.canonicalEntryURL(projectURL: source, entryFile: file),
+          FileManager.default.isReadableFile(atPath: entry.path),
+          try entry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+        else {
+          throw LockScreenWallpaperFailure(
+            message: String(localized: "The web wallpaper entry must be a readable file inside its project."))
+        }
+        webEntry = file
+      } else {
+        webEntry = nil
+      }
+      var projectRevision = try snapshot(source: source, exchange: exchange, reused: &sources)
+      var assetsRevision: String
       if type.lowercased() == "scene" {
         assetsRevision = try snapshot(
           source: URL(fileURLWithPath: input.assetsPath, isDirectory: true),
@@ -434,19 +561,88 @@ private enum LockScreenAssetPublisher {
         // Video rendering does not consume shared scene assets.
         assetsRevision = projectRevision
       }
-      let properties = try publishUserAssets(
-        input: input, exchange: exchange, userAssets: userAssets, reused: &sources)
+      var properties = try publishUserAssets(
+        input: input, exchange: exchange, userAssets: userAssets, web: isWeb, reused: &sources)
+      if isWeb {
+        (projectRevision, properties) = try isolateWebAssets(
+          projectRevision: projectRevision, properties: properties, exchange: exchange, reused: &sources)
+        assetsRevision = projectRevision
+      }
       scenes.append(
         LockScreenScene(
           displayID: input.displayID, title: input.title,
           projectPath: projectRevision + "/project.json", assetsPath: assetsRevision,
           previewPath: nil,
           fps: input.fps, scalingMode: input.scalingMode, scalingFactor: input.scalingFactor,
-          propertiesJSON: properties, paused: input.paused))
+          propertiesJSON: properties, paused: input.paused, webEntryFile: webEntry))
     }
     return Prepared(
       configuration: LockScreenConfiguration(scenes: scenes),
-      referencedRevisions: Set(sources.values))
+      referencedRevisions: Set(sources.values), hasWebWallpapers: hasWebWallpapers)
+  }
+
+  /// WebKit's read grant covers exactly this project and its referenced imports,
+  /// never another display's revision or private renderer assets.
+  private static func isolateWebAssets(
+    projectRevision: String, properties: String?, exchange: URL, reused: inout [String: String]
+  ) throws -> (String, String?) {
+    guard let properties,
+      var values = try JSONSerialization.jsonObject(with: Data(properties.utf8)) as? [String: [String: Any]]
+    else { return (projectRevision, properties) }
+    let project = exchange.appendingPathComponent(projectRevision, isDirectory: true)
+    let imports = values.keys.sorted().compactMap { key -> (String, URL, Bool)? in
+      guard let property = values[key], let type = property["type"] as? String,
+        type == "file" || type == "directory", let value = property["value"] as? String,
+        let url = URL(string: value), url.isFileURL,
+        url.path.hasPrefix(exchange.path + "/revisions/"),
+        !url.path.hasPrefix(project.path + "/")
+      else { return nil }
+      return (key, url, type == "directory")
+    }
+    guard !imports.isEmpty else { return (projectRevision, properties) }
+    let hash = SHA256.hash(data: Data((projectRevision + "\u{0}" + properties).utf8))
+      .map { String(format: "%02x", $0) }.joined()
+    let relative = "revisions/" + hash
+    let destination = exchange.appendingPathComponent(relative, isDirectory: true)
+    let manager = FileManager.default
+    let pending = exchange.appendingPathComponent("revisions/.pending-\(UUID().uuidString)", isDirectory: true)
+    let needsCopy = !manager.fileExists(atPath: destination.path)
+    defer { if needsCopy { try? manager.removeItem(at: pending) } }
+    if needsCopy { try copyTree(project, to: pending) }
+    for (index, imported) in imports.enumerated() {
+      let (key, source, directory) = imported
+      let assetPath = ".mwe-native-assets/\(index)" + (directory ? "" : "/" + source.lastPathComponent)
+      if needsCopy {
+        let target = pending.appendingPathComponent(assetPath, isDirectory: directory)
+        if directory { try copyTree(source, to: target) }
+        else {
+          try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+          try copyFile(from: source, to: target)
+        }
+      }
+      values[key]?["value"] = destination.appendingPathComponent(assetPath, isDirectory: directory).absoluteString
+    }
+    if needsCopy {
+      try Task.checkCancellation()
+      try manager.moveItem(at: pending, to: destination)
+    }
+    reused["web:" + relative] = relative
+    let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+    return (relative, String(decoding: data, as: UTF8.self))
+  }
+
+  private static func copyTree(_ source: URL, to destination: URL) throws {
+    let manager = FileManager.default
+    try manager.createDirectory(at: destination, withIntermediateDirectories: true)
+    for item in try inventory(source) {
+      try Task.checkCancellation()
+      let target = destination.appendingPathComponent(item.relative, isDirectory: item.directory)
+      if item.directory { try manager.createDirectory(at: target, withIntermediateDirectories: true) }
+      else {
+        try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try copyFile(from: source.appendingPathComponent(item.relative), to: target)
+      }
+    }
   }
 
   /// Copies the managed user assets this wallpaper actually references into the
@@ -461,7 +657,7 @@ private enum LockScreenAssetPublisher {
   /// Returns the property payload the extension should receive, unchanged when the
   /// wallpaper references no managed asset.
   private static func publishUserAssets(
-    input: LockScreenPublishInput, exchange: URL, userAssets: URL,
+    input: LockScreenPublishInput, exchange: URL, userAssets: URL, web: Bool,
     reused: inout [String: String]
   ) throws -> String? {
     guard let json = input.propertiesJSON, !input.wallpaperID.isEmpty else {
@@ -480,7 +676,7 @@ private enum LockScreenAssetPublisher {
     // an unchanged selection is recognised without reading a byte.
     var plan: [(property: String, isFile: Bool, files: [(name: String, source: URL, digest: String)])] = []
     for (propertyId, record) in manifest.properties.sorted(by: { $0.key < $1.key }) {
-      guard root[propertyId] != nil, !record.assets.isEmpty else { continue }
+      guard root[propertyId] != nil else { continue }
       var files: [(name: String, source: URL, digest: String)] = []
       for asset in record.assets.sorted(by: { $0.fileName < $1.fileName }) {
         let stored = try store.storedURL(
@@ -488,7 +684,7 @@ private enum LockScreenAssetPublisher {
         guard manager.fileExists(atPath: stored.path) else { continue }
         files.append((asset.fileName, stored, asset.digest))
       }
-      guard !files.isEmpty else { continue }
+      guard record.kind == .directory || !files.isEmpty else { continue }
       plan.append((propertyId, record.kind == .file, files))
     }
     guard !plan.isEmpty else { return input.propertiesJSON }
@@ -529,9 +725,14 @@ private enum LockScreenAssetPublisher {
       let directory = published.appendingPathComponent(entry.property, isDirectory: true)
       // A `file` property names one published file; a `directory` property names the
       // folder, exactly as the renderer already expects on the desktop side.
-      root[entry.property] = entry.isFile
-        ? directory.appendingPathComponent(entry.files[0].name).path
-        : directory.path
+      let target = entry.isFile
+        ? directory.appendingPathComponent(entry.files[0].name) : directory
+      if web, var property = root[entry.property] as? [String: Any] {
+        property["value"] = target.absoluteString
+        root[entry.property] = property
+      } else {
+        root[entry.property] = target.path
+      }
     }
     guard let encoded = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     else { return input.propertiesJSON }
@@ -597,7 +798,7 @@ private enum LockScreenAssetPublisher {
       guard digest(source: source, items: try inventory(source)) == fingerprint else {
         throw LockScreenWallpaperFailure(
           message:
-            String(localized: "Wallpaper assets changed while preparing the lock screen. Retry after the download or edit finishes.")
+            String(localized: "Wallpaper assets changed while preparing native playback. Retry after the download or edit finishes.")
         )
       }
       try Task.checkCancellation()
@@ -636,7 +837,7 @@ private enum LockScreenAssetPublisher {
         values.isDirectory == true || values.isRegularFile == true
       else {
         throw LockScreenWallpaperFailure(
-          message: String(localized: "Lock-screen assets cannot contain symbolic links or special files: \(file.path)")
+          message: String(localized: "Native wallpaper assets cannot contain symbolic links or special files: \(file.path)")
         )
       }
       result.append(
@@ -665,7 +866,7 @@ private enum LockScreenAssetPublisher {
     if clonefile(source.path, destination.path, 0) == 0 { return }
     guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
       throw LockScreenWallpaperFailure(
-        message: String(localized: "Cannot create lock-screen asset: \(destination.path)"))
+        message: String(localized: "Cannot create native wallpaper asset: \(destination.path)"))
     }
     let input = try FileHandle(forReadingFrom: source)
     defer { try? input.close() }

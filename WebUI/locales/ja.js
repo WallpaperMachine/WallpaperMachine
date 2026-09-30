@@ -556,8 +556,13 @@ export default {
   'Updating': '更新中',
   'Experimental. Applies right away.': '実験的機能です。すぐに適用されます。',
   'Compatibility & permissions': '互換性とアクセス権',
-  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over the desktop and idle wallpaper on displays that are playing a wallpaper, and reloads the macOS wallpaper service. Turning it off or quitting restores what the app changed and keeps any other wallpaper changes.': 'ロック画面のアニメーションはmacOSの非公開APIを使用しているため、macOSのアップデート後に動作しなくなる可能性があります。オンの間は、壁紙を再生しているディスプレイのデスクトップ壁紙とアイドル時の壁紙をこのAppが管理し、macOSの壁紙サービスを再読み込みします。オフにするかAppを終了すると、このAppが変更した内容は元に戻り、それ以外の壁紙の変更はそのまま保持されます。',
+  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over only the Desktop wallpaper selection on displays with an applied scene or video wallpaper, and reloads the macOS wallpaper service. The screen saver is a separate choice below. Turning this off restores the Desktop choices; quitting restores all choices the app changed and keeps other wallpaper changes.': 'ロック画面のアニメーションはmacOSの非公開APIを使用しているため、macOSのアップデート後に動作しなくなる可能性があります。オンの間は、シーンまたはビデオ壁紙を適用しているディスプレイのDesktop（デスクトップ）の壁紙選択だけをこのAppが管理し、macOSの壁紙サービスを再読み込みします。スクリーンセーバは下の設定で個別に選択できます。この機能をオフにするとDesktopの選択が元に戻ります。Appを終了すると、このAppが変更したすべての選択が元に戻り、それ以外の壁紙の変更は保持されます。',
   'It keeps separate copies of wallpaper files, which uses extra disk space, and may not render on every macOS version. Pause and battery settings still apply.': '壁紙ファイルのコピーを別に保持するため、追加のディスク容量を使用します。また、すべてのmacOSバージョンで表示されるとは限りません。一時停止とバッテリーの設定は引き続き適用されます。',
+  'Screen saver': 'スクリーンセーバ',
+  'Use wallpaper as screen saver': '壁紙をスクリーンセーバに使用',
+  'Screen saver status': 'スクリーンセーバの状態',
+  'Requires macOS 26 or later. Uses each display’s applied wallpaper as its screen saver, including scenes, videos, web wallpapers and still images. This experimental feature uses private macOS APIs and may stop working after an update.': 'macOS 26以降が必要です。各ディスプレイに適用中のシーン、ビデオ、Web壁紙、静止画像をスクリーンセーバに使用します。この実験的機能はmacOSの非公開APIを使用しているため、アップデート後に動作しなくなる可能性があります。',
+  'The screen saver choice is independent of lock screen animation. It changes only the Idle wallpaper selection and reloads the macOS wallpaper service. Turning it off restores the previous screen saver without changing the Desktop selection, and keeps screen saver changes made elsewhere. Pause and battery settings still apply.': 'スクリーンセーバの選択はロック画面のアニメーションとは独立しています。Idle（アイドル時）の壁紙選択だけを変更し、macOSの壁紙サービスを再読み込みします。オフにすると、Desktop（デスクトップ）の選択を変更せずに、以前のスクリーンセーバが復元されます。ほかで行ったスクリーンセーバの変更は保持されます。一時停止とバッテリーの設定は引き続き適用されます。',
 
   // Settings: performance
   'Playback': '再生',

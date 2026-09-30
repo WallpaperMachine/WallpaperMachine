@@ -1,6 +1,7 @@
-# Animated lock screen (experimental)
+# Lock screen and screen saver (experimental)
 
-The app can animate the macOS lock screen. The feature is off by default.
+The app can animate the macOS lock screen and use applied wallpapers as the
+screen saver. Both choices are off by default and require macOS 26 or later.
 
 ## Enabling it
 
@@ -71,6 +72,33 @@ about 31 seconds (observed on macOS 27.2), so a scene must reach its first frame
 well inside that; see
 [startup costs](../testing/renderer.md#startup-and-staging-buffers).
 
+## Use wallpaper as screen saver
+
+Enable **Settings → General → Screen saver → Use wallpaper as screen saver**.
+Each display follows its applied wallpaper and committed properties, including
+scene, video, web and still-image/pixiv projects. Choosing the native desktop
+video backend does not exclude a video from native presentation.
+
+This control owns only the system's **Idle** selection. **Animate lock screen**
+owns **Desktop**; either can be enabled or disabled without changing the other's
+selection. The screen saver does not require the lock-screen switch. macOS still
+controls idle timing, password requirements and dismissal; the app changes none
+of those settings.
+
+“Selected” means the native choice was committed, not that a screen saver has
+already started rendering. macOS may acquire an Idle-only surface only when it
+starts the screen saver. A later renderer failure is shown beside the setting,
+and restoration preserves choices changed elsewhere. Both modes share the
+publisher and recovery path; a publication or renderer failure can roll back
+both native selections.
+
+Web and still wallpapers use a live WebKit layer tree, not a recorded video or a
+periodic screenshot. Only their staged project and referenced imports are granted
+file access. Audio, media integration, camera/microphone/display capture,
+interaction and author dialogs are disabled. Pause freezes page execution and
+retains the compositor tree; it does not resume playback the user paused.
+Web projects remain unsupported for **Animate lock screen**.
+
 ## Caveats
 
 - It requires macOS 26 or later. On earlier releases the app does not start the
@@ -81,8 +109,9 @@ well inside that; see
 - Lock-screen animation uses private macOS wallpaper APIs and wallpaper-store
   formats that may change; it may stop working after an OS update, and rendering
   is not guaranteed on every macOS release.
-- It replaces the Desktop and Idle provider on active wallpaper displays and
-  reloads the wallpaper service.
+- Lock-screen animation replaces Desktop; screen-saver playback replaces Idle.
+  Selection changes reload the wallpaper service. Linked or unsupported
+  per-display configurations are rejected rather than converted destructively.
 - System-wide linked wallpapers, or another wallpaper app, can prevent
   activation. The app reports the conflict instead of overwriting those choices.
 - Playback respects the pause and battery settings. The lock screen covering the
@@ -113,16 +142,16 @@ checking only the bundle identifier does not establish which copy macOS chose.
 
 ## Turning it off
 
-Disabling the feature or quitting the app restores the native selections that
-are still owned by this app. Wallpaper changes made elsewhere are preserved.
+Disabling either control restores only its still-owned selections. Quitting
+restores both. Wallpaper and screen-saver changes made elsewhere are preserved.
 
 ## Background checks and recovery
 
-The service keeps one two-second monitor only while animation is requested,
+The service keeps one two-second monitor while either mode is requested,
 recovery is complete, shutdown has not begun, and no error is pending. Busy
-refreshes keep that timer but skip its work. An active request with no scenes
-still checks for a later wallpaper; disabling or shutting down cancels the timer
-immediately. An error stops automatic monitoring until an explicit retry or
+refreshes keep that timer but skip its work. An active request with no wallpapers
+still checks for a later wallpaper; disabling both modes or shutting down cancels
+the timer immediately. An error stops automatic monitoring until an explicit retry or
 another existing refresh path succeeds. A pending display-identity lookup does
 not clear that error and does not by itself start the monitor. With no error,
 the same timer retries an unchanged scene set when the identity resolves.
@@ -151,13 +180,18 @@ off and left that Space pointing at the extension.
 
 ## Storage
 
-Lock-screen assets are isolated copies, using APFS clones where available. They
-still require additional disk space.
+Native wallpaper assets are isolated copies, using APFS clones where available.
+They still require additional disk space. Web projects receive a separate
+read-grant root containing only that project's referenced managed files.
 
 ## Verification
 
 See [Testing](../testing/README.md) for the exact tested behavior and visual
 limitations, and the [verification log](../testing/verification-log.md) for
 recorded runs.
+
+The screen-saver implementation has offscreen native-context/WebKit and isolated
+selection coverage. Real idle transitions, password UI, multi-monitor compositor
+delivery, and sleep/wake visuals still require an authorized desktop check.
 
 Back to the [project README](../../README.md).

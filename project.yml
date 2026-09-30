@@ -146,13 +146,15 @@ targets:
       - path: Shared
       - path: Resources/StarterWallpaper/preview.jpg
         buildPhase: resources
+    dependencies:
+      - sdk: WebKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wallpapermachine.wallpaper-extension
         PRODUCT_NAME: WallpaperMachineExtension
         INFOPLIST_FILE: Extension/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: WallpaperMachine Lock Screen
+        INFOPLIST_KEY_CFBundleDisplayName: WallpaperMachine Wallpapers
         MARKETING_VERSION: "1.2.0"
         CURRENT_PROJECT_VERSION: "22"
         ENABLE_APP_SANDBOX: YES

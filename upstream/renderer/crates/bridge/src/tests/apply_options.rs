@@ -1294,7 +1294,6 @@ async fn web_wallpaper_apply_bypasses_engine_and_exports_host_inputs() {
         bridge.app_snapshot().await.unwrap().active_wallpaper_ids,
         vec!["300".to_string()]
     );
-    assert!(bridge.lock_screen_scenes().await.unwrap().is_empty());
 
     let web = bridge.web_wallpapers().await.unwrap();
     assert_eq!(web.len(), 1);
@@ -1309,13 +1308,45 @@ async fn web_wallpaper_apply_bypasses_engine_and_exports_host_inputs() {
     assert_eq!(properties["tint"]["value"], "1 0.5 0");
     assert!(properties.get("group").is_none(), "group rows are not user properties");
 
+    let exported = bridge.lock_screen_scenes().await.unwrap();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].display_id, 7);
+    assert_eq!(exported[0].wallpaper_id, "300");
+    assert_eq!(
+        std::path::Path::new(&exported[0].project_path),
+        std::path::Path::new(&web[0].project_path).join("project.json")
+    );
+    assert_eq!(exported[0].assets_path, web[0].project_path);
+    assert_eq!(exported[0].scaling_mode, BridgeScalingMode::Fill);
+    assert_eq!(exported[0].scaling_factor, 1.0);
+    let exported_properties: serde_json::Value =
+        serde_json::from_str(exported[0].properties_json.as_deref().unwrap()).unwrap();
+    assert_eq!(exported_properties["theme"]["value"], "dark");
+    assert_eq!(exported_properties["tint"]["value"], "1 0.5 0");
+    assert_eq!(exported_properties, properties);
+
+    bridge
+        .edit_property(
+            "300".into(),
+            "theme".into(),
+            crate::BridgePropertyValue::String { value: "light".into() },
+        )
+        .await
+        .unwrap();
+    let draft_export = bridge.lock_screen_scenes().await.unwrap();
+    let properties: serde_json::Value =
+        serde_json::from_str(draft_export[0].properties_json.as_deref().unwrap()).unwrap();
+    assert_eq!(properties["theme"]["value"], "dark");
+
     bridge.pause_all().await.unwrap();
     assert!(bridge.web_wallpapers().await.unwrap()[0].paused);
+    assert!(bridge.lock_screen_scenes().await.unwrap()[0].paused);
     bridge
         .eject_wallpaper_from_display("7".into(), "300".into())
         .await
         .unwrap();
     assert!(bridge.web_wallpapers().await.unwrap().is_empty());
+    assert!(bridge.lock_screen_scenes().await.unwrap().is_empty());
     assert!(bridge.app_snapshot().await.unwrap().active_wallpaper_ids.is_empty());
 }
 

@@ -556,8 +556,13 @@ export default {
   'Updating': '正在更新',
   'Experimental. Applies right away.': '实验性功能，立即生效。',
   'Compatibility & permissions': '兼容性与权限',
-  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over the desktop and idle wallpaper on displays that are playing a wallpaper, and reloads the macOS wallpaper service. Turning it off or quitting restores what the app changed and keeps any other wallpaper changes.': '锁定屏幕动画使用 macOS 私有接口，系统更新后可能失效。开启后，正在播放壁纸的显示器的桌面和闲置墙纸会由本应用接管，并重新加载 macOS 墙纸服务。关闭或退出应用时，只还原本应用改动的部分，其他墙纸更改会保留。',
+  'Lock screen animation uses private macOS APIs and may stop working after a macOS update. While it is on, the app takes over only the Desktop wallpaper selection on displays with an applied scene or video wallpaper, and reloads the macOS wallpaper service. The screen saver is a separate choice below. Turning this off restores the Desktop choices; quitting restores all choices the app changed and keeps other wallpaper changes.': '锁定屏幕动画使用 macOS 私有接口，系统更新后可能失效。开启后，本应用只接管已应用场景或视频壁纸的显示器的 Desktop（桌面）墙纸选项，并重新加载 macOS 墙纸服务。屏幕保护程序可在下方独立设置。关闭此功能会还原桌面选项；退出应用会还原本应用改动的所有选项，并保留其他墙纸更改。',
   'It keeps separate copies of wallpaper files, which uses extra disk space, and may not render on every macOS version. Pause and battery settings still apply.': '它会另存一份壁纸文件，需要额外磁盘空间，且不保证在每个 macOS 版本上都能显示。暂停和电池设置同样适用。',
+  'Screen saver': '屏幕保护程序',
+  'Use wallpaper as screen saver': '将壁纸用作屏幕保护程序',
+  'Screen saver status': '屏幕保护程序状态',
+  'Requires macOS 26 or later. Uses each display’s applied wallpaper as its screen saver, including scenes, videos, web wallpapers and still images. This experimental feature uses private macOS APIs and may stop working after an update.': '需要 macOS 26 或更高版本。将各显示器当前应用的壁纸用作屏幕保护程序，支持场景、视频、网页壁纸和静态图片。此实验性功能使用 macOS 私有接口，系统更新后可能失效。',
+  'The screen saver choice is independent of lock screen animation. It changes only the Idle wallpaper selection and reloads the macOS wallpaper service. Turning it off restores the previous screen saver without changing the Desktop selection, and keeps screen saver changes made elsewhere. Pause and battery settings still apply.': '屏幕保护程序与锁定屏幕动画可独立选择。此功能只更改 Idle（闲置）墙纸选项，并重新加载 macOS 墙纸服务。关闭后会还原原来的屏幕保护程序，不会更改 Desktop（桌面）选项，并保留你在别处更改的屏幕保护程序设置。暂停和电池设置同样适用。',
 
   // Settings: performance
   'Playback': '播放',

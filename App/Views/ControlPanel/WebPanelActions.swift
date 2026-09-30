@@ -438,6 +438,12 @@ extension WebPanelController {
             message: String(localized: "Lock Screen integration is unavailable."))
         }
         lock.setEnabled(try request.boolean("value"))
+      case "screenSaverEnabled":
+        guard let lock = store.lockScreenWallpaper else {
+          throw WallpaperActionError(
+            message: String(localized: "Screen saver integration is unavailable."))
+        }
+        lock.setScreenSaverEnabled(try request.boolean("value"))
       case "videoBackend":
         let mode = try request.string("value")
         // Refuse an unknown mode instead of falling back: silently substituting
@@ -481,6 +487,7 @@ extension WebPanelController {
       guard let id = UUID(uuidString: try request.string("id")) else { throw WebPanelRequest.invalid }
       playback.removeRule(id: id)
     case "lockScreenRetry": store.lockScreenWallpaper?.refresh()
+    case "screenSaverRetry": store.lockScreenWallpaper?.refresh()
     case "openFocusSettings":
       // Focus filters are added to a Focus there; the app cannot add its own.
       NSWorkspace.shared.open(Self.focusSettingsURL)

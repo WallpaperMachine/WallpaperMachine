@@ -202,7 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 // Play, pause and a changed library or display set are when a waiting playlist
                 // change can happen.
                 self.playlistScheduler?.evaluate()
-                if let lockScreen, lockScreen.isRequested, lockScreen.errorMessage == nil {
+                if let lockScreen, lockScreen.anyRequested, lockScreen.errorMessage == nil,
+                   lockScreen.screenSaverError == nil {
                     lockScreen.refresh()
                 } else if lockScreen?.ownsDesktopProvider != true {
                     // A suspended poster sync must never outlive the native provider.

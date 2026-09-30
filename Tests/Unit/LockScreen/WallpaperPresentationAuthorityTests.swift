@@ -93,6 +93,40 @@ final class WallpaperPresentationAuthorityTests: XCTestCase {
     XCTAssertEqual(Authority.suspensionReasons(for: suspended), .hostSuspended)
   }
 
+  func testScreenSaverAndLockScreenAuthorizationRemainIndependent() {
+    var request = Authority.Request(
+      role: .lockScreen, presentationMode: "idle",
+      lockScreenEnabled: false, screenSaverEnabled: true)
+    XCTAssertTrue(Authority.mayPresent(request))
+    request.sessionLocked = true
+    XCTAssertTrue(Authority.mayPresent(request), "Password protection must not stop an active saver")
+    request.presentationMode = "locked"
+    XCTAssertEqual(Authority.suspensionReasons(for: request), .noConsumer)
+
+    request.lockScreenEnabled = true
+    request.screenSaverEnabled = false
+    XCTAssertTrue(Authority.mayPresent(request))
+    request.presentationMode = "idle"
+    XCTAssertEqual(Authority.suspensionReasons(for: request), .noConsumer,
+      "A foreign screen saver covers the desktop even when the session is locked")
+  }
+
+  func testIdleResumeCannotOverridePauseSleepOrHostSuspension() {
+    var request = Authority.Request(
+      role: .lockScreen, userPaused: true, displaysAsleep: true, sessionLocked: true,
+      presentationMode: "idle", hostActivity: .suspended,
+      lockScreenEnabled: false, screenSaverEnabled: true)
+    XCTAssertEqual(Authority.suspensionReasons(for: request),
+      [.userPaused, .displaysAsleep, .hostSuspended])
+    request.displaysAsleep = false
+    request.hostActivity = .active
+    XCTAssertEqual(Authority.suspensionReasons(for: request), .userPaused)
+    request.userPaused = false
+    XCTAssertTrue(Authority.mayPresent(request))
+    request.screenSaverEnabled = false
+    XCTAssertEqual(Authority.suspensionReasons(for: request), .noConsumer)
+  }
+
   // MARK: - the user's pause stays its own reason
 
   func testAUserPauseIsIndependentOfVisibility() {

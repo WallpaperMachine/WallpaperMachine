@@ -49,6 +49,7 @@ or skip to the next wallpaper.
 | [**Out of sight, paused**](docs/architecture.md#desktop-wallpaper-windows-and-private-api-handling) | A covered display stops its own wallpaper, and sleep or lock pauses them all. [Playback rules](docs/features/performance.md#playback) can also pause or mute them while another app plays sound, while an app you choose is running or in front, in Low Power Mode, when the Mac runs hot, or during a Focus. Your own pause stays yours. |
 | [**Automation**](docs/features/automation.md) | Keyboard shortcuts that work in any app, actions for Shortcuts, Siri and Spotlight, and `wallpapermachine://` links: play, pause, next, apply a wallpaper. |
 | [**Lock screen**](docs/features/lock-screen.md) | Video and scene wallpapers can animate the lock screen too. Experimental and off by default. |
+| [**Screen saver**](docs/features/lock-screen.md#use-wallpaper-as-screen-saver) | Use each display’s applied scene, video, web or still wallpaper as its screen saver. Independent of lock-screen animation; experimental on macOS 26+. |
 
 ## Rust core · Metal graphics
 

@@ -1141,6 +1141,30 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             .collect()
     }
 
+    fn web_properties_json(
+        &self,
+        wallpaper_id: &str,
+        properties: &BTreeMap<String, PropertyValue>,
+    ) -> String {
+        let model = self.state.project_models.get(wallpaper_id);
+        let properties = properties
+            .iter()
+            .map(|(id, value)| {
+                let mut entry = serde_json::Map::new();
+                if let Some(property) = model.and_then(|model| {
+                    model.properties.iter().find(|property| property.id == *id)
+                }) {
+                    let _ = entry.insert("value".to_string(), property.web_value(value));
+                    describe_property_kind(property, &mut entry);
+                } else {
+                    let _ = entry.insert("value".to_string(), value.to_json());
+                }
+                (id.clone(), serde_json::Value::Object(entry))
+            })
+            .collect::<serde_json::Map<_, _>>();
+        serde_json::Value::Object(properties).to_string()
+    }
+
     fn web_wallpapers(&self) -> Result<Vec<BridgeWebWallpaper>, BridgeError> {
         if self.state.presentation_unloaded {
             return Ok(Vec::new());
@@ -1165,23 +1189,8 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     .into_os_string()
                     .into_string()
                     .map_err(|_| BridgeError::invalid_input("web wallpaper path is not UTF-8"))?;
-                let model = self.state.project_models.get(&desc.wallpaper_id);
-                let properties = desc
-                    .properties
-                    .iter()
-                    .map(|(id, value)| {
-                        let mut entry = serde_json::Map::new();
-                        if let Some(property) = model.and_then(|model| {
-                            model.properties.iter().find(|property| property.id == *id)
-                        }) {
-                            let _ = entry.insert("value".to_string(), property.web_value(value));
-                            describe_property_kind(property, &mut entry);
-                        } else {
-                            let _ = entry.insert("value".to_string(), value.to_json());
-                        }
-                        (id.clone(), serde_json::Value::Object(entry))
-                    })
-                    .collect::<serde_json::Map<_, _>>();
+                let properties_json =
+                    self.web_properties_json(&desc.wallpaper_id, &desc.properties);
                 let media_integration_enabled = self
                     .state
                     .wallpaper_configs
@@ -1197,7 +1206,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     paused: desc.paused,
                     audio_response_enabled: desc.audio_response_enabled,
                     media_integration_enabled,
-                    properties_json: serde_json::Value::Object(properties).to_string(),
+                    properties_json,
                 })
             })
             .collect()
@@ -1205,18 +1214,19 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
 
     fn lock_screen_scenes(&self) -> Result<Vec<BridgeLockScreenScene>, BridgeError> {
         let displays = self.engine.display_snapshot();
-        // Only the user's Play/Pause and power policy carry over. Locking
-        // covers the desktop and suspends its display, and the extension
-        // applies its own sleep and visibility rules, so a desktop suspension
-        // here would hold the lock screen on a still frame.
+        // The native presentations own visibility and sleep. Export committed
+        // user/power policy without transient desktop suspension or backend
+        // admission, including videos currently played by the native host.
         let no_suspended_displays = BTreeSet::new();
-        let scenes = ActivationInputs {
+        let inputs = ActivationInputs {
             suspended_displays: &no_suspended_displays,
+            native_video_enabled: false,
+            frame_rate_cap: self.active_target_fps_cap(),
             ..self.activation_inputs(&displays, self.state.playback_state == BridgePlaybackState::Paused)
-        }
-        .build()?;
+        };
 
-        scenes
+        let mut scenes = inputs
+            .build()?
             .into_iter()
             .map(|mut scene| {
                 let wallpaper_id = std::path::Path::new(&scene.scene_path)
@@ -1278,14 +1288,64 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     title,
                     project_path: scene.scene_path,
                     assets_path: scene.assets_path,
-                    fps: scene.fps,
+                    fps: self.live_target_fps(scene.fps),
                     scaling_mode: scene.scaling_mode.into(),
                     scaling_factor: scene.scaling_factor,
                     properties_json,
                     paused: scene.paused,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, BridgeError>>()?;
+
+        for desc in inputs.build_web()? {
+            let project_dir = std::path::absolute(&desc.project_dir)
+                .map_err(|error| BridgeError::Error {
+                    kind: crate::api::BridgeErrorKind::Io,
+                    message: error.to_string(),
+                })?;
+            let project_path = project_dir
+                .join("project.json")
+                .into_os_string()
+                .into_string()
+                .map_err(|_| {
+                    BridgeError::invalid_input("lock-screen source path is not UTF-8")
+                })?;
+            let assets_path = project_dir
+                .into_os_string()
+                .into_string()
+                .map_err(|_| {
+                    BridgeError::invalid_input("lock-screen source path is not UTF-8")
+                })?;
+            let title = self
+                .state
+                .library
+                .iter()
+                .find(|entry| entry.id == desc.wallpaper_id)
+                .ok_or_else(|| BridgeError::Error {
+                    kind: crate::api::BridgeErrorKind::Library,
+                    message: format!(
+                        "lock-screen wallpaper {} is not in the library",
+                        desc.wallpaper_id
+                    ),
+                })?
+                .title
+                .clone();
+            let properties_json =
+                self.web_properties_json(&desc.wallpaper_id, &desc.properties);
+            scenes.push(BridgeLockScreenScene {
+                display_id: desc.display.display_id,
+                wallpaper_id: desc.wallpaper_id,
+                title,
+                project_path,
+                assets_path,
+                fps: self.live_target_fps(desc.fps),
+                scaling_mode: BridgeScalingMode::Fill,
+                scaling_factor: 1.0,
+                properties_json: Some(properties_json),
+                paused: desc.paused,
+            });
+        }
+        Ok(scenes)
     }
 
     fn unchanged_configured_scenes(

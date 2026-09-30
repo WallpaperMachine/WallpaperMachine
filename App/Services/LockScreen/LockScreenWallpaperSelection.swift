@@ -15,6 +15,11 @@ final class LockScreenWallpaperSelection {
     var original: Data
     var created: Bool
     var observeOnly: Bool? = nil
+    // Absent in pre-independent journals, which owned both native choices.
+    var fields: [String]? = nil
+    var typeOwned: Bool? = nil
+
+    var ownedFields: Set<String> { Set(fields ?? ["Desktop", "Idle"]) }
   }
 
   private static var lastReloadSignal: Date?
@@ -53,7 +58,7 @@ final class LockScreenWallpaperSelection {
     hasPersistedJournal = true
     // A crash may occur after the store write but before its service reload.
     restartPending = true
-    try synchronize(displays: [])
+    try synchronize(desktopDisplays: [], screenSaverDisplays: [])
   }
 
   func checkCompatibility() throws {
@@ -65,12 +70,15 @@ final class LockScreenWallpaperSelection {
     {
       throw LockScreenWallpaperFailure(
         message:
-          String(localized: "A system-wide linked wallpaper currently overrides individual displays. Turn off that wallpaper app or its all-displays setting before enabling Animate Lock Screen; the existing global wallpaper was not changed.")
+          String(localized: "A system-wide linked wallpaper currently overrides individual displays. Turn off that wallpaper app or its all-displays setting before enabling native wallpaper animation; the existing global wallpaper was not changed.")
       )
     }
   }
 
-  func synchronize(displays: Set<String>, revision: String? = nil) throws {
+  func synchronize(
+    desktopDisplays: Set<String>, screenSaverDisplays: Set<String>, revision: String? = nil
+  ) throws {
+    let displays = desktopDisplays.union(screenSaverDisplays)
     if displays.isEmpty && entries.isEmpty && !restartPending { return }
     let bytes = try Data(contentsOf: storeURL)
     guard
@@ -83,81 +91,27 @@ final class LockScreenWallpaperSelection {
           String(localized: "This macOS wallpaper store format is unsupported. Native selection was not changed."))
     }
     var paths = displays.sorted().map { ["Displays", $0] }
-    for (space, value) in (root["Spaces"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key })
-    {
+    let spaces = root["Spaces"] as? [String: Any] ?? [:]
+    for (space, value) in spaces.sorted(by: { $0.key < $1.key }) {
       guard let node = value as? [String: Any], node["Displays"] is [String: Any] else {
         throw LockScreenWallpaperFailure(
           message: String(localized: "This macOS Space has an unsupported wallpaper configuration."))
       }
       paths += displays.sorted().map { ["Spaces", space, "Displays", $0] }
     }
-    let desired = Set(paths)
-    var retained: [Entry] = []
-    var changed = false
-    let selection = try Self.selection(revision: revision)
-    // Originals already journaled, decoded only when a fallback in the live
-    // store turns out to hold a copy of this extension's selection.
-    var decodedOriginals: [[String]: [String: Any]] = [:]
-    let journaledOriginal = { (path: [String]) -> [String: Any]? in
-      if let decoded = decodedOriginals[path] { return decoded }
-      guard
-        let data = (retained.first { $0.path == path } ?? self.entries.first { $0.path == path })?
-          .original,
-        let original = try? PropertyListSerialization.propertyList(from: data, format: nil)
-          as? [String: Any]
-      else { return nil }
-      decodedOriginals[path] = original
-      return original
+    let fallbackPaths = [["SystemDefault"]] + spaces.keys.sorted().map { ["Spaces", $0, "Default"] }
+    let activeFields = Set(
+      (desktopDisplays.isEmpty ? [] : ["Desktop"])
+        + (screenSaverDisplays.isEmpty ? [] : ["Idle"]))
+    func desiredFields(_ path: [String], observeOnly: Bool) -> Set<String> {
+      if observeOnly { return fallbackPaths.contains(path) ? activeFields : [] }
+      guard paths.contains(path), let display = path.last else { return [] }
+      return Set(
+        (desktopDisplays.contains(display) ? ["Desktop"] : [])
+          + (screenSaverDisplays.contains(display) ? ["Idle"] : []))
     }
+    var originals: [[String]: [String: Any]] = [:]
     for entry in entries {
-      if entry.observeOnly == true && !displays.isEmpty {
-        retained.append(entry)
-        continue
-      }
-      guard var node = Self.node(root, path: entry.path) else {
-        if desired.contains(entry.path) {
-          throw LockScreenWallpaperFailure(
-            message:
-              String(localized: "A native wallpaper override was removed outside WallpaperMachine. Disable Animate Lock Screen before enabling it again.")
-          )
-        }
-        continue
-      }
-      let desktopOwned = Self.owns(node["Desktop"])
-      let idleOwned = Self.owns(node["Idle"])
-      if desired.contains(entry.path) {
-        guard desktopOwned && idleOwned else {
-          throw LockScreenWallpaperFailure(
-            message:
-              String(localized: "The system wallpaper was changed outside WallpaperMachine. Disable Animate Lock Screen before enabling it again; external choices will be preserved.")
-          )
-        }
-        // Reloading the extension's manifest does not invalidate WallpaperAgent's
-        // cached snapshots for inactive Spaces. Change the native choice identity
-        // on publication, while retaining the first restoration journal entry.
-        if revision != nil {
-          var updated = false
-          for key in ["Desktop", "Idle"] {
-            let current = node[key] as? [String: Any]
-            let content = current?["Content"] as? [String: Any]
-            let choices = content?["Choices"] as? [[String: Any]]
-            let expected = (selection["Content"] as? [String: Any])?["Choices"] as? [[String: Any]]
-            if choices?.first?["Configuration"] as? Data != expected?.first?["Configuration"]
-              as? Data
-            {
-              node[key] = selection
-              updated = true
-            }
-          }
-          if updated {
-            Self.setNode(&root, path: entry.path, value: node)
-            changed = true
-          }
-        }
-        retained.append(entry)
-        continue
-      }
-      guard desktopOwned || idleOwned else { continue }
       guard
         let original = try PropertyListSerialization.propertyList(from: entry.original, format: nil)
           as? [String: Any]
@@ -165,85 +119,164 @@ final class LockScreenWallpaperSelection {
         throw LockScreenWallpaperFailure(
           message: String(localized: "The native wallpaper restoration journal is invalid."))
       }
-      if desktopOwned { node["Desktop"] = original["Desktop"] }
-      if idleOwned { node["Idle"] = original["Idle"] }
-      if desktopOwned && idleOwned && node["Type"] as? String == "individual" {
+      originals[entry.path] = original.filter {
+        entry.ownedFields.contains($0.key) || ($0.key == "Type" && (entry.typeOwned ?? true))
+      }
+    }
+    let journaledOriginal = { (path: [String]) in originals[path] }
+    var recovery = entries
+    var retained: [Entry] = []
+    var changed = false
+    let selection = try Self.selection(revision: revision)
+    // The pre-commit journal owns the union of old and new fields. A crash at
+    // either side of the atomic store write can therefore restore all of them.
+    func record(_ entry: Entry, original: [String: Any]) throws {
+      if let index = recovery.firstIndex(where: { $0.path == entry.path }) {
+        var merged = originals[entry.path] ?? [:]
+        for key in entry.ownedFields.subtracting(recovery[index].ownedFields) {
+          merged[key] = original[key]
+        }
+        recovery[index].original = try Self.encode(merged)
+        recovery[index].fields = recovery[index].ownedFields.union(entry.ownedFields).sorted()
+        originals[entry.path] = merged
+      } else {
+        recovery.append(entry)
+        originals[entry.path] = original
+      }
+    }
+    func reconcile(_ prior: Entry?, path: [String], observeOnly: Bool) throws {
+      let desired = desiredFields(path, observeOnly: observeOnly)
+      let previous = prior?.ownedFields ?? []
+      let existing = Self.node(root, path: path)
+      if existing == nil && desired.isEmpty { return }
+      if existing == nil, !observeOnly, !previous.intersection(desired).isEmpty {
+        throw LockScreenWallpaperFailure(
+          message:
+            String(localized: "A native wallpaper override was removed outside WallpaperMachine. Disable the affected wallpaper feature before enabling it again."))
+      }
+      var node = existing ?? [:]
+      if !observeOnly && !desired.isEmpty && existing != nil
+        && node["Type"] as? String != "individual"
+      {
+        throw LockScreenWallpaperFailure(
+          message:
+            String(localized: "This display uses a linked or unsupported native wallpaper configuration. Choose separate desktop and screen saver wallpapers in System Settings before enabling native wallpaper animation."))
+      }
+      var original = prior.flatMap { originals[$0.path] } ?? [:]
+      let removed = previous.subtracting(desired)
+      let allPreviouslyOwned = previous.allSatisfy { Self.owns(node[$0]) }
+      for key in previous.sorted() {
+        if desired.contains(key) {
+          if !observeOnly && !Self.owns(node[key]) {
+            throw LockScreenWallpaperFailure(
+              message:
+                String(localized: "The system wallpaper was changed outside WallpaperMachine. Disable the affected wallpaper feature before enabling it again; external choices will be preserved."))
+          }
+        } else if Self.owns(node[key]) {
+          node[key] = original[key]
+        }
+      }
+      let added = desired.subtracting(previous)
+      if !added.isEmpty {
+        let restored = try Self.restorationOriginal(
+          node, path: path, root: root, fields: added, journaled: journaledOriginal)
+        for key in added { original[key] = restored[key] }
+      }
+      let typeOwned = prior.map { $0.typeOwned ?? true } ?? (!observeOnly && existing == nil)
+      if prior == nil && typeOwned { original["Type"] = existing?["Type"] }
+      if !observeOnly {
+        for key in desired.sorted() {
+          let current = node[key] as? [String: Any]
+          let content = current?["Content"] as? [String: Any]
+          let choices = content?["Choices"] as? [[String: Any]]
+          let expected = (selection["Content"] as? [String: Any])?["Choices"] as? [[String: Any]]
+          if added.contains(key)
+            || (revision != nil
+              && choices?.first?["Configuration"] as? Data
+                != expected?.first?["Configuration"] as? Data)
+          {
+            node[key] = selection
+          }
+        }
+        // Existing Type and all other metadata belong to the user.
+        if prior == nil && typeOwned { node["Type"] = "individual" }
+      }
+      if desired.isEmpty && !removed.isEmpty && typeOwned && allPreviouslyOwned
+        && node["Type"] as? String == "individual"
+        && ["Desktop", "Idle"].allSatisfy({
+          (node[$0] as? NSDictionary) == (original[$0] as? NSDictionary)
+        })
+      {
         node["Type"] = original["Type"]
       }
-      let remove = entry.created && node.isEmpty
-      Self.setNode(&root, path: entry.path, value: remove ? nil : node)
-      changed = true
+      if !desired.isEmpty {
+        original = original.filter {
+          desired.contains($0.key) || ($0.key == "Type" && typeOwned)
+        }
+        let originalData: Data
+        if let prior, desired == previous {
+          originalData = prior.original
+        } else {
+          originalData = try Self.encode(original)
+        }
+        let entry = Entry(
+          path: path, original: originalData,
+          created: prior?.created ?? (existing == nil), observeOnly: observeOnly,
+          fields: desired.sorted(), typeOwned: typeOwned)
+        if !added.isEmpty { try record(entry, original: original) }
+        retained.append(entry)
+      }
+      let value: [String: Any]? =
+        node.isEmpty && ((prior?.created ?? false) || existing == nil) ? nil : node
+      if (existing as NSDictionary?) != (value as NSDictionary?) {
+        Self.setNode(&root, path: path, value: value)
+        changed = true
+      }
     }
-    // Turning off: a Space created after the last check while the feature was
-    // on started from copies of this extension's selection and was never
-    // journaled. Give its Default and the journaled displays' nodes their
-    // native choices back too; nodes of other displays belong to the user.
-    if displays.isEmpty && !entries.isEmpty {
-      let journaledDisplays = entries.compactMap { entry in
-        entry.path.count == 2 && entry.path[0] == "Displays" ? entry.path[1] : nil
-      }
-      var discovered: [[String]] = []
-      for space in (root["Spaces"] as? [String: Any] ?? [:]).keys.sorted() {
-        discovered.append(["Spaces", space, "Default"])
-        discovered += journaledDisplays.sorted().map { ["Spaces", space, "Displays", $0] }
-      }
-      for path in discovered where !entries.contains(where: { $0.path == path }) {
+    for entry in entries {
+      try reconcile(entry, path: entry.path, observeOnly: entry.observeOnly == true)
+    }
+    // New Spaces may inherit copied choices just before one mode is disabled.
+    // Restore only that mode, including unjournaled Defaults, while the other
+    // mode and all foreign choices remain untouched.
+    let oldFallbackFields = entries.filter { $0.observeOnly == true }
+      .reduce(into: Set<String>()) { $0.formUnion($1.ownedFields) }
+    let topEntries = entries.filter { $0.path.count == 2 && $0.path[0] == "Displays" }
+    for space in spaces.keys.sorted() {
+      let discovered = [(["Spaces", space, "Default"], oldFallbackFields.subtracting(activeFields))]
+        + topEntries.map {
+          (["Spaces", space, "Displays", $0.path[1]],
+            $0.ownedFields.subtracting(desiredFields($0.path, observeOnly: false)))
+        }
+      for (path, fields) in discovered where !entries.contains(where: { $0.path == path }) {
         guard var node = Self.node(root, path: path) else { continue }
-        let desktopOwned = Self.owns(node["Desktop"])
-        let idleOwned = Self.owns(node["Idle"])
-        guard desktopOwned || idleOwned else { continue }
+        let copied = fields.filter { Self.owns(node[$0]) }
+        guard !copied.isEmpty else { continue }
         let original = try Self.restorationOriginal(
-          node, path: path, root: root, journaled: journaledOriginal)
-        if desktopOwned { node["Desktop"] = original["Desktop"] }
-        if idleOwned { node["Idle"] = original["Idle"] }
+          node, path: path, root: root, fields: copied, journaled: journaledOriginal)
+          .filter { copied.contains($0.key) }
+        let entry = Entry(
+          path: path, original: try Self.encode(original), created: false,
+          observeOnly: path.last == "Default", fields: copied.sorted(), typeOwned: false)
+        try record(entry, original: original)
+        for key in copied { node[key] = original[key] }
         Self.setNode(&root, path: path, value: node)
         changed = true
       }
     }
-    // macOS may copy explicit selections into fallback nodes on reload. Observe
-    // every fallback before activation so those copies can be restored as well.
-    let fallbackPaths =
-      [["SystemDefault"]]
-      + (root["Spaces"] as? [String: Any] ?? [:]).keys.sorted().map { ["Spaces", $0, "Default"] }
     for path in fallbackPaths
-    where !displays.isEmpty && !retained.contains(where: { $0.path == path }) {
-      let original = Self.node(root, path: path)
-      retained.append(
-        Entry(
-          path: path,
-          original: try Self.encode(
-            Self.restorationOriginal(
-              original ?? [:], path: path, root: root, journaled: journaledOriginal)),
-          created: original == nil, observeOnly: true))
+    where !activeFields.isEmpty && !entries.contains(where: { $0.path == path }) {
+      try reconcile(nil, path: path, observeOnly: true)
     }
-    let restorationRoot = root
-    for path in paths where !retained.contains(where: { $0.path == path }) {
-      let existing = Self.node(root, path: path)
-      var node = existing ?? [:]
-      // An orphaned provider cannot be its own restoration target. Recover only
-      // its fields from surviving native fallbacks; preserve external choices.
-      let original = try Self.restorationOriginal(
-        node, path: path, root: restorationRoot, journaled: journaledOriginal
-      )
-      .filter { ["Desktop", "Idle", "Type"].contains($0.key) }
-      retained.append(
-        Entry(path: path, original: try Self.encode(original), created: existing == nil))
-      node["Desktop"] = selection
-      node["Idle"] = selection
-      node["Type"] = "individual"
-      Self.setNode(&root, path: path, value: node)
-      changed = true
+    for path in paths where !entries.contains(where: { $0.path == path }) {
+      try reconcile(nil, path: path, observeOnly: false)
     }
     if changed {
-      // Journal the union first: recovery works both before and after the store commit.
-      let recovery =
-        entries + retained.filter { new in !entries.contains(where: { $0.path == new.path }) }
       try persistEntries(recovery)
       guard try Data(contentsOf: storeURL) == bytes else {
         throw LockScreenWallpaperFailure(
           message:
-            String(localized: "The system wallpaper changed during native selection. Please retry; no concurrent changes were overwritten.")
-        )
+            String(localized: "The system wallpaper changed during native selection. Please retry; no concurrent changes were overwritten."))
       }
       try Self.encode(root).write(to: storeURL, options: .atomic)
       restartPending = true
@@ -278,7 +311,7 @@ final class LockScreenWallpaperSelection {
   /// after the live value: a Space created after that copy, a full-screen
   /// app's included, would otherwise have no fallback left at all.
   private static func restorationOriginal(
-    _ node: [String: Any], path: [String], root: [String: Any],
+    _ node: [String: Any], path: [String], root: [String: Any], fields: Set<String>,
     journaled: ([String]) -> [String: Any]?
   ) throws -> [String: Any] {
     var original = node
@@ -288,7 +321,7 @@ final class LockScreenWallpaperSelection {
       fallbackPaths.append(["Spaces", path[1], "Default"])
     }
     fallbackPaths += [["SystemDefault"], ["AllSpacesAndDisplays"]]
-    for key in ["Desktop", "Idle"] where owns(node[key]) {
+    for key in fields.sorted() where owns(node[key]) {
       guard
         let replacement = fallbackPaths
           .filter({ $0 != path })
@@ -310,7 +343,7 @@ final class LockScreenWallpaperSelection {
       else {
         throw LockScreenWallpaperFailure(
           message:
-            String(localized: "A native wallpaper selection has no restoration journal or surviving system fallback. Choose a system wallpaper for this display before enabling Animate Lock Screen.")
+            String(localized: "A native wallpaper selection has no restoration journal or surviving system fallback. Choose a system wallpaper for this display before enabling native wallpaper animation.")
         )
       }
       original[key] = replacement

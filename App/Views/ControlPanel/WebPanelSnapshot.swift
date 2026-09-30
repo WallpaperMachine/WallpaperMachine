@@ -28,6 +28,10 @@ extension WebPanelController {
     _ = lock?.isBusy
     _ = lock?.status
     _ = lock?.errorMessage
+    _ = lock?.screenSaverRequested
+    _ = lock?.screenSaverEnabled
+    _ = lock?.screenSaverStatus
+    _ = lock?.screenSaverError
     _ = workshop.searchText
     _ = workshop.kind
     _ = workshop.sort
@@ -452,6 +456,11 @@ extension WebPanelController {
         ?? (LockScreenConfiguration.isSupportedBySystem
           ? String(localized: "Unavailable") : String(localized: "Requires macOS 26 or later")),
       "lockScreenError": lock?.errorMessage as Any? ?? null,
+      "screenSaverEnabled": lock?.screenSaverRequested ?? false, "screenSaverAvailable": lock != nil,
+      "screenSaverBusy": lock?.isBusy ?? false, "screenSaverStatus": lock?.screenSaverStatus
+        ?? (LockScreenConfiguration.isSupportedBySystem
+          ? String(localized: "Unavailable") : String(localized: "Requires macOS 26 or later")),
+      "screenSaverError": lock?.screenSaverError as Any? ?? null,
       "sceneAssetsReady": workshop.sceneAssetsReady,
       "sceneAssetsWarning": workshop.sceneAssetsFailure as Any? ?? null,
       "concurrentDownloads": workshop.downloader.maximumConcurrentDownloads,

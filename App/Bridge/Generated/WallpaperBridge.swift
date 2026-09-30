@@ -698,8 +698,9 @@ public protocol WallpaperBridgeProtocol : AnyObject {
     func librarySnapshot() async throws  -> BridgeLibrarySnapshot
     
     /**
-     * Returns committed active scenes for the currently connected displays.
-     * Draft options and the library selection do not affect these inputs.
+     * Returns committed wallpaper inputs for native lock-screen and screen-saver
+     * displays, including web projects, native-preferred videos and mirrors.
+     * Drafts and transient desktop suspension/unload do not affect these inputs.
      *
      * # Errors
      *
@@ -1733,8 +1734,9 @@ open func librarySnapshot()async throws  -> BridgeLibrarySnapshot {
 }
     
     /**
-     * Returns committed active scenes for the currently connected displays.
-     * Draft options and the library selection do not affect these inputs.
+     * Returns committed wallpaper inputs for native lock-screen and screen-saver
+     * displays, including web projects, native-preferred videos and mirrors.
+     * Drafts and transient desktop suspension/unload do not affect these inputs.
      *
      * # Errors
      *
@@ -4133,7 +4135,7 @@ public func FfiConverterTypeBridgeLibrarySnapshot_lower(_ value: BridgeLibrarySn
 
 
 /**
- * Committed renderer inputs for a native lock-screen wallpaper display.
+ * Committed wallpaper inputs for a native lock-screen or screen-saver display.
  */
 public struct BridgeLockScreenScene {
     public var displayId: UInt32
@@ -4150,7 +4152,7 @@ public struct BridgeLockScreenScene {
     public var scalingMode: BridgeScalingMode
     public var scalingFactor: Double
     /**
-     * Renderer-ready property overrides with nested keys flattened.
+     * Flat renderer overrides, or decorated `{id: {value, type, ...}}` web options.
      */
     public var propertiesJson: String?
     public var paused: Bool
@@ -4164,7 +4166,7 @@ public struct BridgeLockScreenScene {
          * path so a Workshop update does not orphan it.
          */wallpaperId: String, title: String, projectPath: String, assetsPath: String, fps: UInt32, scalingMode: BridgeScalingMode, scalingFactor: Double, 
         /**
-         * Renderer-ready property overrides with nested keys flattened.
+         * Flat renderer overrides, or decorated `{id: {value, type, ...}}` web options.
          */propertiesJson: String?, paused: Bool) {
         self.displayId = displayId
         self.wallpaperId = wallpaperId
@@ -8966,7 +8968,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_library_snapshot() != 36547) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_lock_screen_scenes() != 61131) {
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_lock_screen_scenes() != 25596) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_log_folder_path() != 6045) {
