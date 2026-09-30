@@ -110,6 +110,8 @@ have **Skip**:
    choice applies at once through the `languageSetting` / `themeSetting`
    actions, so the page repaints in the chosen language and theme. **Skip**
    puts back whatever was in force when the guide opened and moves on.
+   The automatic language option spans the full row above four equal language
+   tiles; at 640px or narrower, those tiles form two complete rows of two.
    Each radio group has one Tab stop; arrow keys, Home and End choose an enabled
    option. A completed language/theme write restores lost radio focus without
    taking focus back from another control.

@@ -35,6 +35,9 @@
 .welcome-choice legend svg { color: var(--accent); }
 .welcome-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .welcome-option { position: relative; display: grid; gap: 4px; align-content: start; justify-items: start; min-height: 60px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-align: left; color: var(--text); transition: border-color 140ms, background-color 140ms; }
+.welcome-languages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.welcome-languages .welcome-option { min-width: 0; white-space: normal; }
+.welcome-languages .welcome-option[data-value="system"] { grid-column: 1 / -1; padding-right: 40px; }
 .welcome-languages .welcome-option:not(:has(.welcome-option-note)) { align-content: center; justify-content: center; align-items: center; justify-items: center; text-align: center; }
 .welcome-option:hover:not(:disabled) { background: var(--raised); border-color: var(--line-strong); }
 .welcome-option[aria-checked="true"], .welcome-option[aria-checked="true"]:hover:not(:disabled) { border-color: var(--primary); background: var(--accent-soft); }
@@ -132,6 +135,9 @@
   .welcome-head h1 { font-size: 22px; line-height: 1.25; }
   .welcome-form, .welcome-status, .welcome .dialog-guide { padding: 16px; }
   .welcome-footer { padding: 12px 24px 16px; }
+}
+@media (max-width: 640px) {
+  .welcome-languages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .welcome-page, .welcome-option, .welcome-option-check { animation: none; transition: none; }
