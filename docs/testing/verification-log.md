@@ -25,6 +25,13 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Keep the active-display filter on one line
+
+- Offscreen WKWebView smoke — exit 0; 24 cases across 760, 840, 841, 1040, 1041 and 1280px in English, Japanese, Simplified Chinese and Traditional Chinese. The full label occupies one line without overflow; checking and clearing Active filters the expected wallpapers. Discover widths and collapsed layout remain unchanged. Throwaway probe removed.
+- `python3 scripts/test.py` — first pass failed: 850 passed, 2 failed, 11 skipped. The broad sidebar sizing rule changed Discover width; it is now scoped to the Active row. The other failure was the documented WebKit InvalidTransition/deinit error.
+- `python3 scripts/test.py --serial` — exit 0; 852 passed, 0 failed, 11 skipped of 863; all Python script modules passed. Skips cover opt-in native media and live Workshop checks.
+- Mechanical UI scan returned no findings. No desktop screenshots or visual run; no Release rebuild.
+
 ## 2026-09-30 — Consistent Settings spacing
 
 - Promoted Storage spacing to shared Settings rules; preserved ongoing import-picker changes and changed no settings actions or native APIs.
@@ -100,12 +107,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Skipped opt-in tests: 9 NativeVideoPlayerMediaTests requiring real media decoding and 2 live Steam Workshop queries. Renderer probes were not run; no renderer or generated binding changes.
 - Changed JavaScript syntax checks, native localization JSON parsing and git diff --check passed. English and Chinese Pricing destinations each returned HTTP 200. XcodeGen regenerated the project for the new Swift files.
 - Visual presentation and real desktop/VoiceOver behavior remain unverified; no windows, screenshots, wallpaper changes or external browser launches. No Release build, install, commit or push requested.
-
-## 2026-09-30 — Release notes read squash merges per listed commit; CI serial cost corrected
-
-- Change: scripts/release_notes.py model_prompt splits a squash merge's body at its '* type(scope): subject' lines; each listed commit gets its own 1,500-character cut, internal ones only their subject line; Co-authored-by/Signed-off-by/Reviewed-by/Claude-Session trailers and GitHub's --- rule are dropped. Budget unchanged (120,000).
-- Why: 1.2.0's generated notes missed Workshop updates, automation, Workshop sources, the What's New window and the black wake placeholder, all past the first 1,500 characters of #15 and #16.
-- New test ModelRangeTests.test_a_squash_merge_brings_the_body_of_every_commit_it_lists fails on the old code (later commits missing) and passes now; test_release_notes.py 56/56.
-- Preview of the real v1.1.0..7d3afcf range (no model request): 12,804-character prompt, every #15/#16 feature body present, no trailers, nothing cut.
-- build.yml Test comment and docs/testing/README.md now say serial costs the CI runner almost nothing (300 s against 278 s parallel for the 1.2.0 gate), not four times as long.
-- Gate: python3 scripts/test.py - 828 passed, 0 failed, 11 skipped of 839. No --ai run against the gateway; no Release build (none needed for scripts/CI/docs).

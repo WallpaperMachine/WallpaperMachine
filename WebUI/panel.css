@@ -269,11 +269,12 @@ small, .muted { color: var(--muted); }
    window minimum, one extra pixel for roughly every 6.7px of window, and a 420px cap
    from about 1830px on. There is no drag handle and nothing is stored; every window
    size therefore always produces the same layout. The filter sidebar sits on the left
-   of the grid, beside the toolbar's Filter button that opens it, and keeps a fixed
-   width because its controls gain nothing from more; closed, it leaves the layout
+   of the grid, beside the toolbar's Filter button that opens it, and stays compact
+   while leaving enough room for unwrapped labels; closed, it leaves the layout
    entirely. */
 .library-page { --inspector-width: clamp(260px, calc(15vw + 146px), 420px); --filters-width: 184px; position: relative; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) var(--inspector-width); }
 .library-page.filters-open { grid-template-columns: var(--filters-width) minmax(0, 1fr) var(--inspector-width); }
+.library-page.filters-open:has(.check-label[data-key="Active"]) { grid-template-columns: minmax(var(--filters-width), min-content) minmax(0, 1fr) var(--inspector-width); }
 .browser-column { display: flex; flex-direction: column; min-width: 0; min-height: 0; container-type: inline-size; }
 .browser-toolbar { padding: 12px 14px 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .browser-toolbar button { min-height: var(--control-height); }
@@ -441,6 +442,7 @@ details[open] > summary svg { transform: rotate(90deg); }
 .check-label { display: flex; align-items: center; gap: 8px; font-size: 12px; min-height: 20px; }
 .check-label span { min-width: 0; overflow-wrap: anywhere; }
 .filter-sidebar .check-label { gap: 6px; }
+.filter-sidebar .check-label[data-key="Active"] { white-space: nowrap; }
 /* The pixiv filters are single choices; their radios match the checkboxes, not the text fields. */
 .filter-sidebar .check-label input[type="radio"] { accent-color: var(--control); width: 15px; height: 15px; min-height: 0; margin: 0; padding: 0; flex: 0 0 auto; cursor: pointer; }
 /* Show-only options carry a glyph between the checkbox and the label: muted while off, primary

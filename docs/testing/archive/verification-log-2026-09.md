@@ -15,6 +15,15 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Release notes read squash merges per listed commit; CI serial cost corrected
+
+- Change: scripts/release_notes.py model_prompt splits a squash merge's body at its '* type(scope): subject' lines; each listed commit gets its own 1,500-character cut, internal ones only their subject line; Co-authored-by/Signed-off-by/Reviewed-by/Claude-Session trailers and GitHub's --- rule are dropped. Budget unchanged (120,000).
+- Why: 1.2.0's generated notes missed Workshop updates, automation, Workshop sources, the What's New window and the black wake placeholder, all past the first 1,500 characters of #15 and #16.
+- New test ModelRangeTests.test_a_squash_merge_brings_the_body_of_every_commit_it_lists fails on the old code (later commits missing) and passes now; test_release_notes.py 56/56.
+- Preview of the real v1.1.0..7d3afcf range (no model request): 12,804-character prompt, every #15/#16 feature body present, no trailers, nothing cut.
+- build.yml Test comment and docs/testing/README.md now say serial costs the CI runner almost nothing (300 s against 278 s parallel for the 1.2.0 gate), not four times as long.
+- Gate: python3 scripts/test.py - 828 passed, 0 failed, 11 skipped of 839. No --ai run against the gateway; no Release build (none needed for scripts/CI/docs).
+
 ## 2026-09-30 — PR 16 Claude review: topology state and bundled history
 
 - Standalone Swift smoke compiled the production lock-screen service, selection journal, asset publisher and manifest against isolated host seams and a disposable wallpaper-store fixture. No windows or real wallpaper-service reloads.
