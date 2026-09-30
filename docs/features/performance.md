@@ -15,11 +15,20 @@ measurement, not a promise about any setting.
 ## Energy use
 
 The first group, placed directly above **Quality** so a change and its effect
-sit together, reads a grade and total such as **Medium energy use · 1.2 W**,
-then **CPU … · GPU …** for this app, averaged over the last few seconds (four
-samples two seconds apart, so up to six seconds). It is read
-without privileges from the kernel's resource-coalition accounting
-(`CoalitionEnergySource`, `EnergyUsageMonitor` in `App/Services/Diagnostics/`):
+sit together, leads with the total power, a named energy grade, and separate
+**CPU** and **GPU** readings. The breakdown sits beside the total when space
+allows and below it in a narrow settings container. Battery share and any
+before/after comparison follow the readings.
+
+**How it’s measured** opens the accounting scope, GPU attribution, grade
+thresholds and comparison guidance. It starts collapsed and keeps its open
+state and keyboard focus across energy pushes and snapshot updates. Periodic
+readings are not live announcements.
+
+Readings cover this app, averaged over the last few seconds (four samples two
+seconds apart, so up to six seconds). They are read without privileges from
+the kernel's resource-coalition accounting (`CoalitionEnergySource`,
+`EnergyUsageMonitor` in `App/Services/Diagnostics/`):
 
 - **What is counted.** The app's own coalition, which macOS also charges for
   the XPC services the app starts: the panel's WebKit processes, the video

@@ -115,6 +115,26 @@ label.settings-label { cursor: pointer; }
 .settings-readout .settings-control > .settings-note { flex-basis: 100%; }
 /* A note capped at 64ch would otherwise fit beside a short headline on a wide panel. */
 .settings-readout .settings-control > .settings-status:has(+ .settings-note) { flex-basis: 100%; }
+
+[data-key="performance-energy"] > h3 { margin-bottom: 2px; }
+.settings-energy { padding: 0 0 16px; }
+.settings-energy .settings-label { margin-bottom: 12px; }
+.settings-energy .settings-control { display: block; }
+.settings-energy-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 32px; }
+.settings-energy-total { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.settings-energy-power { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.settings-energy-level { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.settings-energy-level[data-level="low"] { color: color-mix(in srgb, var(--approved) 80%, var(--text)); }
+.settings-energy-level[data-level="medium"] { color: var(--warning); }
+.settings-energy-level[data-level="high"] { color: var(--danger); }
+.settings-energy-breakdown { display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 0; }
+.settings-energy-breakdown > div { min-width: 72px; }
+.settings-energy-breakdown dt { color: var(--muted); font-size: 12px; }
+.settings-energy-breakdown dd { margin: 3px 0 0; color: var(--text); font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.settings-energy-state { display: block; color: var(--muted); font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.settings-energy .settings-control > .settings-note { margin-top: 12px; }
+.settings-energy .settings-control > .settings-energy-comparison { max-width: none; padding-top: 12px; border-top: 1px solid var(--divider); color: var(--text); }
+
 .settings-button {
   appearance: none;
   min-height: var(--control-height);
@@ -209,6 +229,9 @@ label.settings-label { cursor: pointer; }
 .settings-disclosure-rows > .settings-disclosure-body { padding-left: 34px; }
 .settings-disclosure-rows > .settings-disclosure-body > .settings-note { padding-top: 10px; }
 .settings-disclosure-body p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 10px; max-width: 64ch; }
+.settings-energy-help { margin: 0 0 4px; }
+.settings-energy-help > summary { padding: 8px 0; }
+.settings-energy-help > .settings-disclosure-body { padding-top: 4px; }
 .settings-performance-advanced { margin-top: 20px; }
 .settings-performance-advanced > summary { width: 100%; min-height: 56px; padding: 10px 0; color: var(--text); font-size: 13px; font-weight: 600; }
 .settings-performance-advanced[open] > summary { border-bottom: 1px solid var(--divider); }
@@ -270,6 +293,7 @@ label.settings-label { cursor: pointer; }
   .settings-row:not(.settings-readout):not(:has(.settings-switch)) { flex-direction: column; align-items: stretch; }
   .settings-row:not(.settings-readout):not(:has(.settings-switch)) > .settings-label { flex-basis: auto; }
   .settings-row:not(.settings-readout):not(:has(.settings-switch)) > .settings-control { margin-left: 0; justify-content: flex-start; }
+  .settings-energy-overview { flex-direction: column; align-items: flex-start; }
 }
 
 @media (max-width: 800px) {

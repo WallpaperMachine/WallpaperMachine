@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Energy readout hierarchy and measurement disclosure
+
+- python3 scripts/test.py — exit 0; Python suites passed; native 853 passed, 0 failed, 11 skipped (9 opt-in media, 2 live Workshop). The shared tree includes unrelated concurrent window-sizing changes.
+- Headless Chromium on the real WebUI: 249 state/theme/language/layout cases passed at 1100px and the native 760px minimum, plus an isolated 360px settings container; no energy-card overflow. Tested text contrast stayed at least 5.33:1 across light/dark and neutral/warm/cool tones.
+- Space/Enter disclosure operation passed; open state and focus survived energy pushes and snapshots, and updates preserved focus on the quality slider. Measuring, unavailable, GPU contention, battery omission, watt units, zero values and before/after comparisons exercised.
+- Impeccable mechanical detector on settings.js and settings.css — exit 0, no findings.
+- No screenshots, desktop interaction or native visual review; power sampling behavior unchanged. No Release rebuild or app restart.
+
 ## 2026-09-30 — Control-panel full-screen navigation (#17)
 
 - python3 scripts/test.py --only ControlPanelWindowSizingTests: 2 passed, 0 failed, 0 skipped.
@@ -100,10 +108,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Offscreen native smoke — exit 0; en and ja initially show English, zh-Hans and zh-Hant show Simplified Chinese; manual switching remains reversible. Temporary harness removed.
 - python3 scripts/test.py — exit 0; 852 passed, 0 failed, 11 skipped of 863.
 - No new desktop capture or Release rebuild; running app unchanged.
-
-## 2026-09-30 — Readable changelog window with language tabs
-
-- Offscreen native AppKit smoke with bundled release history — exit 0; English → 简体中文 → English at 760 × 720 and 600 × 480 points; first note visible, wrapping and scrolling exercised, scrolled switches reveal the first version, suppression persists. Temporary harness removed.
-- python3 scripts/test.py --only WhatsNewTests — exit 0; 9 passed, 0 failed, 0 skipped.
-- python3 scripts/test.py — exit 0; 851 passed, 0 failed, 11 skipped of 862.
-- Desktop appearance and actual Window Server presentation unverified; no windows opened. No Release rebuild requested or performed.

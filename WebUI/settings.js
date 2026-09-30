@@ -217,17 +217,17 @@ function comparisonNote(comparison) {
 // No role="status": a readout that changes every two seconds must not be announced each time.
 function energyControl(escapeHTML) {
   const reading = energyReading || { status: 'measuring' };
-  const note = text => text ? `<span class="settings-note">${escapeHTML(text)}</span>` : '';
-  if (reading.status === 'unavailable') return `<span class="settings-status">${escapeHTML(t('Unavailable on this Mac'))}</span>`;
-  const comparison = note(comparisonNote(reading.comparison));
-  if (reading.status !== 'ready') return `<span class="settings-status">${escapeHTML(t('Measuring…'))}</span>${comparison}`;
-  const figures = t('CPU {cpu} · GPU {gpu}', { cpu: milliwatts(reading.cpuMilliwatts), gpu: milliwatts(reading.gpuMilliwatts) });
+  const note = (key, text, style = '') => text ? `<span class="settings-note ${style}" data-key="${key}">${escapeHTML(text)}</span>` : '';
+  const status = text => `<span class="settings-energy-state" data-key="energy-state">${escapeHTML(text)}</span>`;
+  if (reading.status === 'unavailable') return status(t('Unavailable on this Mac'));
+  const comparison = note('energy-comparison', comparisonNote(reading.comparison), 'settings-energy-comparison');
+  if (reading.status !== 'ready') return `${status(t('Measuring…'))}${comparison}`;
+  const figures = `<dl class="settings-energy-breakdown"><div><dt>${escapeHTML(t('CPU'))}</dt><dd>${escapeHTML(milliwatts(reading.cpuMilliwatts))}</dd></div><div><dt>${escapeHTML(t('GPU'))}</dt><dd>${escapeHTML(milliwatts(reading.gpuMilliwatts))}</dd></div></dl>`;
   // A contended window has no grade: its GPU figure includes other apps' clock.
-  if (reading.gpuContended) return `<span class="settings-status">${escapeHTML(figures)}</span>${note(t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.'))}${comparison}`;
+  if (reading.gpuContended) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('GPU shared with other apps'))}${figures}</div>${note('energy-contention', t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.'))}${comparison}`;
   const total = Number(reading.cpuMilliwatts) + Number(reading.gpuMilliwatts);
   const level = energyLevelLabel(reading.level);
-  const headline = level ? t('{level} · {power}', { level, power: milliwatts(total) }) : milliwatts(total);
-  return `<span class="settings-status">${escapeHTML(headline)}</span>${note(figures)}${note(batteryShare(reading.batteryPercentPerHour))}${comparison}`;
+  return `<div class="settings-energy-overview" data-key="energy-overview"><div class="settings-energy-total"><span class="settings-energy-power">${escapeHTML(milliwatts(total))}</span>${level ? `<span class="settings-energy-level" data-level="${escapeHTML(reading.level)}">${escapeHTML(level)}</span>` : ''}</div>${figures}</div>${note('energy-battery', batteryShare(reading.batteryPercentPerHour))}${comparison}`;
 }
 
 export function showEnergyUsage(reading) {
@@ -422,7 +422,12 @@ function draw(view) {
   };
   const rulesEditor = `${rules.length ? rules.map(ruleRow).join('') : `<p class="settings-empty" data-key="app-rules-empty">${e(t('No app rules yet. Add an app to pause, mute or stop wallpapers while it is running or in front.'))}</p>`}<div class="settings-form-actions" data-key="app-rules-add">${button(t('Add app…'), 'appRuleAdd', {}, busy || unavailable)}</div>`;
   const energy = group('performance-energy', t('Energy use'),
-    row('energy-use', t('This app, last few seconds'), energyControl(e), t('As macOS accounts for it: GPU energy is shared out by GPU time. Includes the control panel, video decoding and the lock screen. Screen compositing, memory and the display itself are not included. Low is under 0.5 W, Medium under 2 W. Change a quality setting below and this row shows the figure before and after.'), 'settings-readout'));
+    row('energy-use', t('This app, last few seconds'), energyControl(e), '', 'settings-readout settings-energy')
+    + disclosure('energy-method', t('How it’s measured'), paragraphs(
+      t('macOS shares GPU energy between apps by GPU time.'),
+      t('Includes the control panel, video decoding and the lock screen. Screen compositing, memory and the display itself are not included.'),
+      t('Low: below 0.5 W. Medium: 0.5 W to below 2 W. High: 2 W or more.'),
+      t('Change a quality setting below to compare energy use.')), 'settings-energy-help'));
   const playback = group('performance-playback', t('Playback'),
     row('desktop-covered', t('When windows cover the desktop'), select('desktopCoveredAction', t('When windows cover the desktop'), draft('desktopCoveredAction', settings.desktopCoveredAction || 'pause'), localizedOptions(desktopCoveredActions), 'data-setting="desktopCoveredAction"', busy || unavailable), t('Covered means windows hide everything but the menu bar and the screen edges. Pause keeps the last frame there. Wallpapers you can’t see at all always pause.'))
     + row('other-audio', t('When another app plays sound'), select('otherAudioAction', t('When another app plays sound'), draft('otherAudioAction', settings.otherAudioAction || 'keepRunning'), localizedOptions(otherAudioActions), 'data-setting="otherAudioAction"', busy || unavailable), t('Mute affects scene and video wallpapers only. Web wallpapers have no mute channel, so Mute does not silence them. Pause applies to every wallpaper.'))

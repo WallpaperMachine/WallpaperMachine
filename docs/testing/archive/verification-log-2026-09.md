@@ -15,6 +15,13 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Readable changelog window with language tabs
+
+- Offscreen native AppKit smoke with bundled release history — exit 0; English → 简体中文 → English at 760 × 720 and 600 × 480 points; first note visible, wrapping and scrolling exercised, scrolled switches reveal the first version, suppression persists. Temporary harness removed.
+- python3 scripts/test.py --only WhatsNewTests — exit 0; 9 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py — exit 0; 851 passed, 0 failed, 11 skipped of 862.
+- Desktop appearance and actual Window Server presentation unverified; no windows opened. No Release rebuild requested or performed.
+
 ## 2026-09-30 — First downloaded wallpaper support prompt
 
 - Added a persistent, once-only support offer after a successfully installed Workshop/pixiv wallpaper receives a successful explicit activation; failed applies, automatic rotation, restoration and local imports do not qualify.
