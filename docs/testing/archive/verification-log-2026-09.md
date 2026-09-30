@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Preserve lock-screen surfaces through multi-display topology changes
+
+- Existing app/extension logs correlated display refresh bursts with manifests changing 2 -> 0 -> 1 -> 2; one empty manifest cleared every surface and its frame backing. Logs also include old registered extension binaries, so they do not establish a clean live visual result.
+- Standalone Swift publication smoke compiled the production service/selection with isolated bridge and user-asset adapters. Before: transitions to [1], [1,2] and [2] each published [] first (exit 1). After: each published only the complete destination set; explicit disable still cleared scenes (exit 0). No real wallpaper-store writes or WallpaperAgent signals.
+- Standalone offscreen GPU smoke compiled the production WallpaperController and WallpaperSurface against the real renderer and bundled video. Two synthetic display IDs kept distinct unhosted contexts; a secondary 1x-to-2x resize retained its context/backing until the 768x496 replacement frame, preserved the primary context and rejected invalid geometry without clearing the good frame.
+- New permanent topology regression executed through a temporary standalone XCTest bundle: 1 passed. Production service/selection were compiled into an isolated module; bridge and unused managed-user-asset dependencies were fixture adapters. This is not the full app-hosted gate.
+- python3 scripts/test.py: 215 Python passed; native app, extension and tests compiled, then Xcode aborted before executing native tests with IDELaunchServicesLauncher childPID > 0 (exit 250). Targeted parallel, serial, PTY and cleaned-launch-environment attempts hit the same launch failure. Debug bundle codesign --verify --deep --strict passed.
+- Native gate blocked, not passed: no commit or Release build. No app installation/restart, display reconfiguration, real lock/wake run or screen capture. Private XPC/compositor handoff timing remains visually unverified.
+- Removed task-owned smoke programs, XCTest bundle/module and shader cache through the cleanup helper; retained pre-existing artifacts and delivered apps.
+
 ## 2026-09-29 — Commit wallpaper pixels before lock-screen context handoff
 
 - Readback readiness previously acknowledged only an IOSurface in Swift memory, leaving the remote layer tree without backing pixels until a drawable became available. Now commits an IOSurface-backed image under the nonopaque Metal layer with implicit actions disabled, before readiness replies; does not wait for scanout or unload the paused renderer.
