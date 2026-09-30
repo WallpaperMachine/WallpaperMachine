@@ -193,21 +193,22 @@ label.settings-label { cursor: pointer; }
 .settings-switch input:checked + span { transform: translateX(12px); }
 .settings-switch input:disabled + span { opacity: 0.55; }
 .settings-disclosure { margin: 12px 0 6px; }
-.settings-disclosure summary { list-style: none; display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: fit-content; max-width: 100%; min-height: var(--control-height); padding: 6px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
-.settings-disclosure summary::-webkit-details-marker { display: none; }
-.settings-disclosure summary:hover { color: var(--text); }
-.settings-disclosure summary svg { flex: 0 0 12px; width: 12px; height: 12px; }
-.settings-disclosure[open] > summary svg { transform: rotate(90deg); }
+.settings-disclosure > summary { list-style: none; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: fit-content; max-width: 100%; min-height: var(--control-height); padding: 6px 0; border-radius: var(--radius); color: var(--text); font-size: 12px; cursor: pointer; }
+.settings-disclosure > summary::-webkit-details-marker { display: none; }
+.settings-disclosure-indicator { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out; }
+.settings-disclosure > summary:hover .settings-disclosure-indicator { background: var(--raised-hover); border-color: var(--line-strong); }
+.settings-disclosure-indicator svg { width: 16px; height: 16px; stroke-width: 2.75; transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.settings-disclosure[open] > summary > .settings-disclosure-indicator { background: var(--accent-soft); border-color: var(--accent-soft-line); color: var(--accent); }
+.settings-disclosure[open] > summary > .settings-disclosure-indicator svg { transform: rotate(90deg); }
 .settings-disclosure-body { min-width: 0; padding-top: 9px; }
 .settings-disclosure-rows > summary { width: 100%; min-height: 44px; font-size: 13px; color: var(--text); padding: 10px 0; border-bottom: 1px solid var(--divider); }
-.settings-disclosure-rows > .settings-disclosure-body { padding-left: 17px; }
+.settings-disclosure-rows > .settings-disclosure-body { padding-left: 34px; }
 .settings-disclosure-rows > .settings-disclosure-body > .settings-note { padding-top: 10px; }
 .settings-disclosure-body p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 10px; max-width: 64ch; }
 .settings-performance-advanced { margin-top: 20px; }
 .settings-performance-advanced > summary { width: 100%; min-height: 56px; padding: 10px 0; color: var(--text); font-size: 13px; font-weight: 600; }
-.settings-performance-advanced > summary:hover { color: var(--accent); }
 .settings-performance-advanced[open] > summary { border-bottom: 1px solid var(--divider); }
-.settings-disclosure-title { min-width: 0; }
+.settings-disclosure-title { min-width: 0; overflow-wrap: anywhere; }
 .settings-disclosure-title > .settings-note { margin-top: 2px; }
 .settings-performance-advanced > .settings-disclosure-body { padding: 4px 0 8px; }
 .settings-performance-advanced .settings-group { padding: 12px 0 0; border: 0; border-radius: 0; background: transparent; }
@@ -217,7 +218,7 @@ label.settings-label { cursor: pointer; }
 .settings-performance-advanced .settings-row:has(.settings-switch) > .settings-control { padding-top: 1px; }
 .settings-performance-advanced .settings-disclosure { margin: 4px 0 0; }
 .settings-performance-advanced .settings-disclosure > summary { width: 100%; }
-.settings-performance-diagnostics > .settings-disclosure-body { padding: 0 0 4px 20px; }
+.settings-performance-diagnostics > .settings-disclosure-body { padding: 0 0 4px 34px; }
 .settings-performance-diagnostics .settings-row:last-child { border-bottom: 0; }
 .settings-notes h4 { color: var(--text); font-size: 12px; font-weight: 600; margin: 0 0 5px; }
 .settings-notes h4 + ul { margin-top: 0; }
@@ -262,5 +263,6 @@ label.settings-label { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   .settings-switch span { transition: none; }
+  .settings-disclosure-indicator, .settings-disclosure-indicator svg { transition: none; }
   .settings-progress:indeterminate { background-position: 50% 0; }
 }

@@ -231,6 +231,12 @@ disables its switch; language and appearance remain usable if renderer settings
 are unavailable. Snapshot updates preserve active drafts, selection, disclosures
 and scrolling. About's update actions precede expanded release notes.
 
+Settings disclosures use a heavier chevron in a 24px rounded, bordered indicator.
+Closed sections use foreground ink; open sections use the theme's accent surface
+and a downward chevron. Hover strengthens the indicator's surface and border.
+The summary remains the native pointer/keyboard toggle, with visible focus;
+reduced-motion preferences disable the indicator transition.
+
 The panel's web view sets WebKit's inactive scheduling policy
 (`WKPreferences.inactiveSchedulingPolicy = .suspend`). WebKit applies it when
 it considers the view inactive. Minimized or app-hidden windows keep their page;
