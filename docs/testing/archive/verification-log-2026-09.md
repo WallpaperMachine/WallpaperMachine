@@ -15,6 +15,16 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Multi-display lock-screen fix gate and Release delivery
+
+- Resolved the previous native-launch blocker without changing the test command or product code: launchctl managername reported Background for the detached tool session; a temporary same-user launch job ran the existing gate in Aqua. Serial and environment-only changes had not resolved childPID > 0.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests in Aqua: 13 passed, 0 failed, 0 skipped, including the synthetic display topology regression.
+- python3 scripts/test.py in Aqua: 215 Python passed; 738 native passed, 0 failed, 11 skipped of 749. Skips: nine opt-in native-media cases and two live Workshop network cases.
+- python3 scripts/build.py --swift-only --configuration Release: passed; built build/Build/Products/Release/WallpaperMachine.app with the atomic topology publication and same-display context-preserving resize fixes.
+- codesign --verify --deep --strict passed; diff -qr WebUI against the delivered Contents/Resources/WebUI returned no differences.
+- Temporary gate jobs were booted out; task-owned helper files and four suspended orphan test hosts from the failed launches were removed. No installed/running user app was replaced, launched or restarted.
+- Real external-primary/internal-secondary lock and wake visual timing remains for user verification. No desktop control, screen capture or wallpaper changes were performed.
+
 ## 2026-09-29 — Preserve lock-screen surfaces through multi-display topology changes
 
 - Existing app/extension logs correlated display refresh bursts with manifests changing 2 -> 0 -> 1 -> 2; one empty manifest cleared every surface and its frame backing. Logs also include old registered extension binaries, so they do not establish a clean live visual result.
