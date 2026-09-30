@@ -234,7 +234,9 @@ are unavailable. Snapshot updates preserve active drafts, selection, disclosures
 and scrolling. About's update actions precede expanded release notes.
 
 All Settings pages share 20px group insets, 16px row padding and 8px control
-gaps. Notes have a relaxed line height, and action footers sit below a divider.
+gaps. Notes have a relaxed line height, and action footers sit below one divider.
+A footer directly following a row reuses that row's divider without an extra
+blank band.
 The shared scene resources card adds bottom padding after its download
 explanation so the final line does not crowd the card edge.
 When a page's content area is 480px wide or narrower, controls stack beneath

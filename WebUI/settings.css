@@ -230,6 +230,8 @@ label.settings-label { cursor: pointer; }
 .settings-notes li { margin: 0 0 3px; overflow-wrap: anywhere; }
 .settings-display .settings-disclosure-body { padding-top: 0; }
 .settings-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 12px; padding-top: 16px; border-top: 1px solid var(--divider); }
+/* An adjacent row already supplies the divider and its upper spacing. */
+.settings-row + .settings-form-actions { margin-top: 0; border-top: 0; }
 .settings-error { color: var(--danger); background: var(--danger-surface); padding: 9px 10px; border-radius: var(--radius); margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; }
 .settings-notice { color: var(--text); font-size: 12px; line-height: 1.5; margin: 10px 0; overflow-wrap: anywhere; }
 .settings-empty { padding: 20px 0; color: var(--muted); }
