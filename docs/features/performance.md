@@ -264,11 +264,22 @@ older build reading a new file falls back to its own 60 fps default.
 
 ## Advanced
 
-Collapsed. It holds the video backend and its in-use report, the scene
-wallpaper controls (optimisation, update-only-on-change, scene renderer,
-reports and **Renderer compatibility**), and the experimental switches:
-content pacing, shared video decode and direct video plane sampling.
-**What these settings change** stays last, outside this disclosure.
+Collapsed by default, with a **Renderers & experimental options** preview.
+Inside, three flat sections separate **Video backend**, **Scene wallpapers**
+and **Experimental** rather than nesting settings cards. Scene renderer
+selection comes before the optimisation and update-only-on-change switches.
+
+Each renderer section has a collapsed **Live diagnostics** disclosure: video
+shows the backend in use; scenes show the renderer and video path, whether
+optimisation is in force, and what is keeping the scene updating. These reports
+continue to update from snapshots, and their open state survives setting
+changes. **Renderer compatibility** remains beside the scene diagnostics.
+
+The experimental section groups content pacing, shared video decode and direct
+video plane sampling. Shared-decode usage appears immediately below its switch
+when sessions or consumers are reported. All switch labels retain their
+descriptions and aligned controls. **What these settings change** stays last,
+outside Advanced. Renderer behavior and saved preferences are unchanged.
 
 ## Renderer memory
 

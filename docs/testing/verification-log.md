@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Advanced performance settings refinement
+
+- Local WebUI preview: captured matching before/after views with illustrative wallpaper reports; exercised both renderer selectors and all five switches, keyboard disclosure controls, snapshot focus/open-state preservation, pending/rejection recovery, empty/shared-decode/fallback reports, and escaped long titles.
+- Local WebUI preview: no overflow in 24 combinations of 760/960/1240 px, light/dark, and en/ja/zh-Hans/zh-Hant; sampled Advanced text contrast exceeded 4.5:1 in both themes.
+- Impeccable detect over WebUI/settings.js and WebUI/settings.css — exit 0, no findings.
+- python3 scripts/test.py — exit 65; 851 passed, 1 failed, 11 skipped. ControlPanelSyncTests.testHiddenPanelContinuesSetupAndObservesNestedDownloadChanges hit InvalidTransition during WebKit teardown.
+- python3 scripts/test.py --serial — exit 0; 852 passed, 0 failed, 11 skipped of 863; Python script suites also passed. Skips: 9 opt-in media/device cases and 2 live Steam cases.
+- Desktop app presentation not checked; preview uses the real settings renderer and CSS with an isolated fixture. No wallpaper changes, app restart, or Release rebuild. Temporary preview files and servers removed; requested comparison images remain disposable.
+
 ## 2026-09-30 — English-only GitHub release notes
 
 - python3 -m unittest discover -s scripts/tests -p test_release_notes.py — exit 0; 56 passed; bilingual history remains required and GitHub keeps only English plus the compare link.
@@ -104,11 +113,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/build.py --swift-only --configuration Release: passed; existing renderer and bindings reused, no incoming renderer changes.
 - codesign --verify --deep --strict: passed. diff -qr WebUI versus Release bundled WebUI and cmp bundled CHANGELOG.md: byte-identical.
 - No app launch, restart, installation or desktop visual verification; opt-in native-media and live Workshop checks remain skipped.
-
-## 2026-09-29 — Bilingual What's New Release build
-
-- python3 scripts/test.py via a temporary same-user Aqua launch job: exit 0; all 17 Python suites passed, including 51 release-note tests; native 746 passed, 0 failed, 11 skipped of 757. The previous lock-screen recovery blocker now passes.
-- python3 scripts/build.py --swift-only --configuration Release: exit 0; built WallpaperMachine.app, version 1.1.0, using the existing renderer and bindings. No version bump requested.
-- codesign --verify --deep --strict on the Release bundle: exit 0.
-- cmp of source and Release-bundled CHANGELOG.md: exit 0; bilingual history is byte-identical. diff -qr of WebUI and bundled Contents/Resources/WebUI: exit 0.
-- Skipped: 9 opt-in native-media and 2 live Workshop cases; no desktop visual check, live release-note model call, install, launch or restart. Temporary Aqua launch job and helper removed.

@@ -15,6 +15,14 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-29 — Bilingual What's New Release build
+
+- python3 scripts/test.py via a temporary same-user Aqua launch job: exit 0; all 17 Python suites passed, including 51 release-note tests; native 746 passed, 0 failed, 11 skipped of 757. The previous lock-screen recovery blocker now passes.
+- python3 scripts/build.py --swift-only --configuration Release: exit 0; built WallpaperMachine.app, version 1.1.0, using the existing renderer and bindings. No version bump requested.
+- codesign --verify --deep --strict on the Release bundle: exit 0.
+- cmp of source and Release-bundled CHANGELOG.md: exit 0; bilingual history is byte-identical. diff -qr of WebUI and bundled Contents/Resources/WebUI: exit 0.
+- Skipped: 9 opt-in native-media and 2 live Workshop cases; no desktop visual check, live release-note model call, install, launch or restart. Temporary Aqua launch job and helper removed.
+
 ## 2026-09-29 — Retain wallpaper presentation across wake topology changes
 
 - Hidden-window Rust smoke: before the fix, three origin/primary/refresh updates performed 3 drawable-size writes and 3 forced AppKit redraws; afterward both counts were 0 with the same layer, and a real resize still produced a 256x144 window/drawable at scale 1. Window ordering was suppressed; no wallpaper or visible desktop window was changed. Temporary smoke removed.

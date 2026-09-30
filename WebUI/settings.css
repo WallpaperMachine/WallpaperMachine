@@ -203,6 +203,22 @@ label.settings-label { cursor: pointer; }
 .settings-disclosure-rows > .settings-disclosure-body { padding-left: 17px; }
 .settings-disclosure-rows > .settings-disclosure-body > .settings-note { padding-top: 10px; }
 .settings-disclosure-body p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 10px; max-width: 64ch; }
+.settings-performance-advanced { margin-top: 20px; }
+.settings-performance-advanced > summary { width: 100%; min-height: 56px; padding: 10px 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.settings-performance-advanced > summary:hover { color: var(--accent); }
+.settings-performance-advanced[open] > summary { border-bottom: 1px solid var(--divider); }
+.settings-disclosure-title { min-width: 0; }
+.settings-disclosure-title > .settings-note { margin-top: 2px; }
+.settings-performance-advanced > .settings-disclosure-body { padding: 4px 0 8px; }
+.settings-performance-advanced .settings-group { padding: 12px 0 0; border: 0; border-radius: 0; background: transparent; }
+.settings-performance-advanced .settings-group + .settings-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--divider); }
+.settings-performance-advanced .settings-group > h3 { padding-top: 0; margin-bottom: 4px; }
+.settings-performance-advanced .settings-row:has(.settings-switch) { flex-wrap: nowrap; align-items: flex-start; }
+.settings-performance-advanced .settings-row:has(.settings-switch) > .settings-control { padding-top: 1px; }
+.settings-performance-advanced .settings-disclosure { margin: 4px 0 0; }
+.settings-performance-advanced .settings-disclosure > summary { width: 100%; }
+.settings-performance-diagnostics > .settings-disclosure-body { padding: 0 0 4px 20px; }
+.settings-performance-diagnostics .settings-row:last-child { border-bottom: 0; }
 .settings-notes h4 { color: var(--text); font-size: 12px; font-weight: 600; margin: 0 0 5px; }
 .settings-notes h4 + ul { margin-top: 0; }
 .settings-notes ul { list-style: disc; color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 10px; padding-left: 16px; max-width: 64ch; }
