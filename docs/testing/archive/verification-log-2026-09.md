@@ -15,6 +15,17 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — PR 16 Claude review: topology state and bundled history
+
+- Standalone Swift smoke compiled the production lock-screen service, selection journal, asset publisher and manifest against isolated host seams and a disposable wallpaper-store fixture. No windows or real wallpaper-service reloads.
+- Before/after: unchanged topology retained the manifest in both; replacement pending readiness changed from isEnabled=false to true; a compatibility error followed by missing UUID changed from erased error/restarted monitor to preserved error/stopped monitor. Actual failure still cleared the manifest.
+- Release publisher smoke: bilingual Unreleased and internal H2 headings were accepted before and rejected after. The real release_notes.py --tag 1.1.0 --to HEAD --release-body command exported bilingual notes without changing CHANGELOG.md.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests --only WhatsNewTests: 25 passed after correcting the compatibility fixture to change the published inputs; initial targeted run was 24 passed / 1 fixture failure.
+- python3 scripts/test.py: exit 0; Python modules passed (55 release-note tests), native 828 passed / 0 failed / 11 skipped.
+- Opt-in media-device and live-network cases skipped. No renderer code or bridge API changed; check_renderer.py not rerun.
+- Documented nonopaque-layer compositor cost as unmeasured, retained-frame resize/failure behavior, and missing-notes retry. Physical lid-close/wake, host acquire-error behavior and What's New presentation remain unverified.
+- No Release app rebuild, installation or restart; the running app retains its previous behavior.
+
 ## 2026-09-29 — Eye-friendly fallback during display wake
 
 - Offscreen production-layer smoke reproduced RGBA [255,255,255,255] before the fix and [0,0,0,255] after it for initial, resized and recreated surfaces; no window or drawable was created. Retained as wallpaper_background.

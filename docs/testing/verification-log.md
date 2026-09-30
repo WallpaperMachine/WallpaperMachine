@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Consistent Settings spacing
+
+- Promoted Storage spacing to shared Settings rules; preserved ongoing import-picker changes and changed no settings actions or native APIs.
+- Offscreen Chrome: 140 layouts across seven Settings pages, four languages and five widths; no content overflow, narrow controls stack and switches remain inline, including expanded disclosures and long folder paths.
+- Additional narrow-display smoke: day/night playlists and mirror mode had no overflow.
+- Interaction smoke: keyboard disclosure toggling, snapshot-preserved slider draft and scroll, category navigation, full-width library path, action error recovery, and language/appearance availability without renderer settings observed using synthetic state.
+- Impeccable detector on WebUI/settings.css returned no findings.
+- python3 scripts/test.py --serial: passed, 855 passed, 0 failed, 11 skipped of 866; opt-in media/device and live Steam checks not run.
+- Live app visual presentation unverified; no screenshots captured, desktop operations performed or Release app rebuilt.
+
 ## 2026-09-30 — Storage layout spacing
 
 - Offscreen Chrome smoke: long paths in English, Japanese, Simplified and Traditional Chinese; no content overflow at wide, minimum-window and narrow-container sizes; 12px path-to-note and 16px note-to-actions spacing.
@@ -99,14 +109,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Preview of the real v1.1.0..7d3afcf range (no model request): 12,804-character prompt, every #15/#16 feature body present, no trailers, nothing cut.
 - build.yml Test comment and docs/testing/README.md now say serial costs the CI runner almost nothing (300 s against 278 s parallel for the 1.2.0 gate), not four times as long.
 - Gate: python3 scripts/test.py - 828 passed, 0 failed, 11 skipped of 839. No --ai run against the gateway; no Release build (none needed for scripts/CI/docs).
-
-## 2026-09-30 — PR 16 Claude review: topology state and bundled history
-
-- Standalone Swift smoke compiled the production lock-screen service, selection journal, asset publisher and manifest against isolated host seams and a disposable wallpaper-store fixture. No windows or real wallpaper-service reloads.
-- Before/after: unchanged topology retained the manifest in both; replacement pending readiness changed from isEnabled=false to true; a compatibility error followed by missing UUID changed from erased error/restarted monitor to preserved error/stopped monitor. Actual failure still cleared the manifest.
-- Release publisher smoke: bilingual Unreleased and internal H2 headings were accepted before and rejected after. The real release_notes.py --tag 1.1.0 --to HEAD --release-body command exported bilingual notes without changing CHANGELOG.md.
-- python3 scripts/test.py --only LockScreenWallpaperServiceTests --only WhatsNewTests: 25 passed after correcting the compatibility fixture to change the published inputs; initial targeted run was 24 passed / 1 fixture failure.
-- python3 scripts/test.py: exit 0; Python modules passed (55 release-note tests), native 828 passed / 0 failed / 11 skipped.
-- Opt-in media-device and live-network cases skipped. No renderer code or bridge API changed; check_renderer.py not rerun.
-- Documented nonopaque-layer compositor cost as unmeasured, retained-frame resize/failure behavior, and missing-notes retry. Physical lid-close/wake, host acquire-error behavior and What's New presentation remain unverified.
-- No Release app rebuild, installation or restart; the running app retains its previous behavior.

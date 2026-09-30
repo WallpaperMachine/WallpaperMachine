@@ -233,11 +233,17 @@ disables its switch; language and appearance remain usable if renderer settings
 are unavailable. Snapshot updates preserve active drafts, selection, disclosures
 and scrolling. About's update actions precede expanded release notes.
 
-Storage gives the wallpaper-file folder a full-width path and explanation,
-with Finder and cache-clearing actions in a separate footer below a divider.
-Its groups use wider insets and more row spacing; when the Storage content area
-is 480px wide or narrower, action rows stack their controls beneath the label
-rather than squeezing text beside buttons. Switch rows retain their inline layout.
+All Settings pages share 20px group insets, 16px row padding and 8px control
+gaps. Notes have a relaxed line height, and action footers sit below a divider.
+When a page's content area is 480px wide or narrower, controls stack beneath
+their labels rather than squeezing text beside buttons; switches remain inline
+and diagnostic readouts retain their caption/value layout.
+
+Storage's wallpaper-file folder, the wallpaper library and a downloaded SteamCMD
+installation give paths the full available width, with Finder and other folder
+actions below a divider. Performance's nested Advanced groups remain unboxed,
+while display playlists and playback disclosures use the same row spacing as
+the main pages.
 
 Settings text is non-selectable throughout the navigation and content, including
 version readouts, paths, color values, release notes and status/error messages.
