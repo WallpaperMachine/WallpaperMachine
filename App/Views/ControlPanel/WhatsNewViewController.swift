@@ -7,14 +7,17 @@ final class WhatsNewViewController: NSViewController {
     private let announcement: WhatsNewStore.Announcement
     private let preferences: WhatsNewStore
     private let close: () -> Void
+    private let initialLanguage: AppLanguage
     private(set) var suppressionCheckbox: NSButton!
     private(set) var notesView: NSTextView!
     private(set) var languageControl: NSSegmentedControl!
 
-    init(announcement: WhatsNewStore.Announcement, preferences: WhatsNewStore, close: @escaping () -> Void) {
+    init(announcement: WhatsNewStore.Announcement, preferences: WhatsNewStore,
+         initialLanguage: AppLanguage, close: @escaping () -> Void) {
         self.announcement = announcement
         self.preferences = preferences
         self.close = close
+        self.initialLanguage = initialLanguage
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -42,7 +45,7 @@ final class WhatsNewViewController: NSViewController {
         languageControl = NSSegmentedControl(
             labels: ["English", "简体中文"], trackingMode: .selectOne,
             target: self, action: #selector(changeLanguage))
-        languageControl.selectedSegment = Bundle.main.preferredLocalizations.first?.hasPrefix("zh") == true ? 1 : 0
+        languageControl.selectedSegment = initialLanguage.tag.hasPrefix("zh") ? 1 : 0
         languageControl.setAccessibilityLabel(String(localized: "Release notes language"))
 
         let scroll = NSScrollView()

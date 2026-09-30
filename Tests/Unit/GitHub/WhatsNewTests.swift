@@ -44,7 +44,8 @@ final class WhatsNewTests: XCTestCase {
         _ = store("1.0.0").announcement(history: history, existingUser: false)
         let current = store("1.1.0")
         let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
-        let controller = WhatsNewViewController(announcement: announcement, preferences: current, close: {})
+        let controller = WhatsNewViewController(
+            announcement: announcement, preferences: current, initialLanguage: .english, close: {})
         _ = controller.view
         controller.suppressionCheckbox.performClick(nil)
         XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
@@ -61,7 +62,8 @@ final class WhatsNewTests: XCTestCase {
         _ = store("1.0.0").announcement(history: history, existingUser: false)
         let current = store("1.2.0")
         let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
-        let controller = WhatsNewViewController(announcement: announcement, preferences: current, close: {})
+        let controller = WhatsNewViewController(
+            announcement: announcement, preferences: current, initialLanguage: .english, close: {})
         _ = controller.view
 
         func select(_ segment: Int) {
@@ -84,6 +86,28 @@ final class WhatsNewTests: XCTestCase {
                           try XCTUnwrap(chinese.range(of: "1.1.0")?.lowerBound))
         select(0)
         XCTAssertEqual(controller.notesView.string, english)
+    }
+
+    func testInitialTranslationFollowsSavedAppLanguageAndSystemSelection() throws {
+        let history = try history()
+        let current = store("1.2.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        let cases = [
+            ("zh-Hans", "en", true), ("zh-Hant", "en", true),
+            ("en", "zh-CN", false), ("ja", "zh-CN", false),
+            ("system", "zh-CN", true), ("system", "en", false),
+        ]
+        for (preference, systemLanguage, chinese) in cases {
+            let language = AppLanguageStore(defaults: defaults, systemLanguages: [systemLanguage])
+            try language.set(preference)
+            let controller = WhatsNewViewController(
+                announcement: announcement, preferences: current, initialLanguage: language.effective, close: {})
+            _ = controller.view
+            let expected = chinese ? "新增媒体库筛选功能。" : "Added a library filter."
+            let excluded = chinese ? "Added a library filter." : "新增媒体库筛选功能。"
+            XCTAssertTrue(controller.notesView.string.contains(expected), "\(preference), system: \(systemLanguage)")
+            XCTAssertFalse(controller.notesView.string.contains(excluded), "\(preference), system: \(systemLanguage)")
+        }
     }
 
     func testDowngradeAndReturnDoNotRepeatAnAnnouncement() throws {

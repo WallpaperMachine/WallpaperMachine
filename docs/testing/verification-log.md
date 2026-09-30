@@ -25,6 +25,13 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-09-30 — Changelog defaults to the app language
+
+- python3 scripts/test.py --only WhatsNewTests — exit 0; 10 passed, 0 failed, 0 skipped; covers saved language precedence and System matching.
+- Offscreen native smoke — exit 0; en and ja initially show English, zh-Hans and zh-Hant show Simplified Chinese; manual switching remains reversible. Temporary harness removed.
+- python3 scripts/test.py — exit 0; 852 passed, 0 failed, 11 skipped of 863.
+- No new desktop capture or Release rebuild; running app unchanged.
+
 ## 2026-09-30 — Readable changelog window with language tabs
 
 - Offscreen native AppKit smoke with bundled release history — exit 0; English → 简体中文 → English at 760 × 720 and 600 × 480 points; first note visible, wrapping and scrolling exercised, scrolled switches reveal the first version, suppression persists. Temporary harness removed.
@@ -111,13 +118,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/release_notes.py --tag v1.1.0 --release-body --output <temporary-file>: exit 0; actual output matches the recorded current notes exactly, and all bundled historical sections passed bilingual publication validation.
 - History comparison: all 18 version/date headings, English notes and compare links preserved; translated bullet counts match. cmp confirmed Debug-bundled CHANGELOG.md is byte-identical to the source.
 - Skipped: 9 opt-in native-media and 2 live Workshop tests. No live release-note model call, desktop visual check, Release build, install or app restart performed. Temporary Aqua job removed.
-
-## 2026-09-29 — Multi-display lock-screen fix gate and Release delivery
-
-- Resolved the previous native-launch blocker without changing the test command or product code: launchctl managername reported Background for the detached tool session; a temporary same-user launch job ran the existing gate in Aqua. Serial and environment-only changes had not resolved childPID > 0.
-- python3 scripts/test.py --only LockScreenWallpaperServiceTests in Aqua: 13 passed, 0 failed, 0 skipped, including the synthetic display topology regression.
-- python3 scripts/test.py in Aqua: 215 Python passed; 738 native passed, 0 failed, 11 skipped of 749. Skips: nine opt-in native-media cases and two live Workshop network cases.
-- python3 scripts/build.py --swift-only --configuration Release: passed; built build/Build/Products/Release/WallpaperMachine.app with the atomic topology publication and same-display context-preserving resize fixes.
-- codesign --verify --deep --strict passed; diff -qr WebUI against the delivered Contents/Resources/WebUI returned no differences.
-- Temporary gate jobs were booted out; task-owned helper files and four suspended orphan test hosts from the failed launches were removed. No installed/running user app was replaced, launched or restarted.
-- Real external-primary/internal-secondary lock and wake visual timing remains for user verification. No desktop control, screen capture or wallpaper changes were performed.

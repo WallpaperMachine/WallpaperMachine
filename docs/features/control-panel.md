@@ -253,8 +253,10 @@ window shows the installed version and every release since the last announced
 version, newest first. The window opens with a 760 × 720-point content area and
 can resize down to 600 × 480 points without collapsing the notes viewport.
 **English / 简体中文** tabs display one translation at a time for every release.
-The initial tab follows the native interface language: Chinese uses Simplified
-Chinese; other languages use English. Switching tabs returns to the top of the
+The initial tab follows the app’s effective language in Settings → General →
+Language, including **System** matching. Simplified or Traditional Chinese uses
+Simplified Chinese notes; English or Japanese uses English notes. This reads the
+current app preference, not the bundle’s launch-time language. Switching tabs returns to the top of the
 notes and does not change the app’s interface language. Notes come from the bundled
 `CHANGELOG.md`, so they work offline and cannot accidentally describe a newer
 remote release. Release generation and translation are owned by
@@ -284,7 +286,8 @@ whole file and the window does not appear. Publishing rejects that file first.
 presentation, downgrade/relaunch suppression, a missing current section that
 must not consume a later announcement, bilingual history validation, rejection
 of `## Unreleased` and headings inside notes, switching all release translations
-and back, and the checkbox’s persisted effect across subsequent versions.
+and back, saved app-language precedence over system language and System matching,
+and the checkbox’s persisted effect across subsequent versions.
 
 ## Thumbnail corner marks
 

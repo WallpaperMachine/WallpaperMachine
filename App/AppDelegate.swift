@@ -957,6 +957,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             window.delegate = self
             window.contentViewController = WhatsNewViewController(
                 announcement: announcement, preferences: whatsNewStore,
+                initialLanguage: AppLanguageStore.shared.effective,
                 close: { [weak window] in window?.performClose(nil) })
             window.contentMinSize = NSSize(width: 600, height: 480)
             // Installing a controller can resize the window to its content view's fitting size.
