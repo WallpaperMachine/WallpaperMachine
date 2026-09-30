@@ -235,6 +235,8 @@ and scrolling. About's update actions precede expanded release notes.
 
 All Settings pages share 20px group insets, 16px row padding and 8px control
 gaps. Notes have a relaxed line height, and action footers sit below a divider.
+The shared scene resources card adds bottom padding after its download
+explanation so the final line does not crowd the card edge.
 When a page's content area is 480px wide or narrower, controls stack beneath
 their labels rather than squeezing text beside buttons; switches remain inline
 and diagnostic readouts retain their caption/value layout.

@@ -257,6 +257,7 @@ label.settings-label { cursor: pointer; }
 .settings-row:is([data-key="library-path"], [data-key="candidate"]) > .settings-control { margin-left: 0; justify-content: flex-start; padding-top: 16px; border-top: 1px solid var(--divider); }
 [data-key="library-folder"] { padding: 20px; }
 [data-key="library-folder"] > .settings-row { padding: 0; row-gap: 16px; }
+[data-key="scene-resources"] { padding-bottom: 20px; }
 #settings-storage .settings-label { flex-basis: 180px; }
 #settings-storage [data-key="storage-user-assets"] { padding: 20px; }
 #settings-storage [data-key="storage-user-assets"] > h3 { padding-top: 0; margin-bottom: 8px; }
