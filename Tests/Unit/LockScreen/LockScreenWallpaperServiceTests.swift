@@ -918,6 +918,43 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testSystemDefaultLinkedWallpaperActivatesBothModesAndRestoresOnShutdown() async throws {
+    for saverOnly in [false, true] {
+      var record = scene()
+      record.displayId = 1
+      let linked: [String: Any] = ["Type": "linked", "Linked": choice("default")]
+      let original: [String: Any] = [
+        "AllSpacesAndDisplays": linked, "SystemDefault": linked,
+        "Displays": [String: Any](), "Spaces": [String: Any](),
+      ]
+      try write(original)
+      defaults.removePersistentDomain(forName: defaultsSuite)
+      let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+        selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+        exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+        displayUUID: { _ in "one" })
+      let responder = readinessResponder()
+      try service.start()
+      service.setScreenSaverEnabled(true)
+      if !saverOnly { service.setEnabled(true) }
+      await waitFor("native default wallpaper activation") { !service.isBusy }
+      XCTAssertNil(service.errorMessage)
+      XCTAssertNil(service.screenSaverError)
+      XCTAssertEqual(service.isEnabled, !saverOnly)
+      XCTAssertTrue(service.screenSaverEnabled)
+      XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+      XCTAssertEqual(try selectedProvider("Desktop"),
+        saverOnly ? "default" : LockScreenConfiguration.extensionIdentifier)
+      try await service.shutdown()
+      responder.cancel()
+      await responder.value
+      XCTAssertEqual(try PropertyListSerialization.propertyList(
+        from: Data(contentsOf: store), format: nil) as? NSDictionary, original as NSDictionary)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
+  }
+
+  @MainActor
   func testDisablingEitherPresentationPreservesTheOtherInBothOrders() async throws {
     for (disableLockFirst, displayOnline) in [(true, true), (false, true), (true, false), (false, false)] {
       var online = true

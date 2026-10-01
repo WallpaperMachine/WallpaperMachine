@@ -15,6 +15,17 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Perspective scene rendering and live text compatibility
+
+- Renderer gate: python3 scripts/check_renderer.py passed; 494 tests across 23 binaries, 3 explicit local-asset skips; all 10 generated pooled/isolated pixel cases equal with zero diagnostics; 8 projects reloaded twice.
+- Focused suites passed: text_object_runtime_test 60, script_runtime_compat_test 81, scene_schema_tests 89, mdl_schema_tests 55; the final renderer gate also passed 19 layer-reference and 10 render-scale tests.
+- Installed perspective scene: both Native Metal and Compatibility drew 1200 frames offscreen at 3840x2160. Inspected final private images: no black quadrant or login overlay, current clock/date/status text, full-resolution starfield and visible star glows. No asset edits or wallpaper-specific renderer branches.
+- Native Metal final scenario: 44 render passes/frame, 26 on scene output, 1 blit/frame, 0.52 ms thread CPU per drawFrame; 299270656 render-target bytes and 779829248 device-allocated bytes. These exclude script/update CPU and do not establish desktop FPS or power use.
+- Compatibility final scenario: 738564736 VMA allocated bytes; process footprint/peak 2156971808 bytes. Native resolution and retained perspective source mips use more resources than a blurred 1080p/down-mip path; no supersampling or per-frame text-style raster uploads.
+- Routine application gate: python3 scripts/test.py failed, 879 passed / 4 failed / 11 skipped. Three assertions belong to concurrently added ScreenSaverWebSurfaceTests (capture error type, owned-file URL, live-canvas color); another failure is test-runner launchd spawn. Those files and other concurrent app/bridge/extension edits were left unchanged.
+- No Release rebuild, app launch/restart, desktop input or wallpaper changes. Initial diagnostic helpers unexpectedly initialized sound devices on asset mount despite their no-Play comments; corpus helpers now explicitly use the null backend. No live-audio or desktop verification claimed.
+- No commit: the required shared application gate is failing. Exact Windows parity, physical desktop presentation and battery/power effects remain unverified.
+
 ## 2026-09-30 — Issue #17 non-disruptive visual verification
 
 - User authorized visual verification and chose to keep the run non-disruptive rather than switch macOS Spaces.

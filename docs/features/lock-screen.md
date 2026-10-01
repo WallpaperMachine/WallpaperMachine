@@ -85,13 +85,18 @@ selection. The screen saver does not require the lock-screen switch. macOS still
 controls idle timing, password requirements and dismissal; the app changes none
 of those settings.
 
-macOS can also keep an all-displays Idle override, including its default screen
-saver, which takes precedence over the individual display choices. Enabling
-the screen saver journals and removes that override. A combined global
-Desktop/Idle choice becomes Desktop-only, preserving its desktop wallpaper.
-Disabling, quitting, or recovering after a crash restores the saved global
-Idle choice, while preserving any later global screen saver or desktop changes
-made in System Settings. Lock-screen-only activation leaves global Idle alone.
+macOS can also keep all-displays overrides, including its default screen saver,
+which take precedence over individual display choices. Enabling either mode
+journals and removes only that mode's global override. A combined global choice
+becomes Desktop-only for the screen saver or Idle-only for lock-screen animation;
+enabling both removes the global override until restoration.
+
+The built-in `default` provider can link desktop and screen saver into one
+choice, globally or for a display. The app separates that choice while either
+mode is active and preserves the other mode. Disabling, quitting, or recovering
+after a crash restores the original linked configuration, including inherited
+display settings. Later changes made in System Settings are preserved instead
+of relinking over them. Other linked providers remain unsupported.
 
 “Selected” means the native choice was committed, not that a screen saver has
 already started rendering. macOS may acquire an Idle-only surface only when it
@@ -118,9 +123,9 @@ Web projects remain unsupported for **Animate lock screen**.
   formats that may change; it may stop working after an OS update, and rendering
   is not guaranteed on every macOS release.
 - Lock-screen animation replaces Desktop; screen-saver playback replaces Idle.
-  Selection changes reload the wallpaper service. Linked or unsupported
-  per-display configurations are rejected rather than converted destructively.
-- System-wide linked wallpapers, or another wallpaper app, can prevent
+  Selection changes reload the wallpaper service. Unsupported per-display
+  configurations are rejected rather than converted destructively.
+- Linked providers other than the built-in `default` provider can prevent
   activation. The app reports the conflict instead of overwriting those choices.
 - Playback respects the pause and battery settings. The lock screen covering the
   desktop does not pause it.

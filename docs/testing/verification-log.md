@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — Support the macOS linked default wallpaper
+
+- Updated native selection to accept the built-in linked default, suppress only requested global Desktop/Idle overrides, and restore linked or inherited originals while preserving external edits.
+- Focused LockScreenWallpaperTests and LockScreenWallpaperServiceTests: 69 passed after fixing metadata restoration; the added legacy-journal case also passed in the full gate.
+- python3 scripts/test.py: passed; 226 Python tests and 918 native tests passed, 0 failed, 11 skipped (9 opt-in native-media tests and 2 live Workshop tests).
+- python3 scripts/build.py --swift-only --configuration Release: passed; delivered the updated Release app.
+- codesign --verify --deep --strict on the Release app: passed.
+- Under existing user approval, unregistered the Debug extension produced by testing and registered Release; pluginkit listed only the Release extension afterward.
+- Regression fixtures cover both activation orders, partial disable, crash/reload recovery, copied fallbacks, external choices and metadata, and legacy global journals.
+- Live lock-screen/screen-saver rendering, idle transitions, sleep/wake, and quit restoration remain unverified; no desktop control or wallpaper changes were performed.
+
 ## 2026-10-01 — Wait for native-provider and desktop-poster restoration on quit
 
 - python3 scripts/test.py --only DesktopWallpaperTests --only LockScreenWallpaperServiceTests — exit 0; 64 passed, 0 failed, 0 skipped.
@@ -116,14 +127,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Isolated regressions cover independent selection/restoration, topology gaps, native-video exports, web properties/files, capture denial, readiness and paused teardown.
 - Real idle transitions, lock/password UI, multi-monitor compositor delivery and sleep/wake visuals remain unverified. No Release app rebuild, activation or restart.
 - The shared workspace contained unrelated import-picker and renderer changes; those are excluded from this feature commit.
-
-## 2026-09-30 — Perspective scene rendering and live text compatibility
-
-- Renderer gate: python3 scripts/check_renderer.py passed; 494 tests across 23 binaries, 3 explicit local-asset skips; all 10 generated pooled/isolated pixel cases equal with zero diagnostics; 8 projects reloaded twice.
-- Focused suites passed: text_object_runtime_test 60, script_runtime_compat_test 81, scene_schema_tests 89, mdl_schema_tests 55; the final renderer gate also passed 19 layer-reference and 10 render-scale tests.
-- Installed perspective scene: both Native Metal and Compatibility drew 1200 frames offscreen at 3840x2160. Inspected final private images: no black quadrant or login overlay, current clock/date/status text, full-resolution starfield and visible star glows. No asset edits or wallpaper-specific renderer branches.
-- Native Metal final scenario: 44 render passes/frame, 26 on scene output, 1 blit/frame, 0.52 ms thread CPU per drawFrame; 299270656 render-target bytes and 779829248 device-allocated bytes. These exclude script/update CPU and do not establish desktop FPS or power use.
-- Compatibility final scenario: 738564736 VMA allocated bytes; process footprint/peak 2156971808 bytes. Native resolution and retained perspective source mips use more resources than a blurred 1080p/down-mip path; no supersampling or per-frame text-style raster uploads.
-- Routine application gate: python3 scripts/test.py failed, 879 passed / 4 failed / 11 skipped. Three assertions belong to concurrently added ScreenSaverWebSurfaceTests (capture error type, owned-file URL, live-canvas color); another failure is test-runner launchd spawn. Those files and other concurrent app/bridge/extension edits were left unchanged.
-- No Release rebuild, app launch/restart, desktop input or wallpaper changes. Initial diagnostic helpers unexpectedly initialized sound devices on asset mount despite their no-Play comments; corpus helpers now explicitly use the null backend. No live-audio or desktop verification claimed.
-- No commit: the required shared application gate is failing. Exact Windows parity, physical desktop presentation and battery/power effects remain unverified.

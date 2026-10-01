@@ -226,8 +226,10 @@ Swift tests cover, without starting the app:
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,
-  removal and recovery of global Idle overrides (including the default screen
-  saver), preservation of later global Desktop/Idle edits,
+  removal and recovery of global Desktop/Idle overrides, independent activation
+  from macOS's linked default (both inherited and explicit per-display choices),
+  exact linked restoration after disable or reload failure, preservation of
+  later global Desktop/Idle edits,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/
