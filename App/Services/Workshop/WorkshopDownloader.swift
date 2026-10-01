@@ -7,6 +7,10 @@ import Observation
 final class WorkshopDownloader: SteamCMDDownloadActivity {
     enum Prompt: String { case password = "Steam password", guardCode = "Steam Guard code" }
     enum SteamGuardChallenge { case mobileApproval, authenticatorCode, emailCode }
+    enum WallpaperEngineOwnership: String { case unknown, owned, notOwned }
+    private(set) var wallpaperEngineOwnership = WallpaperEngineOwnership.unknown
+    @ObservationIgnored private var readingLicense = false
+    @ObservationIgnored private var licenseIsActive = false
     /// Coarse step of a run for compact surfaces such as the tile ring; `status` carries the
     /// full sentence. Bytes only move during `transferring`; `finishing` covers SteamCMD's
     /// close and the validation/import that follows it.
@@ -26,7 +30,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     private(set) var errorMessage: String?
     private(set) var downloadedID: String?
     private(set) var isInstallingAssets = false
-    /// A session that only signs in (`+login … +quit`) and downloads nothing: the welcome guide
+    /// A session that signs in, checks ownership, and downloads nothing. The welcome guide
     /// and Settings use it to verify an account and save its sign-in ahead of any download.
     private(set) var isSigningInOnly = false
     private(set) var savedAccount: String?
@@ -114,8 +118,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         }
     }
 
-    /// Signs in and quits. Steam's own password and Steam Guard prompts arrive exactly as they do
-    /// for a download; with `rememberSession` the accepted sign-in is saved for later downloads.
+    /// Signs in, checks ownership, and quits using the same password and Steam Guard prompts
+    /// as a download; with `rememberSession` the accepted sign-in is saved for later downloads.
     func signIn(username: String, executable: URL, root: URL, rememberSession: Bool = true, onSignedIn: @escaping @MainActor () -> Void = {}) {
         download(itemID: nil, signInOnly: true, username: username, executable: executable, root: root, rememberSession: rememberSession) { _ in
             self.phase = .finishing
@@ -141,6 +145,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         sessionWarning = nil
         cachedCredentialsRejected = false
         isAuthenticating = true
+        wallpaperEngineOwnership = .unknown
         assetsDownloadCompleted = false
         workshopDownloadCompleted = false
         authenticationFailed = false
@@ -242,6 +247,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                     await stopProcess()
                     // Drain the last output before closing, even when SteamCMD has already exited.
                     try readTerminalOutput()
+                    consumeOwnershipLine(recentOutput)
                     try? terminal?.close()
                     terminal = nil
                     restarts += 1
@@ -370,8 +376,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         terminal = input
         let installDirectory = isInstallingAssets ? staging.appendingPathComponent("wallpaper-engine") : staging
         let platform = isInstallingAssets ? ["+@sSteamCmdForcePlatformType", "windows"] : []
-        // A sign-in-only session has no command between the login and the quit.
-        let command = isSigningInOnly ? [] : itemID.map { ["+workshop_download_item", "431960", $0] } ?? ["+app_update", "431960", "validate"]
+        // Query licenses in the authenticated session without downloading any game files.
+        let command = isSigningInOnly ? ["+licenses_for_app", "431960"] : itemID.map { ["+workshop_download_item", "431960", $0] } ?? ["+app_update", "431960", "validate"]
         let arguments = ["-inhibitbootstrap", "+@ShutdownOnFailedCommand", "1"] + platform
             + ["+force_install_dir", installDirectory.path, "+login", account] + command + ["+quit"]
         let temporary = staging.appendingPathComponent("tmp", isDirectory: true)
@@ -381,6 +387,9 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                            "DYLD_LIBRARY_PATH": staging.path,
                            "DYLD_FRAMEWORK_PATH": staging.appendingPathComponent("Frameworks").path]
         recentOutput = ""
+        wallpaperEngineOwnership = .unknown
+        readingLicense = false
+        licenseIsActive = false
         prompt = nil
         steamGuardChallenge = nil
         isAuthenticating = true
@@ -427,11 +436,32 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         while let newline = recentOutput.firstIndex(where: { $0.isNewline }) {
             let line = String(recentOutput[..<newline])
             recentOutput.removeSubrange(...newline)
+            consumeOwnershipLine(line)
             consumeLine(line)
         }
         recentOutput = String(recentOutput.suffix(4096))
         // Interactive prompts have no newline and can span multiple reads.
         consumeLine(recentOutput)
+    }
+
+    /// Only complete lines establish ownership; a truncated app ID must never match 431960.
+    private func consumeOwnershipLine(_ line: String) {
+        guard isSigningInOnly, !isAuthenticating, failure == nil else { return }
+        let output = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if output.range(of: #"^no active license found for appid 431960\.?$"#, options: .regularExpression) != nil {
+            wallpaperEngineOwnership = .notOwned
+            readingLicense = false
+        } else if output.range(of: #"^license packageid [0-9]+:$"#, options: .regularExpression) != nil {
+            readingLicense = true
+            licenseIsActive = false
+        } else if readingLicense && output.hasPrefix("- state") {
+            licenseIsActive = output.range(of: #"^- state\s*:\s*active\s*\("#, options: .regularExpression) != nil
+        } else if readingLicense && licenseIsActive && output.hasPrefix("- apps") {
+            let apps = output.split(separator: ":", maxSplits: 1).last?.split(separator: ",") ?? []
+            if apps.contains(where: { $0.trimmingCharacters(in: .whitespaces) == "431960" }) {
+                wallpaperEngineOwnership = .owned
+            }
+        }
     }
 
     private func consumeLine(_ line: String) {
@@ -541,7 +571,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             receivesNetwork = false
             bytesPerSecond = nil
             phase = .requesting
-            status = isSigningInOnly ? String(localized: "Signed in; closing SteamCMD…") : isInstallingAssets ? String(localized: "Signed in; requesting Wallpaper Engine’s shared assets…") : String(localized: "Signed in; requesting your Workshop download…")
+            status = isSigningInOnly ? String(localized: "Signed in; checking Wallpaper Engine ownership…") : isInstallingAssets ? String(localized: "Signed in; requesting Wallpaper Engine’s shared assets…") : String(localized: "Signed in; requesting your Workshop download…")
         } else if output.contains("confirm") && (output.contains("mobile") || output.contains("steam guard")) {
             prompt = nil
             steamGuardChallenge = .mobileApproval

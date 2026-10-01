@@ -124,8 +124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     self.desktopWallpaperSync?.suspendForNativeProvider()
                 }
                 lockScreen.afterDeactivation = { [weak self] in
-                    self?.desktopWallpaperSync = nil
-                    try self?.startDesktopWallpaperSync()
+                    guard let self, !self.shutdownInProgress else { return }
+                    self.desktopWallpaperSync = nil
+                    try self.startDesktopWallpaperSync()
                 }
             }
             let mediaScheduler = FoundationMediaTimerScheduler()
@@ -573,13 +574,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         shutdownInProgress = true
         desktopWallpaperSync?.suspendForNativeProvider()
+        // Keep this restorer through native-provider callbacks and reloads.
+        let wallpaperRestorer = desktopWallpaperSync
         controlPanelWindow?.orderOut(nil)
         whatsNewWindow?.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
 
         Task {
             do {
-                try await store?.lockScreenWallpaper?.shutdown()
+                if let lockScreen = store?.lockScreenWallpaper {
+                    try await lockScreen.shutdown {
+                        try await wallpaperRestorer?.restoreForTermination()
+                    }
+                } else {
+                    try await wallpaperRestorer?.restoreForTermination()
+                }
                 globalHotKeys?.stop()
                 AppAutomation.shared.handler = nil
                 AppAutomation.shared.displays = nil
@@ -589,15 +598,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 wallpaperEnergy = nil
                 presentationPolicy?.stop()
                 presentationPolicy = nil
-                desktopWallpaperSync?.stop()
                 desktopWallpaperSync = nil
                 sceneMediaSink?.shutdown()
                 sceneMediaSink = nil
                 webWallpaperHost?.shutdown()
                 webWallpaperHost = nil
             } catch {
+                AppLog.error("Quit cancelled because wallpaper restoration failed: \(error.localizedDescription)")
                 lastError = error
                 shutdownInProgress = false
+                // Native restoration may already have released the desktop even
+                // though poster restoration failed. Resume without waiting for
+                // another bridge snapshot, but never overwrite an owned provider.
+                if store?.lockScreenWallpaper?.ownsDesktopProvider != true {
+                    do { try startDesktopWallpaperSync() } catch {
+                        AppLog.error("Desktop poster sync could not be restarted: \(error.localizedDescription)")
+                    }
+                }
                 presentationPolicy?.evaluate()
                 rebuildMenu()
                 sender.reply(toApplicationShouldTerminate: false)

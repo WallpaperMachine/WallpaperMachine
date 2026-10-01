@@ -393,7 +393,7 @@ retains a `WorkshopDownloadRequest` with id `WorkshopStore.signInRequestID`
 (`steam-sign-in`) that climbs the same ladder as a download — SteamCMD setup,
 then the account — and never the shared-resources stage, then runs
 `WorkshopDownloader.signIn`: a private SteamCMD session with `+login <account>
-+quit` and no download command (`isSigningInOnly`). Steam's password and Steam
++licenses_for_app 431960 +quit` and no download command (`isSigningInOnly`). Steam's password and Steam
 Guard prompts arrive on the job exactly as for a download and are answered
 through `downloadInput`; with **Keep me signed in** the accepted session is
 saved the same way, so the next download starts silently. The job takes a
@@ -401,6 +401,20 @@ queue slot like any other (`WorkshopDownloadManager.signIn`, at most one at a
 time), succeeds only once Steam confirms the sign-in before quitting, and
 reports "Steam sign-in" as its title; the page hides it from the downloads
 list once it has finished.
+
+After authentication, `licenses_for_app` checks the account's active Wallpaper
+Engine license in that same session (the command is also recommended by
+[Valve support](https://github.com/ValveSoftware/steam-for-linux/issues/6218)).
+An active license listing app 431960 confirms ownership; an explicit
+`No active license found for appID 431960` response reports no ownership.
+Missing or unrecognized output stays **unconfirmed**, never a missing purchase.
+The guide shows a purchase link for a non-owner and explains that Pixiv
+downloads, Workshop browsing, and viewing existing Wallpaper Engine wallpapers
+remain available. Both non-owners and unconfirmed accounts can continue setup
+or **Check ownership again**, including after purchasing. Ownership is scoped
+to the current sign-in job, not persisted with credentials; a saved account
+from a previous launch can be checked again. Steam still authorizes each
+actual download, so this advisory check cannot bypass or permanently deny it.
 
 **Keep me signed in on this Mac** is enabled by default for Workshop downloads
 and for scene-asset installation. After a successful authentication the app

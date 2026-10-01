@@ -544,6 +544,65 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertTrue(timers.allSatisfy { !$0.isValid })
   }
 
+  @MainActor
+  func testShutdownRestoresNativeChoicesBeforeWaitingForDesktopRestoration() async throws {
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    try service.start()
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("both native modes enabled") { service.isEnabled && service.screenSaverEnabled }
+    var pending: CheckedContinuation<Void, Never>?
+    var finished = false
+    let shutdown = Task {
+      try await service.shutdown {
+        XCTAssertEqual(try self.selectedProvider("Desktop"), "display-one-desktop")
+        XCTAssertEqual(try self.selectedProvider("Idle"), "display-one-idle")
+        XCTAssertFalse(service.ownsDesktopProvider)
+        await withCheckedContinuation { pending = $0 }
+      }
+      finished = true
+    }
+    await waitFor("desktop restoration pending") { pending != nil }
+    XCTAssertFalse(finished, "Do not exit between native and PNG-original restoration")
+    XCTAssertTrue(timers.allSatisfy { !$0.isValid })
+    pending?.resume()
+    try await shutdown.value
+    XCTAssertTrue(finished)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+  }
+
+  @MainActor
+  func testFailedDesktopRestorationLeavesQuitCancelledAndAllowsExplicitRetry() async throws {
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
+    try service.start()
+    do {
+      try await service.shutdown {
+        throw CocoaError(.fileWriteNoPermission)
+      }
+      XCTFail("A failed desktop restoration must cancel quit")
+    } catch {
+      XCTAssertNotNil(service.errorMessage)
+    }
+    // A cancelled quit must not leave the native service permanently stopping.
+    service.setEnabled(true)
+    await waitFor("retry after cancelled quit") { !service.isBusy }
+    XCTAssertTrue(service.isRequested)
+    XCTAssertNil(service.errorMessage)
+    var restored = false
+    try await service.shutdown { restored = true }
+    XCTAssertTrue(restored)
+  }
+
   /// An unchanged monitor tick must not disable or republish. After a lookup gap,
   /// that same timer — not another scene or preference change — retries the
   /// committed mapping once the display UUID resolves.
@@ -856,6 +915,43 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertEqual(try PropertyListSerialization.propertyList(
       from: Data(contentsOf: store), format: nil) as? NSDictionary, original)
     XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+  }
+
+  @MainActor
+  func testSystemDefaultLinkedWallpaperActivatesBothModesAndRestoresOnShutdown() async throws {
+    for saverOnly in [false, true] {
+      var record = scene()
+      record.displayId = 1
+      let linked: [String: Any] = ["Type": "linked", "Linked": choice("default")]
+      let original: [String: Any] = [
+        "AllSpacesAndDisplays": linked, "SystemDefault": linked,
+        "Displays": [String: Any](), "Spaces": [String: Any](),
+      ]
+      try write(original)
+      defaults.removePersistentDomain(forName: defaultsSuite)
+      let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+        selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+        exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+        displayUUID: { _ in "one" })
+      let responder = readinessResponder()
+      try service.start()
+      service.setScreenSaverEnabled(true)
+      if !saverOnly { service.setEnabled(true) }
+      await waitFor("native default wallpaper activation") { !service.isBusy }
+      XCTAssertNil(service.errorMessage)
+      XCTAssertNil(service.screenSaverError)
+      XCTAssertEqual(service.isEnabled, !saverOnly)
+      XCTAssertTrue(service.screenSaverEnabled)
+      XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+      XCTAssertEqual(try selectedProvider("Desktop"),
+        saverOnly ? "default" : LockScreenConfiguration.extensionIdentifier)
+      try await service.shutdown()
+      responder.cancel()
+      await responder.value
+      XCTAssertEqual(try PropertyListSerialization.propertyList(
+        from: Data(contentsOf: store), format: nil) as? NSDictionary, original as NSDictionary)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    }
   }
 
   @MainActor

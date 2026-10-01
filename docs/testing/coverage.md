@@ -101,7 +101,8 @@ Swift tests cover, without starting the app:
   protection against stale credential rejections erasing a newer session,
   retained-intent setup/account progression, explicit shared-resource consent
   including reinstall, resource-job deduplication, account correction, removal
-  preventing resumption, and download-speed sampling (see
+  preventing resumption, sign-in ownership checks (owned, missing, unconfirmed,
+  split output and switching accounts), and download-speed sampling (see
   [renderer.md](renderer.md) for the `nettop` streaming detail). The
   downloader suites share `DownloaderTestCase` (`Tests/Unit/Workshop/`) and
   split by concern: `DownloaderLifecycleTests`, `DownloaderSessionTests`,
@@ -174,6 +175,7 @@ Swift tests cover, without starting the app:
   active numeric/search drafts, caret, disclosure and scroll preservation;
   theme changes without renderer settings and explicit lock-screen unavailability;
   onboarding background focus isolation and Steam prompt focus transitions;
+  ownership notices, continuing without ownership, and rechecking after purchase;
   revealed-password retention without a value attribute or HTML echo, followed
   by submit clearing through the fake Steam runtime; and real native rejection
   of an anonymous download account with modal feedback, retained intent and
@@ -207,13 +209,21 @@ Swift tests cover, without starting the app:
   without a poster still requests it, legacy journal migration,
   relaunch recovery, external wallpaper changes, and write failures. Topology
   and native option/path translation use fixtures, including empty
-  inherited/default native selections, exact pathless-option restoration across
-  relaunch, rejected native acknowledgements, and unreadable-original errors.
-  Empty native dictionaries are retained verbatim only when no desktop has a
-  real wallpaper; otherwise an inherited desktop, one journaled as inherited by
-  an older build and an unjournaled poster restore the display's (else any
-  display's) real original. Coordinator tests use unattached
-  `CAMetalLayer`s and injected notification/encoding services.
+  inherited/default native selections, rejected native acknowledgements, and
+  unreadable-original errors. Empty per-Space selections resolve through the
+  public API before any poster write, preserving independent display originals
+  even when a write also changes inherited defaults. If no original resolves,
+  synchronization refuses to replace the system wallpaper. A legacy empty
+  journal reports failed restoration and can be repaired from a real original
+  even when the frame is unchanged; relaunch then restores that original.
+  Per-Space originals still take precedence over public-API fallbacks, and
+  external user choices survive restoration. Coordinator tests use unattached
+  `CAMetalLayer`s and injected notification/encoding services. Shutdown fixtures
+  simulate a native provider reload whose persisted PNG is temporarily invisible
+  to the legacy API, delayed persistence after setting the original, permanent
+  write failure followed by retry, and an external user choice during the wait.
+  Native-store reference fixtures cover display/Space scope, inherited fallbacks,
+  linked Desktop choices, and exclusion of Idle and inactive fields.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
   Mode and thermal readings and a private notification center: Low Power Mode
   acting only once an action is chosen, only serious and critical heat counting
@@ -232,8 +242,13 @@ Swift tests cover, without starting the app:
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,
-  removal and recovery of global Idle overrides (including the default screen
-  saver), preservation of later global Desktop/Idle edits,
+  removal and recovery of global Desktop/Idle overrides, independent activation
+  from macOS's linked default (both inherited and explicit per-display choices),
+  exact linked restoration after disable or reload failure, preservation of
+  later global Desktop/Idle edits, complete Desktop/Idle fields in synthesized
+  display and Space overrides when either mode runs alone, and removal of those
+  overrides on recovery while preserving external edits, rejection of malformed
+  linked/inherited baselines without store writes, journal loss or service reload,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/

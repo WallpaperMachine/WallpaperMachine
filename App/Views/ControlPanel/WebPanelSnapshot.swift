@@ -87,6 +87,7 @@ extension WebPanelController {
       _ = worker.errorMessage
       _ = worker.prompt
       _ = worker.sessionWarning
+      _ = worker.wallpaperEngineOwnership
     }
   }
 
@@ -338,6 +339,7 @@ extension WebPanelController {
         "prompt": worker.prompt?.rawValue as Any? ?? null,
         "securePrompt": worker.prompt == .password, "challenge": challenge as Any? ?? null,
         "warning": worker.sessionWarning as Any? ?? null,
+        "wallpaperEngineOwnership": worker.wallpaperEngineOwnership.rawValue,
       ]
     }
     let downloadRequests: [[String: Any]] = workshop.downloadRequests.map { request in

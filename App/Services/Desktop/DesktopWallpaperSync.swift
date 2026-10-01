@@ -190,6 +190,25 @@ final class DesktopWallpaperSync {
         try ledger.restoreAll()
     }
 
+    /// Native Desktop/Idle restoration signals WallpaperAgent to reload. Wait
+    /// for its poster selection to become readable and for our restoration to
+    /// persist before allowing the app to exit.
+    func restoreForTermination(
+        wait: () async throws -> Void = { try await Task.sleep(for: .milliseconds(200)) }
+    ) async throws {
+        suspendForNativeProvider()
+        for attempt in 0..<25 {
+            try Task.checkCancellation()
+            do {
+                try ledger.restoreAll()
+                return
+            } catch {
+                guard attempt < 24 else { throw error }
+                try await wait()
+            }
+        }
+    }
+
     private func receive(_ notification: Notification) {
         guard !stopped, let layer = notification.object as? CALayer,
               surfaces().contains(where: { $0.layer === layer }),
@@ -238,6 +257,6 @@ final class DesktopWallpaperSync {
 
     private func report(_ error: Error) {
         // A native-poster failure must not stop live playback or show a modal.
-        NSLog("[WE] Native desktop poster sync failed: %@", error.localizedDescription)
+        AppLog.error("Native desktop poster sync failed: \(error.localizedDescription)")
     }
 }

@@ -173,6 +173,10 @@ reuse, or visual behavior, which is why these items are manual.
 - [ ] Eject a wallpaper: all Desktops recover their previous native image and
       scaling.
 - [ ] Quit and reopen to check restoration journaling.
+- [ ] Start with an inherited/system wallpaper on each display, apply a live
+      wallpaper, then quit. Each display restores its own original. If macOS
+      cannot expose an original image, live playback works but the system
+      wallpaper and Mission Control thumbnails remain unchanged.
 - [ ] Change a native wallpaper outside the app and verify that quitting does
       not overwrite it.
 
@@ -183,8 +187,12 @@ latency cannot be guaranteed. The app uses dynamically resolved
 `CGSCopyManagedDisplaySpaces` and `DesktopPictureSetDisplayForSpace` to target
 all normal desktop Spaces directly, including inactive ones. It restores them on
 eject and quit, preserves full native options and the old journal format, and
-restores an inherited (pathless) Space, or one left on an unjournaled poster, to
-its display's real wallpaper rather than leaving a poster behind. It
+resolves inherited (pathless) originals through the public wallpaper API before
+writing any poster. An inherited Space, or one left on an unjournaled poster,
+uses its display's real original when available. Without a recoverable original,
+poster writes are skipped and a failure is logged; live playback continues.
+Older journals containing only empty originals cannot recover the earlier
+wallpaper: select it again in System Settings once. The poster service
 never switches Spaces, restarts Dock or WallpaperAgent, or edits Apple's
 wallpaper plist. These are non-public APIs: if they are unavailable on a future
 macOS the app logs the limitation and falls back to `NSWorkspace`'s
@@ -203,7 +211,11 @@ are kept.
 - [ ] Disable the feature: journaled Desktop/Idle entries are restored and PNG
       poster synchronization resumes.
 - [ ] Quit with the feature enabled: the native provider is restored before
-      poster restoration is attempted.
+      poster restoration is attempted. Repeat with lock-screen only, screen-saver
+      only, and both enabled after a PNG poster has already been installed.
+      Every desktop returns to its original; quit waits through the native
+      service reload. A restoration failure keeps the app running and reports
+      the error so Exit can be retried.
 - [ ] Lock and unlock the screen and confirm the provider becomes active with
       playback unpaused.
 - [ ] Do not run this alongside a competing global wallpaper manager; a conflict

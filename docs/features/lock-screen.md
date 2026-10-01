@@ -85,13 +85,26 @@ selection. The screen saver does not require the lock-screen switch. macOS still
 controls idle timing, password requirements and dismissal; the app changes none
 of those settings.
 
-macOS can also keep an all-displays Idle override, including its default screen
-saver, which takes precedence over the individual display choices. Enabling
-the screen saver journals and removes that override. A combined global
-Desktop/Idle choice becomes Desktop-only, preserving its desktop wallpaper.
-Disabling, quitting, or recovering after a crash restores the saved global
-Idle choice, while preserving any later global screen saver or desktop changes
-made in System Settings. Lock-screen-only activation leaves global Idle alone.
+macOS can also keep all-displays overrides, including its default screen saver,
+which take precedence over individual display choices. Enabling either mode
+journals and removes only that mode's global override. A combined global choice
+becomes Desktop-only for the screen saver or Idle-only for lock-screen animation;
+enabling both removes the global override until restoration.
+
+The built-in `default` provider can link desktop and screen saver into one
+choice, globally or for a display. The app separates that choice while either
+mode is active and preserves the other mode. Disabling, quitting, or recovering
+after a crash restores the original linked configuration, including inherited
+display settings. Later changes made in System Settings are preserved instead
+of relinking over them. Other linked providers remain unsupported.
+
+New display overrides, including those inside Spaces, contain both required
+Desktop and Idle choices even when only one mode is enabled. The unselected
+choice comes from the inherited system selection or its restoration journal.
+macOS rejects the entire wallpaper store if an `individual` override omits
+either field; a lock-screen-only override with no Idle field prevents the
+renderer from starting. Temporary overrides return to inheritance on disable
+or recovery, unless a later external choice needs to be kept.
 
 “Selected” means the native choice was committed, not that a screen saver has
 already started rendering. macOS may acquire an Idle-only surface only when it
@@ -118,9 +131,9 @@ Web projects remain unsupported for **Animate lock screen**.
   formats that may change; it may stop working after an OS update, and rendering
   is not guaranteed on every macOS release.
 - Lock-screen animation replaces Desktop; screen-saver playback replaces Idle.
-  Selection changes reload the wallpaper service. Linked or unsupported
-  per-display configurations are rejected rather than converted destructively.
-- System-wide linked wallpapers, or another wallpaper app, can prevent
+  Selection changes reload the wallpaper service. Unsupported per-display
+  configurations are rejected rather than converted destructively.
+- Linked providers other than the built-in `default` provider can prevent
   activation. The app reports the conflict instead of overwriting those choices.
 - Playback respects the pause and battery settings. The lock screen covering the
   desktop does not pause it.
@@ -165,6 +178,14 @@ not unregister copies, change which app is installed, or restart the app.
 Disabling either control restores only its still-owned selections. Quitting
 restores both. Wallpaper and screen-saver changes made elsewhere are preserved.
 
+If the native provider replaced a desktop PNG poster, quit restores the native
+selection first, then waits for WallpaperAgent's asynchronous reload and restores
+the poster's saved original. The PNG journal and image stay available while the
+native store still references them. Quit retries for up to about five seconds;
+if restoration still fails, it cancels termination and exposes the error in the
+menu bar (and native-feature status) so the user can retry. A failed activation
+also restores native selections, but resumes live desktop playback afterward.
+
 ## Background checks and recovery
 
 The service keeps one two-second monitor while either mode is requested,
@@ -183,7 +204,8 @@ Recovery entries represent the last successful journal commit. Repeated checks
 still require a wallpaper-service reload without rewriting the journal. The
 recovery union is persisted before changing the store, and pruned only after a
 successful reload; failed writes, reloads or journal removal retain recovery
-information for retry.
+information for retry. A malformed saved linked or inherited baseline fails
+recovery before changing the store or removing the journal.
 
 macOS copies the extension's selection into the fallbacks it reloads
 (`SystemDefault` and each Space's `Default`), and a Space created while the

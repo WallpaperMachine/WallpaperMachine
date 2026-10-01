@@ -2,6 +2,12 @@
    and data-i18n in WebUI/; see docs/localization.md for how a catalog is maintained. */
 
 export default {
+  'Wallpaper Engine ownership confirmed. You can download its Workshop wallpapers.': 'Wallpaper Engineの所有を確認しました。Workshopの壁紙をダウンロードできます。',
+  'This Steam account does not own Wallpaper Engine. Please purchase it on Steam to download Wallpaper Engine wallpapers. You can still download from Pixiv, browse the Workshop, and view Wallpaper Engine wallpapers you already have.': 'このSteamアカウントはWallpaper Engineを所有していません。Wallpaper Engineの壁紙をダウンロードするには、Steamで購入してください。Pixivからのダウンロード、Workshopの閲覧、お持ちのWallpaper Engineの壁紙の表示は引き続き利用できます。',
+  'Wallpaper Engine ownership has not been confirmed. Check again to verify this account can download its Workshop wallpapers. You can still download from Pixiv, browse the Workshop, and view wallpapers you already have.': 'Wallpaper Engineの所有を確認できていません。再確認して、このアカウントでWorkshopの壁紙をダウンロードできるか確認してください。Pixivからのダウンロード、Workshopの閲覧、お持ちの壁紙の表示は引き続き利用できます。',
+  'Check ownership again': '所有状況を再確認',
+  'Checking Wallpaper Engine ownership…': 'Wallpaper Engineの所有を確認中…',
+  'You can browse without an account. Steam Workshop downloads require an account that owns Wallpaper Engine. Sign in now, or skip and sign in at your first download.': 'アカウントなしでも閲覧できます。Steam Workshopからのダウンロードには、Wallpaper Engineを所有するアカウントが必要です。今サインインするか、スキップして初回ダウンロード時にサインインしてください。',
   // Actions a wallpaper's user can bind one of its shortcut buttons to.
   'No action': 'アクションなし',
   'Play / Pause': '再生/一時停止',

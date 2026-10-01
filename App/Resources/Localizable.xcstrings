@@ -1,6 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Signed in; checking Wallpaper Engine ownership…" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Signed in; checking Wallpaper Engine ownership…"}}, "ja": {"stringUnit": {"state": "translated", "value": "サインイン済み。Wallpaper Engineの所有を確認中…"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "已登录；正在检查是否拥有 Wallpaper Engine…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已登入；正在檢查是否擁有 Wallpaper Engine…"}}}},
+    "macOS is still restoring the desktop wallpaper. Please try quitting again." : {
+      "localizations" : {"en": {"stringUnit": {"state": "translated", "value": "macOS is still restoring the desktop wallpaper. Please try quitting again."}}, "ja": {"stringUnit": {"state": "translated", "value": "macOSがデスクトップの壁紙を復元しています。もう一度終了を試してください。"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "macOS 仍在恢复桌面壁纸。请再次尝试退出。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "macOS 仍在還原桌面桌布。請再次嘗試結束 App。"}}}
+    },
     "macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry." : {
       "localizations" : {"en":{"stringUnit":{"state":"translated","value":"macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry."}},"ja":{"stringUnit":{"state":"translated","value":"macOSが別のWallpaperMachineのコピーからロック画面レンダラを読み込みました。使用するアプリのコピーだけを残してから、再試行してください。"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"macOS 从另一个 WallpaperMachine 副本加载了锁定屏幕渲染器。请只保留要使用的应用副本，然后重试。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"macOS 從另一個 WallpaperMachine 副本載入了鎖定畫面算繪器。請只保留要使用的 App 副本，然後重試。"}}}
     },
@@ -2303,6 +2307,9 @@
     },
     "The preview image is too large to use as a thumbnail." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The preview image is too large to use as a thumbnail."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プレビュー画像が大きすぎるため、サムネイルとして使用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预览图太大，无法用作缩略图。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預覽圖太大，無法用作縮圖。"}}}
+    },
+    "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings." : {
+      "localizations" : {"en": {"stringUnit": {"state": "translated", "value": "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings."}}, "ja": {"stringUnit": {"state": "translated", "value": "元のmacOSの壁紙を復元できませんでした。システム設定で壁紙を選び直してください。"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法恢复原来的 macOS 壁纸。请在系统设置中重新选择壁纸。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法還原原本的 macOS 桌布。請在系統設定中重新選擇桌布。"}}}
     },
     "The preview image could not be decoded." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The preview image could not be decoded."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プレビュー画像をデコードできませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法解码预览图。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法解碼預覽圖。"}}}
