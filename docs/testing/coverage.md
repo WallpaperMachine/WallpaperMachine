@@ -266,6 +266,12 @@ Swift tests cover, without starting the app:
   records every published manifest for synthetic display IDs through disconnect,
   reconnect and primary ordering changes, then checks that explicit disable
   still clears all scenes. It does not depend on a second physical monitor.
+  Service regressions also restore both saved requests without a lock-screen
+  acknowledgement, retain only the screen-saver selection, propagate pause changes
+  without automatic lock-screen retries, and recover on explicit retry. They cover
+  screen-saver disable/re-enable (including Off during a lock-screen retry before a
+  missing display UUID returns), stale readiness rejection, current renderer failure,
+  and full rollback when the shared extension or Idle-only publication fails.
   These tests do not establish real lock-screen visual timing or private XPC
   snapshot transport. No test selects a real wallpaper.
 - **Diagnostics** — `AppLogRouterTests`: lines logged before the bridge keep
