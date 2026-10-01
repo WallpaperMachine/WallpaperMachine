@@ -900,10 +900,15 @@ final class ControlPanelShellTests: ControlPanelTestCase {
         region.querySelector('[data-action="preset"][data-value="low"]').click();
         const low = read();
         const slider = region.querySelector('input[data-performance="frameRateCap"]');
+        slider.value = String(Number(slider.max) - 1);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        const refresh = read();
         slider.value = '24';
         slider.dispatchEvent(new Event('change', { bubbles: true }));
-        return { initial, low, custom: read() };
+        return { initial, low, refresh, custom: read() };
         """) as? [String: [String: Any]]
+      XCTAssertEqual(performance?["refresh"]?["readout"] as? String, "60 fps",
+        "The display's full refresh is a cap of its own, below No limit")
       XCTAssertEqual(performance?["initial"]?["checked"] as? [String], ["high"])
       XCTAssertEqual(performance?["initial"]?["readout"] as? String, "No limit")
       XCTAssertEqual(performance?["low"]?["checked"] as? [String], ["low"])

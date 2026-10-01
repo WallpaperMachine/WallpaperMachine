@@ -226,9 +226,11 @@ The welcome guide's Performance page offers the same presets and slider
 before its Preferences page; see [First run](control-panel.md#first-run).
 
 **Frame rate limit** is a slider from 10 to the highest display refresh the
-snapshot reports (`frameRateCapMax`, or 60 when no display publishes one). The
-top of the slider reads **No limit** and sends null (no cap): each display then
-runs at its own rate, 60 fps by default (below). Any lower value is the cap.
+snapshot reports (`frameRateCapMax`, or 60 when no display publishes one), plus
+one extra top position. Every value up to the refresh (for example 119 and 120
+on a 120 Hz display) is a cap. The extra top position reads **No limit** and
+sends null (no cap): each display then runs at its own rate, 60 fps by default
+(below).
 The effective rate on a display is the minimum of the saved per-wallpaper rate,
 that display's refresh, the global cap, and the battery frame rate when
 reduced quality is in force. Saved per-wallpaper frame rates are never

@@ -118,14 +118,16 @@ function frameRateCapMax(settings) {
   return max != null && max >= 10 ? Math.round(max) : 60;
 }
 
-// Slider position `max` is reserved for no limit, which leaves every display at its
-// own frame rate, so a stored cap at or above that ceiling is the same choice the
-// control can send.
+// The slider runs to one step past the highest display refresh: every rate up to
+// that refresh is a choosable cap, and the extra top position is no limit, which
+// leaves every display at its own frame rate. A stored cap above the refresh is
+// shown as that refresh.
 export function frameRateCapSlider(settings) {
-  const max = frameRateCapMax(settings);
+  const refresh = frameRateCapMax(settings);
+  const max = refresh + 1;
   const cap = storedFrameRateCap(settings);
-  const unlimited = cap == null || cap >= max;
-  return { max, unlimited, value: unlimited ? max : Math.min(max - 1, Math.max(10, Math.round(cap))) };
+  const unlimited = cap == null;
+  return { max, unlimited, value: unlimited ? max : Math.min(refresh, Math.max(10, Math.round(cap))) };
 }
 
 // The slider's value: the top of its range is sent as null (no limit).
