@@ -111,16 +111,21 @@ Swift tests cover, without starting the app:
 - **Steam runtime** — SteamCMD setup against isolated preferences/directories,
   `URLProtocol` archives, real system `tar`, and owned child processes:
   publication/replacement, invalid discovery, traversal/link/archive-size
-  boundaries, the updater's contained sibling Frameworks link, network failures,
+  boundaries, strict package manifests, both checksums, HTTP encoded/decoded
+  lengths, duplicate package paths, real zip backslash normalization, execute
+  permissions, manifest retention, monotonic progress, network failures,
   signature-policy blocking, cancellation, and no late writes. Runtime fixtures
-  exercise canonical macOS path aliases and nested Mach-O executable
+  require arm64, reject Intel-only copies and retire old bootstrap candidates;
+  they exercise canonical macOS path aliases and nested Mach-O executable
   dependencies. Approval tests use isolated fixtures only: exact SHA-256
   receipts, signature/policy-failure rejection, stale candidates, changed
   resources, private copies, quarantine scope, same-path retry/relaunch, and
   explicit discard. An installation-to-downloader regression launches the
   published executable through the real PTY downloader and asserts imported
   manifest and media bytes. Fixtures do not prove that Valve's current
-  distribution passes this Mac's policy.
+  distribution passes this Mac's policy; the opt-in `SteamCMDLiveInstallTests`
+  checks that separately using a temporary native package install and no-login
+  smoke run (see [README.md](README.md#opt-in-layers)).
 - **GitHub updates** — fixture JSON, a fake client and isolated URLSession
   responses: version comparison, disk-image asset selection, host allowlisting,
   progress clamping, classified errors and install retry/timeout. A missing latest

@@ -102,9 +102,10 @@ when no manual or explicitly requested desktop check was performed.
       rejects a copy. Global Gatekeeper and signature checks stay enabled;
       updated bytes require another approval.
 - [ ] An official no-login installation smoke uses a disposable support root and
-      the production providers, stops on any Gatekeeper, Rosetta or signature
-      block, and never approves a prompt, re-signs downloaded code, or removes
-      quarantine automatically.
+      the production providers, stops on any Gatekeeper, architecture or signature
+      block, and never approves a prompt or re-signs downloaded code. The
+      installation candidate stays quarantined; only the validated disposable
+      execution copy has its download marks cleared, just as for downloads.
 
 ## Download queue
 

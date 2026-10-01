@@ -249,7 +249,20 @@ unknown total is indeterminate rather than 0%. Installation failure retains its
 details and offers **Try again**, unless the retained copy needs explicit
 approval first.
 
-Signature, dependency and Rosetta checks remain required. Because official
+Setup downloads Valve's HTTPS `client/steam_cmd_osx` package manifest and installs
+its universal runtime packages directly. It verifies each package's SHA-256,
+SHA-1 filename and size before safe extraction, normalizes Valve's backslash
+paths, restores execute permissions and quarantines the extracted files. The
+manifest is retained as `package/steam_cmd_osx.manifest`. No Intel bootstrap or
+Valve updater is run, and Rosetta is not needed. Every runtime Mach-O must carry
+an arm64 slice; all setup and download launches require native execution.
+Existing Intel-only copies offer **Install SteamCMD**, with confirmation before
+replacing the old installation. Retained candidates from the retired bootstrap
+installer are discarded so installation can restart natively. Valve changing or
+removing this manifest can block new installs; malformed or missing packages
+fail closed without replacing a working copy.
+
+Signature, dependency and Gatekeeper checks remain required. Because official
 signed SteamCMD is a command-line tool, one-click **Install SteamCMD** does not
 wait for an extra Allow step once Valve's signature checks pass. Copies that
 Gatekeeper actually rejects stay at the same path across restarts and retries;
@@ -260,18 +273,21 @@ another approval, and the app never re-signs SteamCMD or silently grants an
 exception. A retained download that is not yet usable can be revealed in Finder
 or discarded from Settings.
 
-If the installed Valve SteamCMD package produces a damaged Breakpad framework
-warning, the in-app setup flow handles it: it detects the incomplete runtime and
-prepares a private complete runtime by running Valve's own updater inside
-private staging. Valve's updater installs a `Breakpad.framework` whose sealed
-resources no longer match its own `CodeResources`, so validation checks the code
-seal dyld actually enforces — once per architecture slice, for every Mach-O
-image in the runtime including that framework — instead of a bundle-wide
-resource verification. The framework is checked before it is ever launched. No
-signature is changed and no system security setting is disabled. Downloads then
-run the prepared runtime with its bootstrap updater inhibited, so a prepared
-complete runtime never self-updates mid-download: update the official runtime
-and repeat setup when a newer version is needed. This is implemented in
+Valve's packages contain a `Breakpad.framework` whose sealed resources no longer
+match its own `CodeResources`, so validation checks the code seal dyld actually
+enforces — once per architecture slice, for every Mach-O image including that
+framework — instead of a bundle-wide resource verification. No signature is
+changed and no system security setting is disabled. Gatekeeper assessment errors
+remain hard failures; the special exit-3 diagnostic for valid non-app code is
+not an assessment error. macOS can still kill a quarantined CLI at launch after
+that valid-non-app assessment. A no-login smoke run therefore uses the same
+validated private copy path as downloads: validate the quarantined source, clear quarantine only
+on a disposable copy, revalidate it, then launch natively. The installation
+candidate stays quarantined and is revalidated before publication.
+
+Downloads and smoke runs use `-inhibitbootstrap`, so a prepared complete runtime
+never self-updates mid-download. Reinstall through setup when a newer version is
+needed. This is implemented in `App/Services/Steam/SteamCMDPackages.swift`,
 `App/Services/Steam/SteamCMDRuntime.swift` and
 `App/Services/Steam/SteamCMDSetupStore.swift`.
 

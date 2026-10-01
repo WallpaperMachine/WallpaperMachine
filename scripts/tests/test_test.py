@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
@@ -47,6 +48,11 @@ class TestXcodebuildCommand(unittest.TestCase):
     def flag(self, name, **kwargs):
         command = runner.xcodebuild_command("S", "T", Path("/tmp/r.xcresult"), **kwargs)
         return command[command.index(name) + 1]
+
+    def test_only_network_opt_in_extends_the_execution_budget(self):
+        for enabled, expected in [("", "90"), ("0", "90"), ("1", "660")]:
+            with self.subTest(enabled=enabled), patch.dict(runner.os.environ, {"WALLPAPER_MACHINE_NETWORK_TESTS": enabled}):
+                self.assertEqual(self.flag("-maximum-test-execution-time-allowance"), expected)
 
     def test_parallel_testing_is_on_by_default_and_can_be_turned_off(self):
         self.assertEqual(self.flag("-parallel-testing-enabled"), "YES")

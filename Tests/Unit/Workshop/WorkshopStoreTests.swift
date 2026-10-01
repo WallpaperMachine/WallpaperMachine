@@ -978,7 +978,6 @@ private struct IntentRuntimeProvider: SteamCMDRuntimeProviding {
     return SteamCMDRuntime(
       rootURL: executable.deletingLastPathComponent(), executableURL: executable)
   }
-  func validateBootstrap(at root: URL) async throws {}
   func prepare(executable: URL, staging: URL) async throws -> URL { executable }
   func validate(at root: URL) async throws {}
 }

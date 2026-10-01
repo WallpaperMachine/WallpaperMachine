@@ -188,7 +188,6 @@ struct UnavailableRuntime: SteamCMDRuntimeProviding {
   func resolve(executable: URL) throws -> SteamCMDRuntime {
     throw WorkshopFailure(message: "fixture")
   }
-  func validateBootstrap(at root: URL) async throws { throw WorkshopFailure(message: "fixture") }
   func prepare(executable: URL, staging: URL) async throws -> URL {
     throw WorkshopFailure(message: "fixture")
   }
@@ -499,7 +498,6 @@ struct PanelRuntime: SteamCMDRuntimeProviding {
     }
     return SteamCMDRuntime(rootURL: executable.deletingLastPathComponent(), executableURL: executable)
   }
-  func validateBootstrap(at root: URL) async throws {}
   func prepare(executable: URL, staging: URL) async throws -> URL { executable }
   func validate(at root: URL) async throws {}
 }

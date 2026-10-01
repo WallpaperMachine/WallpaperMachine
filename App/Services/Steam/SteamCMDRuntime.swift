@@ -10,7 +10,6 @@ struct SteamCMDRuntime: Equatable, Sendable {
 
 protocol SteamCMDRuntimeProviding: Sendable {
     func resolve(executable: URL) throws -> SteamCMDRuntime
-    func validateBootstrap(at root: URL) async throws
     func prepare(executable: URL, staging: URL) async throws -> URL
     func validate(at root: URL) async throws
 }
@@ -18,12 +17,27 @@ protocol SteamCMDRuntimeProviding: Sendable {
 struct SteamCMDApprovalCandidate: Equatable, Sendable {
     let rootURL: URL
     let fingerprint: String
-    let bootstrap: Bool
 }
 
 protocol SteamCMDRuntimeApproving: Sendable {
-    func approvalCandidate(at root: URL, bootstrap: Bool) async throws -> SteamCMDApprovalCandidate
+    func approvalCandidate(at root: URL) async throws -> SteamCMDApprovalCandidate
     func approve(_ candidate: SteamCMDApprovalCandidate) async throws
+}
+
+/// SteamCMD runs only as Apple silicon code: Rosetta is not part of macOS 28's general app
+/// support, so every launch and every validated image must carry an arm64 slice.
+enum SteamCMDArchitecture {
+    static let arm64: UInt32 = 0x0100_000c
+    static let x86_64: UInt32 = 0x0100_0007
+
+    /// Selects only arm64 slices; an image without one fails with EBADARCH instead of being
+    /// translated. Subtype ANY keeps arm64e system tools such as tar and codesign launchable.
+    static func requireNative(_ attributes: inout posix_spawnattr_t?) -> Int32 {
+        var types = [cpu_type_t(bitPattern: arm64)]
+        var subtypes = [cpu_subtype_t(-1)]  // CPU_SUBTYPE_ANY
+        var count = 0
+        return posix_spawnattr_setarchpref_np(&attributes, 1, &types, &subtypes, &count)
+    }
 }
 
 /// External runtimes are read-only except for an explicit, content-bound approval.
@@ -45,20 +59,20 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
         self.approvalDirectory = approvalDirectory
     }
 
-    func approvalCandidate(at root: URL, bootstrap: Bool) async throws -> SteamCMDApprovalCandidate {
+    func approvalCandidate(at root: URL) async throws -> SteamCMDApprovalCandidate {
         guard root.isFileURL else { throw approvalFailure() }
         // Reject a selected root symlink before canonicalizing Apple's /var alias.
         var metadata = stat()
         guard lstat(root.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR else { throw approvalFailure() }
         let canonical = canonicalURL(root)
         let before = try fingerprint(at: canonical)
-        try await validate(root: canonical, bootstrap: bootstrap, preparingApproval: true)
+        try await validate(root: canonical, preparingApproval: true)
         guard try fingerprint(at: canonical) == before else { throw approvalFailure() }
-        return SteamCMDApprovalCandidate(rootURL: canonical, fingerprint: before, bootstrap: bootstrap)
+        return SteamCMDApprovalCandidate(rootURL: canonical, fingerprint: before)
     }
 
     func approve(_ candidate: SteamCMDApprovalCandidate) async throws {
-        let current = try await approvalCandidate(at: candidate.rootURL, bootstrap: candidate.bootstrap)
+        let current = try await approvalCandidate(at: candidate.rootURL)
         guard current == candidate else { throw approvalFailure() }
         let receipts = canonicalURL(approvalDirectory)
         guard receipts != candidate.rootURL, !contained(receipts, in: candidate.rootURL) else { throw approvalFailure() }
@@ -67,7 +81,7 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
         defer { close(directory) }
         _ = try readApproval(candidate.fingerprint, directory: directory)
         _ = try fingerprint(at: candidate.rootURL, removingQuarantine: true)
-        let after = try await approvalCandidate(at: candidate.rootURL, bootstrap: candidate.bootstrap)
+        let after = try await approvalCandidate(at: candidate.rootURL)
         guard after == candidate else { throw approvalFailure() }
         try saveApproval(candidate.fingerprint, directory: directory)
     }
@@ -277,19 +291,18 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
         _ = try regularFile(binary)
         let images = try MachO.read(binary)
         guard !images.isEmpty, images.allSatisfy({ $0.fileType == 2 }),
-              images.contains(where: { $0.cpu == 0x01000007 || $0.cpu == 0x0100000c }),
+              images.contains(where: { $0.cpu == SteamCMDArchitecture.x86_64 || $0.cpu == SteamCMDArchitecture.arm64 }),
               FileManager.default.isExecutableFile(atPath: binary.path) else {
             throw issue(.invalidSelection, "\(binary.path) is not a macOS Mach-O SteamCMD executable.")
+        }
+        guard images.contains(where: { $0.cpu == SteamCMDArchitecture.arm64 }) else {
+            throw appleSiliconIssue(binary)
         }
         return SteamCMDRuntime(rootURL: root, executableURL: binary)
     }
 
-    func validateBootstrap(at root: URL) async throws {
-        try await validate(root: root, bootstrap: true)
-    }
-
     func validate(at root: URL) async throws {
-        try await validate(root: root, bootstrap: false)
+        try await validate(root: root, preparingApproval: false)
     }
 
     func prepare(executable: URL, staging: URL) async throws -> URL {
@@ -336,7 +349,7 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
         return URL(fileURLWithPath: String(text[range]))
     }
 
-    private func validate(root: URL, bootstrap: Bool, preparingApproval: Bool = false) async throws {
+    private func validate(root: URL, preparingApproval: Bool) async throws {
         try Task.checkCancellation()
         let canonical = canonicalURL(root)
         var rootStat = stat()
@@ -345,13 +358,9 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
         }
         let descriptor = try resolve(executable: canonical.appendingPathComponent("steamcmd"))
         guard descriptor.rootURL == canonical else { throw issue(.incompleteRuntime, "Unexpected SteamCMD runtime layout.") }
-        // The official updater needs the script; legacy private runtimes execute the binary directly.
-        if bootstrap { _ = try regularFile(canonical.appendingPathComponent("steamcmd.sh")) }
         _ = try regularFile(canonical.appendingPathComponent("crashhandler.dylib"))
-        if !bootstrap {
-            do { _ = try regularFile(canonical.appendingPathComponent("steamconsole.dylib")) }
-            catch { throw issue(.incompleteRuntime, "SteamCMD at \(root.path) needs to finish installation: steamconsole.dylib is missing, empty, or unreadable.") }
-        }
+        do { _ = try regularFile(canonical.appendingPathComponent("steamconsole.dylib")) }
+        catch { throw issue(.incompleteRuntime, "SteamCMD at \(root.path) needs to finish installation: steamconsole.dylib is missing, empty, or unreadable.") }
         let framework = canonical.appendingPathComponent("Frameworks/Breakpad.framework", isDirectory: true)
         var frameworkStat = stat()
         guard lstat(framework.path, &frameworkStat) == 0, frameworkStat.st_mode & S_IFMT == S_IFDIR else {
@@ -364,17 +373,23 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
             if lstat(url.path, &metadata) == 0 { try inspect(url, root: canonical, binaries: &binaries) }
             else if errno != ENOENT { throw issue(.incompleteRuntime, "Cannot inspect \(url.path).") }
         }
-        for name in bootstrap ? ["steamcmd", "crashhandler.dylib"] : ["steamcmd", "crashhandler.dylib", "steamconsole.dylib"] {
+        for name in ["steamcmd", "crashhandler.dylib", "steamconsole.dylib"] {
             guard binaries[canonicalURL(canonical.appendingPathComponent(name))] != nil else {
                 throw issue(.incompleteRuntime, "\(name) is not a valid Mach-O runtime component.")
             }
         }
+        // Any image without arm64 code could only ever run translated, so the whole copy is
+        // treated as an Intel build that a native reinstall replaces.
+        if let intel = binaries.keys.sorted(by: { $0.path < $1.path }).first(where: { binary in
+            !(binaries[binary] ?? []).contains { $0.cpu == SteamCMDArchitecture.arm64 }
+        }) {
+            throw appleSiliconIssue(intel)
+        }
         let frameworkBinary = canonicalURL(framework.appendingPathComponent("Breakpad"))
         guard let frameworkImages = binaries[frameworkBinary] else { throw issue(.incompleteRuntime, "Breakpad.framework has no valid Mach-O binary.") }
-        let executableImages = binaries[descriptor.executableURL] ?? []
         try validateDependencies(binaries, runtime: descriptor)
         let verifiedFingerprint = try fingerprint(at: canonical)
-        // Valve rules out both a bundle-wide and a whole-file verification: their updater installs a
+        // Valve rules out both a bundle-wide and a whole-file verification: their packages contain a
         // Breakpad.framework whose sealed Headers/Breakpad.h no longer matches its own CodeResources,
         // and steamclient.dylib keeps unsigned bytes in its fat-header padding, which fails a universal
         // verify while every slice verifies. Check the code seal dyld actually enforces, once per slice,
@@ -407,13 +422,11 @@ struct SteamCMDRuntimeService: SteamCMDRuntimeProviding, SteamCMDRuntimeApprovin
                 }
             }
         }
-        #if arch(arm64)
-        if !preparingApproval, !executableImages.contains(where: { $0.cpu == 0x0100000c }), executableImages.contains(where: { $0.cpu == 0x01000007 }) {
-            let status = try await runSystem("/usr/bin/arch", ["-x86_64", "/usr/bin/true"], root: canonical).status
-            guard status == 0 else { throw issue(.rosettaRequired, "This SteamCMD installation requires Rosetta. Follow Apple’s Rosetta installation guidance, then Retry.") }
-        }
-        #endif
         try Task.checkCancellation()
+    }
+
+    private func appleSiliconIssue(_ image: URL) -> SteamCMDSetupIssue {
+        issue(.appleSiliconRequired, "This SteamCMD copy is built for Intel Macs only (\(image.lastPathComponent)). Reinstall SteamCMD to get Valve’s Apple silicon version.")
     }
 
     private func validateDependencies(_ binaries: [URL: [MachO.Image]], runtime: SteamCMDRuntime) throws {

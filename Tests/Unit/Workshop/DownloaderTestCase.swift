@@ -295,7 +295,6 @@ struct ShellRuntimeProvider: SteamCMDRuntimeProviding {
     return binary
   }
 
-  func validateBootstrap(at root: URL) async throws { try check(root) }
   func validate(at root: URL) async throws { try check(root) }
 
   private func check(_ root: URL) throws {
@@ -317,7 +316,7 @@ struct FixtureSystemAssessment: SteamCMDProcessRunning {
     executable: URL, arguments: [String], workingDirectory: URL, environment: [String: String],
     onOutput: @escaping @Sendable (Data) -> Void
   ) async throws -> Int32 {
-    guard ["/usr/bin/codesign", "/usr/sbin/spctl", "/usr/bin/arch"].contains(executable.path) else {
+    guard ["/usr/bin/codesign", "/usr/sbin/spctl"].contains(executable.path) else {
       throw WorkshopFailure(message: "The fixture must not execute a runtime program")
     }
     try Task.checkCancellation()

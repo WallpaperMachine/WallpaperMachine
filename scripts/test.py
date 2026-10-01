@@ -13,7 +13,7 @@ iteration on a small change; the full gate is still the default and the final wo
 
 Opt-in layers are off by default and are requested through the environment:
 `WALLPAPER_MACHINE_MEDIA_TESTS=1` (real video decoding) and
-`WALLPAPER_MACHINE_NETWORK_TESTS=1` (live Steam pages).
+`WALLPAPER_MACHINE_NETWORK_TESTS=1` (live Steam pages and temporary native SteamCMD install).
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -67,7 +67,10 @@ def xcodebuild_command(scheme, target, result, only=None, parallel=True):
     # staging tree. Most of the wall clock is spent waiting on debounce intervals and
     # child-process reaping, which overlaps well.
     command += ["-parallel-testing-enabled", "YES" if parallel else "NO"]
-    command += ["-maximum-test-execution-time-allowance", "90", "-test-timeouts-enabled", "YES", "test"]
+    # A real CDN install includes downloads and system security assessments. Keep the
+    # routine gate bounded tightly; only the explicitly opted-in layer gets more time.
+    allowance = "660" if os.environ.get("WALLPAPER_MACHINE_NETWORK_TESTS") == "1" else "90"
+    command += ["-maximum-test-execution-time-allowance", allowance, "-test-timeouts-enabled", "YES", "test"]
     return command
 
 

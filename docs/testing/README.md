@@ -64,7 +64,7 @@ with an installed newer interpreter (for example, `python3.12`).
 | Swift unit/integration | `Tests/Unit/<Domain>/` | `python3 scripts/test.py` (`WallpaperMachineTests`); `--only <TestClass>` for a subset |
 | XCUITest (desktop) | `Tests/UI/` | `python3 scripts/test.py --ui` — opt-in only |
 | Media/device integration | `Tests/Unit/NativeVideo/` | `WALLPAPER_MACHINE_MEDIA_TESTS=1 python3 scripts/test.py` — opt-in only |
-| Live Steam pages | `Tests/Unit/Workshop/WorkshopTests.swift` | `WALLPAPER_MACHINE_NETWORK_TESTS=1 python3 scripts/test.py` — opt-in only |
+| Live Steam pages / native SteamCMD install | `Tests/Unit/Workshop/WorkshopTests.swift`, `Tests/Unit/Steam/SteamCMDLiveInstallTests.swift` | `WALLPAPER_MACHINE_NETWORK_TESTS=1 python3 scripts/test.py` — opt-in only |
 | Rust crates | `upstream/renderer/crates/` | `cargo test --release -p wallpaper-core --lib`, `cargo test --release -p wallpaper-bridge --lib`, `cargo test -p shader --test pipeline -- --nocapture` |
 | C++ renderer tests | `upstream/renderer/external/open-wallpaper-engine` | `python3 scripts/check_renderer.py` builds and runs a fixed list: the script's `cmake --build … --target` build list and its `for binary in` run list. `scene_schema_tests`, `script_runtime_compat_test`, `mouse_input_test` and `audio_tests` are not in that list: build them in `artifacts/renderer/bin` with `cmake --build artifacts/renderer/bin --target <name>` and run `artifacts/renderer/bin/tests/<name>`; see [renderer.md](renderer.md#ccmake-test-binaries) |
 | Headless GPU probes | same CMake tree | explicitly invoked executables (`offscreen_scene_probe`, `scene_reload_cycle_probe`, `playback_gpu_test`, `wpdump`); see [renderer.md](renderer.md) |
@@ -118,6 +118,16 @@ invites a pointless re-run.
   `WorkshopStoreTests`, so only the assumption that Valve still serves that
   shape goes untested by default. Run them before a release, after touching the
   Workshop parser, and whenever search results look wrong in the app.
+  `SteamCMDLiveInstallTests/testLiveNativePackageInstall` also downloads Valve's
+  package manifest and runtime into a temporary support directory, using the real
+  setup store, signature/Gatekeeper checks and native no-login smoke run. It
+  asserts Ready, arm64 availability and successful Steam API initialization;
+  no saved session or real installed SteamCMD is read or changed. Run it after
+  setup/runtime changes with `WALLPAPER_MACHINE_NETWORK_TESTS=1 python3
+  scripts/test.py --only SteamCMDLiveInstallTests`. Network opt-in raises the
+  per-test execution ceiling to 660 seconds for downloads and system assessment;
+  the routine ceiling stays at 90 seconds. A cached-account login or Workshop
+  download remains a separate explicitly authorized check, never part of this test.
 
 Both are forwarded into the test host by `scripts/test.py`; setting them in your
 shell is enough. A skipped test is not a passing test — read the skip lines
