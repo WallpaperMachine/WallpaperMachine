@@ -7,6 +7,8 @@ import XCTest
 @MainActor
 private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
     var pictures: [DesktopPictureTarget: DesktopPicture] = [:]
+    /// Public NSWorkspace results, which may resolve an empty per-Space selection.
+    var visiblePictures: [String: DesktopPicture] = [:]
     var writes: [DesktopPictureTarget] = []
     var failures: Set<DesktopPictureTarget> = []
     /// Listed by `targets()`, but their current picture cannot be read.
@@ -20,7 +22,8 @@ private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
             .sorted { ($0.display + ($0.space ?? "")) < ($1.display + ($1.space ?? "")) }
     }
     func currentPicture(target: DesktopPictureTarget) -> DesktopPicture? {
-        unreadable.contains(target) ? nil : pictures[target]
+        if target.space == nil, let visible = visiblePictures[target.display] { return visible }
+        return unreadable.contains(target) ? nil : pictures[target]
     }
     func setPicture(_ picture: DesktopPicture, target: DesktopPictureTarget) throws {
         if failures.contains(target) { throw CocoaError(.fileWriteNoPermission) }
@@ -182,21 +185,48 @@ final class DesktopWallpaperTests: XCTestCase {
     }
 
     @MainActor
-    func testInheritedNativeSelectionSynchronizesAndRestoresAcrossRelaunch() throws {
+    func testInheritedNativeSelectionCapturesEffectiveWallpaperBeforeAnyWrite() throws {
         let workspace = MemoryDesktopWorkspace()
-        let before = try DesktopSpaceWallpaperAPI.decodePicture([:])
-        XCTAssertFalse(before.url.isFileURL)
-        XCTAssertTrue(try DesktopSpaceWallpaperAPI.configuration(before).isEmpty)
-        workspace.pictures = [one: before, two: before]
+        let inherited = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        workspace.pictures = [one: inherited, two: inherited, external: inherited]
+        workspace.visiblePictures = ["1": original("primary"), "2": original("external")]
+        // macOS's fallback changes with the first poster, including defaults
+        // that another Space/display might inherit. Capture both beforehand.
+        workspace.didWrite = {
+            workspace.visiblePictures = ["1": workspace.pictures[self.one]!, "2": workspace.pictures[self.one]!]
+        }
         let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
-        try ledger.synchronize(posters: ["1": Data([1, 2, 3])], liveDisplays: ["1"])
+        try ledger.synchronize(posters: ["1": Data([1]), "2": Data([2])], liveDisplays: ["1", "2"])
         XCTAssertTrue(try XCTUnwrap(workspace.pictures[one]).url.isFileURL)
         XCTAssertEqual(workspace.pictures[one], workspace.pictures[two])
+        workspace.didWrite = nil
         let reloaded = try DesktopWallpaperLedger(folder: root, workspace: workspace)
         try reloaded.restoreAll()
-        XCTAssertEqual(workspace.pictures[one], before)
-        XCTAssertEqual(workspace.pictures[two], before)
-        XCTAssertTrue(try DesktopSpaceWallpaperAPI.configuration(XCTUnwrap(workspace.pictures[one])).isEmpty)
+        XCTAssertEqual(workspace.pictures[one], original("primary"))
+        XCTAssertEqual(workspace.pictures[two], original("primary"))
+        XCTAssertEqual(workspace.pictures[external], original("external"))
+    }
+
+    @MainActor
+    func testUnresolvedInheritedWallpaperIsNeverReplacedByAPoster() throws {
+        let workspace = MemoryDesktopWorkspace()
+        let inherited = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        workspace.pictures = [one: inherited, two: inherited]
+        // An already stranded frame is not an original either.
+        workspace.visiblePictures = ["1": .poster(root.appendingPathComponent("old-poster.png"))]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        XCTAssertThrowsError(try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"]))
+        XCTAssertTrue(workspace.writes.isEmpty)
+        XCTAssertEqual(workspace.pictures[one], inherited)
+        XCTAssertEqual(workspace.pictures[two], inherited)
+        XCTAssertTrue(try posterNames().isEmpty)
+
+        // Once a real original is available, playback can synchronize again.
+        workspace.visiblePictures["1"] = original("chosen-again")
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"])
+        try ledger.restoreAll()
+        XCTAssertEqual(workspace.pictures[one], original("chosen-again"))
+        XCTAssertEqual(workspace.pictures[two], original("chosen-again"))
     }
 
     @MainActor
@@ -242,6 +272,43 @@ final class DesktopWallpaperTests: XCTestCase {
         XCTAssertEqual(workspace.pictures[three], original("before"))
         XCTAssertEqual(workspace.pictures[external], original("user-choice"))
         XCTAssertFalse(workspace.writes.contains(external))
+    }
+
+    @MainActor
+    func testLegacyInheritedJournalIsRepairedEvenWhenFrameHasNotChanged() throws {
+        let inherited = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(inherited)) as? [String: Any])
+        try JSONSerialization.data(withJSONObject: [
+            "old.png": ["original": encoded, "display": "1"]
+        ]).write(to: root.appendingPathComponent("originals.json"))
+        let old = root.appendingPathComponent("old.png")
+        try Data([1]).write(to: old)
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: .poster(old)]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        XCTAssertThrowsError(try ledger.restoreAll(), "An empty original is not a successful restoration")
+        XCTAssertTrue(workspace.writes.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
+
+        workspace.visiblePictures["1"] = original("recovered")
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"])
+        XCTAssertNotEqual(workspace.pictures[one]?.url, old)
+        workspace.visiblePictures = [:]
+        let reloaded = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try reloaded.restoreAll()
+        XCTAssertEqual(workspace.pictures[one], original("recovered"))
+    }
+
+    @MainActor
+    func testEffectiveWallpaperDoesNotReplaceIndependentSpaceOriginals() throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        workspace.visiblePictures["1"] = original("visible")
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"])
+        try ledger.restoreAll()
+        XCTAssertEqual(workspace.pictures[one], original("one"))
+        XCTAssertEqual(workspace.pictures[two], original("two"))
     }
 
     @MainActor
@@ -566,7 +633,7 @@ final class DesktopWallpaperTests: XCTestCase {
     @MainActor
     func testNativeHandoffPreservesPosterAndJournalWithoutLegacyRestore() async throws {
         let workspace = MemoryDesktopWorkspace()
-        let before = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        let before = original("before")
         workspace.pictures = [one: before]
         let center = NotificationCenter(), layer = CAMetalLayer()
         let encoder = ControlledPosterEncoder()
@@ -585,8 +652,8 @@ final class DesktopWallpaperTests: XCTestCase {
         let poster = try XCTUnwrap(workspace.pictures[one])
         post(delayed, layer: layer, center: center)
         try await waitFor(encoder, data: delayed)
-        // The real legacy API rejects restoring an empty native selection.
-        // Handoff must not call it, delete the poster, or forget its original.
+        // Handoff must not restore through the legacy API, delete the poster,
+        // or forget its original while the native provider owns the desktop.
         workspace.failures = [one]
         sync.suspendForNativeProvider()
         await encoder.finish(delayed)

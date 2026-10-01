@@ -77,9 +77,10 @@ final class DesktopSpaceWallpaperAPI {
         return try Self.decodePicture(config)
     }
 
-    /// An empty dictionary is a real native selection (inherited/default), not
-    /// an unavailable display. Keep it verbatim so restoration does not flatten
-    /// a linked/dynamic wallpaper into a guessed DefaultDesktop.heic image.
+    /// An empty dictionary is an inherited/default selection, not an
+    /// unavailable display. Preserve that distinction; the ledger must resolve
+    /// its effective image before replacing it, since writing back an empty
+    /// dictionary does not undo a poster on modern macOS.
     static func decodePicture(_ config: [String: Any]) throws -> DesktopPicture {
         let data = try PropertyListSerialization.data(fromPropertyList: config, format: .binary, options: 0)
         let path = config["ImageFilePath"] as? String

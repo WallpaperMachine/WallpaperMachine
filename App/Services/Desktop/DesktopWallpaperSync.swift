@@ -238,6 +238,6 @@ final class DesktopWallpaperSync {
 
     private func report(_ error: Error) {
         // A native-poster failure must not stop live playback or show a modal.
-        NSLog("[WE] Native desktop poster sync failed: %@", error.localizedDescription)
+        AppLog.error("Native desktop poster sync failed: \(error.localizedDescription)")
     }
 }

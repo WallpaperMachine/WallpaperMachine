@@ -193,12 +193,15 @@ Swift tests cover, without starting the app:
   without a poster still requests it, legacy journal migration,
   relaunch recovery, external wallpaper changes, and write failures. Topology
   and native option/path translation use fixtures, including empty
-  inherited/default native selections, exact pathless-option restoration across
-  relaunch, rejected native acknowledgements, and unreadable-original errors.
-  Empty native dictionaries are retained verbatim only when no desktop has a
-  real wallpaper; otherwise an inherited desktop, one journaled as inherited by
-  an older build and an unjournaled poster restore the display's (else any
-  display's) real original. Coordinator tests use unattached
+  inherited/default native selections, rejected native acknowledgements, and
+  unreadable-original errors. Empty per-Space selections resolve through the
+  public API before any poster write, preserving independent display originals
+  even when a write also changes inherited defaults. If no original resolves,
+  synchronization refuses to replace the system wallpaper. A legacy empty
+  journal reports failed restoration and can be repaired from a real original
+  even when the frame is unchanged; relaunch then restores that original.
+  Per-Space originals still take precedence over public-API fallbacks, and
+  external user choices survive restoration. Coordinator tests use unattached
   `CAMetalLayer`s and injected notification/encoding services.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
   Mode and thermal readings and a private notification center: Low Power Mode

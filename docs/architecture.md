@@ -173,10 +173,14 @@ Swift keeps the *system* wallpaper consistent with that window:
 - `DesktopWallpaperLedger` journals the user's original per-Space `DesktopPicture` (including the
   opaque native options blob) before anything is replaced, so the original wallpaper can be
   restored. A pathless (inherited) selection or a poster cannot bring the user's wallpaper back,
-  because what it inherits from shows posters too; such a desktop, and one showing a poster with
-  no journal entry, gets the display's first real original in Space order instead (then any
-  display's). It deletes posters no readable desktop shows, keeping only the newest few on a
-  display where some desktop could not be seen or read.
+  because what it inherits from shows posters too. Before any write, the ledger resolves each
+  display's first real per-Space original, then its effective image through `NSWorkspace`, then
+  its saved journal (finally another display's original). An inherited desktop or unjournaled
+  poster uses that snapshot. With no recoverable original, it leaves the system selection
+  untouched and reports the failure through `AppLog`; live playback continues without new
+  posters. An older journal containing only empty originals cannot recover the user's previous
+  choice: the user must select it again in System Settings. It deletes posters no readable
+  desktop shows, keeping only the newest few on a display where some desktop could not be read.
 - `DesktopWallpaperSync` encodes real renderer output into a PNG poster
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
   matches the animated one; a Space change or wake re-applies the existing poster instead of

@@ -2008,6 +2008,9 @@
     "The preview image is too large to use as a thumbnail." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The preview image is too large to use as a thumbnail."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プレビュー画像が大きすぎるため、サムネイルとして使用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预览图太大，无法用作缩略图。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預覽圖太大，無法用作縮圖。"}}}
     },
+    "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings." : {
+      "localizations" : {"en": {"stringUnit": {"state": "translated", "value": "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings."}}, "ja": {"stringUnit": {"state": "translated", "value": "元のmacOSの壁紙を復元できませんでした。システム設定で壁紙を選び直してください。"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法恢复原来的 macOS 壁纸。请在系统设置中重新选择壁纸。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法還原原本的 macOS 桌布。請在系統設定中重新選擇桌布。"}}}
+    },
     "The preview image could not be decoded." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The preview image could not be decoded."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プレビュー画像をデコードできませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法解码预览图。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法解碼預覽圖。"}}}
     },
