@@ -39,7 +39,8 @@ Display-topology refreshes stage the next complete configuration before replacin
 the previous one; they do not publish an empty manifest between a one-display
 and two-display mapping. Staging does not clear the committed enabled state.
 That flag stays until the new mapping's first frame is acknowledged, or until
-deactivation rolls a real failure back to disabled and clears the manifest.
+deactivation rolls a real failure back to disabled. A lock-screen acknowledgement
+timeout can retain an independently selected screen saver, as described below.
 If Core Graphics temporarily cannot resolve a display
 still named by the bridge during wake or a lid change, the committed manifest
 and native selection stay untouched. That gap is not an error. While no earlier
@@ -47,8 +48,8 @@ error is pending, the existing status monitor retries the same scene set once
 the topology settles; an unchanged mapping is reconciled and not republished.
 A real earlier compatibility or restoration error is left in place, and the
 monitor stays stopped until an explicit retry succeeds — the gap must not
-clear that error just to resume polling. Removing the last wallpaper, explicit
-disable and actual publication/readiness failure recovery still clear the
+clear that error just to resume polling. Removing the last wallpaper, disabling
+both modes, and shared publication/renderer failure recovery still clear the
 manifest. If macOS reacquires the same
 WallpaperID on the same physical display at a different size or scale, the
 extension keeps its remote context and backing frame while rebuilding the
@@ -109,9 +110,24 @@ or recovery, unless a later external choice needs to be kept.
 “Selected” means the native choice was committed, not that a screen saver has
 already started rendering. macOS may acquire an Idle-only surface only when it
 starts the screen saver. A later renderer failure is shown beside the setting,
-and restoration preserves choices changed elsewhere. Both modes share the
-publisher and recovery path; a publication or renderer failure can roll back
-both native selections.
+and restoration preserves choices changed elsewhere. If both modes are requested
+and the lock-screen frame acknowledgement times out, only Desktop is restored;
+the app publishes a new Idle-only revision and keeps the screen saver selected.
+This also applies when restoring saved preferences after an update or relaunch:
+the user need not turn off the lock-screen switch to retain the screen saver.
+The lock-screen error remains visible without turning off a previously saved
+lock-screen preference. Automatic updates keep the screen saver's wallpapers and
+pause state current, but do not retry the failed lock screen. Its **Retry** action
+or explicitly enabling its switch starts a new lock-screen attempt. Late reports
+for the abandoned revision cannot overwrite the screen saver's current state.
+Retry preserves the last committed display mapping. If a display UUID is temporarily
+unavailable during wake, turning the screen saver off still restores its Idle choice
+immediately rather than waiting for that display lookup to recover.
+
+Both modes still share the publisher and extension. Configuration-loading errors,
+incompatible extension copies, reported renderer failures, and failed publication
+or restoration can roll back both selections. Retaining the Idle selection after
+a lock-screen timeout does not establish that macOS has started rendering it.
 
 Web and still wallpapers use a live WebKit layer tree, not a recorded video or a
 periodic screenshot. Only their staged project and referenced imports are granted
@@ -188,14 +204,17 @@ also restores native selections, but resumes live desktop playback afterward.
 
 ## Background checks and recovery
 
-The service keeps one two-second monitor while either mode is requested,
-recovery is complete, shutdown has not begun, and no error is pending. Busy
-refreshes keep that timer but skip its work. An active request with no wallpapers
-still checks for a later wallpaper; disabling both modes or shutting down cancels
-the timer immediately. An error stops automatic monitoring until an explicit retry or
-another existing refresh path succeeds. A pending display-identity lookup does
-not clear that error and does not by itself start the monitor. With no error,
-the same timer retries an unchanged scene set when the identity resolves.
+The service keeps one two-second monitor while a mode can still refresh safely,
+recovery is complete, and shutdown has not begun. Busy refreshes keep that timer
+but skip its work. An active request with no wallpapers still checks for a later
+wallpaper; disabling both modes or shutting down cancels the timer immediately.
+A shared error stops automatic monitoring until an explicit retry or another
+existing refresh path succeeds. A lock-screen-only acknowledgement timeout does
+not stop monitoring the retained screen saver, and those checks never restart
+the failed lock-screen attempt. Disabling the screen saver in that state stops
+the monitor until either mode is explicitly reactivated. A pending display-identity
+lookup does not clear an error and does not by itself start the monitor. With no
+error, the same timer retries an unchanged scene set when the identity resolves.
 
 Recovery entries represent the last successful journal commit. Repeated checks
   do not rewrite an unchanged journal, but still read the actual system store to
