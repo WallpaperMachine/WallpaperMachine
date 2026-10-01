@@ -204,7 +204,8 @@ Recovery entries represent the last successful journal commit. Repeated checks
 still require a wallpaper-service reload without rewriting the journal. The
 recovery union is persisted before changing the store, and pruned only after a
 successful reload; failed writes, reloads or journal removal retain recovery
-information for retry.
+information for retry. A malformed saved linked or inherited baseline fails
+recovery before changing the store or removing the journal.
 
 macOS copies the extension's selection into the fallbacks it reloads
 (`SystemDefault` and each Space's `Default`), and a Space created while the

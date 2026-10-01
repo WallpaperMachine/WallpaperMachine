@@ -167,13 +167,23 @@ final class LockScreenWallpaperSelection {
       var node = existing ?? [:]
       var linkedOriginal: [String: Any]?
       if let data = prior?.linkedOriginal {
-        linkedOriginal = try PropertyListSerialization.propertyList(from: data, format: nil)
+        guard let decoded = try PropertyListSerialization.propertyList(from: data, format: nil)
           as? [String: Any]
+        else {
+          throw LockScreenWallpaperFailure(
+            message: String(localized: "The native wallpaper restoration journal is invalid."))
+        }
+        linkedOriginal = decoded
       }
       var inheritedOriginal: [String: Any]?
       if let data = prior?.inheritedOriginal {
-        inheritedOriginal = try PropertyListSerialization.propertyList(from: data, format: nil)
+        guard let decoded = try PropertyListSerialization.propertyList(from: data, format: nil)
           as? [String: Any]
+        else {
+          throw LockScreenWallpaperFailure(
+            message: String(localized: "The native wallpaper restoration journal is invalid."))
+        }
+        inheritedOriginal = decoded
       }
       if prior == nil, !desired.isEmpty {
         if Self.defaultLinkedChoice(node) != nil {

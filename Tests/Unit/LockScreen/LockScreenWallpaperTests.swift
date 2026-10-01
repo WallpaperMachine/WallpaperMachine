@@ -862,6 +862,58 @@ final class LockScreenWallpaperTests: XCTestCase {
   }
 
   @MainActor
+  func testInvalidLinkedOriginalPreservesStoreAndRecoveryJournal() throws {
+    try assertInvalidBaselinePreservesRecovery(field: "linkedOriginal", linked: true)
+  }
+
+  @MainActor
+  func testInvalidInheritedOriginalPreservesStoreAndRecoveryJournal() throws {
+    try assertInvalidBaselinePreservesRecovery(field: "inheritedOriginal", linked: false)
+  }
+
+  @MainActor
+  private func assertInvalidBaselinePreservesRecovery(field: String, linked: Bool) throws {
+    let invalidPayloads = [
+      try PropertyListSerialization.data(fromPropertyList: ["not a dictionary"], format: .binary, options: 0),
+      Data("not a property list".utf8),
+    ]
+    for payload in invalidPayloads {
+      let displays: [String: Any] = linked ? ["one": linkedDefault()] : [:]
+      let original: [String: Any] = [
+        "SystemDefault": node("system"),
+        "Displays": displays,
+        "Spaces": [String: Any](),
+      ]
+      try write(original)
+      let selection = LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {})
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: [])
+      let validJournal = try Data(contentsOf: journal)
+      let selectedStore = try Data(contentsOf: store)
+      var saved = try XCTUnwrap(PropertyListSerialization.propertyList(
+        from: validJournal, format: nil) as? [[String: Any]])
+      let index = try XCTUnwrap(saved.firstIndex { $0["path"] as? [String] == ["Displays", "one"] })
+      XCTAssertNotNil(saved[index][field])
+      saved[index][field] = payload
+      let invalidJournal = try PropertyListSerialization.data(fromPropertyList: saved, format: .binary, options: 0)
+      try invalidJournal.write(to: journal, options: .atomic)
+
+      var reloads = 0
+      let recovered = LockScreenWallpaperSelection(
+        storeURL: store, journalURL: journal, reload: { reloads += 1 })
+      XCTAssertThrowsError(try recovered.recover())
+      XCTAssertEqual(try Data(contentsOf: store), selectedStore)
+      XCTAssertEqual(try Data(contentsOf: journal), invalidJournal)
+      XCTAssertEqual(reloads, 0)
+
+      try validJournal.write(to: journal, options: .atomic)
+      try recovered.recover()
+      XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+      XCTAssertEqual(reloads, 1)
+    }
+  }
+
+  @MainActor
   func testDecodedEmptyJournalIsRemovedAndMalformedJournalIsPreserved() throws {
     try write(fixture())
     try PropertyListEncoder().encode([String]()).write(to: journal)

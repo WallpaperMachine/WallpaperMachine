@@ -247,7 +247,8 @@ Swift tests cover, without starting the app:
   exact linked restoration after disable or reload failure, preservation of
   later global Desktop/Idle edits, complete Desktop/Idle fields in synthesized
   display and Space overrides when either mode runs alone, and removal of those
-  overrides on recovery while preserving external edits,
+  overrides on recovery while preserving external edits, rejection of malformed
+  linked/inherited baselines without store writes, journal loss or service reload,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/
