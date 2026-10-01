@@ -8,6 +8,64 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.2 — 2026-10-01
+
+### English
+
+This release adds wallpaper collections, playlists, presets and settings backups, and fixes several problems with restoring your original desktop and lock screen wallpapers
+
+#### Breaking changes
+
+- Workshop downloads now require a Steam account that owns Wallpaper Engine, and you can check again after buying it
+
+#### New
+
+- Organize installed wallpapers into your own collections and reusable playlists
+- Save wallpaper properties as named presets, apply them anytime and exchange them with others
+- Back up your settings and, optionally, your wallpaper files, then preview a restore before applying it and undo it if needed
+- Mute web wallpapers and adjust media volume
+- Position and zoom imported images separately on each display
+- Choose which displays an action applies to in Shortcuts
+- Wallpapers now come with an explanation of their compatibility
+
+#### Fixed
+
+- Quitting now restores your original wallpaper on each display and Space, even after a relaunch, and leaves the system wallpaper alone when no original can be recovered
+- Quitting now waits for your original wallpaper to be restored and is cancelled with an error if restoring fails, instead of leaving a still frame behind
+- After a cancelled quit, the desktop still frame resumes updating without needing another wallpaper or settings change
+- The experimental animated lock screen can now be turned on when macOS shares its default wallpaper between the lock screen and screen saver
+- Turning on only the experimental lock screen no longer times out when a Space inherits its wallpaper, and your screen saver choice is kept
+- When lock screen wallpaper recovery fails because of damaged saved data, your wallpapers and recovery data are now kept so recovery can be retried
+
+### 简体中文
+
+此版本新增壁纸合集、播放列表、预设和设置备份，并修复了恢复原桌面和锁定屏幕壁纸时的多个问题
+
+#### 不兼容变更
+
+- Workshop 下载现在需要拥有 Wallpaper Engine 的 Steam 账户，购买后可重新检查
+
+#### 新增
+
+- 可将已安装的壁纸整理为自定义合集和可重复使用的播放列表
+- 可将壁纸属性保存为命名预设，随时应用，并可与他人交换
+- 可备份设置并选择是否包含壁纸文件，恢复前可预览，必要时还可撤销恢复
+- 可将网页壁纸静音，并调节媒体音量
+- 可在每台显示器上分别调整导入图片的位置和缩放
+- 可在快捷指令中选择操作要应用到的显示器
+- 壁纸现在附带兼容性说明
+
+#### 修复
+
+- 退出时会在每台显示器和每个空间恢复原壁纸，重新启动后也是如此；无法找回原壁纸时不再改动系统壁纸
+- 退出时会等待原壁纸恢复完成；恢复失败时会取消退出并显示错误，不再留下静止画面
+- 取消退出后，桌面静止画面会恢复更新，无需再次更换壁纸或修改设置
+- 当 macOS 在锁定屏幕和屏幕保护程序之间共用默认壁纸时，现在也可以开启实验性的动态锁定屏幕
+- 当空间沿用继承的壁纸时，仅开启实验性锁定屏幕不再超时，屏幕保护程序的选择也会保留
+- 因保存的数据损坏导致锁定屏幕壁纸恢复失败时，现在会保留壁纸和恢复数据，以便重新尝试恢复
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.1...v1.2.2
+
 ## 1.2.1 — 2026-09-30
 
 ### English
