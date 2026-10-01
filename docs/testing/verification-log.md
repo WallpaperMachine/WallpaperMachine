@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — Keep inherited native display choices complete
+
+- Read-only WallpaperAgent logs identified DecodingError.keyNotFound for Idle in a synthesized Space display override; macOS rejected the entire Index before launching the extension. Enabling both modes filled the missing field and succeeded.
+- Synthesized individual display nodes now resolve and journal both inherited choices, preserve the inactive mode, and return to inheritance on disable/recovery unless an external edit must survive.
+- python3 scripts/test.py --only LockScreenWallpaperTests --only LockScreenWallpaperServiceTests: 73 passed, 0 failed.
+- python3 scripts/test.py: passed; 226 Python and 921 native tests passed, 0 failed, 11 skipped (9 opt-in media and 2 live Workshop tests).
+- python3 scripts/build.py --swift-only --configuration Release: passed; codesign --verify --deep --strict also passed.
+- Under existing user authorization, unregistered the test-produced Debug extension and registered Release; pluginkit confirmed only Release remained.
+- Regression fixtures cover linked/individual inheritance, missing top-level and per-Space nodes, either mode alone, mode transitions, exact crash recovery, external edits, and failed reloads.
+- Live standalone lock-screen playback and quit restoration on the rebuilt app remain unverified; no app restart, desktop control, or wallpaper change was performed.
+
 ## 2026-10-01 — Support the macOS linked default wallpaper
 
 - Updated native selection to accept the built-in linked default, suppress only requested global Desktop/Idle overrides, and restore linked or inherited originals while preserving external edits.
@@ -116,14 +127,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 python3 scripts/build.py --configuration Release — exit 0; rebuilt the full Rust/C++ renderer, regenerated bindings and built the Release application.
 - Delivered build/Build/Products/Release/WallpaperMachine.app. codesign --verify --deep --strict passed; diff -qr confirmed bundled Contents/Resources/WebUI matches WebUI byte for byte.
 - No app launch/restart, desktop input, wallpaper changes or live audio capture. The user must quit the old app and open the delivered build; physical desktop behavior and exact Windows visual parity remain unverified.
-
-## 2026-09-30 — Independent native wallpaper screen saver
-
-- `python3 scripts/test.py --serial` — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 skipped (9 opt-in media/device and 2 live Steam checks).
-- `cargo test --release -p wallpaper-bridge --lib` with scripts/build.py cargo environment — exit 0; 361 passed.
-- `python3 scripts/check_renderer.py` — exit 0; generated pooled/isolated pixels equal, no diagnostics; eight-project reload cycles passed. Private wallpaper corpus not exercised.
-- Offscreen native CAContext/WebKit smoke — rendered expected pixels, advanced canvas frames, preserved committed properties and paused/resumed; no window ordered or live selection changed.
-- Isolated settings browser smoke — screen-saver toggle left lock-screen toggle unchanged; busy state disabled the control. Impeccable detector returned no findings.
-- Isolated regressions cover independent selection/restoration, topology gaps, native-video exports, web properties/files, capture denial, readiness and paused teardown.
-- Real idle transitions, lock/password UI, multi-monitor compositor delivery and sleep/wake visuals remain unverified. No Release app rebuild, activation or restart.
-- The shared workspace contained unrelated import-picker and renderer changes; those are excluded from this feature commit.

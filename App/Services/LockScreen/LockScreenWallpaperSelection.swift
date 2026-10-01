@@ -20,6 +20,8 @@ final class LockScreenWallpaperSelection {
     var typeOwned: Bool? = nil
     // Preserve the native linked shape while Desktop and Idle are independent.
     var linkedOriginal: Data? = nil
+    // A synthesized display needs both native fields even when we own only one.
+    var inheritedOriginal: Data? = nil
     var globalWasPresent: Bool? = nil
 
     var ownedFields: Set<String> { Set(fields ?? ["Desktop", "Idle"]) }
@@ -168,14 +170,23 @@ final class LockScreenWallpaperSelection {
         linkedOriginal = try PropertyListSerialization.propertyList(from: data, format: nil)
           as? [String: Any]
       }
+      var inheritedOriginal: [String: Any]?
+      if let data = prior?.inheritedOriginal {
+        inheritedOriginal = try PropertyListSerialization.propertyList(from: data, format: nil)
+          as? [String: Any]
+      }
       if prior == nil, !desired.isEmpty {
         if Self.defaultLinkedChoice(node) != nil {
           linkedOriginal = node
         } else if existing == nil, !observeOnly {
-          let fallback = Self.fallbackPaths(for: path).compactMap {
-            Self.node(root, path: $0)
-          }.first
-          if let fallback, Self.defaultLinkedChoice(fallback) != nil { linkedOriginal = fallback }
+          // An `individual` native node requires Desktop AND Idle. Resolve the
+          // inherited originals before installing either owned choice; a parent
+          // display may already be ours, so consult its journal as well.
+          let inherited = try Self.restorationOriginal(
+            ["Type": "individual", "Desktop": selection, "Idle": selection],
+            path: path, root: root, fields: ["Desktop", "Idle"], journaled: journaledOriginal)
+          inheritedOriginal = inherited
+          node = inherited
         }
       }
       if !observeOnly, !desired.isEmpty, let linkedOriginal,
@@ -212,7 +223,7 @@ final class LockScreenWallpaperSelection {
         for key in added { original[key] = restored[key] }
       }
       let typeOwned = prior.map { $0.typeOwned ?? true }
-        ?? (!observeOnly && existing == nil && linkedOriginal == nil)
+        ?? (!observeOnly && existing == nil && linkedOriginal == nil && inheritedOriginal == nil)
       if prior == nil && typeOwned { original["Type"] = existing?["Type"] }
       if !observeOnly {
         for key in desired.sorted() {
@@ -247,7 +258,16 @@ final class LockScreenWallpaperSelection {
           node = Self.relinked(node, original: linkedOriginal)
         }
       }
+      if desired.isEmpty, let inheritedOriginal, prior?.created == true,
+        (node as NSDictionary) == (inheritedOriginal as NSDictionary)
+      {
+        node = [:]
+      }
       if !desired.isEmpty {
+        if !observeOnly, !(node["Desktop"] is [String: Any] && node["Idle"] is [String: Any]) {
+          throw LockScreenWallpaperFailure(
+            message: String(localized: "This macOS wallpaper store format is unsupported. Native selection was not changed."))
+        }
         original = original.filter {
           desired.contains($0.key) || ($0.key == "Type" && typeOwned)
         }
@@ -261,7 +281,8 @@ final class LockScreenWallpaperSelection {
           path: path, original: originalData,
           created: prior?.created ?? (existing == nil), observeOnly: observeOnly,
           fields: desired.sorted(), typeOwned: typeOwned,
-          linkedOriginal: try linkedOriginal.map { try Self.encode($0) })
+          linkedOriginal: try linkedOriginal.map { try Self.encode($0) },
+          inheritedOriginal: try inheritedOriginal.map { try Self.encode($0) })
         if !added.isEmpty { try record(entry, original: original) }
         retained.append(entry)
       }
@@ -426,7 +447,7 @@ final class LockScreenWallpaperSelection {
           .flatMap({ fallback in
             [
               Self.node(root, path: fallback).map(Self.separatedLinked)?[key] as? [String: Any],
-              journaled(fallback)?[key] as? [String: Any],
+              journaled(fallback).map(Self.separatedLinked)?[key] as? [String: Any],
             ].compactMap { $0 }
           })
           .first(where: { value in

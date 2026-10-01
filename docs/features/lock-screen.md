@@ -98,6 +98,14 @@ after a crash restores the original linked configuration, including inherited
 display settings. Later changes made in System Settings are preserved instead
 of relinking over them. Other linked providers remain unsupported.
 
+New display overrides, including those inside Spaces, contain both required
+Desktop and Idle choices even when only one mode is enabled. The unselected
+choice comes from the inherited system selection or its restoration journal.
+macOS rejects the entire wallpaper store if an `individual` override omits
+either field; a lock-screen-only override with no Idle field prevents the
+renderer from starting. Temporary overrides return to inheritance on disable
+or recovery, unless a later external choice needs to be kept.
+
 “Selected” means the native choice was committed, not that a screen saver has
 already started rendering. macOS may acquire an Idle-only surface only when it
 starts the screen saver. A later renderer failure is shown beside the setting,

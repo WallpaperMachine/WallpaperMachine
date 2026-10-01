@@ -229,7 +229,9 @@ Swift tests cover, without starting the app:
   removal and recovery of global Desktop/Idle overrides, independent activation
   from macOS's linked default (both inherited and explicit per-display choices),
   exact linked restoration after disable or reload failure, preservation of
-  later global Desktop/Idle edits,
+  later global Desktop/Idle edits, complete Desktop/Idle fields in synthesized
+  display and Space overrides when either mode runs alone, and removal of those
+  overrides on recovery while preserving external edits,
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/
