@@ -113,8 +113,10 @@ Swift tests cover, without starting the app:
   publication/replacement, invalid discovery, traversal/link/archive-size
   boundaries, strict package manifests, both checksums, HTTP encoded/decoded
   lengths, duplicate package paths, real zip backslash normalization, execute
-  permissions, manifest retention, monotonic progress, network failures,
-  signature-policy blocking, cancellation, and no late writes. Runtime fixtures
+  permissions, manifest retention, monotonic progress, network failures (including
+  preserving a rejected redirect's original diagnostic when its final response
+  arrives before cancellation), signature-policy blocking, cancellation, and no
+  late writes. Runtime fixtures
   require arm64, reject Intel-only copies and retire old bootstrap candidates;
   they exercise canonical macOS path aliases and nested Mach-O executable
   dependencies. Approval tests use isolated fixtures only: exact SHA-256

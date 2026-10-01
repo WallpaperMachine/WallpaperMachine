@@ -199,6 +199,8 @@ final class SteamCMDDownload: NSObject, URLSessionDataDelegate, @unchecked Senda
         self.destination = destination
         self.maximum = maximum
         self.expectedSize = expectedSize
+        // NSCopying preserves this Foundation type; a private copy isolates caller-owned settings.
+        // swiftlint:disable:next force_cast
         self.configuration = configuration.copy() as! URLSessionConfiguration
         self.progress = progress
     }
@@ -249,6 +251,10 @@ final class SteamCMDDownload: NSObject, URLSessionDataDelegate, @unchecked Senda
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard failure == nil else {
+            completionHandler(.cancel)
+            return
+        }
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
               response.url?.scheme == "https", response.url?.host == source.host else {
             failure = SteamCMDSetupIssue(kind: .network, detail: String(localized: "The official SteamCMD server did not return HTTP 200."))

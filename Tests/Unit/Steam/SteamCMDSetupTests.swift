@@ -343,6 +343,33 @@ final class SteamCMDSetupTests: XCTestCase {
         }
     }
 
+    func testRejectedRedirectRetainsItsFailureWhenFinalResponseArrivesBeforeCancellation() async throws {
+        for destination in ["https://untrusted.invalid/steamcmd", "http://steamcdn-a.akamaihd.net/client/steam_cmd_osx"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            var failures: [SteamCMDSetupIssue] = []
+            for deliversFinalResponse in [false, true] {
+                let events = RejectedRedirectEvents(destination: URL(string: destination)!, deliversFinalResponse: deliversFinalResponse)
+                let output = fixture.root.appendingPathComponent("download-\(deliversFinalResponse)")
+                let download = SteamCMDDownload(source: SteamCMDPackageManifest.url, destination: output,
+                    maximum: SteamCMDPackageManifest.maximumSize, configuration: fixture.configuration,
+                    progress: { received, _ in events.rejectRedirect(received: received) })
+                events.attach(download)
+                do {
+                    _ = try await download.start()
+                    XCTFail("A rejected redirect must fail the download")
+                } catch let issue as SteamCMDSetupIssue {
+                    failures.append(issue)
+                }
+                XCTAssertEqual(try Data(contentsOf: output).count, 0)
+            }
+            XCTAssertEqual(failures.count, 2)
+            XCTAssertEqual(failures.first?.kind, .network)
+            // Preserve the original error value, without pinning localized diagnostic wording.
+            XCTAssertEqual(failures.first, failures.last)
+        }
+    }
+
     func testUnsafeManagedSymlinkDoesNotTouchExternalRuntime() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -1068,6 +1095,38 @@ private struct FixtureRunner: SteamCMDProcessRunning {
         }
         if mode == .waitBeforePublication { try await Task.sleep(for: .seconds(60)) }
         return 0
+    }
+}
+
+/// Replays the redirect/response race synchronously from the serial delegate's progress callback.
+/// The dummy task is never resumed; only the URLProtocol-backed download can deliver bytes.
+private final class RejectedRedirectEvents: @unchecked Sendable {
+    private let destination: URL
+    private let deliversFinalResponse: Bool
+    private let lock = NSLock()
+    private weak var download: SteamCMDDownload?
+
+    init(destination: URL, deliversFinalResponse: Bool) {
+        self.destination = destination
+        self.deliversFinalResponse = deliversFinalResponse
+    }
+
+    func attach(_ download: SteamCMDDownload) { lock.withLock { self.download = download } }
+
+    func rejectRedirect(received: Int64) {
+        guard received == 0, let download = lock.withLock({ self.download }) else { return }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: SteamCMDPackageManifest.url)
+        let redirect = HTTPURLResponse(url: SteamCMDPackageManifest.url, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": destination.absoluteString])!
+        download.urlSession(session, task: task, willPerformHTTPRedirection: redirect,
+            newRequest: URLRequest(url: destination), completionHandler: { request in
+                guard request == nil, self.deliversFinalResponse else { return }
+                // completionHandler(nil) can turn the rejected 302 into a final response
+                // before the redirect delegate gets to task.cancel().
+                download.urlSession(session, dataTask: task, didReceive: redirect, completionHandler: { _ in })
+            })
     }
 }
 
