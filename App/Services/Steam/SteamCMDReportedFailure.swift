@@ -1,0 +1,45 @@
+import Foundation
+
+/// Classifies SteamCMD's parenthesized failures without treating an unknown reason as bad credentials.
+/// Only the category is logged: terminal output can contain account names or secrets.
+enum SteamCMDReportedFailure: String, Sendable {
+    case cachedCredentials, steamGuard, connection, rateLimited, credentials, unknown
+
+    init(reason: String, cachedCredentialsRejected: Bool = false, awaitingSteamGuard: Bool = false) {
+        // Steam uses both prose ("Service Unavailable") and EResult names ("ServiceUnavailable").
+        let reason = reason.lowercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        if cachedCredentialsRejected && reason.contains("cachedcredential") {
+            self = .cachedCredentials
+        } else if reason.contains("twofactor") || reason.contains("authcode") || reason.contains("steamguard")
+            || (awaitingSteamGuard && (reason.contains("denied") || reason.contains("cancel"))) {
+            self = .steamGuard
+        } else if reason.contains("timeout") || reason.contains("timedout") || reason.contains("connection")
+            || reason.contains("connectfailed") || reason.contains("serviceunavailable") {
+            self = .connection
+        } else if reason.contains("ratelimit") || reason.contains("toomany") {
+            self = .rateLimited
+        } else if reason.contains("invalidpassword") || reason.contains("invalidlogin")
+            || reason.contains("accountlogondenied") {
+            self = .credentials
+        } else {
+            self = .unknown
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .cachedCredentials:
+            String(localized: "Your saved Steam sign-in has expired or was revoked. Try again and sign in to Steam.")
+        case .steamGuard:
+            String(localized: "Steam Guard was rejected, cancelled or expired. Try again, enter your password, then approve the new request or use a new code.")
+        case .connection:
+            String(localized: "Steam could not complete the connection or sign-in in time. Check your connection and any Steam Guard approval, then retry.")
+        case .rateLimited:
+            String(localized: "Steam has temporarily limited sign-in attempts. Wait before retrying.")
+        case .credentials:
+            String(localized: "Steam rejected the sign-in. Check your account login name and password, then retry.")
+        case .unknown:
+            String(localized: "SteamCMD could not complete the request. Check your connection and try again. If it keeps failing, export a diagnostics report from Settings.")
+        }
+    }
+}

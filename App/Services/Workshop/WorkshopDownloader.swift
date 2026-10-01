@@ -489,20 +489,12 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             failure = String(localized: "Steam could not install Wallpaper Engine’s shared assets. Confirm ownership and check available disk space, then retry.")
         } else if let match = Self.failurePattern.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
                   let range = Range(match.range(at: 1), in: output) {
-            let reason = output[range]
+            let reported = SteamCMDReportedFailure(
+                reason: String(output[range]), cachedCredentialsRejected: cachedCredentialsRejected,
+                awaitingSteamGuard: steamGuardChallenge != nil)
             authenticationFailed = isAuthenticating
-            if cachedCredentialsRejected && reason.contains("cached credential") {
-                failure = String(localized: "Your saved Steam sign-in has expired or was revoked. Try again and sign in to Steam.")
-            } else if reason.contains("two-factor") || reason.contains("auth code") || reason.contains("steam guard")
-                || (steamGuardChallenge != nil && (reason.contains("denied") || reason.contains("cancel"))) {
-                failure = String(localized: "Steam Guard was rejected, cancelled or expired. Try again, enter your password, then approve the new request or use a new code.")
-            } else if reason.contains("timeout") || reason.contains("timed out") || reason.contains("connection") || reason.contains("service unavailable") {
-                failure = String(localized: "Steam could not complete the connection or sign-in in time. Check your connection and any Steam Guard approval, then retry.")
-            } else if reason.contains("rate limit") || reason.contains("too many") {
-                failure = String(localized: "Steam has temporarily limited sign-in attempts. Wait before retrying.")
-            } else {
-                failure = String(localized: "Steam rejected the sign-in. Check your account login name, password, and Steam Guard approval, then retry.")
-            }
+            AppLog.warn("SteamCMD reported failure: \(reported.rawValue); authenticating: \(isAuthenticating)")
+            failure = reported.message
         } else if output.contains("invalid password") || output.contains("invalid login") || output.contains("account logon denied") {
             authenticationFailed = true
             failure = String(localized: "Steam rejected the sign-in. Check your account login name and password, then retry.")

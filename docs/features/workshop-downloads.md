@@ -470,6 +470,13 @@ retries are never automatic. If Steam reports rate limiting, wait before
 retrying. Workshop content-access errors are a separate failure and offer no
 authentication retry.
 
+Parenthesized SteamCMD failures distinguish explicit credential rejection, Steam
+Guard, connection/service failures and rate limits, including compact result
+names such as `ServiceUnavailable` and `RateLimitExceeded`. Unrecognised reasons
+do not establish bad credentials: the app asks to check connectivity and export
+[a diagnostics report](diagnostics.md#diagnostics-report) if retries keep failing.
+Logs include the failure category, never the raw terminal reason or secrets.
+
 Generic Workshop download failures also explain the purchase requirement:
 buy Wallpaper Engine on Steam or sign in with an account that already owns it,
 then retry. If that account already owns it, check the wallpaper's Workshop

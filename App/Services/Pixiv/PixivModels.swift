@@ -235,7 +235,7 @@ struct PixivFailure: LocalizedError, Equatable, Sendable {
         case .status(429):
             String(localized: "pixiv is limiting requests from this network right now. Wait a minute, then try again.")
         case .status(403):
-            String(localized: "pixiv refused the request. Wait a minute, then try again.")
+            String(localized: "pixiv denied access to this request (HTTP 403). Check access in your browser and your network or proxy connection before retrying.")
         case .status(let status):
             String(localized: "pixiv returned status \(status). Try again later.")
         case .unreadable:

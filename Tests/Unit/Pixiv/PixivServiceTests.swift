@@ -290,6 +290,33 @@ final class PixivServiceTests: XCTestCase {
         XCTAssertFalse(PixivQuery(ranking: .dailyR18, ratings: [.mature]).admits(works[1]))
     }
 
+    func testHTTPFailuresPreserveStatusInsteadOfAssumingRateLimiting() throws {
+        let url = URL(string: "https://www.pixiv.net/ranking.php")!
+        for status in [401, 403, 404, 429, 500, 503] {
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: nil))
+            XCTAssertThrowsError(try URLSessionPixivTransport.check(response)) {
+                XCTAssertEqual($0 as? PixivFailure, PixivFailure(code: .status(status)))
+            }
+        }
+        let ok = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+        XCTAssertNoThrow(try URLSessionPixivTransport.check(ok))
+        XCTAssertThrowsError(try URLSessionPixivTransport.check(
+            URLResponse(url: url, mimeType: nil, expectedContentLength: 0, textEncodingName: nil))) {
+            XCTAssertEqual($0 as? PixivFailure, PixivFailure(code: .unreadable))
+        }
+    }
+
+    func testListingFailuresPreserveAccessDenialAndRateLimiting() async {
+        for status in [403, 429, 503] {
+            let transport = PixivFixtureTransport { _ in throw PixivFailure(code: .status(status)) }
+            let service = PixivService(transport: transport, minimumInterval: .zero)
+            await XCTAssertPixivFailure(try await service.page(1, of: .ranking(.daily)), .status(status))
+            await XCTAssertPixivFailure(
+                try await service.page(1, of: PixivQuery(text: "sky").listing), .status(status))
+        }
+    }
+
     func testRefusedR18RankingSaysWhetherASignInIsMissingOrTheAccountHidesR18() async {
         let transport = PixivFixtureTransport { _ in throw PixivFixtures.forbidden }
         let service = PixivService(transport: transport, minimumInterval: .zero)

@@ -59,6 +59,14 @@ as their referrer, through a thumbnail cache of their own
 (`Cache/PixivThumbnails`, 256 MB, six fetches at a time) served to the page as
 `mwe-ui://pixiv-thumbnail/<id>`.
 
+A general HTTP 403 means the request was denied, not that pixiv has confirmed a
+rate limit or that waiting a minute will fix it. The error asks users to check
+access in a browser and their network/proxy connection. A browser working does
+not prove the app's requests will be accepted. HTTP 429 has separate rate-limit
+advice. Failed HTTP responses log only the status code, not URLs, searches,
+cookies or response bodies, for the [diagnostics report](diagnostics.md#diagnostics-report).
+R-18 ranking denials have the account-specific handling described below.
+
 ## Saving a page
 
 Selecting a tile fetches the work's page list; the inspector shows the page

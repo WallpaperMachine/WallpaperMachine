@@ -111,9 +111,13 @@ struct URLSessionPixivTransport: PixivTransport {
         }
     }
 
-    private static func check(_ response: URLResponse) throws {
+    static func check(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw PixivFailure(code: .unreadable) }
-        guard (200..<300).contains(http.statusCode) else { throw PixivFailure(code: .status(http.statusCode)) }
+        guard (200..<300).contains(http.statusCode) else {
+            // Do not log URLs, headers or bodies: they can reveal searches or the session cookie.
+            AppLog.warn("pixiv request failed: HTTP \(http.statusCode)")
+            throw PixivFailure(code: .status(http.statusCode))
+        }
     }
 }
 

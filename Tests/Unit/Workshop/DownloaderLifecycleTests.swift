@@ -578,6 +578,29 @@ final class DownloaderLifecycleTests: DownloaderTestCase {
     }
   }
 
+  func testReportedFailuresKeepTheirDiagnosisThroughTerminalExit() async throws {
+    let cases: [(String, SteamCMDReportedFailure)] = [
+      ("ServiceUnavailable", .connection), ("RateLimitExceeded", .rateLimited),
+      ("InvalidPassword", .credentials), ("Unexpected result", .unknown),
+    ]
+    for (reason, expected) in cases {
+      let root = try makeRuntime("printf 'Logging in user to Steam Public...FAILED (\(reason))'; exit 1")
+      defer { try? FileManager.default.removeItem(at: root) }
+      let downloader = startDownload(in: root)
+      do {
+        try await waitUntil { !downloader.isRunning }
+        XCTAssertEqual(downloader.errorMessage, expected.message, reason)
+        XCTAssertTrue(downloader.canRetryAuthentication)
+        XCTAssertNil(downloader.prompt)
+        XCTAssertNil(downloader.downloadedID)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Library").path))
+      } catch {
+        await downloader.shutdown()
+        throw error
+      }
+    }
+  }
+
   func testDeniedMobileApprovalCanRestartWithFreshCredentials() async throws {
     let root = try makeRuntime(
       """
