@@ -833,7 +833,6 @@ export default {
   'Approve Steam Guard in the Steam mobile app, or enter the fresh code when requested. Steam may require a new sign-in after expiry or security changes. If Steam reports too many attempts, wait before retrying.': '請在 Steam 行動應用程式中核准 Steam Guard，或在要求時輸入最新的驗證碼。登入過期或安全性設定變更後，Steam 可能會要求重新登入。如果 Steam 回報嘗試次數過多，請稍候再重試。',
   'Allowing SteamCMD applies only to the downloaded copy you confirmed. Gatekeeper and signature checks stay on.': '允許 SteamCMD 只對你確認過的那份下載副本有效。Gatekeeper 和簽章檢查會保持開啟。',
   'Wallpaper Engine on Steam': 'Steam 上的 Wallpaper Engine',
-  'Rosetta installation': '安裝 Rosetta',
   'macOS app security': 'macOS App 安全性',
 
   // Settings: storage

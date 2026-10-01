@@ -16,6 +16,10 @@ final class LockScreenWallpaperService {
   private(set) var screenSaverStatus = String(localized: "Off")
   private(set) var screenSaverError: String?
   var anyRequested: Bool { isRequested || screenSaverRequested }
+  var canRefreshAutomatically: Bool {
+    anyRequested && screenSaverError == nil
+      && (errorMessage == nil || (screenSaverRequested && lockScreenActivationError != nil))
+  }
   @ObservationIgnored var beforeActivation: (() throws -> Void)?
   @ObservationIgnored var afterDeactivation: (() throws -> Void)?
 
@@ -39,10 +43,11 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private var stopping = false
   @ObservationIgnored private(set) var ownsDesktopProvider = false
   @ObservationIgnored private var lastInputs: [LockScreenPublishInput]?
-  @ObservationIgnored private var lastLockScreenRequested = false
+  @ObservationIgnored private var lastLockScreenRequested: Bool?
   @ObservationIgnored private var lastScreenSaverRequested = false
   @ObservationIgnored private var lastHasWebWallpapers = false
   @ObservationIgnored private var published: LockScreenConfiguration?
+  @ObservationIgnored private var lockScreenActivationError: String?
 
   convenience init(bridge: WallpaperBridge) {
     self.init(
@@ -121,7 +126,7 @@ final class LockScreenWallpaperService {
     isRequested = enabled
     updateMonitor()
     if !enabled { defaults.set(false, forKey: Self.preference) }
-    refresh()
+    refresh(retryingLockScreen: true)
   }
 
   func setScreenSaverEnabled(_ enabled: Bool) {
@@ -132,8 +137,14 @@ final class LockScreenWallpaperService {
     refresh()
   }
 
-  func refresh() {
+  func refresh(retryingLockScreen: Bool = false) {
     guard !stopping else { return }
+    if retryingLockScreen {
+      // The committed display mapping must survive a retry for disable during wake.
+      if lockScreenActivationError != nil { lastLockScreenRequested = nil }
+      lockScreenActivationError = nil
+      errorMessage = nil
+    }
     generation &+= 1
     let revision = generation
     let previous = work
@@ -147,15 +158,14 @@ final class LockScreenWallpaperService {
   }
 
   private func updateMonitor() {
-    guard anyRequested, recovered, !stopping, errorMessage == nil, screenSaverError == nil else {
+    guard canRefreshAutomatically, recovered, !stopping else {
       monitor?.invalidate()
       monitor = nil
       return
     }
     guard monitor == nil else { return }
     monitor = scheduleMonitor { [weak self] in
-      guard let self, self.anyRequested, !self.stopping, !self.isBusy,
-        self.errorMessage == nil, self.screenSaverError == nil
+      guard let self, self.canRefreshAutomatically, !self.stopping, !self.isBusy
       else { return }
       // The bridge applies battery policy without opening the control panel.
       self.refresh()
@@ -235,14 +245,11 @@ final class LockScreenWallpaperService {
         }
         updateStatuses(committed, hasWebWallpapers: lastHasWebWallpapers)
       }
-      guard anyRequested else {
+      guard (isRequested && lockScreenActivationError == nil) || screenSaverRequested else {
         status = String(localized: "Restoring system wallpapers…")
         screenSaverStatus = status
         try deactivate()
-        errorMessage = nil
-        screenSaverError = nil
-        status = String(localized: "Off")
-        screenSaverStatus = status
+        updateStatuses(LockScreenConfiguration(scenes: []))
         return
       }
       let records = try await scenes()
@@ -309,7 +316,7 @@ final class LockScreenWallpaperService {
       try Task.checkCancellation()
       guard generation == revision, anyRequested else { return }
       var configuration = prepared.configuration
-      configuration.lockScreenEnabled = isRequested
+      configuration.lockScreenEnabled = isRequested && lockScreenActivationError == nil
         && configuration.scenes.contains { $0.webEntryFile == nil }
       configuration.screenSaverEnabled = screenSaverRequested && !configuration.scenes.isEmpty
       if configuration.lockScreenEnabled, !ownsDesktopProvider {
@@ -329,7 +336,20 @@ final class LockScreenWallpaperService {
       // waits for its desktop-backed surfaces to produce real pixels.
       if configuration.lockScreenEnabled {
         status = String(localized: "Waiting for the system wallpaper renderer…")
-        try await awaitReadiness(configuration)
+        do {
+          try await awaitReadiness(configuration)
+        } catch let error as RendererUnavailable where configuration.screenSaverEnabled {
+          // Idle selection is valid without an acquired surface. A missing
+          // Desktop acknowledgement must not take that independent choice down.
+          configuration.revision = UUID().uuidString
+          configuration.lockScreenEnabled = false
+          try publish(configuration)
+          try applySelection(configuration, inputs: inputs)
+          ownsDesktopProvider = false
+          try afterDeactivation?()
+          lockScreenActivationError = error.localizedDescription
+          AppLog.error("Native lock screen: \(error.localizedDescription)")
+        }
       }
       try Task.checkCancellation()
       guard generation == revision, anyRequested else { return }
@@ -344,6 +364,7 @@ final class LockScreenWallpaperService {
       // A newer request owns the next publication; keep the committed surfaces.
     } catch {
       guard generation == revision else { return }
+      lockScreenActivationError = nil
       var message = error.localizedDescription
       do { try deactivate() } catch {
         message += " " + String(localized: "Restoration also failed: \(error.localizedDescription)")
@@ -380,16 +401,17 @@ final class LockScreenWallpaperService {
     isEnabled = isRequested && configuration.lockScreenEnabled && lockCount > 0
     screenSaverEnabled = screenSaverRequested && configuration.screenSaverEnabled
       && !configuration.scenes.isEmpty
-    status = !isRequested ? String(localized: "Off") : isEnabled
-      ? String(localized: "Enabled for \(lockCount) display(s)")
-      : hasWebWallpapers
-        ? String(localized: "Not applicable — web wallpapers have no lock-screen support")
-        : String(localized: "Waiting for an applied video or live scene on a connected display")
+    errorMessage = isRequested ? lockScreenActivationError : nil
+    status = !isRequested ? String(localized: "Off") : errorMessage != nil
+      ? String(localized: "Not enabled — action required") : isEnabled
+        ? String(localized: "Enabled for \(lockCount) display(s)")
+        : hasWebWallpapers
+          ? String(localized: "Not applicable — web wallpapers have no lock-screen support")
+          : String(localized: "Waiting for an applied video or live scene on a connected display")
     let count = configuration.scenes.count
     screenSaverStatus = !screenSaverRequested ? String(localized: "Off") : screenSaverEnabled
       ? String(localized: "Selected for \(count) display(s) — starts when macOS is idle")
       : String(localized: "Waiting for an applied wallpaper on a connected display")
-    errorMessage = nil
     screenSaverError = nil
   }
 
@@ -433,6 +455,12 @@ final class LockScreenWallpaperService {
     if let firstError { throw firstError }
   }
 
+  private struct RendererUnavailable: LocalizedError {
+    var errorDescription: String? {
+      String(localized: "macOS did not load the lock-screen renderer. The original wallpaper has been restored. Check for another wallpaper app or a conflicting system-wide wallpaper selection.")
+    }
+  }
+
   private func awaitReadiness(_ configuration: LockScreenConfiguration) async throws {
     let deadline = Date().addingTimeInterval(readinessTimeout)
     while Date() < deadline {
@@ -462,10 +490,7 @@ final class LockScreenWallpaperService {
       AppLog.error("Native extension timeout: running bundle=\(other.path), expected=\(expected.path)")
       throw LockScreenWallpaperFailure(message: LockScreenExtensionDiagnostics.differentCopyMessage)
     }
-    throw LockScreenWallpaperFailure(
-      message:
-        String(localized: "macOS did not load the lock-screen renderer. The original wallpaper has been restored. Check for another wallpaper app or a conflicting system-wide wallpaper selection.")
-    )
+    throw RendererUnavailable()
   }
 
   private func restoreNativeSelection() throws {

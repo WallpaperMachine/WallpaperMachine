@@ -1138,6 +1138,248 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     try await service.shutdown()
   }
 
+  @MainActor
+  func testRestoredLockTimeoutKeepsSaverSelectedUntilExplicitLockRetry() async throws {
+    defaults.set(true, forKey: preference)
+    defaults.set(true, forKey: "WallpaperMachineUseWallpaperAsScreenSaver")
+    var record = scene()
+    record.displayId = 1
+    var answerLock = false
+    var desktopReturned = false
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      if answerLock { try? self.answerPublishedReadiness() }
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, runningExtensionBundles: { [] }, readinessTimeout: 0.2)
+    service.afterDeactivation = { desktopReturned = true }
+    try service.start()
+    service.refresh()
+    await waitFor("restored lock activation timeout") { !service.isBusy }
+    XCTAssertTrue(service.isRequested)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertTrue(desktopReturned)
+    let lockError = try XCTUnwrap(service.errorMessage)
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertNil(service.screenSaverError)
+    XCTAssertTrue(defaults.bool(forKey: preference))
+    XCTAssertTrue(defaults.bool(forKey: "WallpaperMachineUseWallpaperAsScreenSaver"))
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+    let fallback = try publishedConfiguration()
+    XCTAssertFalse(fallback.lockScreenEnabled)
+    XCTAssertTrue(fallback.screenSaverEnabled)
+    XCTAssertEqual(fallback.scenes.map(\.displayID), [1])
+
+    let monitor = try XCTUnwrap(timers.last)
+    XCTAssertTrue(monitor.isValid)
+    monitor.fire()
+    await waitFor("saver monitoring after lock timeout") { !service.isBusy }
+    XCTAssertEqual(try publishedConfiguration(), fallback)
+    XCTAssertEqual(service.errorMessage, lockError)
+    XCTAssertTrue(service.screenSaverEnabled)
+
+    record.paused = true
+    service.refresh()
+    await waitFor("saver pause update without retrying lock") { !service.isBusy }
+    let paused = try publishedConfiguration()
+    XCTAssertFalse(paused.lockScreenEnabled)
+    XCTAssertTrue(paused.screenSaverEnabled)
+    XCTAssertEqual(paused.scenes.first?.paused, true)
+    XCTAssertEqual(service.errorMessage, lockError)
+    XCTAssertNil(service.screenSaverError)
+
+    answerLock = true
+    service.refresh(retryingLockScreen: true)
+    await waitFor("explicit lock retry") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertNil(service.screenSaverError)
+    XCTAssertEqual(try selectedProvider("Desktop"), LockScreenConfiguration.extensionIdentifier)
+    XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+    try await service.shutdown()
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+  }
+
+  @MainActor
+  func testSaverDisableDuringLockRetryWithMissingDisplayUUIDRestoresIdleImmediately() async throws {
+    var record = scene()
+    record.displayId = 1
+    var online = true
+    var answerLock = false
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      if answerLock { try? self.answerPublishedReadiness() }
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in online ? "one" : nil }, runningExtensionBundles: { [] },
+    readinessTimeout: 0.2)
+    try service.start()
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("lock timeout retaining saver") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertNotNil(service.errorMessage)
+    let retained = try publishedConfiguration()
+
+    online = false
+    service.refresh(retryingLockScreen: true)
+    await waitFor("lock retry waiting for display identity") { !service.isBusy }
+    XCTAssertEqual(try publishedConfiguration(), retained)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertTrue(service.screenSaverEnabled)
+
+    service.setScreenSaverEnabled(false)
+    await waitFor("saver restored before display identity returns") { !service.isBusy }
+    XCTAssertTrue(service.isRequested)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverRequested)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertNil(service.screenSaverError)
+    XCTAssertFalse(defaults.bool(forKey: "WallpaperMachineUseWallpaperAsScreenSaver"))
+    XCTAssertFalse(try publishedConfiguration().screenSaverEnabled)
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+
+    online = true
+    answerLock = true
+    try XCTUnwrap(timers.last).fire()
+    await waitFor("pending lock retry after display identity returns") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertEqual(try selectedProvider("Desktop"), LockScreenConfiguration.extensionIdentifier)
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testSharedExtensionFailureStillRollsBackBothModes() async throws {
+    let bundle = root.appendingPathComponent("extension.appex")
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      _ = try? LockScreenExtensionStatus.loadConfiguration(
+        exchange: self.exchange, bundleURL: bundle, supportedVersion: 1,
+        reportWriteFailure: { XCTFail("\($0)") })
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, expectedExtensionBundle: bundle,
+    runningExtensionBundles: { [] }, readinessTimeout: 0.2)
+    try service.start()
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("shared extension rejection") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertNotNil(service.screenSaverError)
+    XCTAssertFalse(try XCTUnwrap(timers.last).isValid)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testSaverCanStopAndRestartAfterLockTimeoutAndRejectsItsOwnRendererFailure() async throws {
+    var record = scene()
+    record.displayId = 1
+    var lockRevision: String?
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+      if let configuration = try? self.publishedConfiguration(), configuration.lockScreenEnabled,
+        !configuration.scenes.isEmpty {
+        lockRevision = configuration.revision
+      }
+    }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, runningExtensionBundles: { [] }, readinessTimeout: 0)
+    try service.start()
+    service.setScreenSaverEnabled(true)
+    await waitFor("initial saver selection") { !service.isBusy }
+    service.setEnabled(true)
+    await waitFor("lock timeout while saver was selected") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    let lockError = try XCTUnwrap(service.errorMessage)
+    let stale = LockScreenReadiness(
+      revision: try XCTUnwrap(lockRevision), displayID: 1, error: "old desktop failure")
+    try JSONEncoder().encode(stale).write(
+      to: exchange.appendingPathComponent("ready-1.json"), options: .atomic)
+    try XCTUnwrap(timers.last).fire()
+    await waitFor("ignoring departed desktop readiness") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertNil(service.screenSaverError)
+
+    service.setScreenSaverEnabled(false)
+    await waitFor("saver disabled with failed lock still requested") { !service.isBusy }
+    XCTAssertTrue(service.isRequested)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertEqual(service.errorMessage, lockError)
+    XCTAssertFalse(try XCTUnwrap(timers.last).isValid)
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+
+    service.setScreenSaverEnabled(true)
+    await waitFor("saver restarted independently") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertFalse(try publishedConfiguration().lockScreenEnabled)
+    XCTAssertEqual(service.errorMessage, lockError)
+    XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+    try failPublishedReadiness("current saver renderer failed")
+    try XCTUnwrap(timers.last).fire()
+    await waitFor("current saver failure rollback") { !service.isBusy }
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertNotNil(service.screenSaverError)
+    XCTAssertFalse(try XCTUnwrap(timers.last).isValid)
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testFailedSaverOnlyPublicationRestoresBothSelections() async throws {
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+    displayUUID: { _ in "one" }, persistConfiguration: { url, data in
+      let configuration = try JSONDecoder().decode(LockScreenConfiguration.self, from: data)
+      if configuration.screenSaverEnabled && !configuration.lockScreenEnabled {
+        throw CocoaError(.fileWriteOutOfSpace)
+      }
+      try data.write(to: url, options: .atomic)
+    }, runningExtensionBundles: { [] }, readinessTimeout: 0)
+    try service.start()
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("failed saver-only fallback") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertFalse(service.ownsDesktopProvider)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertNotNil(service.screenSaverError)
+    XCTAssertFalse(try XCTUnwrap(timers.last).isValid)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
   private func publishedConfiguration() throws -> LockScreenConfiguration {
     try JSONDecoder().decode(LockScreenConfiguration.self,
       from: Data(contentsOf: exchange.appendingPathComponent(LockScreenConfiguration.fileName)))

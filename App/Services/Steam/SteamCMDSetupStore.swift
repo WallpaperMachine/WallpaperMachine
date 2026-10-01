@@ -4,7 +4,7 @@ import Observation
 
 struct SteamCMDSetupIssue: LocalizedError, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
-        case invalidSelection, incompleteRuntime, network, invalidArchive, rosettaRequired
+        case invalidSelection, incompleteRuntime, network, invalidArchive, appleSiliconRequired
         case securityApprovalRequired, invalidSignature, updateFailed, timedOut, fileSystem
     }
     let kind: Kind
@@ -13,7 +13,7 @@ struct SteamCMDSetupIssue: LocalizedError, Equatable, Sendable {
 }
 
 enum SteamCMDSetupState: Equatable {
-    case idle, checking, downloading(received: Int64, expected: Int64?), extracting, updating
+    case idle, checking, downloading(received: Int64, expected: Int64?), extracting
     case validating, committing, ready, cancelled, failed(SteamCMDSetupIssue)
 }
 
@@ -47,6 +47,7 @@ struct SteamCMDProcessRunner: SteamCMDProcessRunning {
         func check(_ code: Int32) throws { if code != 0 { throw posixIssue(String(localized: "Configure child process"), code) } }
         try check(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)))
         try check(posix_spawnattr_setpgroup(&attributes, 0))
+        try check(SteamCMDArchitecture.requireNative(&attributes))
         try check(posix_spawn_file_actions_addchdir_np(&actions, workingDirectory.path))
         try check(posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0))
         try check(posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO))
@@ -142,7 +143,7 @@ final class SteamCMDSetupStore {
     var isBusy: Bool {
         if discarding { return true }
         return switch state {
-        case .checking, .downloading, .extracting, .updating, .validating, .committing: true
+        case .checking, .downloading, .extracting, .validating, .committing: true
         case .idle, .ready, .cancelled, .failed: false
         }
     }
@@ -156,13 +157,14 @@ final class SteamCMDSetupStore {
     @ObservationIgnored private var discardOperation: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     private struct PendingInstallation: Codable, Equatable {
+        /// `bootstrap` survives only to recognize candidates retained by the retired Intel-only
+        /// bootstrap installer; native installations are always retained `complete`.
         enum Stage: String, Codable { case bootstrap, complete }
         let directory: String
         let device: UInt64
         let inode: UInt64
         var stage: Stage
         let replacingExisting: Bool
-        var needsRosetta = false
         var detail = ""
     }
     @ObservationIgnored private var pending: PendingInstallation?
@@ -192,8 +194,14 @@ final class SteamCMDSetupStore {
                 do {
                     _ = try stagingURL(for: record)
                     try Self.requireSafeDirectory(retainedRoot(record), mayBeMissing: false)
-                    setPending(record)
-                    state = .failed(pendingIssue(record))
+                    if record.stage == .bootstrap {
+                        // Its next step was running Valve's Intel updater, which a native install
+                        // never does; the next install starts over from the package manifest.
+                        try removeStaging(record)
+                    } else {
+                        setPending(record)
+                        state = .failed(pendingIssue(record))
+                    }
                 } catch {
                     // A dangling or substituted candidate cannot be resumed. Remove only the
                     // private record, never the path it supplied or a directory discovered through it.
@@ -228,6 +236,9 @@ final class SteamCMDSetupStore {
                               URL(fileURLWithPath: "/opt/homebrew/bin/steamcmd"),
                               URL(fileURLWithPath: "/usr/local/bin/steamcmd"),
                               FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Steam/steamcmd.sh")]
+            // An Intel-only copy is not usable, but saying so beats reporting nothing installed:
+            // its reinstall offer is what moves the user to a native copy.
+            var intelOnly: SteamCMDSetupIssue?
             for candidate in candidates {
                 try store.check(token)
                 do {
@@ -237,10 +248,13 @@ final class SteamCMDSetupStore {
                     store.state = .ready
                     return
                 } catch is CancellationError { throw CancellationError() }
-                catch { continue }
+                catch let issue as SteamCMDSetupIssue where issue.kind == .appleSiliconRequired {
+                    if intelOnly == nil { intelOnly = issue }
+                } catch { continue }
             }
             try store.check(token)
             store.selectedRuntime = nil
+            if let intelOnly { throw intelOnly }
             store.state = .idle
         }
         await operation?.value
@@ -277,10 +291,9 @@ final class SteamCMDSetupStore {
               let approver = runtimeProvider as? any SteamCMDRuntimeApproving else { throw staleApprovalIssue() }
         let token = generation
         let root = try stagingURL(for: record).appendingPathComponent("runtime/MacOS", isDirectory: true)
-        let candidate = try await approver.approvalCandidate(at: root, bootstrap: record.stage == .bootstrap)
+        let candidate = try await approver.approvalCandidate(at: root)
         try check(token)
-        guard !isBusy, !discarding, pending == record, candidate.rootURL == root,
-              candidate.bootstrap == (record.stage == .bootstrap) else { throw staleApprovalIssue() }
+        guard !isBusy, !discarding, pending == record, candidate.rootURL == root else { throw staleApprovalIssue() }
         _ = try stagingURL(for: record)
         return candidate
     }
@@ -288,7 +301,6 @@ final class SteamCMDSetupStore {
     func approveRetainedCandidate(_ candidate: SteamCMDApprovalCandidate) {
         guard !isBusy, !downloader.isRunning, !discarding else { return }
         guard let record = pending, candidate.rootURL == retainedCandidateURL,
-              candidate.bootstrap == (record.stage == .bootstrap),
               let approver = runtimeProvider as? any SteamCMDRuntimeApproving else {
             state = .failed(staleApprovalIssue())
             return
@@ -296,7 +308,7 @@ final class SteamCMDSetupStore {
         begin(state: .checking) { store, token in
             defer { if Task.isCancelled { try? store.removeStaging(record) } }
             _ = try store.stagingURL(for: record)
-            let current = try await approver.approvalCandidate(at: candidate.rootURL, bootstrap: candidate.bootstrap)
+            let current = try await approver.approvalCandidate(at: candidate.rootURL)
             try store.check(token)
             guard store.pending == record, current == candidate else { throw store.staleApprovalIssue() }
             try await approver.approve(candidate)
@@ -383,7 +395,7 @@ final class SteamCMDSetupStore {
     }
 
     private func pendingIssue(_ record: PendingInstallation) -> SteamCMDSetupIssue {
-        SteamCMDSetupIssue(kind: record.needsRosetta ? .rosettaRequired : .securityApprovalRequired, detail: record.detail)
+        SteamCMDSetupIssue(kind: .securityApprovalRequired, detail: record.detail)
     }
 
     private func stagingURL(for record: PendingInstallation) throws -> URL {
@@ -463,61 +475,102 @@ final class SteamCMDSetupStore {
         var info = stat()
         guard lstat(staging.path, &info) == 0 else { throw staleApprovalIssue() }
         let record = PendingInstallation(directory: staging.lastPathComponent, device: UInt64(info.st_dev),
-                                         inode: UInt64(info.st_ino), stage: .bootstrap, replacingExisting: replacingExisting)
+                                         inode: UInt64(info.st_ino), stage: .complete, replacingExisting: replacingExisting)
         var handedOff = false
         defer { if !handedOff { try? removeStaging(record) } }
         let container = staging.appendingPathComponent("runtime", isDirectory: true)
         let runtimeRoot = container.appendingPathComponent("MacOS", isDirectory: true)
         let home = staging.appendingPathComponent("home", isDirectory: true)
         let temporary = staging.appendingPathComponent("tmp", isDirectory: true)
-        for directory in [runtimeRoot, home, temporary] {
+        let downloads = staging.appendingPathComponent("packages", isDirectory: true)
+        for directory in [runtimeRoot, home, temporary, downloads] {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }
         let environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": home.path,
                            "TMPDIR": temporary.path + "/", "TERM": "dumb", "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8"]
-        let archive = staging.appendingPathComponent("steamcmd.tar.gz")
         state = .downloading(received: 0, expected: nil)
-        let download = SteamCMDBootstrapDownload(destination: archive, configuration: sessionConfiguration) { [weak self] received, expected in
-            Task { @MainActor in
-                guard let self, self.generation == token, !Task.isCancelled,
-                      case .downloading = self.state else { return }
-                self.state = .downloading(received: received, expected: expected)
-            }
-        }
-        try await download.start()
+        // The manifest Valve's own updater reads lists the universal runtime's packages. Installing
+        // them directly replaces running the 2020 Intel-only bootstrap under Rosetta to fetch them.
+        let manifestFile = downloads.appendingPathComponent("steam_cmd_osx")
+        _ = try await SteamCMDDownload(source: SteamCMDPackageManifest.url, destination: manifestFile,
+                                       maximum: SteamCMDPackageManifest.maximumSize,
+                                       configuration: sessionConfiguration).start()
         try check(token)
-        state = .extracting
-        let listing = SteamCMDOutputBuffer(limit: 2 * 1024 * 1024)
-        let listed = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
-            arguments: ["-t", "-f", archive.path], workingDirectory: staging, environment: environment,
-            onOutput: { listing.append($0) })
-        guard listed == 0, !listing.overflowed else {
-            throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive could not be listed safely."))
+        let manifestData = try Data(contentsOf: manifestFile)
+        let manifest = try SteamCMDPackageManifest(data: manifestData)
+        AppLog.info("SteamCMD setup: Valve package manifest \(manifest.version), \(manifest.packages.count) packages, \(manifest.totalSize) bytes")
+        let total = manifest.totalSize
+        state = .downloading(received: 0, expected: total)
+        var archives: [URL] = []
+        var completed: Int64 = 0
+        for package in manifest.packages {
+            let archive = downloads.appendingPathComponent(package.file)
+            let base = completed
+            let digest = try await SteamCMDDownload(source: package.url, destination: archive, maximum: package.size,
+                                                    expectedSize: package.size, configuration: sessionConfiguration) { [weak self] received, _ in
+                Task { @MainActor in
+                    // Updates hop to the main actor out of order; the total never runs backwards.
+                    guard let self, self.generation == token, !Task.isCancelled,
+                          case .downloading(let shown, _) = self.state, base + received > shown else { return }
+                    self.state = .downloading(received: base + received, expected: total)
+                }
+            }.start()
+            guard digest.sha256 == package.sha256, digest.sha1 == package.sha1 else {
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD package \(package.name) does not match Valve’s published checksum. Nothing was installed."))
+            }
+            completed += package.size
+            try check(token)
+            archives.append(archive)
         }
-        try Self.validateListing(listing.data)
-        let sizes = SteamCMDOutputBuffer(limit: 2 * 1024 * 1024)
+        state = .extracting
+        // Every package is listed and measured before any is extracted, so a later unsafe or
+        // oversized package cannot leave a partial runtime behind.
+        var entries: [String: Bool] = [:]
+        var expanded: Int64 = 0
         var listingEnvironment = environment
         listingEnvironment["LC_ALL"] = "C"
         listingEnvironment["LANG"] = "C"
-        let measured = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
-            arguments: ["-t", "-v", "--numeric-owner", "-f", archive.path], workingDirectory: staging,
-            environment: listingEnvironment, onOutput: { sizes.append($0) })
-        guard measured == 0, !sizes.overflowed else {
-            throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive's expanded size could not be checked safely."))
+        for archive in archives {
+            let listing = SteamCMDOutputBuffer(limit: 2 * 1024 * 1024)
+            let listed = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
+                arguments: ["-t", "-f", archive.path], workingDirectory: staging, environment: listingEnvironment,
+                onOutput: { listing.append($0) })
+            guard listed == 0, !listing.overflowed else {
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive could not be listed safely."))
+            }
+            try Self.validateListing(listing.data, entries: &entries)
+            let sizes = SteamCMDOutputBuffer(limit: 2 * 1024 * 1024)
+            let measured = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
+                arguments: ["-t", "-v", "--numeric-owner", "-f", archive.path], workingDirectory: staging,
+                environment: listingEnvironment, onOutput: { sizes.append($0) })
+            guard measured == 0, !sizes.overflowed else {
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive's expanded size could not be checked safely."))
+            }
+            try Self.validateExpandedSizeListing(sizes.data, total: &expanded)
+            try check(token)
         }
-        try Self.validateExpandedSizeListing(sizes.data)
-        try check(token)
-        let diagnostics = SteamCMDOutputBuffer(limit: 16 * 1024)
-        let extracted = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
-            arguments: ["-x", "-k", "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-fflags", "--no-xattrs", "--no-mac-metadata", "-f", archive.path, "-C", runtimeRoot.path],
-            workingDirectory: staging, environment: environment, onOutput: { diagnostics.append($0) })
-        guard extracted == 0 else {
-            throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "SteamCMD extraction failed. \(diagnostics.text)"))
+        for archive in archives {
+            let diagnostics = SteamCMDOutputBuffer(limit: 16 * 1024)
+            // Valve's zips separate some directory names with backslashes, as its updater expects.
+            let extracted = try await processRunner.run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
+                arguments: ["-x", "-k", "-s", "|\\\\|/|g", "--no-same-owner", "--no-same-permissions", "--no-acls", "--no-fflags",
+                            "--no-xattrs", "--no-mac-metadata", "-f", archive.path, "-C", runtimeRoot.path],
+                workingDirectory: staging, environment: environment, onOutput: { diagnostics.append($0) })
+            guard extracted == 0 else {
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "SteamCMD extraction failed. \(diagnostics.text)"))
+            }
+            try check(token)
         }
+        // Kept beside the runtime, as Valve's updater does, so the installed version is on record.
+        let packageRecord = runtimeRoot.appendingPathComponent("package", isDirectory: true)
+        try Self.requireSafeDirectory(runtimeRoot, mayBeMissing: false)
+        try fm.createDirectory(at: packageRecord, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        try Self.requireSafeDirectory(packageRecord, mayBeMissing: false)
+        try manifestData.write(to: packageRecord.appendingPathComponent("steam_cmd_osx.manifest"), options: .withoutOverwriting)
         try await Self.inspectAndQuarantine(runtimeRoot, byteLimit: 256 * 1024 * 1024)
-        for path in ["steamcmd", "steamcmd.sh", "crashhandler.dylib", "Frameworks/Breakpad.framework"] {
+        for path in ["steamcmd", "crashhandler.dylib", "steamconsole.dylib", "Frameworks/Breakpad.framework"] {
             guard fm.fileExists(atPath: runtimeRoot.appendingPathComponent(path).path) else {
-                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The official SteamCMD bootstrap is missing \(path)."))
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "Valve’s SteamCMD packages are missing \(path)."))
             }
         }
         handedOff = true
@@ -540,35 +593,14 @@ final class SteamCMDSetupStore {
             let environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": home.path,
                                "TMPDIR": temporary.path + "/", "TERM": "dumb", "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8"]
             let diagnostics = SteamCMDOutputBuffer(limit: 16 * 1024)
-            if record.stage == .bootstrap {
-                try check(token)
-                state = .validating
-                try await runtimeProvider.validateBootstrap(at: runtimeRoot)
-                try check(token)
-                state = .updating
-                var updateEnvironment = environment
-                updateEnvironment["DYLD_FRAMEWORK_PATH"] = runtimeRoot.appendingPathComponent("Frameworks").path
-                let updated = try await processRunner.run(executable: URL(fileURLWithPath: "/bin/bash"),
-                    arguments: [runtimeRoot.appendingPathComponent("steamcmd.sh").path, "+quit"],
-                    workingDirectory: runtimeRoot, environment: updateEnvironment, onOutput: { diagnostics.append($0) })
-                guard updated == 0 else {
-                    throw SteamCMDSetupIssue(kind: .updateFailed, detail: String(localized: "SteamCMD update exited with status \(updated). \(diagnostics.text)"))
-                }
-                try check(token)
-                try Self.requireSafeDirectory(runtimeRoot, mayBeMissing: false)
-                // New updater bytes cross a new security boundary; retrying old approved bytes does not.
-                try await Self.inspectAndQuarantine(container, byteLimit: nil)
-                record.stage = .complete
-                if pending != nil { try persistPending(record) }
-            }
+            // Only a native installation is resumed; init discards retired bootstrap candidates.
+            guard record.stage == .complete else { throw staleApprovalIssue() }
             state = .validating
             try await finishInstallation(record, staging: staging, container: container, runtimeRoot: runtimeRoot,
                                          environment: environment, diagnostics: diagnostics, token: token)
         } catch {
-            if !Task.isCancelled, let issue = error as? SteamCMDSetupIssue,
-               issue.kind == .securityApprovalRequired || issue.kind == .rosettaRequired {
+            if !Task.isCancelled, let issue = error as? SteamCMDSetupIssue, issue.kind == .securityApprovalRequired {
                 try check(token)
-                record.needsRosetta = issue.kind == .rosettaRequired
                 record.detail = issue.detail
                 try persistPending(record)
                 retain = true
@@ -583,12 +615,19 @@ final class SteamCMDSetupStore {
         try await runtimeProvider.validate(at: runtimeRoot)
         try check(token)
         let runtime = try runtimeProvider.resolve(executable: runtimeRoot.appendingPathComponent("steamcmd"))
+        // Exercise the same validated private-copy path used by downloads. macOS can kill a
+        // quarantined CLI at exec even when spctl reports valid non-app code. prepare validates
+        // the source, clears quarantine only on its disposable copy, then validates that copy;
+        // it never bypasses a policy denial or changes the candidate's download marks.
+        let smokeRoot = staging.appendingPathComponent("smoke-runtime", isDirectory: true)
+        defer { try? fm.removeItem(at: smokeRoot) }
+        let smokeExecutable = try await runtimeProvider.prepare(executable: runtime.executableURL, staging: smokeRoot)
+        try check(token)
         var smokeEnvironment = environment
-        // The no-bootstrap executable needs the same private loader paths supplied by Valve's wrapper.
-        smokeEnvironment["DYLD_LIBRARY_PATH"] = runtimeRoot.path
-        smokeEnvironment["DYLD_FRAMEWORK_PATH"] = runtimeRoot.appendingPathComponent("Frameworks").path
-        let smoke = try await processRunner.run(executable: runtime.executableURL,
-            arguments: ["-inhibitbootstrap", "+quit"], workingDirectory: runtimeRoot,
+        smokeEnvironment["DYLD_LIBRARY_PATH"] = smokeRoot.path
+        smokeEnvironment["DYLD_FRAMEWORK_PATH"] = smokeRoot.appendingPathComponent("Frameworks").path
+        let smoke = try await processRunner.run(executable: smokeExecutable,
+            arguments: ["-inhibitbootstrap", "+quit"], workingDirectory: smokeRoot,
             environment: smokeEnvironment, onOutput: { diagnostics.append($0) })
         guard smoke == 0 else {
             throw SteamCMDSetupIssue(kind: .updateFailed, detail: String(localized: "SteamCMD's no-login verification exited with status \(smoke). \(diagnostics.text)"))
@@ -653,25 +692,53 @@ final class SteamCMDSetupStore {
         }
     }
 
-    private static func validateListing(_ data: Data) throws {
+    /// `entries` maps every path already listed across this installation's packages to whether it
+    /// is a directory: packages share directories but never a file, and `tar -k` would otherwise
+    /// silently keep whichever copy came first.
+    private static func validateListing(_ data: Data, entries: inout [String: Bool]) throws {
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
             throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive listing is empty or unreadable."))
         }
+        let unsafe = SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive contains an unsafe path."))
         for entry in text.split(separator: "\n", omittingEmptySubsequences: true) {
             try Task.checkCancellation()
-            guard !entry.hasPrefix("/"), !entry.split(separator: "/").contains(".."),
-                  !entry.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
-                  !entry.contains("\\") else {
-                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive contains an unsafe path."))
+            guard let path = extractedPath(String(entry)), !path.hasPrefix("/"),
+                  !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw unsafe }
+            let components = path.split(separator: "/").filter { $0 != "." }
+            guard !components.contains("..") else { throw unsafe }
+            // A `./` entry names the extraction root itself.
+            if components.isEmpty { guard path.hasSuffix("/") else { throw unsafe }; continue }
+            let key = components.joined(separator: "/")
+            let directory = path.hasSuffix("/")
+            if let existing = entries[key], !(existing && directory) {
+                throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "SteamCMD packages contain the same file more than once."))
             }
+            entries[key] = directory
         }
     }
 
-    private static func validateExpandedSizeListing(_ data: Data) throws {
+    /// bsdtar lists a literal backslash as `\\` and escapes every other unprintable byte. Extraction
+    /// turns each backslash into `/` (Valve's zips use both separators), so the listing is decoded
+    /// the same way; any other escape is refused rather than interpreted.
+    private static func extractedPath(_ listed: String) -> String? {
+        var path = ""
+        var characters = listed.makeIterator()
+        while let character = characters.next() {
+            if character == "\\" {
+                guard characters.next() == "\\" else { return nil }
+                path.append("/")
+            } else {
+                path.append(character)
+            }
+        }
+        return path
+    }
+
+    /// `total` accumulates across every package of one installation.
+    private static func validateExpandedSizeListing(_ data: Data, total: inout Int64) throws {
         guard let text = String(data: data, encoding: .utf8), !text.isEmpty else {
             throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD archive's size listing is unreadable."))
         }
-        var total: Int64 = 0
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             try Task.checkCancellation()
             // macOS bsdtar under LC_ALL=C and --numeric-owner prints:
@@ -720,7 +787,7 @@ final class SteamCMDSetupStore {
                 }
                 switch info.st_mode & S_IFMT {
                 case S_IFDIR:
-                    guard chmod(file.path, info.st_mode & 0o777) == 0 else { throw issue(NSError(domain: NSPOSIXErrorDomain, code: Int(errno))) }
+                    guard chmod(file.path, 0o755) == 0 else { throw issue(NSError(domain: NSPOSIXErrorDomain, code: Int(errno))) }
                     try walk(file)
                 case S_IFREG:
                     guard info.st_nlink == 1 else {
@@ -731,15 +798,18 @@ final class SteamCMDSetupStore {
                         throw SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The expanded SteamCMD archive exceeds 256 MiB."))
                     }
                     total = sum
-                    guard chmod(file.path, info.st_mode & 0o777) == 0 else { throw issue(NSError(domain: NSPOSIXErrorDomain, code: Int(errno))) }
+                    // Valve's zips record no permission bits (its updater sets them itself), so code
+                    // images become executable here; nothing gains set-ID or group/other write.
+                    let executable = info.st_mode & 0o111 != 0 || isMachO(file)
+                    guard chmod(file.path, executable ? 0o755 : 0o644) == 0 else { throw issue(NSError(domain: NSPOSIXErrorDomain, code: Int(errno))) }
                     let marked = quarantine.withCString { setxattr(file.path, "com.apple.quarantine", $0, strlen($0), 0, XATTR_NOFOLLOW) }
                     guard marked == 0 else {
                         throw SteamCMDSetupIssue(kind: .fileSystem, detail: String(localized: "Cannot preserve downloaded-file security metadata: \(file.lastPathComponent)."))
                     }
                 case S_IFLNK:
                     let target = try fm.destinationOfSymbolicLink(atPath: file.path)
-                    // Valve's updater adds a Contents-style sibling: runtime/Frameworks -> MacOS/Frameworks.
-                    // Accept any relative link that resolves inside this tree; reject absolute, dangling, or escaping ones.
+                    // Breakpad.framework's version links: accept any relative link that resolves inside
+                    // this tree; reject absolute, dangling, or escaping ones.
                     let resolved = resolvedPath(file)
                     guard !target.hasPrefix("/"), !target.isEmpty,
                           !target.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
@@ -757,6 +827,16 @@ final class SteamCMDSetupStore {
             }
         }
         try walk(root)
+    }
+
+    private nonisolated static func isMachO(_ url: URL) -> Bool {
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard descriptor >= 0 else { return false }
+        defer { close(descriptor) }
+        var magic = [UInt8](repeating: 0, count: 4)
+        guard Darwin.read(descriptor, &magic, 4) == 4 else { return false }
+        let value = magic.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        return [0xfeedface, 0xcefaedfe, 0xfeedfacf, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].contains(value)
     }
 
     /// POSIX realpath keeps /var and /tmp identities stable when checking link containment.
@@ -789,122 +869,4 @@ private final class SteamCMDOutputBuffer: @unchecked Sendable {
     var data: Data { lock.withLock { storage } }
     var text: String { String(decoding: data, as: UTF8.self) }
     var overflowed: Bool { lock.withLock { exceeded } }
-}
-
-/// Serial URLSession delegate streams bounded chunks to a private disk file, never an in-memory archive.
-private final class SteamCMDBootstrapDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    private static let source = URL(string: "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_osx.tar.gz")!
-    private static let maximum: Int64 = 64 * 1024 * 1024
-    private let destination: URL
-    private let configuration: URLSessionConfiguration
-    private let progress: @Sendable (Int64, Int64?) -> Void
-    private let lock = NSLock()
-    private var cancelled = false
-    private var task: URLSessionDataTask?
-    // Remaining state is confined to the serial delegate queue, established before task.resume().
-    private var session: URLSession?
-    private var continuation: CheckedContinuation<Void, Error>?
-    private var file: FileHandle?
-    private var received: Int64 = 0
-    private var expected: Int64?
-    private var failure: Error?
-
-    init(destination: URL, configuration: URLSessionConfiguration, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
-        self.destination = destination
-        self.configuration = configuration.copy() as! URLSessionConfiguration
-        self.progress = progress
-    }
-
-    func start() async throws {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                do {
-                    let descriptor = open(destination.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-                    guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
-                    file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-                    self.continuation = continuation
-                    configuration.httpCookieStorage = nil
-                    configuration.httpShouldSetCookies = false
-                    configuration.urlCredentialStorage = nil
-                    configuration.urlCache = nil
-                    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-                    configuration.timeoutIntervalForRequest = 300
-                    configuration.timeoutIntervalForResource = 1800
-                    let queue = OperationQueue()
-                    queue.maxConcurrentOperationCount = 1
-                    let session = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
-                    self.session = session
-                    let task = session.dataTask(with: Self.source)
-                    lock.withLock {
-                        self.task = task
-                        task.resume()
-                        if cancelled { task.cancel() }
-                    }
-                } catch { continuation.resume(throwing: error) }
-            }
-        } onCancel: {
-            self.lock.withLock { self.cancelled = true; self.task?.cancel() }
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        guard request.url?.scheme == "https", request.url?.host == Self.source.host,
-              request.url?.port == nil || request.url?.port == 443 else {
-            failure = SteamCMDSetupIssue(kind: .network, detail: String(localized: "SteamCMD download redirected outside the official HTTPS host."))
-            completionHandler(nil)
-            task.cancel()
-            return
-        }
-        completionHandler(request)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-              response.url?.scheme == "https", response.url?.host == Self.source.host else {
-            failure = SteamCMDSetupIssue(kind: .network, detail: String(localized: "The official SteamCMD server did not return HTTP 200."))
-            completionHandler(.cancel)
-            return
-        }
-        expected = http.value(forHTTPHeaderField: "Content-Length").flatMap(Int64.init).flatMap { $0 >= 0 ? $0 : nil }
-        if let expected, expected > Self.maximum {
-            failure = SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD bootstrap exceeds 64 MiB."))
-            completionHandler(.cancel)
-            return
-        }
-        progress(0, expected)
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard failure == nil else { return }
-        guard Int64(data.count) <= Self.maximum - received else {
-            failure = SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD bootstrap exceeds 64 MiB."))
-            dataTask.cancel()
-            return
-        }
-        do {
-            try file?.write(contentsOf: data)
-            received += Int64(data.count)
-            progress(received, expected)
-        } catch { failure = error; dataTask.cancel() }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        do { try file?.close() } catch { if failure == nil { failure = error } }
-        file = nil
-        let wasCancelled = lock.withLock { self.task = nil; return cancelled }
-        let completion = continuation
-        continuation = nil
-        session.finishTasksAndInvalidate()
-        self.session = nil
-        if wasCancelled { completion?.resume(throwing: CancellationError()) }
-        else if let failure { completion?.resume(throwing: failure) }
-        else if let error {
-            completion?.resume(throwing: SteamCMDSetupIssue(kind: (error as? URLError)?.code == .timedOut ? .timedOut : .network, detail: error.localizedDescription))
-        } else if received == 0 || expected.map({ $0 != received }) == true {
-            completion?.resume(throwing: SteamCMDSetupIssue(kind: .invalidArchive, detail: String(localized: "The SteamCMD bootstrap download is empty or truncated.")))
-        } else { completion?.resume() }
-    }
 }

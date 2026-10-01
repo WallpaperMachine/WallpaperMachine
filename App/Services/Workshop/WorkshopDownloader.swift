@@ -258,9 +258,9 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                 guard process?.terminationStatus == 0 else {
                     authenticationFailed = isAuthenticating
                     if isSigningInOnly {
-                        throw WorkshopFailure(message: String(localized: "SteamCMD exited before confirming the sign-in. Check the account name and password, approve Steam Guard, and retry. On Apple silicon, SteamCMD may require Rosetta 2."))
+                        throw WorkshopFailure(message: String(localized: "SteamCMD exited before confirming the sign-in. Check the account name and password, approve Steam Guard, and retry."))
                     }
-                    throw WorkshopFailure(message: String(localized: "SteamCMD exited before completing the download. Confirm this account owns Wallpaper Engine, approve Steam Guard, and retry. On Apple silicon, SteamCMD may require Rosetta 2."))
+                    throw WorkshopFailure(message: String(localized: "SteamCMD exited before completing the download. Confirm this account owns Wallpaper Engine, approve Steam Guard, and retry."))
                 }
                 progress = nil
                 receivesNetwork = false
@@ -403,7 +403,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         }
         catch {
             try? child.close()
-            throw WorkshopFailure(message: String(localized: "Cannot launch SteamCMD: \(error.localizedDescription). Install the macOS SteamCMD distribution; on Apple silicon install Rosetta 2 if requested."))
+            throw WorkshopFailure(message: String(localized: "Cannot launch SteamCMD: \(error.localizedDescription). Reinstall SteamCMD in Settings → Library & Steam to get Valve’s Apple silicon version."))
         }
         try? child.close()
         phase = .connecting
@@ -935,6 +935,8 @@ private final class SteamCMDTerminalProcess {
         try check(posix_spawnattr_init(&attributes))
         defer { posix_spawnattr_destroy(&attributes) }
         try check(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)))
+        // SteamCMD never falls back to Rosetta; nettop, the other child, is native as well.
+        try check(SteamCMDArchitecture.requireNative(&attributes))
         try check(posix_spawnattr_setpgroup(&attributes, 0))
         try check(posix_spawn_file_actions_addchdir_np(&actions, workingDirectory.path))
         for descriptor in [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO] {

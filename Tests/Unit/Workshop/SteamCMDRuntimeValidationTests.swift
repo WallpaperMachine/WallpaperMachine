@@ -40,7 +40,7 @@ final class SteamCMDRuntimeValidationTests: DownloaderTestCase {
     let executable = root.appendingPathComponent("runtime/steamcmd")
     // Two x86_64 slices differing only by subtype: a CPU-keyed selection resolves one and
     // would leave the other unvalidated and unverified by codesign --arch.
-    let slice = fixtureMachO(fileType: 2)
+    let slice = fixtureMachO(fileType: 2, cpu: 0x0100_0007)
     var fat = Data()
     func append(_ values: [UInt32]) {
       for value in values {
@@ -76,7 +76,7 @@ final class SteamCMDRuntimeValidationTests: DownloaderTestCase {
     let service = SteamCMDRuntimeService(processRunner: FixtureSystemAssessment())
     let alias = URL(fileURLWithPath: aliasPath, isDirectory: true)
     let physical = URL(fileURLWithPath: privatePath, isDirectory: true)
-    try await service.validateBootstrap(at: physical)
+    try await service.validate(at: physical)
     try await service.validate(at: alias)
     XCTAssertEqual(
       try service.resolve(executable: alias.appendingPathComponent("steamcmd")),
@@ -166,6 +166,43 @@ final class SteamCMDRuntimeValidationTests: DownloaderTestCase {
     XCTAssertEqual(try Data(contentsOf: outside), sentinel)
   }
 
+  func testIntelOnlyImagesAreRejectedAsNeedingANativeReinstall() async throws {
+    let files = FileManager.default
+    let directory = try makeMachOFrameworkRuntime()
+    defer { try? files.removeItem(at: directory) }
+    let root = directory.appendingPathComponent("MacOS", isDirectory: true)
+    let service = SteamCMDRuntimeService(processRunner: FixtureSystemAssessment())
+    try await service.validate(at: root)
+
+    // One Intel-only library is enough: it could only ever load into a translated process.
+    let library = root.appendingPathComponent("crashhandler.dylib")
+    let native = try Data(contentsOf: library)
+    try fixtureMachO(
+      fileType: 6, dependency: "@loader_path/Breakpad.framework/Versions/A/Breakpad",
+      cpu: 0x0100_0007
+    ).write(to: library)
+    do {
+      try await service.validate(at: root)
+      XCTFail("An Intel-only library must not validate")
+    } catch {
+      XCTAssertEqual((error as? SteamCMDSetupIssue)?.kind, .appleSiliconRequired)
+    }
+    try native.write(to: library)
+
+    // The 2020 bootstrap's executable alone: universal and arm64-only images resolve, x86_64 does not.
+    let executable = root.appendingPathComponent("steamcmd")
+    try fixtureMachO(fileType: 2, cpu: 0x0100_0007).write(to: executable)
+    XCTAssertThrowsError(try service.resolve(executable: executable)) { error in
+      XCTAssertEqual((error as? SteamCMDSetupIssue)?.kind, .appleSiliconRequired)
+    }
+    do {
+      try await service.validate(at: root)
+      XCTFail("An Intel-only executable must not validate")
+    } catch {
+      XCTAssertEqual((error as? SteamCMDSetupIssue)?.kind, .appleSiliconRequired)
+    }
+  }
+
   private func makeMachOFrameworkRuntime() throws -> URL {
     let files = FileManager.default
     let directory = files.temporaryDirectory.appendingPathComponent(
@@ -204,9 +241,9 @@ final class SteamCMDRuntimeValidationTests: DownloaderTestCase {
     return directory
   }
 
-  private func fixtureMachO(fileType: UInt32, dependency: String? = nil, rpaths: [String] = [])
-    -> Data
-  {
+  private func fixtureMachO(
+    fileType: UInt32, dependency: String? = nil, rpaths: [String] = [], cpu: UInt32 = 0x0100_000c
+  ) -> Data {
     func words(_ values: [UInt32]) -> Data {
       var result = Data()
       for value in values {
@@ -227,7 +264,7 @@ final class SteamCMDRuntimeValidationTests: DownloaderTestCase {
       commands.append(Data(repeating: 0, count: length - header - name.count))
     }
     return words([
-      0xfeed_facf, 0x0100_0007, 3, fileType, UInt32(entries.count + rpaths.count),
+      0xfeed_facf, cpu, 0, fileType, UInt32(entries.count + rpaths.count),
       UInt32(commands.count), 0, 0,
     ]) + commands
   }
