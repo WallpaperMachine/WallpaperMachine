@@ -168,7 +168,7 @@ final class LockScreenWallpaperService {
     }
   }
 
-  func shutdown() async throws {
+  func shutdown(restoringDesktop: () async throws -> Void = {}) async throws {
     stopping = true
     updateMonitor()
     generation &+= 1
@@ -177,8 +177,13 @@ final class LockScreenWallpaperService {
     work = nil
     do {
       try restoreNativeSelection()
+      ownsDesktopProvider = false
       isEnabled = false
       screenSaverEnabled = false
+      lastInputs = nil
+      // The native journal can restore a PNG poster. Its owner must then
+      // restore the user's original after WallpaperAgent has reloaded.
+      try await restoringDesktop()
       isBusy = false
     } catch {
       stopping = false

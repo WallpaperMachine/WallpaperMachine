@@ -32,15 +32,24 @@ protocol DesktopPictureWorkspace {
     func targets() throws -> [DesktopPictureTarget]
     func currentPicture(target: DesktopPictureTarget) throws -> DesktopPicture?
     func setPicture(_ picture: DesktopPicture, target: DesktopPictureTarget) throws
+    /// Selections waiting for WallpaperAgent to reload may not be visible
+    /// through the legacy picture API yet.
+    func referencedPictureURLs(targets: [DesktopPictureTarget]) throws -> Set<URL>
 }
 
 @MainActor
 final class DesktopWallpaperLedger {
     private enum Failure: LocalizedError {
         case originalUnavailable
+        case restorationPending
 
         var errorDescription: String? {
-            String(localized: "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings.")
+            switch self {
+            case .originalUnavailable:
+                String(localized: "The original macOS wallpaper could not be recovered. Select your wallpaper again in System Settings.")
+            case .restorationPending:
+                String(localized: "macOS is still restoring the desktop wallpaper. Please try quitting again.")
+            }
         }
     }
 
@@ -106,7 +115,14 @@ final class DesktopWallpaperLedger {
         if let firstError { throw firstError }
     }
 
-    func restoreAll() throws { try synchronize(posters: [:], liveDisplays: []) }
+    func restoreAll() throws {
+        try synchronize(posters: [:], liveDisplays: [])
+        let targets = try workspace.targets()
+        guard try !workspace.referencedPictureURLs(targets: targets)
+            .contains(where: { Self.isPoster($0, folder: folder) }) else {
+            throw Failure.restorationPending
+        }
+    }
 
     func apply(png: Data, target: DesktopPictureTarget) throws {
         var comparisons: [URL: Bool] = [:]
@@ -250,6 +266,12 @@ final class DesktopWallpaperLedger {
     /// journal, which name no display, are left alone.
     private func removeUnreferencedPosters(targets: [DesktopPictureTarget]) throws {
         var targeted = Set<String>(), incomplete = Set<String>(), referenced = Set<String>()
+        // A native-provider shutdown reloads WallpaperAgent asynchronously.
+        // Its persisted poster is still in use even while the legacy API sees
+        // an empty selection or an already-updated cache. Keep its original.
+        for url in try workspace.referencedPictureURLs(targets: targets) where entry(for: url) != nil {
+            referenced.insert(url.lastPathComponent)
+        }
         for target in targets {
             targeted.insert(target.display)
             // The public-API fallback sees only the current Space.

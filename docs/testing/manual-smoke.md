@@ -211,7 +211,11 @@ are kept.
 - [ ] Disable the feature: journaled Desktop/Idle entries are restored and PNG
       poster synchronization resumes.
 - [ ] Quit with the feature enabled: the native provider is restored before
-      poster restoration is attempted.
+      poster restoration is attempted. Repeat with lock-screen only, screen-saver
+      only, and both enabled after a PNG poster has already been installed.
+      Every desktop returns to its original; quit waits through the native
+      service reload. A restoration failure keeps the app running and reports
+      the error so Exit can be retried.
 - [ ] Lock and unlock the screen and confirm the provider becomes active with
       playback unpaused.
 - [ ] Do not run this alongside a competing global wallpaper manager; a conflict

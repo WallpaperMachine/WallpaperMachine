@@ -202,7 +202,12 @@ Swift tests cover, without starting the app:
   even when the frame is unchanged; relaunch then restores that original.
   Per-Space originals still take precedence over public-API fallbacks, and
   external user choices survive restoration. Coordinator tests use unattached
-  `CAMetalLayer`s and injected notification/encoding services.
+  `CAMetalLayer`s and injected notification/encoding services. Shutdown fixtures
+  simulate a native provider reload whose persisted PNG is temporarily invisible
+  to the legacy API, delayed persistence after setting the original, permanent
+  write failure followed by retry, and an external user choice during the wait.
+  Native-store reference fixtures cover display/Space scope, inherited fallbacks,
+  linked Desktop choices, and exclusion of Idle and inactive fields.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
   Mode and thermal readings and a private notification center: Low Power Mode
   acting only once an action is chosen, only serious and critical heat counting

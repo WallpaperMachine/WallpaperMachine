@@ -185,7 +185,11 @@ Swift keeps the *system* wallpaper consistent with that window:
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
   matches the animated one; a Space change or wake re-applies the existing poster instead of
   capturing another. It suspends itself while the native lock-screen provider owns the
-  desktop.
+  desktop. On quit, the native service restores its selections before the poster service
+  restores originals. The latter checks image references in the native store read-only,
+  retains still-referenced posters and their journal entries across WallpaperAgent reloads,
+  and retries asynchronous restoration for about five seconds. Failure cancels quit before
+  other services are torn down; provider callbacks cannot discard the restorer during quit.
 - `WallpaperPresentationPolicy` suspends or unloads presentation when no wallpaper pixel can reach a
   display, without altering the user's play/pause choice. The strongest global condition wins:
   display sleep pauses (`setPresentationSuspended`) or stops and frees renderer memory

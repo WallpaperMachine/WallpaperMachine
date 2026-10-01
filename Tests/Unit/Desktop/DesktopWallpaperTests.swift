@@ -9,6 +9,8 @@ private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
     var pictures: [DesktopPictureTarget: DesktopPicture] = [:]
     /// Public NSWorkspace results, which may resolve an empty per-Space selection.
     var visiblePictures: [String: DesktopPicture] = [:]
+    /// A reload can lag behind the persisted native selection.
+    var persistedPictures: Set<URL> = []
     var writes: [DesktopPictureTarget] = []
     var failures: Set<DesktopPictureTarget> = []
     /// Listed by `targets()`, but their current picture cannot be read.
@@ -31,6 +33,7 @@ private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
         writes.append(target)
         didWrite?()
     }
+    func referencedPictureURLs(targets: [DesktopPictureTarget]) -> Set<URL> { persistedPictures }
 }
 
 private actor ControlledPosterEncoder {
@@ -309,6 +312,112 @@ final class DesktopWallpaperTests: XCTestCase {
         try ledger.restoreAll()
         XCTAssertEqual(workspace.pictures[one], original("one"))
         XCTAssertEqual(workspace.pictures[two], original("two"))
+    }
+
+    @MainActor
+    func testTerminationWaitsForNativeReloadAndPersistedPosterRestoration() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("before")]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try ledger.apply(png: Data([1]), target: one)
+        let poster = try XCTUnwrap(workspace.pictures[one])
+        // The native journal has put the PNG back in the store, but the old
+        // WallpaperAgent still reports the extension's pathless selection.
+        workspace.pictures[one] = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        workspace.persistedPictures = [poster.url]
+        XCTAssertThrowsError(try ledger.restoreAll())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: poster.url.path))
+
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [] }, frameCenter: NotificationCenter())
+        var reloaded = false
+        var persisted = false
+        try await sync.restoreForTermination {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: poster.url.path),
+                          "Do not delete the frame or its original while macOS still references it")
+            if !reloaded {
+                workspace.pictures[self.one] = poster
+                reloaded = true
+            } else {
+                XCTAssertEqual(workspace.pictures[self.one], self.original("before"))
+                workspace.persistedPictures = []
+                persisted = true
+            }
+        }
+        XCTAssertTrue(reloaded)
+        XCTAssertTrue(persisted)
+        XCTAssertEqual(workspace.pictures[one], original("before"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: poster.url.path))
+    }
+
+    @MainActor
+    func testTerminationReportsPersistentFailureAndRetainsOriginalForRetry() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"])
+        let poster = try XCTUnwrap(workspace.pictures[one])
+        workspace.failures = [one]
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [] }, frameCenter: NotificationCenter())
+        do {
+            try await sync.restoreForTermination(wait: {})
+            XCTFail("Quit must not succeed while an original could not be restored")
+        } catch {
+            XCTAssertEqual(workspace.pictures[one], poster)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: poster.url.path))
+            XCTAssertEqual(workspace.pictures[two], original("two"))
+        }
+        workspace.failures = []
+        try await sync.restoreForTermination(wait: {})
+        XCTAssertEqual(workspace.pictures[one], original("one"))
+    }
+
+    @MainActor
+    func testUserChoiceDuringNativeReloadSurvivesQuit() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("before")]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try ledger.apply(png: Data([1]), target: one)
+        workspace.persistedPictures = [try XCTUnwrap(workspace.pictures[one]?.url)]
+        workspace.pictures[one] = try DesktopSpaceWallpaperAPI.decodePicture([:])
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [] }, frameCenter: NotificationCenter())
+        workspace.writes = []
+        try await sync.restoreForTermination {
+            workspace.pictures[self.one] = self.original("user-choice")
+            workspace.persistedPictures = []
+        }
+        XCTAssertEqual(workspace.pictures[one], original("user-choice"))
+        XCTAssertTrue(workspace.writes.isEmpty)
+    }
+
+    @MainActor
+    func testPersistedWallpaperReferencesIncludeFallbacksButExcludeIdleAndOtherDisplays() throws {
+        func selection(_ name: String) throws -> [String: Any] {
+            let config: [String: Any] = ["type": "imageFile", "url": ["relative": original(name).url.absoluteString]]
+            return ["Content": ["Choices": [[
+                "Provider": "com.apple.wallpaper.choice.image",
+                "Configuration": try PropertyListSerialization.data(fromPropertyList: config, format: .binary, options: 0)
+            ]]]]
+        }
+        let store: [String: Any] = [
+            "AllSpacesAndDisplays": ["Type": "linked", "Linked": try selection("linked"),
+                                     "Desktop": try selection("inactive-desktop")],
+            "SystemDefault": ["Type": "individual", "Desktop": try selection("system"),
+                              "Idle": try selection("idle"), "Linked": try selection("inactive-linked")],
+            "Displays": ["display-one": ["Desktop": try selection("display")],
+                         "disconnected": ["Desktop": try selection("disconnected")]],
+            "Spaces": ["space-one": ["Default": ["Desktop": try selection("fallback")],
+                                     "Displays": ["display-one": ["Desktop": try selection("space")]]],
+                       "deleted-space": ["Default": ["Desktop": try selection("deleted")]]]
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: store, format: .binary, options: 0)
+        XCTAssertEqual(try SystemDesktopPictureWorkspace.referencedPictureURLs(
+            in: data, displays: ["display-one"], spaces: ["space-one"]),
+            Set(["linked", "system", "display", "fallback", "space"].map { original($0).url }))
+        XCTAssertThrowsError(try SystemDesktopPictureWorkspace.referencedPictureURLs(
+            in: Data("invalid".utf8), displays: ["display-one"], spaces: []))
     }
 
     @MainActor

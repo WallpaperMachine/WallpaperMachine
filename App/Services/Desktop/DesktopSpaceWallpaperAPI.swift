@@ -154,7 +154,67 @@ final class DesktopSpaceWallpaperAPI {
 @MainActor
 final class SystemDesktopPictureWorkspace: DesktopPictureWorkspace {
     private let spaces = DesktopSpaceWallpaperAPI()
+    private let storeURL: URL
     private var reportedFallback = false
+
+    init(storeURL: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+        "Library/Application Support/com.apple.wallpaper/Store/Index.plist")) {
+        self.storeURL = storeURL
+    }
+
+    func referencedPictureURLs(targets: [DesktopPictureTarget]) throws -> Set<URL> {
+        guard !targets.isEmpty, FileManager.default.fileExists(atPath: storeURL.path) else { return [] }
+        let displays = Set(targets.compactMap { target -> String? in
+            guard let id = UInt32(target.display),
+                  let uuid = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }
+            return CFUUIDCreateString(nil, uuid) as String
+        })
+        return try Self.referencedPictureURLs(in: Data(contentsOf: storeURL), displays: displays,
+                                             spaces: Set(targets.compactMap(\.space)))
+    }
+
+    /// Read-only: the store records the selection WallpaperAgent will load,
+    /// whereas DesktopPictureCopyDisplayForSpace can still report its old one.
+    static func referencedPictureURLs(in data: Data, displays: Set<String>, spaces: Set<String>) throws -> Set<URL> {
+        guard let root = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        var nodes = [root["AllSpacesAndDisplays"], root["SystemDefault"]]
+        let displayNodes = root["Displays"] as? [String: Any] ?? [:]
+        nodes += displays.map { displayNodes[$0] }
+        let spaceNodes = root["Spaces"] as? [String: [String: Any]] ?? [:]
+        for space in spaces {
+            guard let node = spaceNodes[space] else { continue }
+            nodes.append(node["Default"])
+            let scoped = node["Displays"] as? [String: Any] ?? [:]
+            nodes += displays.map { scoped[$0] }
+        }
+        var urls: Set<URL> = []
+        for node in nodes.compactMap({ $0 as? [String: Any] }) {
+            // Idle is deliberately excluded: saver-only choices do not own
+            // the desktop, and the poster service never writes them.
+            let fields: [String]
+            switch node["Type"] as? String {
+            case "idle": fields = []
+            case "linked": fields = ["Linked"]
+            case "desktop", "individual": fields = ["Desktop"]
+            default: fields = ["Desktop", "Linked"]
+            }
+            for field in fields {
+                guard let selection = node[field] as? [String: Any],
+                      let content = selection["Content"] as? [String: Any],
+                      let choices = content["Choices"] as? [[String: Any]] else { continue }
+                for choice in choices where choice["Provider"] as? String == "com.apple.wallpaper.choice.image" {
+                    guard let data = choice["Configuration"] as? Data,
+                          let config = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                          let value = config["url"] as? [String: Any], let relative = value["relative"] as? String,
+                          let url = URL(string: relative), url.isFileURL else { continue }
+                    urls.insert(url.standardizedFileURL)
+                }
+            }
+        }
+        return urls
+    }
 
     static func id(_ screen: NSScreen) -> String? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue
