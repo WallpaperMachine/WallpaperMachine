@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — PR 19 backup and preset review fixes
+
+- `python3 scripts/build.py --renderer-only` — passed; rebuilt the isolated worktree’s missing current bridge library and regenerated unchanged bindings after the first targeted run could not link.
+- `python3 scripts/test.py --only WallpaperBackupTests --only WallpaperPresetStoreTests --only ControlPanelBackupFlowTests` — passed, 50 tests; an earlier run exposed volatile-default cleanup in the new fixture, corrected before this run.
+- `python3 scripts/test.py` — passed once as the final gate: all Python checks passed; 1006 native tests passed, 0 failed, 11 opt-in media/network cases skipped.
+- Regressions cover persistent-only preference export/conflicts/rollback, a 48 MiB preset archive, manifest rejection before payload reads while preserving an existing destination, and preset directory roundtrips with hidden Finder metadata.
+- The WebUI mechanical detector reported no findings; `git diff --check` passed. No renderer source or generated-binding changes.
+- No Release app build, desktop/window-driving, visual presentation, audio hardware or live-account verification. The shared main checkout’s existing commit and uncommitted edits were not changed.
+
 ## 2026-10-01 — Reusable wallpaper workflows rebased onto 1.2.1
 
 - Implementation: local collections and named playlist plans, wallpaper property presets, staged local backup/restore, per-display still-image placement, compatibility cards, Shortcuts display selection, and Web page mute/native HTML-media gain; all four UI languages updated.
@@ -122,11 +131,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Hidden native cacheDisplay captures contained stale WebKit frames and were discarded; visual inspection used WKWebView.takeSnapshot instead. Guidance recorded in docs/development-tools.md.
 - Peekaboo reported Screen Recording and Accessibility unavailable. No permissions requested, no desktop input, no Space switch, no existing app restart, and no wallpaper changes. Live full-screen/Split View transitions remain unverified by user choice.
 - Only the Debug test host was compiled. No Release rebuild; the running Release app and its bundle were left untouched. Local screenshots remain disposable and uncommitted.
-
-## 2026-09-30 — Energy readout hierarchy and measurement disclosure
-
-- python3 scripts/test.py — exit 0; Python suites passed; native 853 passed, 0 failed, 11 skipped (9 opt-in media, 2 live Workshop). The shared tree includes unrelated concurrent window-sizing changes.
-- Headless Chromium on the real WebUI: 249 state/theme/language/layout cases passed at 1100px and the native 760px minimum, plus an isolated 360px settings container; no energy-card overflow. Tested text contrast stayed at least 5.33:1 across light/dark and neutral/warm/cool tones.
-- Space/Enter disclosure operation passed; open state and focus survived energy pushes and snapshots, and updates preserved focus on the quality slider. Measuring, unavailable, GPU contention, battery omission, watt units, zero values and before/after comparisons exercised.
-- Impeccable mechanical detector on settings.js and settings.css — exit 0, no findings.
-- No screenshots, desktop interaction or native visual review; power sampling behavior unchanged. No Release rebuild or app restart.

@@ -392,7 +392,7 @@ final class WallpaperPresetStore {
       try requireRetainedPath(path, presetID: document.preset.id, propertyID: property.id)
       let url = URL(fileURLWithPath: path)
       let sources = property.kind == "directory"
-        ? try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey]).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        ? try fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]).sorted { $0.lastPathComponent < $1.lastPathComponent }
         : [url]
       guard !sources.isEmpty, sources.count <= 4096,
             Set(sources.map { Self.canonicalComponent($0.lastPathComponent) }).count == sources.count else { throw Self.invalidDocument() }
@@ -458,7 +458,8 @@ final class WallpaperPresetStore {
                 property.kind != "file" || files.count == 1,
                 Set(files.map { Self.canonicalComponent($0.name) }).count == files.count else { throw Self.invalidDocument() }
           for file in files {
-            guard Self.safeComponent(file.name), file.bytes.count <= Self.maximumAssetBytes - total else { throw Self.assetLimit() }
+            guard Self.safeComponent(file.name) else { throw Self.invalidDocument() }
+            guard file.bytes.count <= Self.maximumAssetBytes - total else { throw Self.assetLimit() }
             total += file.bytes.count
           }
         } else if property.value != .empty && property.value != .string("") {

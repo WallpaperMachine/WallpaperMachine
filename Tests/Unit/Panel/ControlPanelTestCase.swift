@@ -292,7 +292,7 @@ final class PanelFixture {
       defaults: defaults, managed: ManagedUserAssetStore(root: root.appendingPathComponent("UserAssets")))
     let pickers = self.pickers
     backup = WallpaperBackupStore(
-      service: WallpaperBackupService(supportRoot: root), defaults: defaults,
+      service: WallpaperBackupService(supportRoot: root), defaults: defaults, domainName: root.lastPathComponent,
       exportDestination: { await pickers.exportBackup() }, restoreSource: { await pickers.restoreBackup() })
     imagePlacement = StillImagePlacementStore(defaults: defaults, library: library)
     let sceneAssets = root.appendingPathComponent("SceneAssets", isDirectory: true)

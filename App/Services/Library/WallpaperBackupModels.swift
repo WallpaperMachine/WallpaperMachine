@@ -11,12 +11,18 @@ enum WallpaperBackupConflictPolicy: String, Codable, Sendable {
 }
 
 struct WallpaperBackupLimits: Sendable {
-    var maximumEntries = 100_000
+    private static let entryLimit = 100_000
+    private static let pathByteLimit = 1_024
+    private static let preferenceByteLimit = WallpaperPresetStore.maximumDocumentBytes + 16 * 1_024 * 1_024
+    var maximumEntries = Self.entryLimit
     var maximumBytes: Int64 = 64 * 1_024 * 1_024 * 1_024
     var maximumFileBytes: Int64 = 32 * 1_024 * 1_024 * 1_024
-    var maximumManifestBytes = 8 * 1_024 * 1_024
+    // Budget JSON path escaping, entry fields/digests, base64 preferences and the header.
+    var maximumManifestBytes = Self.entryLimit * (6 * Self.pathByteLimit + 256)
+        + ((Self.preferenceByteLimit + 2) / 3) * 4 + 16 * 1_024
+    var maximumPreferenceBytes = Self.preferenceByteLimit
     var maximumMetadataBytes = 16 * 1_024 * 1_024
-    var maximumPathBytes = 1_024
+    var maximumPathBytes = Self.pathByteLimit
     var maximumDepth = 32
 }
 
@@ -100,11 +106,13 @@ struct WallpaperBackupPreferences: Sendable {
     ]
     var values: [String: Data]
 
+    /// Pass the suite name when injecting suite-based defaults.
     @MainActor
-    init(defaults: UserDefaults) throws {
+    init(defaults: UserDefaults, domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine") throws {
         values = [:]
+        let persistent = defaults.persistentDomain(forName: domainName) ?? [:]
         for key in Self.allowedKeys.sorted() {
-            if let value = defaults.object(forKey: key) {
+            if let value = persistent[key] {
                 values[key] = try Self.encode(value)
             }
         }

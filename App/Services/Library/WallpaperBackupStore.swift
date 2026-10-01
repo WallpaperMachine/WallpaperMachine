@@ -13,6 +13,7 @@ final class WallpaperBackupStore {
     private(set) var pendingRestore: Bool
     @ObservationIgnored private let service: WallpaperBackupService
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let domainName: String
     @ObservationIgnored private var selectedPackage: URL?
     @ObservationIgnored private var cancelOperation: (() -> Void)?
     @ObservationIgnored var onChange: (() -> Void)?
@@ -21,10 +22,12 @@ final class WallpaperBackupStore {
     @ObservationIgnored private let restoreSource: @MainActor () async -> URL?
 
     init(service: WallpaperBackupService = .init(), defaults: UserDefaults = .standard,
+         domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine",
          exportDestination: (@MainActor () async -> URL?)? = nil,
          restoreSource: (@MainActor () async -> URL?)? = nil) {
         self.service = service
         self.defaults = defaults
+        self.domainName = domainName
         pendingRestore = service.pendingRestore
         error = service.lastStartupError
         self.exportDestination = exportDestination ?? Self.chooseExportDestination
@@ -45,7 +48,7 @@ final class WallpaperBackupStore {
         status = String(localized: "Copying the local backup…")
         error = nil
         do {
-            let preferences = try WallpaperBackupPreferences(defaults: defaults)
+            let preferences = try WallpaperBackupPreferences(defaults: defaults, domainName: domainName)
             let service = service
             try await run { try service.export(to: destination, includeLibrary: includeLibrary, preferences: preferences) }
             status = String(localized: "Backup exported. Login sessions, caches and shared scene assets were not included.")
@@ -67,7 +70,7 @@ final class WallpaperBackupStore {
         preview = nil
         selectedPackage = nil
         do {
-            let preferences = try WallpaperBackupPreferences(defaults: defaults)
+            let preferences = try WallpaperBackupPreferences(defaults: defaults, domainName: domainName)
             let service = service
             preview = try await run { try service.preview(package: package, preferences: preferences) }
             selectedPackage = package

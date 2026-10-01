@@ -33,7 +33,7 @@ export function createPresets({ send, render, escapeHTML, icon, button, keyAttr,
     const rename = editor.mode === 'rename';
     return `<form class="inline-form" data-form="presetName" data-cancel="presetCancelEdit" ${keyAttr('preset-editor')}>`
       + `<label class="sr-only" for="preset-name">${escapeHTML(t('Preset name'))}</label>`
-      + `<input id="preset-name" type="text" required maxlength="128" autocomplete="off" spellcheck="false" placeholder="${escapeHTML(t('Preset name'))}" value="${escapeHTML(editor.name)}" data-input="presetName" data-id="${escapeHTML(id)}">`
+      + `<input id="preset-name" type="text" required maxlength="120" autocomplete="off" spellcheck="false" placeholder="${escapeHTML(t('Preset name'))}" value="${escapeHTML(editor.name)}" data-input="presetName" data-id="${escapeHTML(id)}">`
       + `<div class="actions"><button type="submit" class="primary"${disabled(pendingChange())}>${escapeHTML(rename ? t('Save') : t('Save preset'))}</button>${button(t('Cancel'), 'presetCancelEdit', {}, { className: 'quiet' })}</div></form>`;
   }
 

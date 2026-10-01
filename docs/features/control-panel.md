@@ -627,7 +627,9 @@ deleting a saved preset does not delete a directory still used by an applied
 wallpaper. Ordinary cache cleaning leaves these retained originals alone.
 
 Portable documents embed up to 32 MB of managed attachments, within a 48 MB
-document limit. Arbitrary external paths do not grant access on import: select
+document limit. Hidden files in retained directories (such as Finder metadata)
+are excluded from portable exports. Preset names accept 1–120 characters.
+Arbitrary external paths do not grant access on import: select
 external originals through the property editor. Missing resources, incompatible
 author changes, malformed documents and filesystem-aliasing filenames are errors,
 not partially applied presets.
@@ -659,6 +661,10 @@ plans, presets, favorites and image placements included), and retained UserAsset
 **Include the wallpaper library** also copies installed projects. Login sessions,
 passwords, keychain entries, logs, caches and shared scene resources are excluded.
 The local scene-assets selection stays local and may need to be selected again.
+Only preferences saved in the app’s persistent domain are included; inherited
+system languages and registered defaults are excluded, including during conflict
+checks and rollback. Export checks the complete manifest size before copying
+payload bytes and supports the full 48 MB preset archive limit.
 
 Choose a backup to preview its contents, conflicts and missing-resource warnings.
 **Keep what is on this Mac** preserves conflicting per-display playlists and their

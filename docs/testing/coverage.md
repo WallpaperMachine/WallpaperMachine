@@ -27,10 +27,11 @@ Swift tests cover, without starting the app:
   Collections and named plans cover stable identity, ordered membership, cleanup,
   detach-on-edit and paused/replaced queued transitions. `WallpaperPresetStoreTests`
   covers typed applied-property snapshots, portable managed attachments, limits,
-  alias rejection, draft/permission rollback and applied-source retention after
-  deleting a preset. `WallpaperBackupTests` exercises real package export,
+  hidden file exclusion, alias rejection, draft/permission rollback and
+  applied-source retention after deleting a preset. `WallpaperBackupTests` exercises real package export,
   preview, staged next-launch restore, conflict policy, parser/schema rejection,
-  authorization, plain-text preservation, rollback and interrupted recovery.
+  authorization, plain-text preservation, rollback and interrupted recovery,
+  persistent-only preferences, full-size preset archives and manifest preflight.
   Image placement tests cover fit-aware geometry, per-display persistence,
   version-bound single-flight upgrade, actual resource changes and reset races;
   `StillImagePageRenderingTests` exercises the generated page offscreen.

@@ -111,6 +111,13 @@ final class WallpaperPresetStoreTests: XCTestCase {
     let imported = try await context.store.importDocument(JSONEncoder().encode(document), options: options(properties: [descriptor]))
     let path = try XCTUnwrap(imported.properties.first?.retainedPath)
     XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path).appendingPathComponent("b.jpg")), Data("b".utf8))
+    try Data("Finder metadata".utf8).write(to: URL(fileURLWithPath: path).appendingPathComponent(".DS_Store"))
+    let exported = try await context.store.exportDocument(id: imported.id)
+    let portable = try JSONDecoder().decode(WallpaperPresetDocument.self, from: exported)
+    XCTAssertEqual(portable.assets["slides"]?.map(\.name), ["a.png", "b.jpg"])
+    let roundtrip = try await context.store.importDocument(exported, options: options(properties: [descriptor]))
+    let roundtripPath = try XCTUnwrap(roundtrip.properties.first?.retainedPath)
+    XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: roundtripPath).appendingPathComponent("b.jpg")), Data("b".utf8))
     let plan = try context.store.mutations(for: imported, options: options(properties: [descriptor]))
     guard case .path(let selection) = plan[0].operation else { return XCTFail("Directory selection semantics were lost") }
     XCTAssertEqual(selection, path)

@@ -56,19 +56,26 @@ struct WallpaperBackupService: Sendable {
             }
         }
         try validateEntries(entries, includesLibrary: includeLibrary)
-        for index in entries.indices {
-            let entry = entries[index]
+        var manifest = WallpaperBackupManifest(createdAt: Date(), sourceSupportRoot: supportRoot.path,
+                                               sourceSupportAliases: referenceRoot == supportRoot.path ? nil : [referenceRoot],
+                                               includesLibrary: includeLibrary, preferences: preferences.values,
+                                               entries: entries.sorted { $0.path < $1.path })
+        // Hex digests have a fixed encoded size. Check the complete manifest before
+        // reading payload bytes, including escaped paths and base64 preferences.
+        for index in manifest.entries.indices where manifest.entries[index].kind == .file {
+            manifest.entries[index].digest = String(repeating: "0", count: 64)
+        }
+        _ = try encodedManifest(manifest)
+        for index in manifest.entries.indices {
+            var entry = manifest.entries[index]
+            entry.digest = nil
             let target = payload.appendingPathComponent(entry.path)
             if entry.kind == .directory {
                 try manager.createDirectory(at: target, withIntermediateDirectories: true)
             } else {
-                entries[index].digest = try files.stream(root: supportRoot, entry: entry, to: target, rejectHardLinks: false)
+                manifest.entries[index].digest = try files.stream(root: supportRoot, entry: entry, to: target, rejectHardLinks: false)
             }
         }
-        let manifest = WallpaperBackupManifest(createdAt: Date(), sourceSupportRoot: supportRoot.path,
-                                               sourceSupportAliases: referenceRoot == supportRoot.path ? nil : [referenceRoot],
-                                               includesLibrary: includeLibrary, preferences: preferences.values,
-                                               entries: entries.sorted { $0.path < $1.path })
         try writeManifest(manifest, at: temporary)
         try Task.checkCancellation()
         try publishPackage(temporary, to: destination)
@@ -131,10 +138,11 @@ struct WallpaperBackupService: Sendable {
     /// It is synchronous because those consumers must not race startup publication.
     @MainActor
     static func applyPendingRestore(supportRoot: URL = ClientPaths.supportURL,
-                                    defaults: UserDefaults = .standard) throws -> WallpaperBackupRestoreReport? {
+                                    defaults: UserDefaults = .standard,
+                                    domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine") throws -> WallpaperBackupRestoreReport? {
         let service = WallpaperBackupService(supportRoot: supportRoot)
         do {
-            return try service.applyPendingRestore(defaults: defaults)
+            return try service.applyPendingRestore(defaults: defaults, domainName: domainName)
         } catch {
             // The next panel can explain a failed startup without opening a window.
             try? service.manager.createDirectory(at: service.supportRoot, withIntermediateDirectories: true)
@@ -145,6 +153,7 @@ struct WallpaperBackupService: Sendable {
 
     @MainActor
     func applyPendingRestore(defaults: UserDefaults,
+                             domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine",
                              beforePublish: ((String) throws -> Void)? = nil) throws -> WallpaperBackupRestoreReport? {
         let transaction = supportRoot.appendingPathComponent(Self.transactionDirectoryName)
         var recovered = false
@@ -159,7 +168,7 @@ struct WallpaperBackupService: Sendable {
         let (manifest, digest) = try validatedPackage(pending, isPending: true)
         let pendingState = try readJSON(WallpaperBackupPending.self, at: pending, name: "pending.json")
         guard pendingState.version == 1, digest == pendingState.manifestDigest else { throw files.changed() }
-        let current = try WallpaperBackupPreferences(defaults: defaults)
+        let current = try WallpaperBackupPreferences(defaults: defaults, domainName: domainName)
         try validateReferences(manifest: manifest, package: pending)
         let selected = try resourceUnits(manifest.entries).filter {
             pendingState.policy == .replace || !manager.fileExists(atPath: supportRoot.appendingPathComponent($0).path)
@@ -325,7 +334,7 @@ struct WallpaperBackupService: Sendable {
         }
         var bytes = 0
         for (key, data) in values {
-            guard data.count <= limits.maximumManifestBytes - bytes else { throw files.oversized() }
+            guard data.count <= limits.maximumPreferenceBytes - bytes else { throw files.oversized() }
             bytes += data.count
             let value = try WallpaperBackupPreferences.decode(data)
             try validateValue(value, depth: 0)
@@ -387,13 +396,18 @@ struct WallpaperBackupService: Sendable {
         return (json as? [Any])?.count ?? 0
     }
 
-    @discardableResult
-    private func writeManifest(_ manifest: WallpaperBackupManifest, at root: URL) throws -> String {
+    private func encodedManifest(_ manifest: WallpaperBackupManifest) throws -> Data {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys]
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(manifest)
         guard data.count <= limits.maximumManifestBytes else { throw files.oversized() }
+        return data
+    }
+
+    @discardableResult
+    private func writeManifest(_ manifest: WallpaperBackupManifest, at root: URL) throws -> String {
+        let data = try encodedManifest(manifest)
         try data.write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
         return WallpaperBackupFiles.digest(data)
     }
