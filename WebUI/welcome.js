@@ -62,7 +62,7 @@ export function createWelcome(helpers) {
   const signInRequest = () => (state?.downloadRequests || []).find(item => item.id === SIGN_IN_ID) || null;
   const signedIn = () => {
     const job = signInJob();
-    if (job?.pending) return '';
+    if (job?.pending || signInRequest()) return '';
     if (job && !dismissedJob) return !job.error && !job.cancelled ? job.account : '';
     return state?.savedAccount || '';
   };
@@ -220,11 +220,21 @@ export function createWelcome(helpers) {
     const job = signInJob();
     const request = signInRequest();
     const setup = state.setup || {};
-    const lead = t('You can browse without an account. Downloading requires a Steam account that owns Wallpaper Engine. Sign in now, or skip and sign in at your first download.');
+    const lead = t('You can browse without an account. Steam Workshop downloads require an account that owns Wallpaper Engine. Sign in now, or skip and sign in at your first download.');
     const links = `<div class="welcome-steam-links"><div class="welcome-steam-link"><p><b>${e(t('No Steam account yet?'))}</b> ${e(t('Creating one is free.'))}</p>${button(t('Create a Steam account'), 'openExternal', { url: STEAM_JOIN_URL }, { icon: 'external', className: 'link' })}</div><div class="welcome-steam-link"><p><b>${e(t('Don’t own Wallpaper Engine?'))}</b> ${e(t('It is a one-time purchase on Steam.'))}</p>${button(t('Buy Wallpaper Engine'), 'openExternal', { url: STEAM_STORE_URL }, { icon: 'external', className: 'link' })}</div></div>`;
     let body;
     if (done) {
-      body = statusCard('check', t('Signed in as {account}', { account: done }), t('Downloads will use this sign-in. Steam may still ask you to approve a new device in its mobile app.'), `${job?.warning ? `<p class="notice warning">${e(job.warning)}</p>` : ''}<div class="welcome-status-actions">${button(t('Use a different account'), 'signOut', {}, { className: 'link', disabled: busy('logOutSteam') })}</div>`, 'success');
+      const ownership = !dismissedJob && job?.account === done ? job.wallpaperEngineOwnership : 'unknown';
+      const owned = ownership === 'owned';
+      const missing = ownership === 'notOwned';
+      const message = owned
+        ? t('Wallpaper Engine ownership confirmed. You can download its Workshop wallpapers.')
+        : missing
+          ? t('This Steam account does not own Wallpaper Engine. Please purchase it on Steam to download Wallpaper Engine wallpapers. You can still download from Pixiv, browse the Workshop, and view Wallpaper Engine wallpapers you already have.')
+          : t('Wallpaper Engine ownership has not been confirmed. Check again to verify this account can download its Workshop wallpapers. You can still download from Pixiv, browse the Workshop, and view wallpapers you already have.');
+      const purchase = missing ? button(t('Buy Wallpaper Engine'), 'openExternal', { url: STEAM_STORE_URL }, { icon: 'external', className: 'primary' }) : '';
+      const recheck = !owned ? button(t('Check ownership again'), 'checkOwnership', {}, { className: 'quiet', disabled: pending.has('signIn') }) : '';
+      body = statusCard(owned ? 'check' : 'info', t('Signed in as {account}', { account: done }), message, `${job?.warning ? `<p class="notice warning">${e(job.warning)}</p>` : ''}<div class="welcome-status-actions">${purchase}${recheck}${button(t('Use a different account'), 'signOut', {}, { className: 'link', disabled: busy('logOutSteam') })}</div>${error ? `<p class="notice error" role="alert">${e(error)}</p>` : ''}`, owned ? 'success' : '');
     } else if (request) {
       body = setupCard(request, setup);
     } else if (job?.pending) {
@@ -255,6 +265,7 @@ export function createWelcome(helpers) {
 
   function signingInCard(job) {
     const account = job.account || signIn.account;
+    if (!job.queued && !job.authenticating && !job.prompt && !job.challenge) return statusCard('search', t('Checking Wallpaper Engine ownership…'), '', `<progress aria-label="${e(t('Checking Wallpaper Engine ownership…'))}"></progress><div class="welcome-status-actions">${button(t('Cancel'), 'cancelSignIn', {}, { className: 'quiet' })}</div>`);
     if (job.queued) return statusCard('logIn', job.status, t('The sign-in starts as soon as the current download is done.'), `<progress aria-label="${e(t('Waiting'))}"></progress><div class="welcome-status-actions">${button(t('Cancel'), 'cancelSignIn', {}, { className: 'quiet' })}</div>`);
     const guide = helpers.signInGuide(job, account);
     const cancel = button(t('Cancel'), 'cancelSignIn', {}, { className: 'quiet', disabled: busy('downloadCancel', { id: job.id }) });
@@ -482,6 +493,13 @@ export function createWelcome(helpers) {
       case 'theme': run(chooseTheme(control.dataset.value)); return;
       case 'reveal': signIn.reveal = !signIn.reveal; render(state); container.querySelector('#welcome-password')?.focus(); return;
       case 'cancelSignIn': run(cancelSignIn()); return;
+      case 'checkOwnership': {
+        const account = signedIn();
+        if (!account) return;
+        dismissedJob = false;
+        run(perform('signIn', 'steamSignIn', { account, rememberSession: signIn.remember }));
+        return;
+      }
       case 'signOut': run(perform('signOut', 'logOutSteam').then(result => { if (result && !result.savedAccount) dismissedJob = true; render(state); })); return;
       case 'setupApprove': case 'setupInstall': case 'setupLocate': run(perform(action, action)); return;
       case 'openExternal': run(send('openExternal', { url: control.dataset.url })); return;

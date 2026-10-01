@@ -142,9 +142,13 @@ have **Skip**:
    (`setupInstall`, with the Gatekeeper approval and locate-a-copy paths when
    they apply). Steam Guard (mobile approval, authenticator or emailed code)
    is shown with the same guides as the download dialog; **Cancel** stops the
-   session. Success shows **Signed in as …** with **Use a different account**
-   (`logOutSteam`); a saved sign-in from an earlier run shows the same state
-   straight away. **Skip for now** (or **Skip and cancel sign-in** while a job or
+   session. After sign-in, the guide checks Wallpaper Engine ownership and shows
+   **Signed in as …** with the result and **Use a different account** (`logOutSteam`).
+   Non-owners see **Buy Wallpaper Engine** and an explanation that Pixiv downloads,
+   Workshop browsing, and viewing existing wallpapers remain available. An
+   inconclusive result is labeled unconfirmed. Both offer **Check ownership again**
+   and allow **Continue**; saved accounts from an earlier run can also be checked.
+   **Skip for now** (or **Skip and cancel sign-in** while a job or
    setup request is pending) leaves Steam for the first download to ask about.
    New prompts hand focus to their input when the previous control disappears;
    ordinary progress does not interrupt typing. A Steam Guard request arriving

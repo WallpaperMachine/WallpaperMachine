@@ -1217,6 +1217,66 @@ final class ControlPanelShellTests: ControlPanelTestCase {
     }
   }
 
+  func testWelcomeOwnershipNoticeAllowsContinuingAndRecheckingAfterPurchase() async throws {
+    for (output, ownership) in [("No active license found for appID 431960.\n", "notOwned"), ("", "unknown")] {
+      try await withPanel { panel in
+        try Data(output.utf8).write(to: panel.root.appendingPathComponent("ownership"))
+        panel.show()
+        panel.workshop.steamCMDSetup.selectExisting(at: panel.executable)
+        try await panel.waitUntil(timeout: 5) { panel.workshop.steamCMDSetup.selectedRuntime != nil }
+        _ = try await panel.js("""
+          window.wallpaperUI.receive(await window.webkit.messageHandlers.native.postMessage({action:'ready'}));
+          document.querySelector('#welcome [data-action="go"][data-step="1"]').click();
+          const account = document.getElementById('welcome-account');
+          account.value = 'localtest';
+          account.dispatchEvent(new Event('input', {bubbles:true}));
+          document.getElementById('welcome-password').value = 'fixture-password';
+          document.querySelector('#welcome form[data-form="signIn"]').requestSubmit();
+          """)
+        let job = try await panel.waitForSignIn()
+        try await panel.waitUntil(timeout: 10) { !job.isPending }
+        XCTAssertNil(job.errorMessage)
+        let downloads = try XCTUnwrap(panel.controller.snapshot()["downloads"] as? [[String: Any]])
+        XCTAssertEqual(downloads.first { $0["id"] as? String == job.id }?["wallpaperEngineOwnership"] as? String, ownership)
+        try await panel.waitJS("!!document.querySelector('#welcome [data-action=\"checkOwnership\"]')")
+        let notice = try await panel.js("""
+          const region = document.getElementById('welcome');
+          const buy = region.querySelector('.welcome-status [data-action="openExternal"]');
+          return {
+            purchase: buy?.dataset.url || '',
+            alternatives: region.querySelector('.welcome-status-text').textContent.includes('Pixiv'),
+            success: !!region.querySelector('.welcome-status.success'),
+            continueEnabled: !region.querySelector('[data-action="continue"]').disabled,
+          };
+          """) as? [String: Any]
+        XCTAssertEqual(notice?["alternatives"] as? Bool, true)
+        XCTAssertEqual(notice?["success"] as? Bool, false)
+        XCTAssertEqual(notice?["continueEnabled"] as? Bool, true)
+        XCTAssertEqual((notice?["purchase"] as? String ?? "").contains("/app/431960"), ownership == "notOwned")
+        _ = try await panel.js("document.querySelector('#welcome [data-action=\"continue\"]').click();")
+        try await panel.waitJS("document.querySelector('#welcome .welcome-page')?.dataset.step === 'performance'")
+
+        // A fresh query after purchase replaces the notice, even without a reusable sign-in.
+        try Data("License packageID 12345:\n - State : Active( flags 512 )\n - Apps : 431960, (1 in total)\n".utf8)
+          .write(to: panel.root.appendingPathComponent("ownership"))
+        _ = try await panel.js("""
+          document.querySelector('#welcome [data-action="go"][data-step="1"]').click();
+          document.querySelector('#welcome [data-action="checkOwnership"]').click();
+          """)
+        try await panel.waitUntil { panel.workshop.downloader.signIn !== job }
+        try await panel.waitJS("!!document.getElementById('welcome-response')")
+        _ = try await panel.js("""
+          document.getElementById('welcome-response').value = 'fixture-password';
+          document.querySelector('#welcome form[data-form="prompt"]').requestSubmit();
+          """)
+        try await panel.waitJS("!!document.querySelector('#welcome .welcome-status.success')")
+        XCTAssertEqual(panel.workshop.downloader.signIn?.worker.wallpaperEngineOwnership, .owned)
+        let hasRetry = try await panel.js("return !!document.querySelector('#welcome [data-action=\"checkOwnership\"]');") as? Bool
+        XCTAssertEqual(hasRetry, false)
+      }
+    }
+  }
+
   func testWelcomeRevealedPasswordSurvivesSnapshotsWithoutHTMLEchoAndClearsOnSubmit() async throws {
     try await withPanel { panel in
       panel.show()

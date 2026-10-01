@@ -195,7 +195,7 @@ final class DownloaderLifecycleTests: DownloaderTestCase {
     }
   }
 
-  /// A sign-in-only session runs `+login … +quit` with no download command, answers Steam's own
+  /// A sign-in-only session checks the license without downloading, answers Steam's own
   /// prompts, saves the accepted sign-in for later downloads, and leaves nothing behind.
   func testSignInOnlySessionSavesTheSignInAndDownloadsNothing() async throws {
     let root = try makeRuntime(
@@ -234,9 +234,77 @@ final class DownloaderLifecycleTests: DownloaderTestCase {
       XCTAssertNil(downloader.downloadedID, "Nothing is downloaded")
       XCTAssertEqual(downloader.savedAccount, "localtest", "The accepted sign-in is saved for later downloads")
       let arguments = try String(contentsOf: root.appendingPathComponent("arguments.txt"), encoding: .utf8)
-      XCTAssertTrue(arguments.contains("+login localtest +quit"), "Login is followed straight by quit: \(arguments)")
+      XCTAssertTrue(arguments.contains("+login localtest +licenses_for_app 431960 +quit"), "The authenticated session checks ownership without downloading: \(arguments)")
       try assertNoStaging(in: root)
       try assertPrivateSession(in: root)
+    } catch {
+      await downloader.shutdown()
+      throw error
+    }
+  }
+
+  func testSignInChecksOwnershipWithoutTreatingUnknownOutputAsMissingPurchase() async throws {
+    let cases: [(String, WorkshopDownloader.WallpaperEngineOwnership)] = [
+      ("License packageID 12345:\\n - State : Active( flags 512 )\\n - Apps : 431960, (1 in total)\\n", .owned),
+      ("No active license found for appID 431960.", .notOwned),
+      ("", .unknown),
+      ("Unknown command: licenses_for_app\\n", .unknown),
+      ("No active license found for appID 4319600.\\n", .unknown),
+      ("License packageID 12345:\\n - State : Inactive( flags 0 )\\n - Apps : 431960, (1 in total)\\n", .unknown),
+      ("License packageID 12345:\\n - State : Active (flags 0x200)\\n - Apps : 4319600, (1 in total)\\n", .unknown),
+      ("License packageID 12345:\\n - State : Active( flags 512 )\\n - Apps : 123, (1 in total)\\nLicense packageID 67890:\\n - Apps : 431960, (1 in total)\\n", .unknown),
+    ]
+    for (output, expected) in cases {
+      let root = try makeRuntime("""
+        for argument in "$@"; do
+          case "$argument" in +workshop_download_item|+app_update) exit 70 ;; esac
+        done
+        printf 'Waiting for user info...OK\\n'
+        printf '\(output)'
+        """)
+      defer { try? FileManager.default.removeItem(at: root) }
+      let downloader = WorkshopDownloader(
+        sessionDirectory: root.appendingPathComponent("SteamSession"),
+        runtimeProvider: ShellRuntimeProvider(), networkMonitor: FixtureNetworkMonitor())
+      downloader.signIn(username: "localtest", executable: root.appendingPathComponent("runtime/steamcmd"),
+                        root: root, rememberSession: false)
+      do {
+        try await waitUntil { !downloader.isRunning }
+        XCTAssertNil(downloader.errorMessage, "Ownership does not invalidate a successful sign-in")
+        XCTAssertEqual(downloader.wallpaperEngineOwnership, expected, output)
+        try assertNoStaging(in: root)
+      } catch {
+        await downloader.shutdown()
+        throw error
+      }
+    }
+  }
+
+  func testOwnershipWaitsForCompleteAppIDAndResetsForTheNextSignIn() async throws {
+    let root = try makeRuntime("""
+      printf 'Waiting for user info...OK\\nLicense packageID 12345:\\n - State : Active( flags 512 )\\n - Apps : 431960'
+      touch ../partial-license
+      while [ ! -f ../finish-license ]; do sleep 0.02; done
+      printf '0, (1 in total)\\nLicense packageID 67890:\\n - State : Active( flags 512 )\\n - Apps : 431960, (1 in total)\\n'
+      """)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let downloader = WorkshopDownloader(
+      sessionDirectory: root.appendingPathComponent("SteamSession"),
+      runtimeProvider: ShellRuntimeProvider(), networkMonitor: FixtureNetworkMonitor())
+    let executable = root.appendingPathComponent("runtime/steamcmd")
+    downloader.signIn(username: "localtest", executable: executable, root: root, rememberSession: false)
+    do {
+      try await waitUntil { FileManager.default.fileExists(atPath: root.appendingPathComponent("partial-license").path) && !downloader.isAuthenticating }
+      XCTAssertEqual(downloader.wallpaperEngineOwnership, .unknown)
+      try Data().write(to: root.appendingPathComponent("finish-license"))
+      try await waitUntil { !downloader.isRunning }
+      XCTAssertEqual(downloader.wallpaperEngineOwnership, .owned)
+      try Data("#!/bin/sh\nprintf 'Waiting for user info...OK\\nNo active license found for appID 431960.\\n'\n".utf8).write(to: executable)
+      downloader.signIn(username: "anotheraccount", executable: executable, root: root, rememberSession: false)
+      XCTAssertEqual(downloader.wallpaperEngineOwnership, .unknown, "The previous account's ownership must not carry over")
+      try await waitUntil { !downloader.isRunning }
+      XCTAssertNil(downloader.errorMessage)
+      XCTAssertEqual(downloader.wallpaperEngineOwnership, .notOwned)
     } catch {
       await downloader.shutdown()
       throw error

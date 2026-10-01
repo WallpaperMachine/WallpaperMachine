@@ -1,6 +1,7 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Signed in; checking Wallpaper Engine ownership…" : {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Signed in; checking Wallpaper Engine ownership…"}}, "ja": {"stringUnit": {"state": "translated", "value": "サインイン済み。Wallpaper Engineの所有を確認中…"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "已登录；正在检查是否拥有 Wallpaper Engine…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已登入；正在檢查是否擁有 Wallpaper Engine…"}}}},
     "macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry." : {
       "localizations" : {"en":{"stringUnit":{"state":"translated","value":"macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry."}},"ja":{"stringUnit":{"state":"translated","value":"macOSが別のWallpaperMachineのコピーからロック画面レンダラを読み込みました。使用するアプリのコピーだけを残してから、再試行してください。"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"macOS 从另一个 WallpaperMachine 副本加载了锁定屏幕渲染器。请只保留要使用的应用副本，然后重试。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"macOS 從另一個 WallpaperMachine 副本載入了鎖定畫面算繪器。請只保留要使用的 App 副本，然後重試。"}}}
     },

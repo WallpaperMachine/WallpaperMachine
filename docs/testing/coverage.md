@@ -88,7 +88,8 @@ Swift tests cover, without starting the app:
   protection against stale credential rejections erasing a newer session,
   retained-intent setup/account progression, explicit shared-resource consent
   including reinstall, resource-job deduplication, account correction, removal
-  preventing resumption, and download-speed sampling (see
+  preventing resumption, sign-in ownership checks (owned, missing, unconfirmed,
+  split output and switching accounts), and download-speed sampling (see
   [renderer.md](renderer.md) for the `nettop` streaming detail). The
   downloader suites share `DownloaderTestCase` (`Tests/Unit/Workshop/`) and
   split by concern: `DownloaderLifecycleTests`, `DownloaderSessionTests`,
@@ -161,6 +162,7 @@ Swift tests cover, without starting the app:
   active numeric/search drafts, caret, disclosure and scroll preservation;
   theme changes without renderer settings and explicit lock-screen unavailability;
   onboarding background focus isolation and Steam prompt focus transitions;
+  ownership notices, continuing without ownership, and rechecking after purchase;
   revealed-password retention without a value attribute or HTML echo, followed
   by submit clearing through the fake Steam runtime; and real native rejection
   of an anonymous download account with modal feedback, retained intent and

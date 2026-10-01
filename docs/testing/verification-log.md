@@ -25,6 +25,15 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — Welcome guide Wallpaper Engine ownership check
+
+- python3 scripts/test.py --only DownloaderLifecycleTests — exit 0; 24 passed, 0 failed, 0 skipped. Covers owned, missing and unknown license responses, complete app IDs, session reset and no downloads during sign-in.
+- python3 scripts/test.py --only ControlPanelShellTests/testWelcomeOwnershipNoticeAllowsContinuingAndRecheckingAfterPurchase — exit 0; 1 passed. Offscreen guide covers purchase links, unconfirmed results, continuing setup and rechecking after purchase.
+- python3 scripts/test.py — exit 0; 226 Python tests passed; native gate 901 passed, 0 failed, 11 skipped of 912. Skips: 9 opt-in media tests and 2 live Workshop tests.
+- Impeccable detector on WebUI/welcome.js — exit 0; no findings. git diff --check — exit 0. Added strings cover all shipped languages.
+- Live Steam authentication and license responses, desktop presentation and visual appearance remain unverified; synthetic PTY fixtures and offscreen WebKit only. Release app not rebuilt.
+- python3 scripts/clean.py --dry-run — exit 0; existing shared artifacts retained to avoid removing unrelated evidence.
+
 ## 2026-10-01 — Bounded HDR and interactive scene compatibility
 
 - User selected a general bounded bloom model rather than claiming exact proprietary Wallpaper Engine HDR parameter parity. No wallpaper-specific rendering branches or private asset edits.
@@ -118,13 +127,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Space/Enter disclosure operation passed; open state and focus survived energy pushes and snapshots, and updates preserved focus on the quality slider. Measuring, unavailable, GPU contention, battery omission, watt units, zero values and before/after comparisons exercised.
 - Impeccable mechanical detector on settings.js and settings.css — exit 0, no findings.
 - No screenshots, desktop interaction or native visual review; power sampling behavior unchanged. No Release rebuild or app restart.
-
-## 2026-09-30 — Control-panel full-screen navigation (#17)
-
-- python3 scripts/test.py --only ControlPanelWindowSizingTests: 2 passed, 0 failed, 0 skipped.
-- Temporary offscreen AppKit smoke executable: opaque title-bar chrome intercepted navigation before the layout change; the fixed layout and restored windowed layout both delivered hits to content and preserved the window frame.
-- Regression coverage exercises 1920×1080, 960×1080 and 760×560 bounds, unobscured content, navigation hit-testing and restoration of the unified title-bar layout.
-- python3 scripts/test.py: all 17 Python test modules passed; native gate 853 passed, 0 failed, 11 skipped of 864.
-- Skipped: 9 opt-in NativeVideoPlayerMediaTests and 2 live-network WorkshopTests; no asset-dependent skips.
-- Live full-screen and Split View transitions and visual presentation remain unverified; no window was shown or Space transition requested.
-- Release app not rebuilt; the running app remains unchanged. Unrelated concurrent WebUI and documentation edits were preserved.

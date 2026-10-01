@@ -237,6 +237,11 @@ final class PanelFixture {
         IFS= read -r password
         printf '%s' "$password" > "\(root.path)/password"
         printf 'Waiting for user info...OK\\n'
+        if [ -f "\(root.path)/ownership" ]; then
+          cat "\(root.path)/ownership"
+        else
+          printf 'License packageID 12345:\\n - State : Active( flags 512 )\\n - Apps : 431960, (1 in total)\\n'
+        fi
         exit 0
       fi
       while [ ! -e "\(root.path)/advance" ]; do /bin/sleep 0.02; done
