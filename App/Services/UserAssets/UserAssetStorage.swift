@@ -43,6 +43,7 @@ enum UserAssetStorage {
             guard (try? wallpaper.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
             else { continue }
             let id = wallpaper.lastPathComponent
+            guard id != WallpaperPresetStore.retainedDirectoryName else { continue }
             let manifest = store.manifest(wallpaperId: id)
             let referenced = manifest.properties.filter { !$0.value.assets.isEmpty }
             if referenced.isEmpty {

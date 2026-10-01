@@ -41,6 +41,303 @@
     "The web screen saver could not suspend or resume playback." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The web screen saver could not suspend or resume playback."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Webスクリーンセーバの再生を一時停止または再開できませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法暂停或恢复网页屏幕保护程序的播放。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法暫停或恢復網頁螢幕保護程式的播放。"}}}
     },
+    "Restore recovery found old files without its journal. Keep this support folder intact; the old files have not been deleted." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Restore recovery found old files without its journal. Keep this support folder intact; the old files have not been deleted."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "復元のリカバリーで、ジャーナルのない旧ファイルが見つかりました。このサポートフォルダを変更しないでください。旧ファイルは削除されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "恢复修复发现旧文件但没有日志。请保持此支持文件夹完整；旧文件尚未删除。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "還原復原發現舊檔案但沒有日誌。請保持此支援資料夾完整；舊檔案尚未刪除。"}}}
+    },
+    "A previous restore failed. Preview and confirm the backup again to retry, or cancel the pending restore." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A previous restore failed. Preview and confirm the backup again to retry, or cancel the pending restore."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "以前の復元が失敗しました。バックアップを再度プレビューして確定し、再試行するか、保留中の復元を取り消してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "之前的恢复失败。请重新预览并确认备份以重试，或取消待执行恢复。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "先前的還原失敗。請重新預覽並確認備份以重試，或取消待執行還原。"}}}
+    },
+    "Display" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Display"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ディスプレイ"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "显示器"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "顯示器"}}}
+    },
+    "Changes a chosen display to its next wallpaper, or the target display when none is chosen." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Changes a chosen display to its next wallpaper, or the target display when none is chosen."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "選択したディスプレイを次の壁紙に切り替えます。未選択の場合は対象ディスプレイを使用します。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "将所选显示器切换到下一张壁纸；未选择时使用目标显示器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "將所選顯示器切換到下一張桌布；未選擇時使用目標顯示器。"}}}
+    },
+    "Applies an installed wallpaper to a chosen display, or the target display when none is chosen." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Applies an installed wallpaper to a chosen display, or the target display when none is chosen."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済みの壁紙を選択したディスプレイに適用します。未選択の場合は対象ディスプレイを使用します。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "将已安装的壁纸应用到所选显示器；未选择时使用目标显示器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "將已安裝的桌布套用到所選顯示器；未選擇時使用目標顯示器。"}}}
+    },
+    "Target display" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Target display"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "対象ディスプレイ"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "目标显示器"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "目標顯示器"}}}
+    },
+    "Checking this display at %u FPS, including its mirror group and global frame-rate cap." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Checking this display at %u FPS, including its mirror group and global frame-rate cap."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ミラーグループと全体のフレームレート上限を含め、このディスプレイを %u FPS で確認します。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "以 %u FPS 检查此显示器，包括镜像组和全局帧率上限。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "以 %u FPS 檢查此顯示器，包括鏡像群組和全域影格率上限。"}}}
+    },
+    "Choose a connected, enabled independent display. A mirror follows its source wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose a connected, enabled independent display. A mirror follows its source wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "接続され、有効な独立ディスプレイを選択してください。ミラーは元の壁紙に従います。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择已连接并启用的独立显示器。镜像显示器跟随来源壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請選擇已連接並啟用的獨立顯示器。鏡像顯示器跟隨來源桌布。"}}}
+    },
+    "Lock screen" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Lock screen"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "鎖定畫面"}}}
+    },
+    "Web wallpapers are not supported on the lock screen." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Web wallpapers are not supported on the lock screen."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ロック画面では Web 壁紙は使用できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "锁定屏幕不支持网页壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "鎖定畫面不支援網頁桌布。"}}}
+    },
+    "This wallpaper type has no supported lock-screen route." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This wallpaper type has no supported lock-screen route."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "この壁紙の種類には、対応するロック画面での表示方法がありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此壁纸类型没有受支持的锁定屏幕方式。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此桌布類型沒有支援的鎖定畫面方式。"}}}
+    },
+    "Video and scene wallpapers have a lock-screen route. Publishing, resource access and extension playback still require runtime verification; scenes use Compatibility there." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Video and scene wallpapers have a lock-screen route. Publishing, resource access and extension playback still require runtime verification; scenes use Compatibility there."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "動画とシーン壁紙にはロック画面への表示経路があります。公開、リソースへのアクセス、拡張機能での再生は実行時の検証が必要です。シーンは互換モードを使用します。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "视频和场景壁纸支持锁定屏幕方式。发布、资源访问和扩展播放仍需运行时验证；场景在此使用兼容模式。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "影片和場景桌布支援鎖定畫面方式。發佈、資源存取和延伸功能播放仍需執行時驗證；場景在此使用相容模式。"}}}
+    },
+    "Installed project" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Installed project"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済みプロジェクト"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已安装项目"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已安裝專案"}}}
+    },
+    "The installed wallpaper identifier is not a safe library path." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The installed wallpaper identifier is not a safe library path."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済み壁紙の識別子は安全なライブラリパスではありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已安装壁纸的标识符不是安全的库路径。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已安裝桌布的識別碼不是安全的資料庫路徑。"}}}
+    },
+    "The project resolves outside the installed library." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The project resolves outside the installed library."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロジェクトの参照先がインストール済みライブラリの外にあります。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "项目解析到已安装库之外。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "專案解析到已安裝資料庫之外。"}}}
+    },
+    "The installed wallpaper folder is missing or unreadable. Refresh or reinstall this wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The installed wallpaper folder is missing or unreadable. Refresh or reinstall this wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済み壁紙のフォルダが見つからないか、読み取れません。更新するか、この壁紙を再インストールしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已安装壁纸文件夹缺失或不可读。请刷新或重新安装此壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已安裝桌布資料夾遺失或無法讀取。請重新整理或重新安裝此桌布。"}}}
+    },
+    "project.json is missing, unreadable, too large or has no valid entry file. Reinstall this wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "project.json is missing, unreadable, too large or has no valid entry file. Reinstall this wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "project.json が見つからない、読み取れない、大きすぎる、または有効なエントリファイルがありません。この壁紙を再インストールしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "project.json 缺失、不可读、过大或没有有效入口文件。请重新安装此壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "project.json 遺失、無法讀取、過大或沒有有效入口檔案。請重新安裝此桌布。"}}}
+    },
+    "The manifest type no longer matches the library entry. Refresh your library before checking again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The manifest type no longer matches the library entry. Refresh your library before checking again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "マニフェストの種類がライブラリ項目と一致しなくなりました。ライブラリを更新してから再確認してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "清单类型与库条目不再匹配。请刷新壁纸库后重新检查。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "資訊清單類型與資料庫項目不再相符。請重新整理桌布庫後重新檢查。"}}}
+    },
+    "Entry resources" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Entry resources"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "エントリリソース"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "入口资源"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "入口資源"}}}
+    },
+    "The declared entry resolves outside this wallpaper folder." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The declared entry resolves outside this wallpaper folder."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "宣言されたエントリの参照先がこの壁紙フォルダの外にあります。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "声明的入口解析到此壁纸文件夹之外。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "宣告的入口解析到此桌布資料夾之外。"}}}
+    },
+    "The installed manifest has a declared entry file." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The installed manifest has a declared entry file."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済みマニフェストにエントリファイルが宣言されています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已安装清单声明了入口文件。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已安裝資訊清單宣告了入口檔案。"}}}
+    },
+    "The library reports this project type as unsupported." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The library reports this project type as unsupported."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ライブラリによると、このプロジェクトの種類は未対応です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸库报告此项目类型不受支持。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布庫回報此專案類型不受支援。"}}}
+    },
+    "The declared entry file is installed and readable. This does not verify every authored dependency." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The declared entry file is installed and readable. This does not verify every authored dependency."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "宣言されたエントリファイルはインストール済みで読み取れます。すべての作者定義の依存リソースが検証されたわけではありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "声明的入口文件已安装且可读。这不代表所有作者依赖均已验证。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "宣告的入口檔案已安裝且可讀取。這不代表所有作者相依資源均已驗證。"}}}
+    },
+    "A scene package is installed. Its internal entry and dependencies need the renderer's package parser; preflight cannot certify them." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A scene package is installed. Its internal entry and dependencies need the renderer's package parser; preflight cannot certify them."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "シーンパッケージはインストール済みです。内部エントリと依存リソースにはレンダラーのパッケージ解析が必要で、事前確認では保証できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "场景包已安装。其内部入口和依赖需要渲染器的包解析器；预检无法认证。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "場景套件已安裝。其內部入口和相依資源需要算繪器的套件解析器；預先檢查無法認證。"}}}
+    },
+    "The declared entry file is missing or unreadable. Reinstall this wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The declared entry file is missing or unreadable. Reinstall this wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "宣言されたエントリファイルが見つからないか、読み取れません。この壁紙を再インストールしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "声明的入口文件缺失或不可读。请重新安装此壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "宣告的入口檔案遺失或無法讀取。請重新安裝此桌布。"}}}
+    },
+    "Native video admission" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Native video admission"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ネイティブ動画の適合確認"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "原生视频准入"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "原生影片准入"}}}
+    },
+    "AVFoundation metadata meets this target frame-rate constraint. Actual player preparation and on-screen presentation are not verified by this check." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation metadata meets this target frame-rate constraint. Actual player preparation and on-screen presentation are not verified by this check."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation のメタデータは対象のフレームレート制約を満たしています。実際のプレイヤーの準備や画面表示は、この確認では検証しません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation 元数据符合目标帧率约束。此检查不验证实际播放器准备和屏幕显示。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation 中繼資料符合目標影格率限制。此檢查不驗證實際播放器準備和螢幕顯示。"}}}
+    },
+    "AVFoundation metadata meets this target frame-rate constraint. Compatibility remains selected; this check does not change your backend." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation metadata meets this target frame-rate constraint. Compatibility remains selected; this check does not change your backend."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation のメタデータは対象のフレームレート制約を満たしています。互換モードの選択は維持され、この確認でバックエンドは変更されません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation 元数据符合目标帧率约束。仍选择兼容模式；此检查不会更改后端。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "AVFoundation 中繼資料符合目標影格率限制。仍選擇相容模式；此檢查不會變更後端。"}}}
+    },
+    "Native admission needs a supported installed video, a readable entry and a valid target display." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Native admission needs a supported installed video, a readable entry and a valid target display."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ネイティブ適合確認には、対応するインストール済み動画、読み取れるエントリ、有効な対象ディスプレイが必要です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "原生准入需要受支持的已安装视频、可读入口和有效目标显示器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "原生准入需要支援的已安裝影片、可讀取入口和有效目標顯示器。"}}}
+    },
+    "Shared scene resources" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Shared scene resources"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "共有シーンリソース"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "共享场景资源"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "共用場景資源"}}}
+    },
+    "The required baseline shared shaders and material are installed. Authored resources are not fully validated." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The required baseline shared shaders and material are installed. Authored resources are not fully validated."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "必要な基本共有シェーダーとマテリアルはインストール済みです。作者定義のリソースは完全には検証されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "所需的基础共享着色器和材质已安装。作者资源尚未全面验证。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "所需的基礎共用著色器和材質已安裝。作者資源尚未全面驗證。"}}}
+    },
+    "Baseline Wallpaper Engine shaders or materials are missing. Install or locate the complete scene assets folder." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Baseline Wallpaper Engine shaders or materials are missing. Install or locate the complete scene assets folder."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "基本の Wallpaper Engine シェーダーまたはマテリアルがありません。完全なシーンアセットフォルダをインストールするか、指定してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "缺少基础 Wallpaper Engine 着色器或材质。请安装或定位完整的场景资源文件夹。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "缺少基礎 Wallpaper Engine 著色器或材質。請安裝或定位完整的場景資源資料夾。"}}}
+    },
+    "Scene shader and graph support" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Scene shader and graph support"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "シーンのシェーダーとグラフの対応"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "场景着色器和图支持"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "場景著色器和圖支援"}}}
+    },
+    "Preflight has no parsed render-graph capability result. Shader, puppet, particle and effect support need runtime evaluation; the live backend and fallback reason are shown separately." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preflight has no parsed render-graph capability result. Shader, puppet, particle and effect support need runtime evaluation; the live backend and fallback reason are shown separately."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "事前確認には解析済みレンダーグラフの対応結果がありません。シェーダー、パペット、パーティクル、エフェクトは実行時の評価が必要です。実際のバックエンドとフォールバック理由は別途表示されます。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预检没有已解析的渲染图能力结果。着色器、骨骼模型、粒子和特效支持需运行时评估；实际后端和回退原因另行显示。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預先檢查沒有已解析的算繪圖能力結果。著色器、骨骼模型、粒子和特效支援需執行時評估；實際後端和備援原因另行顯示。"}}}
+    },
+    "Web runtime" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Web runtime"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Web 実行環境"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "网页运行时"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "網頁執行環境"}}}
+    },
+    "The entry file check does not execute scripts or verify media, local dependencies or WebGL. These need runtime evaluation." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The entry file check does not execute scripts or verify media, local dependencies or WebGL. These need runtime evaluation."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "エントリファイルの確認では、スクリプトの実行やメディア、ローカル依存リソース、WebGL の検証は行いません。これらは実行時の評価が必要です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "入口文件检查不会执行脚本或验证媒体、本地依赖或 WebGL。这些需要运行时评估。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "入口檔案檢查不會執行指令碼或驗證媒體、本機相依資源或 WebGL。這些需要執行時評估。"}}}
+    },
+    "Wallpaper capability" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper capability"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙の対応機能"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸能力"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布能力"}}}
+    },
+    "No supported renderer is declared for this wallpaper type." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "No supported renderer is declared for this wallpaper type."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "この壁紙の種類には対応するレンダラーが宣言されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此壁纸类型未声明受支持的渲染器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此桌布類型未宣告支援的算繪器。"}}}
+    },
+    "Content changed" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Content changed"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "コンテンツが変更されました"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "内容已变化"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "內容已變更"}}}
+    },
+    "Wallpaper files changed during this check. Retry against the new content." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper files changed during this check. Retry against the new content."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "確認中に壁紙ファイルが変更されました。新しいコンテンツで再試行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "检查期间壁纸文件发生变化。请针对新内容重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "檢查期間桌布檔案發生變更。請針對新內容重試。"}}}
+    },
+    "Installed resources" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Installed resources"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済みリソース"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已安装资源"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已安裝資源"}}}
+    },
+    "The resource check could not complete: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The resource check could not complete: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リソースの確認を完了できませんでした：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "资源检查无法完成：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "資源檢查無法完成：%@"}}}
+    },
+    "Image placement must use positions between 0 and 1 and zoom between 1 and 3." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Image placement must use positions between 0 and 1 and zoom between 1 and 3."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "画像の位置は 0～1、ズームは 1～3 の範囲で指定してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "图像位置必须在 0 到 1 之间，缩放必须在 1 到 3 之间。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "影像位置必須在 0 到 1 之間，縮放必須在 1 到 3 之間。"}}}
+    },
+    "Choose an installed image wallpaper and a valid display." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose an installed image wallpaper and a valid display."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "インストール済みの画像壁紙と有効なディスプレイを選択してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择已安装的图像壁纸和有效显示器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請選擇已安裝的影像桌布和有效顯示器。"}}}
+    },
+    "The image wallpaper’s current properties could not be read." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The image wallpaper’s current properties could not be read."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "画像壁紙の現在のプロパティを読み取れませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法读取图像壁纸的当前属性。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法讀取影像桌布的目前屬性。"}}}
+    },
+    "Save the backup outside WallpaperMachine’s support folder with the .wmbackup extension." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Save the backup outside WallpaperMachine’s support folder with the .wmbackup extension."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップは WallpaperMachine のサポートフォルダの外に、拡張子 .wmbackup で保存してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请将备份保存到 WallpaperMachine 支持文件夹之外，并使用 .wmbackup 扩展名。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請將備份儲存到 WallpaperMachine 支援資料夾之外，並使用 .wmbackup 副檔名。"}}}
+    },
+    "Restored preferences could not be saved. The previous state has been retained." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Restored preferences could not be saved. The previous state has been retained."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "復元した環境設定を保存できませんでした。以前の状態は保持されています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法保存恢复的偏好设置。已保留之前的状态。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法儲存還原的偏好設定。已保留先前的狀態。"}}}
+    },
+    "This is not a supported WallpaperMachine backup manifest." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This is not a supported WallpaperMachine backup manifest."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "対応する WallpaperMachine のバックアップマニフェストではありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这不是受支持的 WallpaperMachine 备份清单。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "這不是支援的 WallpaperMachine 備份資訊清單。"}}}
+    },
+    "This backup version or source path is not supported." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This backup version or source path is not supported."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバックアップのバージョンまたはソースパスは未対応です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不支持此备份版本或来源路径。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不支援此備份版本或來源路徑。"}}}
+    },
+    "The backup contains preferences that WallpaperMachine does not allow restoring." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The backup contains preferences that WallpaperMachine does not allow restoring."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップに WallpaperMachine が復元を許可しない環境設定が含まれています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份包含 WallpaperMachine 不允许恢复的偏好设置。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份包含 WallpaperMachine 不允許還原的偏好設定。"}}}
+    },
+    "The previous preferences could not be saved. Restore recovery will retry at the next launch." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The previous preferences could not be saved. Restore recovery will retry at the next launch."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "以前の環境設定を保存できませんでした。復元のリカバリーは次回起動時に再試行します。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法保存之前的偏好设置。恢复修复将在下次启动时重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法儲存先前的偏好設定。還原復原將在下次啟動時重試。"}}}
+    },
+    "Wallpaper %@ is not included or installed. Reinstall its project files after restoring." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper %@ is not included or installed. Reinstall its project files after restoring."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "壁紙 %@ は含まれていないか、インストールされていません。復元後にプロジェクトファイルを再インストールしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸 %@ 未包含或安装。请在恢复后重新安装其项目文件。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布 %@ 未包含或安裝。請在還原後重新安裝其專案檔案。"}}}
+    },
+    "A referenced managed resource is not included: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A referenced managed resource is not included: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "参照されている管理対象リソースが含まれていません：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未包含引用的托管资源：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "未包含參照的受管理資源：%@"}}}
+    },
+    "An external file reference is unavailable on this Mac: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "An external file reference is unavailable on this Mac: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "この Mac では外部ファイルの参照を使用できません：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此 Mac 上的外部文件引用不可用：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此 Mac 上的外部檔案參照無法使用：%@"}}}
+    },
+    "Shared scene shaders and materials are not included in backups. Install or locate Wallpaper Engine’s complete scene assets if they are unavailable on this Mac." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Shared scene shaders and materials are not included in backups. Install or locate Wallpaper Engine’s complete scene assets if they are unavailable on this Mac."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "共有シーンシェーダーとマテリアルはバックアップに含まれません。この Mac にない場合は、完全な Wallpaper Engine シーンアセットをインストールするか、指定してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份不包含共享场景着色器和材质。如果此 Mac 上缺少它们，请安装或定位完整的 Wallpaper Engine 场景资源。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份不包含共用場景著色器和材質。如果此 Mac 上缺少它們，請安裝或定位完整的 Wallpaper Engine 場景資源。"}}}
+    },
+    "Copying the local backup…" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Copying the local backup…"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ローカルバックアップをコピー中…"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "正在复制本地备份…"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "正在複製本機備份…"}}}
+    },
+    "Backup exported. Login sessions, caches and shared scene assets were not included." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Backup exported. Login sessions, caches and shared scene assets were not included."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップをエクスポートしました。ログインセッション、キャッシュ、共有シーンアセットは含まれていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份已导出。未包含登录会话、缓存和共享场景资源。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份已匯出。未包含登入工作階段、快取和共用場景資源。"}}}
+    },
+    "Backup operation cancelled." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Backup operation cancelled."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップ操作を取り消しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份操作已取消。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份操作已取消。"}}}
+    },
+    "Validating the backup and checking conflicts…" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Validating the backup and checking conflicts…"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップの検証と競合の確認中…"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "正在验证备份并检查冲突…"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "正在驗證備份並檢查衝突…"}}}
+    },
+    "Review the conflicts and missing resources before confirming. Restore takes effect at the next launch." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Review the conflicts and missing resources before confirming. Restore takes effect at the next launch."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "確定する前に競合と不足しているリソースを確認してください。復元は次回起動時に反映されます。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "确认前请检查冲突和缺失资源。恢复将在下次启动时生效。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "確認前請檢查衝突和遺失資源。還原將在下次啟動時生效。"}}}
+    },
+    "Preview a backup before confirming restore." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preview a backup before confirming restore."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "復元を確定する前に、バックアップをプレビューしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "确认恢复前请先预览备份。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "確認還原前請先預覽備份。"}}}
+    },
+    "Staging the confirmed restore…" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Staging the confirmed restore…"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "確定した復元をステージング中…"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "正在暂存已确认的恢复…"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "正在暫存已確認的還原…"}}}
+    },
+    "Restore is ready for the next launch. Current wallpapers and settings have not changed." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Restore is ready for the next launch. Current wallpapers and settings have not changed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "次回起動時の復元の準備ができました。現在の壁紙と設定は変更されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "恢复已准备就绪，将在下次启动时生效。当前壁纸和设置未改变。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "還原已準備就緒，將在下次啟動時生效。目前桌布和設定未變更。"}}}
+    },
+    "Pending restore cancelled. Current wallpapers and settings have not changed." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Pending restore cancelled. Current wallpapers and settings have not changed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "保留中の復元を取り消しました。現在の壁紙と設定は変更されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "待执行恢复已取消。当前壁纸和设置未改变。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "待執行還原已取消。目前桌布和設定未變更。"}}}
+    },
+    "Another backup operation is already running." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Another backup operation is already running."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "別のバックアップ操作が実行中です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已有其他备份操作正在运行。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已有其他備份操作正在執行。"}}}
+    },
+    "Export local backup" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Export local backup"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ローカルバックアップを書き出す"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "导出本地备份"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "匯出本機備份"}}}
+    },
+    "Preview local backup" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preview local backup"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ローカルバックアップをプレビュー"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预览本地备份"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預覽本機備份"}}}
+    },
+    "Choose a .wmbackup package. No current settings will change until you confirm and launch the app again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose a .wmbackup package. No current settings will change until you confirm and launch the app again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : ".wmbackup パッケージを選択してください。確定してアプリを再起動するまで、現在の設定は変更されません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择 .wmbackup 包。确认并重新启动应用前，当前设置不会改变。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請選擇 .wmbackup 套件。確認並重新啟動應用程式前，目前設定不會變更。"}}}
+    },
+    "Enter a name between 1 and 128 characters, on one line." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Enter a name between 1 and 128 characters, on one line."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "1～128 文字の名前を 1 行で入力してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请输入 1 到 128 个字符的单行名称。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請輸入 1 到 128 個字元的單行名稱。"}}}
+    },
+    "This collection no longer exists. Refresh the library and retry." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This collection no longer exists. Refresh the library and retry."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このコレクションは存在しません。ライブラリを更新して再試行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此收藏夹已不存在。请刷新壁纸库后重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此收藏集已不存在。請重新整理桌布庫後重試。"}}}
+    },
+    "This playlist plan no longer exists. Refresh the library and retry." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This playlist plan no longer exists. Refresh the library and retry."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このプレイリストプランは存在しません。ライブラリを更新して再試行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此播放列表方案已不存在。请刷新壁纸库后重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此播放清單方案已不存在。請重新整理桌布庫後重試。"}}}
+    },
+    "The backup contains an invalid preference value." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The backup contains an invalid preference value."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップに無効な環境設定値が含まれています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份包含无效的偏好设置值。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份包含無效的偏好設定值。"}}}
+    },
+    "Saved property presets could not be read. Restore a backup before saving new presets." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Saved property presets could not be read. Restore a backup before saving new presets."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "保存済みのプロパティプリセットを読み取れませんでした。新しいプリセットを保存する前にバックアップを復元してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法读取已保存的属性预设。保存新预设前请恢复备份。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法讀取已儲存的屬性預設。儲存新預設前請還原備份。"}}}
+    },
+    "This property preset no longer exists." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This property preset no longer exists."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このプロパティプリセットは存在しません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此属性预设已不存在。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此屬性預設已不存在。"}}}
+    },
+    "Apply or revert pending edits before saving or applying a property preset." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Apply or revert pending edits before saving or applying a property preset."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを保存または適用する前に、保留中の編集を適用するか、元に戻してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "保存或应用属性预设前，请应用或撤销待处理的编辑。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "儲存或套用屬性預設前，請套用或還原待處理的編輯。"}}}
+    },
+    "This property preset belongs to a different wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This property preset belongs to a different wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このプロパティプリセットは別の壁紙用です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此属性预设属于其他壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此屬性預設屬於其他桌布。"}}}
+    },
+    "Preset property %@ is unknown or its authored type has changed." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preset property %@ is unknown or its authored type has changed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プリセットのプロパティ %@ が不明か、作者定義の型が変更されています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预设属性 %@ 未知或其作者定义的类型已改变。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預設屬性 %@ 未知或其作者定義的類型已變更。"}}}
+    },
+    "This property preset uses an unsupported format version." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This property preset uses an unsupported format version."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このプロパティプリセットは未対応の形式バージョンを使用しています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此属性预设使用不受支持的格式版本。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此屬性預設使用不支援的格式版本。"}}}
+    },
+    "External file references are not portable. Choose the files in the property editor and save a new preset." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "External file references are not portable. Choose the files in the property editor and save a new preset."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "外部ファイル参照は移行できません。プロパティエディタでファイルを選択し、新しいプリセットを保存してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "外部文件引用不可移植。请在属性编辑器中选择文件并保存新预设。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "外部檔案參照無法攜帶至其他電腦。請在屬性編輯器中選擇檔案並儲存新預設。"}}}
+    },
+    "Enter a property preset name of 1–120 characters." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Enter a property preset name of 1–120 characters."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "1～120 文字のプロパティプリセット名を入力してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请输入 1–120 个字符的属性预设名称。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請輸入 1–120 個字元的屬性預設名稱。"}}}
+    },
+    "This property preset document is invalid or exceeds the supported limits." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This property preset document is invalid or exceeds the supported limits."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このプロパティプリセット文書は無効か、対応する上限を超えています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此属性预设文档无效或超过支持的限制。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此屬性預設文件無效或超過支援的限制。"}}}
+    },
+    "Preset property %@ does not match the current authored values or limits." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preset property %@ does not match the current authored values or limits."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プリセットのプロパティ %@ は、現在の作者定義の値または制限に一致しません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预设属性 %@ 不符合当前作者定义的值或限制。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預設屬性 %@ 不符合目前作者定義的值或限制。"}}}
+    },
+    "Preset property %@ is currently disabled. No preset changes were applied." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preset property %@ is currently disabled. No preset changes were applied."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プリセットのプロパティ %@ は現在無効です。プリセットの変更は適用されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预设属性 %@ 当前已禁用。未应用任何预设更改。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預設屬性 %@ 目前已停用。未套用任何預設變更。"}}}
+    },
+    "Preset property %@ references missing or unreadable assets. Choose the files again before applying." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Preset property %@ references missing or unreadable assets. Choose the files again before applying."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プリセットのプロパティ %@ は、見つからないか読み取れないアセットを参照しています。適用前にファイルを再選択してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "预设属性 %@ 引用了缺失或不可读的资源。应用前请重新选择文件。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "預設屬性 %@ 參照了遺失或無法讀取的資源。套用前請重新選擇檔案。"}}}
+    },
+    "Portable property presets support up to 32 MB of managed assets. External files are not bundled." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Portable property presets support up to 32 MB of managed assets. External files are not bundled."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "移行可能なプロパティプリセットは、最大 32 MB の管理対象アセットに対応します。外部ファイルは同梱されません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "便携属性预设支持最多 32 MB 的托管资源。外部文件不会打包。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "可攜式屬性預設支援最多 32 MB 的受管理資源。外部檔案不會封裝。"}}}
+    },
+    "The backup contains an unsafe path, link or special file: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The backup contains an unsafe path, link or special file: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップに安全でないパス、リンク、または特殊ファイルが含まれています：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份包含不安全的路径、链接或特殊文件：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份包含不安全的路徑、連結或特殊檔案：%@"}}}
+    },
+    "This backup exceeds the supported file, size or manifest limits." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This backup exceeds the supported file, size or manifest limits."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバックアップは、対応するファイル数、サイズ、またはマニフェストの上限を超えています。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此备份超过支持的文件、大小或清单限制。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此備份超過支援的檔案、大小或資訊清單限制。"}}}
+    },
+    "The backup changed after it was reviewed. Preview it again before restoring." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The backup changed after it was reviewed. Preview it again before restoring."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "確認後にバックアップが変更されました。復元前にもう一度プレビューしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份在检查后发生变化。恢复前请重新预览。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份在檢查後發生變更。還原前請重新預覽。"}}}
+    },
+    "Image placement requires an enabled independent display." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Image placement requires an enabled independent display."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "画像の配置には、有効な独立ディスプレイが必要です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "图像位置设置需要已启用的独立显示器。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "影像位置設定需要已啟用的獨立顯示器。"}}}
+    },
+    "Image placement is available only for unmodified image pages generated by WallpaperMachine." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Image placement is available only for unmodified image pages generated by WallpaperMachine."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "画像の配置は、WallpaperMachine が生成した未変更の画像ページでのみ使用できます。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "图像位置设置仅适用于 WallpaperMachine 生成且未经修改的图像页面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "影像位置設定僅適用於 WallpaperMachine 產生且未經修改的影像頁面。"}}}
+    },
+    "This wallpaper is not an unmodified image page generated by WallpaperMachine." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This wallpaper is not an unmodified image page generated by WallpaperMachine."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "この壁紙は、WallpaperMachine が生成した未変更の画像ページではありません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "此壁纸不是 WallpaperMachine 生成且未经修改的图像页面。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此桌布不是 WallpaperMachine 產生且未經修改的影像頁面。"}}}
+    },
+    "Saved the applied wallpaper properties." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Saved the applied wallpaper properties."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "適用済みの壁紙プロパティを保存しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "已保存已应用的壁纸属性。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "已儲存已套用的桌布屬性。"}}}
+    },
+    "The property preset failed: %@. Pending preset edits could not be reverted: %@. Refresh and revert before continuing." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The property preset failed: %@. Pending preset edits could not be reverted: %@. Refresh and revert before continuing."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットが失敗しました：%@。保留中のプリセット編集を元に戻せませんでした：%@。更新して編集を元に戻してから続行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "属性预设失败：%@。无法撤销待处理的预设编辑：%@。请刷新并撤销后再继续。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "屬性預設失敗：%@。無法還原待處理的預設編輯：%@。請重新整理並還原後再繼續。"}}}
+    },
+    "Property preset applied." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Property preset applied."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを適用しました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "属性预设已应用。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "屬性預設已套用。"}}}
+    },
+    "Export Property Preset" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Export Property Preset"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを書き出す"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "导出属性预设"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "匯出屬性預設"}}}
+    },
+    "Managed assets up to 32 MB are bundled. External file references are not portable." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Managed assets up to 32 MB are bundled. External file references are not portable."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "最大 32 MB の管理対象アセットを同梱します。外部ファイル参照は移行できません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "最多 32 MB 的托管资源会打包。外部文件引用不可移植。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "最多 32 MB 的受管理資源會封裝。外部檔案參照無法攜帶至其他電腦。"}}}
+    },
+    "Property preset exported. External file references require choosing the files again after import." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Property preset exported. External file references require choosing the files again after import."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを書き出しました。外部ファイル参照は、読み込み後にファイルを再選択する必要があります。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "属性预设已导出。导入后需重新选择外部文件引用的文件。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "屬性預設已匯出。匯入後需重新選擇外部檔案參照的檔案。"}}}
+    },
+    "Import Property Preset" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Import Property Preset"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを読み込む"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "导入属性预设"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "匯入屬性預設"}}}
+    },
+    "Property preset imported. Apply it to change this wallpaper." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Property preset imported. Apply it to change this wallpaper."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットを読み込みました。この壁紙を変更するには適用してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "属性预设已导入。应用后才会更改此壁纸。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "屬性預設已匯入。套用後才會變更此桌布。"}}}
+    },
     "The link could not be opened. Please try again." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The link could not be opened. Please try again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リンクを開けませんでした。もう一度お試しください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法打开链接，请重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法開啟連結，請重試。"}}}
     },
@@ -2640,6 +2937,30 @@
     },
     "The library’s folder for Workshop item %@ is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The library’s folder for Workshop item %@ is not an installed wallpaper, so its update was not put in its place. Move the folder out of the library and download the item again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "ライブラリにあるワークショップアイテム%@のフォルダはインストール済みの壁紙ではないため、アップデートで置き換えませんでした。フォルダをライブラリの外に移動してから、アイテムをもう一度ダウンロードしてください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "壁纸库中创意工坊项目 %@ 的文件夹不是已安装的壁纸，因此未用更新替换它。请将该文件夹移出壁纸库，然后重新下载该项目。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "桌布庫中工作坊項目 %@ 的資料夾不是已安裝的桌布，因此沒有以更新取代它。請將該資料夾移出桌布庫，再重新下載該項目。"}}}
+    },
+    "The wallpaper properties changed while preparing this preset. Refresh and retry." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The wallpaper properties changed while preparing this preset. Refresh and retry."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プリセットの準備中に壁紙のプロパティが変更されました。更新してから再試行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "准备预设时壁纸属性发生了变化。请刷新后重试。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "準備預設時桌布屬性發生了變更。請重新整理後再試。"}}}
+    },
+    "Property preset applied, but unused retained assets could not be cleaned up: %@." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Property preset applied, but unused retained assets could not be cleaned up: %@."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "プロパティプリセットは適用されましたが、未使用の保持ファイルを削除できませんでした：%@。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "属性预设已应用，但无法清理未使用的保留素材：%@。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "屬性預設已套用，但無法清理未使用的保留素材：%@。"}}}
+    },
+    "A backup resource has no local authorization or retained copy. Reselect it in the wallpaper’s properties before restoring: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A backup resource has no local authorization or retained copy. Reselect it in the wallpaper’s properties before restoring: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "バックアップのリソースに、このMacでの許可または保持されたコピーがありません。復元前に壁紙のプロパティで選び直してください：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "备份中的资源没有本机授权或保留副本。请在恢复前到壁纸属性中重新选择：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "備份中的資源沒有本機授權或保留副本。請在還原前到桌布屬性中重新選擇：%@"}}}
+    },
+    "A retained resource will use its backed-up bytes instead of authorizing its original source: %@" : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "A retained resource will use its backed-up bytes instead of authorizing its original source: %@"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "保持されたリソースは元の場所を許可せず、バックアップしたデータを使用します：%@"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "保留资源将使用备份中的数据，不会授权读取其原始来源：%@"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "保留資源將使用備份中的資料，不會授權讀取其原始來源：%@"}}}
+    },
+    "The scene assets folder remains the one already selected on this Mac. Reselect it in Settings if needed." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The scene assets folder remains the one already selected on this Mac. Reselect it in Settings if needed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "シーン素材フォルダは、このMacで選択済みの場所を引き続き使用します。必要なら設定で選び直してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "场景资源文件夹仍使用本机原先选定的位置。如有需要，请在设置中重新选择。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "場景資源資料夾仍使用本機原先選定的位置。如有需要，請在設定中重新選擇。"}}}
+    },
+    "The retained resource is unavailable. Select the original resource again." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The retained resource is unavailable. Select the original resource again."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "保持されたリソースを利用できません。元のファイルまたはフォルダを選び直してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "保留的资源不可用。请重新选择原始文件或文件夹。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "保留的資源無法使用。請重新選擇原始檔案或資料夾。"}}}
+    },
+    "Retained asset permissions could not be read safely. Refresh before continuing." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Retained asset permissions could not be read safely. Refresh before continuing."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "保持ファイルのアクセス許可を安全に読み取れませんでした。更新してから続行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无法安全读取保留素材的访问权限。请刷新后继续。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "無法安全讀取保留素材的存取權限。請重新整理後繼續。"}}}
+    },
+    "The asset selection failed: %@. Its permissions could not be restored: %@. Refresh before continuing." : {
+      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The asset selection failed: %@. Its permissions could not be restored: %@. Refresh before continuing."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "素材の選択に失敗しました：%@。アクセス許可を元に戻せませんでした：%@。更新してから続行してください。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "素材选择失败：%@。无法恢复其访问权限：%@。请刷新后继续。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "素材選擇失敗：%@。無法還原其存取權限：%@。請重新整理後繼續。"}}}
     }
   },
   "version" : "1.0"

@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-01 — Integrate wallpaper recovery and Steam ownership fixes with main
+
+- Merged the latest remote main without rewriting the five local feature/fix commits; preserved both branches of verification history while resolving log conflicts.
+- python3 scripts/build.py --renderer-only --configuration Release: passed; regenerated the renderer bindings required by the incoming main branch.
+- python3 scripts/test.py: passed; 226 Python and 1,029 native tests passed, 0 failed, 11 skipped (9 opt-in media and 2 live Workshop tests).
+- python3 scripts/check_renderer.py: passed; all renderer binaries exited 0, all 10 synthetic scenes matched between pooled and isolated runs with no diagnostics, and 8 projects passed two reload cycles.
+- Renderer asset-dependent checks skipped: the two private text-scene regressions and the environment-selected native Metal project corpus. Authored visual compatibility was not established.
+- python3 scripts/build.py --configuration Release: passed; strict deep codesign verification passed.
+- Under prior authorization, removed the test-generated Debug extension registration and registered the rebuilt Release copy; pluginkit listed only Release.
+- The user confirmed the preceding wallpaper fix works. Live desktop, lock-screen, saver, and quit behavior of the merged build were not retested; no automatic app restart was performed.
+
 ## 2026-10-01 — Keep inherited native display choices complete
 
 - Read-only WallpaperAgent logs identified DecodingError.keyNotFound for Idle in a synthesized Space display override; macOS rejected the entire Index before launching the extension. Enabling both modes filled the missing field and succeeded.
@@ -99,31 +110,23 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/clean.py --dry-run: exit 0; broad cleanup deferred to preserve the shared workspace renderer evidence under artifacts.
 - No Release rebuild, app restart, registration changes or desktop tests. Live extension selection and lock-screen visuals remain unverified.
 
-## 2026-09-30 — Restore per-display screen saver precedence
+## 2026-10-01 — PR 19 backup and preset review fixes
 
-- Read-only inspection on macOS 26.6.2 found AllSpacesAndDisplays.Type=idle with Provider=default despite WallpaperMachine being selected for each display.
-- Native WallpaperAgent type metadata confirms an optional global selection and separate idle, desktop, individual and linked cases; no live store was changed.
-- python3 scripts/test.py --only LockScreenWallpaperTests: exit 0; 34 passed, 0 failed, 0 skipped.
-- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0; 22 passed, 0 failed, 0 skipped.
-- python3 scripts/test.py: exit 0; all Python modules passed; native suite 888 passed, 0 failed, 11 skipped (9 opt-in media tests and 2 live Workshop tests).
-- Isolated regressions cover global Idle removal, combined global choices, disable and crash recovery, reload failure, independent lock-screen operation and later System Settings edits.
-- git diff --check and owning-document local link checks passed. No Release build, installation, restart or desktop run; real idle playback and visual behavior remain unverified.
+- `python3 scripts/build.py --renderer-only` — passed; rebuilt the isolated worktree’s missing current bridge library and regenerated unchanged bindings after the first targeted run could not link.
+- `python3 scripts/test.py --only WallpaperBackupTests --only WallpaperPresetStoreTests --only ControlPanelBackupFlowTests` — passed, 50 tests; an earlier run exposed volatile-default cleanup in the new fixture, corrected before this run.
+- `python3 scripts/test.py` — passed once as the final gate: all Python checks passed; 1006 native tests passed, 0 failed, 11 opt-in media/network cases skipped.
+- Regressions cover persistent-only preference export/conflicts/rollback, a 48 MiB preset archive, manifest rejection before payload reads while preserving an existing destination, and preset directory roundtrips with hidden Finder metadata.
+- The WebUI mechanical detector reported no findings; `git diff --check` passed. No renderer source or generated-binding changes.
+- No Release app build, desktop/window-driving, visual presentation, audio hardware or live-account verification. The shared main checkout’s existing commit and uncommitted edits were not changed.
 
-## 2026-09-30 — Import picker follows live app language
+## 2026-10-01 — Reusable wallpaper workflows rebased onto 1.2.1
 
-- python3 scripts/test.py --only WallpaperImportPickerTests: 5 passed, 0 failed; child cancellation/reaping, activation failure cleanup, invalid handshake and failed exit.
-- python3 scripts/test.py: all 17 Python modules passed; native gate 883 passed, 0 failed, 11 skipped of 894. Skips: 9 opt-in native-video media cases and 2 live Workshop network cases.
-- Authorized signed smoke app compiled the production picker/helper sources: English parent opened Japanese helper, selected one image and received its URL; isPresenting was false after return. No import or wallpaper change performed.
-- Native helper cancellation returned no URLs; parent-pipe EOF before activation returned null and exited 0 without showing a picker.
-- Changed WebUI copy detector returned no findings; catalog parity and offscreen panel language tests passed in the gate.
-- No Release build or main-app desktop launch. Full real-app import, focus across Spaces and native picker visuals in every language were not exercised. Prior research covered all four native launch languages.
-
-## 2026-09-30 — Perspective wallpaper fix delivered after gate recovery
-
-- The earlier app-gate blocker is cleared. Concurrent screensaver fixes were preserved: canonical asset URLs, denied-or-unavailable capture behavior and rendered content checks; this delivery added no changes to those files.
-- python3 scripts/test.py --serial — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 explicit opt-in skips of 894. Serial execution avoided the previous multi-runner launchd spawn failure without excluding tests.
-- python3 scripts/check_renderer.py — exit 0; all renderer executables passed, all 10 generated pooled/isolated images equal with zero diagnostics, eight projects reloaded twice. Local-asset skips remain explicit.
-- Fresh surface-free Native Metal scenario: installed perspective wallpaper drew 1200 frames at 3840x2160; inspected the private final frame for full coverage, live clock/date/status and faded login overlays. 44 render passes/frame, 1 blit/frame, 0.53 ms thread CPU per drawFrame; no desktop FPS or power claim.
-- CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 python3 scripts/build.py --configuration Release — exit 0; rebuilt the full Rust/C++ renderer, regenerated bindings and built the Release application.
-- Delivered build/Build/Products/Release/WallpaperMachine.app. codesign --verify --deep --strict passed; diff -qr confirmed bundled Contents/Resources/WebUI matches WebUI byte for byte.
-- No app launch/restart, desktop input, wallpaper changes or live audio capture. The user must quit the old app and open the delivered build; physical desktop behavior and exact Windows visual parity remain unverified.
+- Implementation: local collections and named playlist plans, wallpaper property presets, staged local backup/restore, per-display still-image placement, compatibility cards, Shortcuts display selection, and Web page mute/native HTML-media gain; all four UI languages updated.
+- Fetched origin and rebased feat/library-workflows-and-web-audio onto main a5200fe; preserved remote import-picker startup, screen-saver/renderer updates, localization and historical verification records. Regenerated Xcode project and UniFFI outputs rather than editing generated conflicts.
+- Scene restore security: scene/scenetexture overrides and texture defaults now resolve to validated retained image files instead of unapproved original paths. A keep-existing tree without matching bytes is rejected before publication. WallpaperBackupTests: 24 passed before rebase; included again in the rebased full gate.
+- python3 scripts/build.py --renderer-only — exit 0 after rebase; renderer library and Swift bindings regenerated. No Release app build.
+- cargo test -p wallpaper-bridge with scripts/build.py cargo_environment — exit 0 after rebase; 363 passed, 0 failed.
+- python3 scripts/check_renderer.py — rebuilt current renderer probes, exit 0; 10 generated scene pixel comparisons and 8 projects x2 reload cycles passed. Three local-asset-dependent cases skipped; no full authored-wallpaper compatibility claim.
+- python3 scripts/test.py — exit 0 after rebase; all Python checks passed, 1002 native tests passed, 0 failed, 11 opt-in media/network tests skipped of 1013.
+- Before rebase: six temporary real offscreen WKWebView feature flows passed and were removed after retaining focused regressions; renderer draft/metadata and synthetic pointer-capture boundaries were injected. Native WebKit output probe invoked media gain and read back mute false→true→false without audio hardware.
+- Desktop/visual presentation, actual speaker output, live account services, Siri/Shortcuts UI and power remain unverified. No app launch, permission prompt, wallpaper change, install or restart.

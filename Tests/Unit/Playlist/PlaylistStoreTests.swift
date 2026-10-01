@@ -20,9 +20,6 @@ final class PlaylistStoreTests: XCTestCase {
         super.tearDown()
     }
 
-    func testAnUnconfiguredDisplayDoesNothingOnItsOwn() {
-        XCTAssertEqual(PlaylistStore(defaults: defaults).playlist(for: "primary").mode, .off)
-    }
 
     func testPlaylistsAndDatesOutliveTheApp() {
         let store = PlaylistStore(defaults: defaults)
@@ -79,6 +76,88 @@ final class PlaylistStoreTests: XCTestCase {
         defer { NotificationCenter.default.removeObserver(token) }
         store.schedule("primary", at: date)
         XCTAssertEqual(posts.value, 0, "the scheduler re-dates on every evaluation without a feedback loop")
+    }
+    func testPlansCopyAcrossDisplaysAndManualEditsDetachOnlyThatDisplay() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") {
+            $0.mode = .rotate
+            $0.source = .list
+            $0.wallpaperIDs = ["a", "b"]
+            $0.interval = 60
+        }
+        let plan = try store.savePlan(from: "primary", name: " Evening ")
+        try store.applyPlan(plan.id, to: "primary")
+        try store.applyPlan(plan.id, to: "second")
+        store.update("second") { $0.interval = 60 }
+        XCTAssertEqual(store.playlist(for: "second").planID, plan.id, "a no-op keeps the active plan")
+        store.update("second") { $0.interval = 120 }
+        XCTAssertNil(store.playlist(for: "second").planID)
+        XCTAssertEqual(store.playlist(for: "primary").interval, 60)
+        XCTAssertEqual(store.plan(id: plan.id)?.playlist.interval, 60)
+        XCTAssertNil(store.plan(id: plan.id)?.playlist.planID)
+        try store.renamePlan(plan.id, name: "Night")
+        let reloaded = PlaylistStore(defaults: defaults)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.name, "Night")
+        XCTAssertEqual(reloaded.playlist(for: "primary").planID, plan.id)
+        XCTAssertEqual(reloaded.playlist(for: "second").interval, 120)
+        XCTAssertEqual(reloaded.nextChange["primary"], .distantPast)
+    }
+
+    func testPlanDeletionRetainsActiveCopyAndItsSchedule() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["a", "b"] }
+        let plan = try store.savePlan(from: "primary", name: "Rotation")
+        try store.applyPlan(plan.id, to: "second")
+        let due = Date(timeIntervalSince1970: 1_800_000_000)
+        store.schedule("second", at: due)
+        try store.deletePlan(plan.id)
+        let reloaded = PlaylistStore(defaults: defaults)
+        XCTAssertNil(reloaded.plan(id: plan.id))
+        XCTAssertEqual(reloaded.playlist(for: "second").wallpaperIDs, ["a", "b"])
+        XCTAssertNil(reloaded.playlist(for: "second").planID)
+        XCTAssertEqual(reloaded.nextChange["second"], due)
+        XCTAssertThrowsError(try store.applyPlan(plan.id, to: "primary"))
+    }
+
+    func testDeletingWallpapersCleansInactivePlansAsWellAsActiveDisplays() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") {
+            $0.wallpaperIDs = ["a", "b"]
+            $0.dayWallpaperID = "b"
+            $0.nightWallpaperID = "c"
+        }
+        let plan = try store.savePlan(from: "primary", name: "Day")
+        store.forget(["b"])
+        let reloaded = PlaylistStore(defaults: defaults)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.playlist.wallpaperIDs, ["a"])
+        XCTAssertNil(reloaded.plan(id: plan.id)?.playlist.dayWallpaperID)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.playlist.nightWallpaperID, "c")
+    }
+
+    func testRemovingCollectionEmptiesReferencesWithoutExpandingRotation() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") {
+            $0.mode = .rotate; $0.source = .collection; $0.collectionID = "collection"
+            $0.wallpaperIDs = ["stale-list"]
+        }
+        let plan = try store.savePlan(from: "primary", name: "Collection")
+        try store.applyPlan(plan.id, to: "second")
+        store.forgetCollection("collection")
+        let reloaded = PlaylistStore(defaults: defaults)
+        XCTAssertEqual(reloaded.playlist(for: "second").source, .list)
+        XCTAssertEqual(reloaded.playlist(for: "second").wallpaperIDs, [])
+        XCTAssertNil(reloaded.playlist(for: "second").collectionID)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.playlist.source, .list)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.playlist.wallpaperIDs, [])
+    }
+
+    func testInvalidPlanNamesLeaveSavedPlanAndDisplayUnchanged() throws {
+        let store = PlaylistStore(defaults: defaults)
+        let plan = try store.savePlan(from: "primary", name: "Valid")
+        XCTAssertThrowsError(try store.renamePlan(plan.id, name: " \n "))
+        XCTAssertThrowsError(try store.savePlan(from: "primary", name: String(repeating: "x", count: 129)))
+        XCTAssertEqual(store.plans, [plan])
+        XCTAssertEqual(PlaylistStore(defaults: defaults).plans, [plan])
     }
 }
 

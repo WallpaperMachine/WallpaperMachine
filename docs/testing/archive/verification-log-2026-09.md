@@ -15,6 +15,35 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Restore per-display screen saver precedence
+
+- Read-only inspection on macOS 26.6.2 found AllSpacesAndDisplays.Type=idle with Provider=default despite WallpaperMachine being selected for each display.
+- Native WallpaperAgent type metadata confirms an optional global selection and separate idle, desktop, individual and linked cases; no live store was changed.
+- python3 scripts/test.py --only LockScreenWallpaperTests: exit 0; 34 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py --only LockScreenWallpaperServiceTests: exit 0; 22 passed, 0 failed, 0 skipped.
+- python3 scripts/test.py: exit 0; all Python modules passed; native suite 888 passed, 0 failed, 11 skipped (9 opt-in media tests and 2 live Workshop tests).
+- Isolated regressions cover global Idle removal, combined global choices, disable and crash recovery, reload failure, independent lock-screen operation and later System Settings edits.
+- git diff --check and owning-document local link checks passed. No Release build, installation, restart or desktop run; real idle playback and visual behavior remain unverified.
+
+## 2026-09-30 — Import picker follows live app language
+
+- python3 scripts/test.py --only WallpaperImportPickerTests: 5 passed, 0 failed; child cancellation/reaping, activation failure cleanup, invalid handshake and failed exit.
+- python3 scripts/test.py: all 17 Python modules passed; native gate 883 passed, 0 failed, 11 skipped of 894. Skips: 9 opt-in native-video media cases and 2 live Workshop network cases.
+- Authorized signed smoke app compiled the production picker/helper sources: English parent opened Japanese helper, selected one image and received its URL; isPresenting was false after return. No import or wallpaper change performed.
+- Native helper cancellation returned no URLs; parent-pipe EOF before activation returned null and exited 0 without showing a picker.
+- Changed WebUI copy detector returned no findings; catalog parity and offscreen panel language tests passed in the gate.
+- No Release build or main-app desktop launch. Full real-app import, focus across Spaces and native picker visuals in every language were not exercised. Prior research covered all four native launch languages.
+
+## 2026-09-30 — Perspective wallpaper fix delivered after gate recovery
+
+- The earlier app-gate blocker is cleared. Concurrent screensaver fixes were preserved: canonical asset URLs, denied-or-unavailable capture behavior and rendered content checks; this delivery added no changes to those files.
+- python3 scripts/test.py --serial — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 explicit opt-in skips of 894. Serial execution avoided the previous multi-runner launchd spawn failure without excluding tests.
+- python3 scripts/check_renderer.py — exit 0; all renderer executables passed, all 10 generated pooled/isolated images equal with zero diagnostics, eight projects reloaded twice. Local-asset skips remain explicit.
+- Fresh surface-free Native Metal scenario: installed perspective wallpaper drew 1200 frames at 3840x2160; inspected the private final frame for full coverage, live clock/date/status and faded login overlays. 44 render passes/frame, 1 blit/frame, 0.53 ms thread CPU per drawFrame; no desktop FPS or power claim.
+- CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 python3 scripts/build.py --configuration Release — exit 0; rebuilt the full Rust/C++ renderer, regenerated bindings and built the Release application.
+- Delivered build/Build/Products/Release/WallpaperMachine.app. codesign --verify --deep --strict passed; diff -qr confirmed bundled Contents/Resources/WebUI matches WebUI byte for byte.
+- No app launch/restart, desktop input, wallpaper changes or live audio capture. The user must quit the old app and open the delivered build; physical desktop behavior and exact Windows visual parity remain unverified.
+
 ## 2026-09-30 — Independent native wallpaper screen saver
 
 - `python3 scripts/test.py --serial` — exit 0; all 17 Python modules passed; native 883 passed, 0 failed, 11 skipped (9 opt-in media/device and 2 live Steam checks).

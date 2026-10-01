@@ -24,6 +24,22 @@
 			</array>
 		</dict>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>app.wallpapermachine.backup</string>
+			<key>UTTypeDescription</key>
+			<string>WallpaperMachine Backup</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>com.apple.package</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>wmbackup</string></array>
+			</dict>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

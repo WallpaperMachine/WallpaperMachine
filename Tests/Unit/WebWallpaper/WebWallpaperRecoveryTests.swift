@@ -325,8 +325,10 @@ final class WebWallpaperRecoveryTests: XCTestCase {
 
   private func descriptor(entryFile: String) -> BridgeWebWallpaper {
     BridgeWebWallpaper(
-      displayId: 7, wallpaperId: "1", title: "Test", projectPath: project.path,
-      entryFile: entryFile, fps: 30, paused: false, audioResponseEnabled: false,
+      displayId: 7, displayKey: "7", audioSourceDisplayId: 7,
+      wallpaperId: "1", title: "Test", projectPath: project.path,
+      entryFile: entryFile, fps: 30, paused: false, volume: 1, muted: false,
+      audioResponseEnabled: false,
       mediaIntegrationEnabled: false, propertiesJson: "{}")
   }
 

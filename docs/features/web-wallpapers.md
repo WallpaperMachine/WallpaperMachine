@@ -291,13 +291,37 @@ reported beside that control rather than in the window-wide banner, and the path
 is not sent. `texture` and `scenetexture` properties are a separate kind: they keep
 the scene texture picker they always had and are refused by the path editor.
 
+## Page sound
+
+Mute and Volume now reach the page's output, independently of Audio response.
+`WebWallpaperAudioOutput` resolves WebKit's native interfaces at runtime:
+`WKPageSetMediaVolume` controls HTML audio/video media elements, while
+`_setPageMuted:` with only the audio bit controls whole-page output, including
+WebAudio. Nonzero Volume is **not** a WebAudio gain control. Zero volume also
+mutes the page; neither control pauses media timelines or disables system-audio
+analysis. The official general-property payload remains `fps`, not an invented
+`volume` protocol.
+
+User mute and temporary app/Focus/other-audio mute compose in the existing bridge
+configuration. Ending a rule does not clear user mute. Mirrored pages elect one
+presenting audible owner per actual source assignment; independent assignments
+of the same project remain independent. A hidden owner hands off to a visible
+mirror without producing duplicate sound.
+
+These are private WebKit interfaces and may be unavailable on another macOS
+version. **Audio and media status** reports the observed availability; it never
+substitutes Pause for unavailable mute. Windowless verification exercises setter
+and mute-state readback without starting audio hardware; actual speaker output
+and audible handoff require an authorized desktop/audio run.
+
 ## Not yet supported
 
 - Keyboard input is not forwarded; the wallpaper window never becomes key.
 - Pointer events are mirrored, not captured: Finder still selects icons and
   rubber-bands, and a click on an icon reaches the page too. The middle button
   arrives without its button number.
-- Per-wallpaper volume and mute are not applied to page media.
+- Nonzero WebAudio gain is not controlled by the native media-volume interface;
+  whole-page Mute still applies where WebKit exposes it.
 
 ## Verification
 

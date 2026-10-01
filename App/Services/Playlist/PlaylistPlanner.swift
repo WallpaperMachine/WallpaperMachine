@@ -10,16 +10,19 @@ enum PlaylistPlanner {
 
     /// The wallpapers `playlist` rotates through: `library` is every playable wallpaper in
     /// library order, so a list entry or favorite that is gone or cannot play is skipped.
-    static func candidates(for playlist: DisplayPlaylist, library: [String], favorites: Set<String>) -> [String] {
+    static func candidates(
+        for playlist: DisplayPlaylist, library: [String], favorites: Set<String>, collectionIDs: [String]
+    ) -> [String] {
         switch playlist.source {
         case .all:
             return library
         case .favorites:
             return library.filter(favorites.contains)
-        case .list:
+        case .list, .collection:
             let playable = Set(library)
             var seen = Set<String>()
-            return playlist.wallpaperIDs.filter { playable.contains($0) && seen.insert($0).inserted }
+            let ids = playlist.source == .collection ? collectionIDs : playlist.wallpaperIDs
+            return ids.filter { playable.contains($0) && seen.insert($0).inserted }
         }
     }
 

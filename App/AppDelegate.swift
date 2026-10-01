@@ -335,6 +335,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             AppAutomation.shared.wallpapers = {
                 store.librarySnapshot.wallpapers.filter(\.supported).map { (id: $0.id, title: $0.title) }
             }
+            AppAutomation.shared.displays = {
+                let titles = DisplayTitleResolver.system.resolved()
+                return Self.availableAutomationDisplays(store: store).map {
+                    (id: $0.displayId, title: titles.title($0.title, displayId: $0.displayId))
+                }
+            }
             let hotKeys = GlobalHotKeys(preferences: .shared)
             hotKeys.onPress = { [weak self] action in self?.runAutomation(action.command) }
             globalHotKeys = hotKeys
@@ -402,6 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let playlists = PlaylistStore.shared
         let scheduler = PlaylistScheduler(
             store: playlists,
+            collections: WallpaperCollectionStore.shared,
             displays: {
                 store.settingsSnapshot.displays.filter { $0.enabled && $0.mode == .standalone }.map(\.displayId)
             },
@@ -412,9 +419,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     $0.displayId == display && $0.mirrorTargetDisplayId == nil && !$0.wallpaperId.isEmpty
                 }?.wallpaperId
             },
-            isRunning: { [weak self] in
-                store.appSnapshot.playbackState == .playing
-                    && self?.presentationPolicy?.globalPresentation == .running
+            isRunning: { [weak self] display in
+                guard store.appSnapshot.playbackState == .playing,
+                    let policy = self?.presentationPolicy, policy.globalPresentation == .running,
+                    let row = store.settingsSnapshot.displays.first(where: { $0.displayId == display }),
+                    let physicalID = ResolvedDisplayTitles.liveDisplayID(display, title: row.title)
+                else { return false }
+                return !policy.suspendedDisplayIDs.contains(physicalID)
             },
             activate: { display, choose in
                 var applied: String?
@@ -530,6 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func applicationWillTerminate(_ notification: Notification) {
         globalHotKeys?.stop()
         AppAutomation.shared.handler = nil
+        AppAutomation.shared.displays = nil
         playlistScheduler?.stop()
         stopPlaybackMonitoring()
         wallpaperEnergy?.stop()
@@ -579,6 +591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 }
                 globalHotKeys?.stop()
                 AppAutomation.shared.handler = nil
+                AppAutomation.shared.displays = nil
                 playlistScheduler?.stop()
                 stopPlaybackMonitoring()
                 wallpaperEnergy?.stop()
@@ -1128,6 +1141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             // "Next" is measured from whatever the display shows when this one gets its turn.
             try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId)) {
+                _ = try self.automationDisplay(displayId, store: store)
                 guard let id = store.nextWallpaperID(displayId: displayId) else { return }
                 try await store.activateWallpaperAsync(id: id, displayId: displayId, userInitiated: true)
             }
@@ -1137,6 +1151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 throw AutomationError(message: String(localized: "No installed wallpaper has the id “\(id)”."))
             }
             try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayId), subject: id) {
+                _ = try self.automationDisplay(displayId, store: store)
                 try await store.activateWallpaperAsync(id: id, displayId: displayId, userInitiated: true)
             }
         case .open(let page):
@@ -1157,13 +1172,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    private static func availableAutomationDisplays(store: BridgeStore) -> [BridgeDisplaySettingsRow] {
+        let connected = Set(WebWallpaperHost.systemScreens().map(\.id))
+        return store.settingsSnapshot.displays.filter { display in
+            guard display.enabled, display.mode == .standalone,
+                let physicalID = ResolvedDisplayTitles.liveDisplayID(display.displayId, title: display.title)
+            else { return false }
+            return connected.contains(physicalID)
+        }
+    }
+
     /// The display a command names, or the panel's target display; only an enabled display
     /// that shows its own wallpaper can be switched.
     private func automationDisplay(_ requested: String?, store: BridgeStore) throws -> String {
         let id = requested ?? controlPanelNavigation.targetDisplayID
-        guard store.settingsSnapshot.displays.contains(where: {
-            $0.displayId == id && $0.enabled && $0.mode == .standalone
-        }) else {
+        guard Self.availableAutomationDisplays(store: store).contains(where: { $0.displayId == id }) else {
             throw AutomationError(message: String(localized: "No enabled display showing its own wallpaper has the id “\(id)”."))
         }
         return id

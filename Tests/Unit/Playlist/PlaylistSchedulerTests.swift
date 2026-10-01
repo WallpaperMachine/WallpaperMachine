@@ -6,6 +6,7 @@ final class PlaylistSchedulerTests: XCTestCase {
     private var suite: String!
     private var defaults: UserDefaults!
     private var store: PlaylistStore!
+    private var collections: WallpaperCollectionStore!
     private var shown: [String: String] = [:]
     private var running = true
     private var clock = Date()
@@ -22,6 +23,7 @@ final class PlaylistSchedulerTests: XCTestCase {
         defaults = UserDefaults(suiteName: suite)
         defaults.removePersistentDomain(forName: suite)
         store = PlaylistStore(defaults: defaults)
+        collections = WallpaperCollectionStore(defaults: defaults)
         shown = ["primary": "a"]
         running = true
         clock = calendar.date(from: DateComponents(year: 2027, month: 1, day: 15, hour: 12))!
@@ -32,20 +34,24 @@ final class PlaylistSchedulerTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defaults = nil
         store = nil
+        collections = nil
         super.tearDown()
     }
 
-    private func makeScheduler(library: [String] = ["a", "b", "c"], favorites: Set<String> = []) -> PlaylistScheduler {
+    private func makeScheduler(
+        library: [String] = ["a", "b", "c"], favorites: Set<String> = [],
+        activate: PlaylistScheduler.Activate? = nil
+    ) -> PlaylistScheduler {
         PlaylistScheduler(
-            store: store, displays: { ["primary"] }, library: { library }, favorites: { favorites },
-            current: { self.shown[$0] }, isRunning: { self.running },
-            activate: { display, choose in
+            store: store, collections: collections, displays: { ["primary"] }, library: { library }, favorites: { favorites },
+            current: { self.shown[$0] }, isRunning: { _ in self.running },
+            activate: activate ?? { display, choose in
                 guard let id = choose() else { return nil }
                 self.shown[display] = id
                 self.applied.append(id)
                 return id
             },
-            now: { self.clock }, calendar: calendar, center: NotificationCenter(),
+            now: { self.clock }, calendar: calendar, center: .default,
             sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
     }
 
@@ -169,5 +175,137 @@ final class PlaylistSchedulerTests: XCTestCase {
         await settle()
         XCTAssertTrue(applied.isEmpty)
         XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(30 * 60), "it tries again an interval later")
+    }
+
+    func testApplyingPlanWhilePausedWaitsThenRotatesOnceUsingLiveCollection() async throws {
+        let collection = try collections.create(name: "Live", wallpaperIDs: ["a", "gone", "b"])
+        store.update("source") { $0.mode = .rotate; $0.source = .collection; $0.collectionID = collection.id }
+        let plan = try store.savePlan(from: "source", name: "Collection rotation")
+        running = false
+        let scheduler = makeScheduler()
+        scheduler.start()
+        defer { scheduler.stop() }
+        try store.applyPlan(plan.id, to: "primary")
+        await settle()
+        XCTAssertEqual(applied, [])
+        try collections.remove(["b"], from: collection.id)
+        try collections.add(["c"], to: collection.id)
+        running = true
+        scheduler.evaluate()
+        await settle()
+        scheduler.evaluate()
+        await settle()
+        XCTAssertEqual(applied, ["c"], "membership is resolved when the display actually resumes")
+        XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(30 * 60))
+    }
+
+    func testReapplyingDayNightPlanSettlesOnceButDeletingPlanKeepsManualOverride() async throws {
+        store.update("source") { $0.mode = .dayNight; $0.dayWallpaperID = "b"; $0.nightWallpaperID = "c" }
+        let plan = try store.savePlan(from: "source", name: "Day and night")
+        let scheduler = makeScheduler()
+        scheduler.start()
+        defer { scheduler.stop() }
+        try store.applyPlan(plan.id, to: "primary")
+        await settle()
+        shown["primary"] = "a"
+        try store.applyPlan(plan.id, to: "primary")
+        await settle()
+        XCTAssertEqual(applied, ["b", "b"], "explicit reactivation reconciles the current phase")
+        shown["primary"] = "a"
+        try store.deletePlan(plan.id)
+        scheduler.evaluate()
+        await settle()
+        XCTAssertEqual(applied, ["b", "b"], "deleting metadata must not override a manual wallpaper")
+    }
+
+    func testQueuedPlanReplacementCannotApplyOldPlanOrOverwriteNewDeadline() async throws {
+        store.update("source") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["a", "b"] }
+        let oldPlan = try store.savePlan(from: "source", name: "Old")
+        store.update("source") { $0.wallpaperIDs = ["a", "c"]; $0.interval = 60 }
+        let newPlan = try store.savePlan(from: "source", name: "New")
+        var resume: CheckedContinuation<Void, Never>?
+        var first = true
+        let scheduler = makeScheduler(activate: { display, choose in
+            if first {
+                first = false
+                await withCheckedContinuation { resume = $0 }
+            }
+            guard let id = choose() else { return nil }
+            self.shown[display] = id
+            self.applied.append(id)
+            return id
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        try store.applyPlan(oldPlan.id, to: "primary")
+        await settle()
+        let gate = try XCTUnwrap(resume)
+        try store.applyPlan(newPlan.id, to: "primary")
+        gate.resume()
+        await settle()
+        XCTAssertEqual(applied, ["c"])
+        XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(60 * 60))
+    }
+
+    func testPauseAfterEnqueuePreservesDuePlanUntilResume() async throws {
+        store.update("source") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["a", "b"] }
+        let plan = try store.savePlan(from: "source", name: "Rotation")
+        var resume: CheckedContinuation<Void, Never>?
+        var first = true
+        let scheduler = makeScheduler(activate: { display, choose in
+            if first {
+                first = false
+                await withCheckedContinuation { resume = $0 }
+            }
+            guard let id = choose() else { return nil }
+            self.shown[display] = id
+            self.applied.append(id)
+            return id
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        try store.applyPlan(plan.id, to: "primary")
+        await settle()
+        let gate = try XCTUnwrap(resume)
+        running = false
+        gate.resume()
+        await settle()
+        XCTAssertEqual(applied, [])
+        XCTAssertEqual(store.nextChange["primary"], .distantPast)
+        running = true
+        scheduler.evaluate()
+        await settle()
+        XCTAssertEqual(applied, ["b"])
+    }
+    func testPlanActivationOnOneDisplayDoesNotLiftAnotherDisplaysPause() async throws {
+        shown["second"] = "a"
+        running = false
+        store.update("source") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["a", "b"] }
+        let plan = try store.savePlan(from: "source", name: "Shared configuration")
+        let scheduler = PlaylistScheduler(
+            store: store, collections: collections, displays: { ["primary", "second"] },
+            library: { ["a", "b"] }, favorites: { [] }, current: { self.shown[$0] },
+            isRunning: { $0 == "primary" || self.running },
+            activate: { display, choose in
+                guard let id = choose() else { return nil }
+                self.shown[display] = id
+                self.applied.append(display)
+                return id
+            },
+            now: { self.clock }, center: .default,
+            sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
+        scheduler.start()
+        defer { scheduler.stop() }
+        try store.applyPlan(plan.id, to: "primary")
+        try store.applyPlan(plan.id, to: "second")
+        await settle()
+        XCTAssertEqual(applied, ["primary"])
+        XCTAssertEqual(shown["second"], "a")
+        XCTAssertFalse(scheduler.skip("second"))
+        running = true
+        scheduler.evaluate()
+        await settle()
+        XCTAssertEqual(applied, ["primary", "second"])
+        XCTAssertEqual(shown["second"], "b")
     }
 }

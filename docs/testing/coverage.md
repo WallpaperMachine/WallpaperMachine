@@ -24,6 +24,19 @@ Swift tests cover, without starting the app:
   Native picker localization and the real selection-to-parent URL handoff
   require a separately authorized desktop smoke; these tests open no picker.
   The Finder/Dock hand-off in `AppDelegate` is not covered (it needs a running app).
+  Collections and named plans cover stable identity, ordered membership, cleanup,
+  detach-on-edit and paused/replaced queued transitions. `WallpaperPresetStoreTests`
+  covers typed applied-property snapshots, portable managed attachments, limits,
+  hidden file exclusion, alias rejection, draft/permission rollback and
+  applied-source retention after deleting a preset. `WallpaperBackupTests` exercises real package export,
+  preview, staged next-launch restore, conflict policy, parser/schema rejection,
+  authorization, plain-text preservation, rollback and interrupted recovery,
+  persistent-only preferences, full-size preset archives and manifest preflight.
+  Image placement tests cover fit-aware geometry, per-display persistence,
+  version-bound single-flight upgrade, actual resource changes and reset races;
+  `StillImagePageRenderingTests` exercises the generated page offscreen.
+  Compatibility checks cover target/content/config generations and truthful
+  unknown states, not complete scene or on-screen compatibility.
 - **Workshop** — search and pagination beneath the UI, committed-query
   pagination, window-sized pages cut from cached Steam pages (including a size
   change while a page loads), superseded requests, cancellation, and exact
@@ -174,6 +187,9 @@ Swift tests cover, without starting the app:
   an opaque title bar, unobscured content bounds, and restoration of the windowed
   title-bar layout without resizing the frame. It does not enter a full-screen
   Space or verify the live Split View transition.
+  `ControlPanelBackupFlowTests` drives real controls and isolated package writes,
+  preserving the library-inclusion and replace-conflict choices and checking that
+  staging/cancellation leave running files untouched. It opens no file panels.
 - **Appearance** — preference recreation, rejection of invalid changes without
   overwriting saved values, recovery from a damaged saved accent, reset
   isolation, plus an offscreen appearance regression that commits the real

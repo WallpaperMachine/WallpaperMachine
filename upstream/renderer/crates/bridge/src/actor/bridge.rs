@@ -1198,12 +1198,16 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     .is_some_and(|config| config.media_integration_enabled);
                 Ok(BridgeWebWallpaper {
                     display_id: desc.display.display_id,
+                    display_key: desc.display_key,
+                    audio_source_display_id: desc.audio_source_display_id,
                     wallpaper_id: desc.wallpaper_id,
                     title,
                     project_path,
                     entry_file: desc.entry_file,
                     fps: desc.fps,
                     paused: desc.paused,
+                    volume: desc.volume,
+                    muted: desc.muted,
                     audio_response_enabled: desc.audio_response_enabled,
                     media_integration_enabled,
                     properties_json,

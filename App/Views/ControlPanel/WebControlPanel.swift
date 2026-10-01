@@ -63,6 +63,13 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let playback: PlaybackPreferences
   let playlists: PlaylistStore
   let hotKeys: HotKeyPreferences
+  let collections: WallpaperCollectionStore
+  let presets: WallpaperPresetStore
+  let backup: WallpaperBackupStore
+  let imagePlacement: StillImagePlacementStore
+  let compatibility: WallpaperCompatibilityStore
+  var imagePlacementRequestSequence: UInt64 = 0
+  var imagePlacementRequests: [String: UInt64] = [:]
   /// Tests pass a closure so choosing an app does not open a panel. Nil uses the sheet.
   var chooseApplication: (@MainActor () async -> URL?)?
   /// Tests pass a closure that answers a pixiv session, so signing in opens no window. Nil
@@ -154,6 +161,11 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     playback: PlaybackPreferences? = nil,
     playlists: PlaylistStore? = nil,
     hotKeys: HotKeyPreferences? = nil,
+    collections: WallpaperCollectionStore? = nil,
+    presets: WallpaperPresetStore? = nil,
+    backup: WallpaperBackupStore? = nil,
+    imagePlacement: StillImagePlacementStore? = nil,
+    compatibility: WallpaperCompatibilityStore? = nil,
     chooseApplication: (@MainActor () async -> URL?)? = nil
   ) {
     self.store = store
@@ -172,6 +184,11 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.playback = playback ?? .shared
     self.playlists = playlists ?? .shared
     self.hotKeys = hotKeys ?? .shared
+    self.collections = collections ?? .shared
+    self.presets = presets ?? .shared
+    self.backup = backup ?? WallpaperBackupStore(defaults: defaults)
+    self.imagePlacement = imagePlacement ?? .shared
+    self.compatibility = compatibility ?? WallpaperCompatibilityStore()
     self.chooseApplication = chooseApplication
     filtersCollapsed = Self.filtersCollapsedKeys.mapValues { defaults.bool(forKey: $0) }
     welcomeSeen = defaults.bool(forKey: Self.welcomeSeenKey)
@@ -185,6 +202,8 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     super.init()
     self.libraryMetrics.onChange = { [weak self] in self?.scheduleUpdate() }
     self.energyUsage.onChange = { [weak self] in self?.pushEnergyUsage() }
+    self.backup.onChange = { [weak self] in self?.scheduleUpdate() }
+    self.compatibility.onChange = { [weak self] in self?.scheduleUpdate() }
   }
 
   func makeWebView() -> WKWebView {
@@ -242,6 +261,18 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
         Task { @MainActor [weak self] in self?.scheduleUpdate() }
       }
       .store(in: &subscriptions)
+    let featureNotifications: [(Notification.Name, AnyObject)] = [
+      (WallpaperCollectionStore.didChangeNotification, collections),
+      (WallpaperPresetStore.didChangeNotification, presets),
+      (StillImagePlacementStore.didChangeNotification, imagePlacement),
+    ]
+    for (name, object) in featureNotifications {
+      NotificationCenter.default.publisher(for: name, object: object)
+        .sink { [weak self] _ in
+          Task { @MainActor [weak self] in self?.scheduleUpdate() }
+        }
+        .store(in: &subscriptions)
+    }
     // Playback shows whether Low Power Mode, heat or a Focus filter is in effect right now.
     for name in [
       Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification,
@@ -631,6 +662,7 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
   private static let files: Set<String> = [
     "index.html", "panel.js", "panel.css", "settings.js", "settings.css", "welcome.js",
     "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js", "pixiv.js", "support-prompt.js",
+    "collections.js", "presets.js", "placement.js", "compatibility.js", "plans.js", "backup.js",
     "app-icons/minimal.png", "app-icons/day.png", "app-icons/night.png",
   ]
   /// One catalog module per shipped language, served as `mwe-ui://app/locales/<tag>.js`.

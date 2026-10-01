@@ -32,6 +32,19 @@ impl ConfigStore {
         Self { root: root.into() }
     }
 
+    /// Parses backup bytes without reading, repairing, or replacing live configuration files.
+    pub fn validate_app_config_text(raw: &str) -> Result<(), BridgeError> {
+        let config = toml::from_str::<AppConfig>(raw)
+            .map_err(|error| config_error(format!("invalid app configuration: {error}")))?;
+        check_schema_version(config.schema_version, app::SCHEMA_VERSION, "config")
+    }
+
+    pub fn validate_wallpaper_config_text(raw: &str) -> Result<(), BridgeError> {
+        let config = serde_json::from_str::<WallpaperConfig>(raw)
+            .map_err(|error| config_error(format!("invalid wallpaper configuration: {error}")))?;
+        check_schema_version(config.schema_version, wallpaper::SCHEMA_VERSION, "wallpaper config")
+    }
+
     /// # Errors
     ///
     /// Returns an error when the config file is from a newer schema or a
@@ -65,13 +78,7 @@ impl ConfigStore {
 
         match toml::from_str::<AppConfig>(&raw) {
             Ok(mut config) => {
-                if config.schema_version > app::SCHEMA_VERSION {
-                    return Err(config_error(format!(
-                        "config schema version {} is newer than supported version {}",
-                        config.schema_version,
-                        app::SCHEMA_VERSION
-                    )));
-                }
+                check_schema_version(config.schema_version, app::SCHEMA_VERSION, "config")?;
                 config.migrate_legacy_keys();
 
                 Ok(ConfigLoad {
@@ -136,13 +143,7 @@ impl ConfigStore {
             }
         };
 
-        if config.schema_version > wallpaper::SCHEMA_VERSION {
-            return Err(config_error(format!(
-                "wallpaper config schema version {} is newer than supported version {}",
-                config.schema_version,
-                wallpaper::SCHEMA_VERSION
-            )));
-        }
+        check_schema_version(config.schema_version, wallpaper::SCHEMA_VERSION, "wallpaper config")?;
 
         Ok(config)
     }
@@ -174,6 +175,15 @@ impl ConfigStore {
     fn wallpaper_path(&self, id: &str) -> PathBuf {
         self.root.join("wallpapers").join(format!("{id}.json"))
     }
+}
+
+fn check_schema_version(version: u32, supported: u32, name: &str) -> Result<(), BridgeError> {
+    if version > supported {
+        return Err(config_error(format!(
+            "{name} schema version {version} is newer than supported version {supported}"
+        )));
+    }
+    Ok(())
 }
 
 fn backup_corrupted(path: &Path) -> Result<PathBuf, BridgeError> {

@@ -1,0 +1,842 @@
+import CoreGraphics
+import Darwin
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
+import XCTest
+@testable import WallpaperMachine
+
+@MainActor
+final class WallpaperBackupTests: XCTestCase {
+    private var root: URL!
+    private var source: URL { root.appendingPathComponent("source") }
+    private var destination: URL { root.appendingPathComponent("destination") }
+    private var package: URL { root.appendingPathComponent("Roundtrip.wmbackup") }
+    private var suites: [String] = []
+    private var domains: [ObjectIdentifier: String] = [:]
+    private let presetID = "00000000-0000-4000-8000-000000000001"
+    private let existingPresetID = "00000000-0000-4000-8000-000000000002"
+    private struct PresetArchive: Codable { var version = 1; var items: [WallpaperPropertyPreset] }
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("Backup-tests-\(UUID().uuidString)").resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws {
+        for suite in suites { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        try FileManager.default.removeItem(at: root)
+    }
+
+    private func defaults() throws -> UserDefaults {
+        let name = "Backup-tests-\(UUID().uuidString)"
+        suites.append(name)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        domains[ObjectIdentifier(defaults)] = name
+        return defaults
+    }
+
+    private func domainName(for defaults: UserDefaults) -> String {
+        domains[ObjectIdentifier(defaults)]!
+    }
+
+    private func put(_ string: String, _ path: String, in directory: URL) throws {
+        let url = directory.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(string.utf8).write(to: url)
+    }
+
+    private func json(_ path: String, in directory: URL) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent(path))) as? [String: Any])
+    }
+
+    private func fixture() throws -> UserDefaults {
+        let preferences = try defaults()
+        try put("schema_version = 1\n[general]\nlast_selected_wallpaper = \"101\"\n", "config.toml", in: source)
+        try put(#"{"workshop_id":"101","type":"scene","property_overrides":{"photo":"PATH/UserAssets/101/photo/asset/画 像.png"}}"#
+            .replacingOccurrences(of: "PATH", with: source.path), "wallpapers/101.json", in: source)
+        try put(#"{"title":"Original","type":"scene","file":"scene.json","general":{"properties":{"photo":{"type":"file","value":""},"caption":{"type":"textInput","value":""}}}}"#, "Library/101/project.json", in: source)
+        try put(#"{"layers":[]}"#, "Library/101/scene.json", in: source)
+        try put("retained image bytes", "UserAssets/101/photo/asset/画 像.png", in: source)
+        let bytes = Data("retained image bytes".utf8)
+        let asset = ManagedUserAsset(assetId: "asset", fileName: "画 像.png",
+            sourcePath: source.appendingPathComponent("UserAssets/101/photo/asset/画 像.png").path,
+            size: Int64(bytes.count), modified: Date(timeIntervalSince1970: 100), digest: WallpaperBackupFiles.digest(bytes))
+        var manifest = UserAssetManifest(wallpaperId: "101")
+        manifest.properties["photo"] = .init(kind: .file, sourcePath: asset.sourcePath, assets: [asset])
+        try ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets")).write(manifest)
+        // An imported file named manifest.json is user data, not store metadata.
+        try put("do not parse or rewrite me", "UserAssets/101/photo/asset/manifest.json", in: source)
+        let retained = "UserAssets/PresetAssets/\(presetID)/photo/retained.png"
+        try put("preset bytes", retained, in: source)
+        let property = WallpaperPresetProperty(id: "photo", kind: "file", value: .string(source.appendingPathComponent(retained).path),
+            usesDefault: false, retainedPath: source.appendingPathComponent(retained).path)
+        let preset = WallpaperPropertyPreset(id: presetID, wallpaperID: "101", name: "My preset", properties: [property])
+        preferences.set(try JSONEncoder().encode(PresetArchive(items: [preset])), forKey: "WallpaperMachine.wallpaperPresets")
+        preferences.set(try JSONSerialization.data(withJSONObject: [["id": "collection-one", "name": "Calm", "wallpaperIDs": ["101"]]]), forKey: "WallpaperMachine.collections")
+        preferences.set("mute", forKey: "WallpaperMachine.otherAudioAction")
+        preferences.set("sensitive cookie", forKey: "WallpaperMachine.steamCookie")
+        try put("credential", "SteamCMD/config/loginusers.vdf", in: source)
+        try put("log", "Logs/session.log", in: source)
+        try put("cache", "Cache/cache.bin", in: source)
+        return preferences
+    }
+
+    func testBackupExportsOnlyPersistentPreferencesAndKeepExistingIgnoresInheritedValues() throws {
+        let original = try defaults()
+        let target = try defaults()
+        let languageKey = "AppleLanguages"
+        let actionKey = "WallpaperMachine.otherAudioAction"
+        let originalArguments = original.volatileDomain(forName: UserDefaults.argumentDomain)
+        let originalRegistration = original.volatileDomain(forName: UserDefaults.registrationDomain)
+        original.setVolatileDomain([languageKey: ["ja"]], forName: UserDefaults.argumentDomain)
+        original.register(defaults: [actionKey: "mute"])
+        defer {
+            original.setVolatileDomain(originalArguments, forName: UserDefaults.argumentDomain)
+            original.setVolatileDomain(originalRegistration, forName: UserDefaults.registrationDomain)
+        }
+        XCTAssertEqual(original.stringArray(forKey: languageKey), ["ja"])
+        XCTAssertEqual(original.string(forKey: actionKey), "mute")
+        var preferences = try WallpaperBackupPreferences(defaults: original, domainName: domainName(for: original))
+        XCTAssertNil(preferences.values[languageKey])
+        XCTAssertNil(preferences.values[actionKey])
+        original.set(["zh-Hans"], forKey: languageKey)
+        original.set("pause", forKey: actionKey)
+        preferences = try WallpaperBackupPreferences(defaults: original, domainName: domainName(for: original))
+        XCTAssertEqual(try WallpaperBackupPreferences.decode(XCTUnwrap(preferences.values[languageKey])) as? [String], ["zh-Hans"])
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: false, preferences: preferences)
+        let targetArguments = target.volatileDomain(forName: UserDefaults.argumentDomain)
+        target.setVolatileDomain([languageKey: ["en"], actionKey: "ignore"], forName: UserDefaults.argumentDomain)
+        defer { target.setVolatileDomain(targetArguments, forName: UserDefaults.argumentDomain) }
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package,
+            preferences: .init(defaults: target, domainName: domainName(for: target)))
+        XCTAssertFalse(preview.conflicts.contains("Preferences/" + languageKey))
+        XCTAssertFalse(preview.conflicts.contains("Preferences/" + actionKey))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        _ = try service.applyPendingRestore(defaults: target, domainName: domainName(for: target))
+        let persistent = target.persistentDomain(forName: domainName(for: target))
+        XCTAssertEqual(persistent?[languageKey] as? [String], ["zh-Hans"])
+        XCTAssertEqual(persistent?[actionKey] as? String, "pause")
+    }
+
+    func testFailedRestoreDoesNotPersistInheritedLanguage() throws {
+        let original = try fixture()
+        original.set(["ja"], forKey: "AppleLanguages")
+        let target = try defaults()
+        let targetArguments = target.volatileDomain(forName: UserDefaults.argumentDomain)
+        target.setVolatileDomain(["AppleLanguages": ["en"]], forName: UserDefaults.argumentDomain)
+        defer { target.setVolatileDomain(targetArguments, forName: UserDefaults.argumentDomain) }
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true,
+            preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package,
+            preferences: .init(defaults: target, domainName: domainName(for: target)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        XCTAssertThrowsError(try service.applyPendingRestore(defaults: target, domainName: domainName(for: target), beforePublish: { path in
+            if path == "Preferences" { throw CocoaError(.fileWriteUnknown) }
+        }))
+        XCTAssertNil(target.persistentDomain(forName: domainName(for: target))?["AppleLanguages"])
+        XCTAssertEqual(target.stringArray(forKey: "AppleLanguages"), ["en"])
+        XCTAssertTrue(service.pendingRestore)
+    }
+
+    func testBackupAcceptsMaximumSizePresetArchive() throws {
+        var archive = try JSONEncoder().encode(PresetArchive(items: []))
+        archive.append(Data(repeating: 32, count: WallpaperPresetStore.maximumDocumentBytes - archive.count))
+        try WallpaperPresetStore.validateArchiveData(archive)
+        let preferences = WallpaperBackupPreferences(values: [
+            "WallpaperMachine.wallpaperPresets": try WallpaperBackupPreferences.encode(archive),
+        ])
+        let service = WallpaperBackupService(supportRoot: source)
+        try service.export(to: package, includeLibrary: false, preferences: preferences)
+        let preview = try service.preview(package: package, preferences: .init(values: [:]))
+        XCTAssertEqual(preview.presetCount, 0)
+        let manifest = try json("manifest.json", in: package)
+        let values = try XCTUnwrap(manifest["preferences"] as? [String: String])
+        let bytes = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(values["WallpaperMachine.wallpaperPresets"])))
+        XCTAssertEqual(try WallpaperBackupPreferences.decode(bytes) as? Data, archive)
+    }
+
+    func testManifestLimitFailsBeforeOpeningPayloadAndPreservesExistingPackage() throws {
+        try put("payload", "UserAssets/asset.bin", in: source)
+        let asset = source.appendingPathComponent("UserAssets/asset.bin")
+        XCTAssertEqual(chmod(asset.path, 0), 0)
+        defer { _ = chmod(asset.path, 0o600) }
+        XCTAssertThrowsError(try FileHandle(forReadingFrom: asset))
+        try put("previous backup", "sentinel", in: package)
+        var limits = WallpaperBackupLimits()
+        limits.maximumManifestBytes = 1
+        let service = WallpaperBackupService(supportRoot: source, limits: limits)
+        XCTAssertThrowsError(try service.export(to: package, includeLibrary: false, preferences: .init(values: [:]))) { error in
+            XCTAssertEqual(error as? WallpaperBackupFailure, WallpaperBackupFiles(limits: limits).oversized())
+        }
+        XCTAssertEqual(try String(contentsOf: package.appendingPathComponent("sentinel"), encoding: .utf8), "previous backup")
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains { $0.hasPrefix(".wmbackup-export-") })
+    }
+
+    func testExportPreviewPendingAndIsolatedStartupRoundtripRemapsRetainedPaths() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        let exporter = WallpaperBackupService(supportRoot: source)
+        try exporter.export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preview = try importer.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertEqual(preview.wallpaperCount, 1)
+        XCTAssertEqual(preview.presetCount, 1)
+        XCTAssertEqual(preview.collectionCount, 1)
+        let manifest = try json("manifest.json", in: package)
+        let exportedPreferences = try XCTUnwrap(manifest["preferences"] as? [String: Any])
+        XCTAssertNil(exportedPreferences["WallpaperMachine.steamCookie"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.appendingPathComponent("data/SteamCMD").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.appendingPathComponent("data/Logs").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.appendingPathComponent("data/Cache").path))
+        try importer.stageRestore(package: package, preview: preview, policy: .replace)
+        XCTAssertTrue(importer.pendingRestore)
+        XCTAssertNil(targetDefaults.object(forKey: "WallpaperMachine.otherAudioAction"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("config.toml").path))
+        // The staged package is complete and independent of the selected source.
+        try FileManager.default.removeItem(at: package)
+        let report = try XCTUnwrap(WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertTrue(report.restoredPaths.contains("Library/101"))
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
+        let overrides = try XCTUnwrap(json("wallpapers/101.json", in: destination)["property_overrides"] as? [String: String])
+        XCTAssertEqual(overrides["photo"], destination.appendingPathComponent("UserAssets/101/photo/asset/画 像.png").path)
+        let presetJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(targetDefaults.data(forKey: "WallpaperMachine.wallpaperPresets"))) as? [String: Any])
+        let preset = try XCTUnwrap((presetJSON["items"] as? [[String: Any]])?.first)
+        let property = try XCTUnwrap((preset["properties"] as? [[String: Any]])?.first)
+        XCTAssertEqual(property["retainedPath"] as? String, destination.appendingPathComponent("UserAssets/PresetAssets/\(presetID)/photo/retained.png").path)
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("UserAssets/101/photo/asset/manifest.json"), encoding: .utf8), "do not parse or rewrite me")
+        XCTAssertFalse(importer.pendingRestore)
+        XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+    }
+
+    func testKeepExistingPreservesCollidingWallpaperAndImportsIndependentCollectionsAndPresetBytes() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try put("old config", "config.toml", in: destination)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{}}"#, "wallpapers/101.json", in: destination)
+        try put(#"{"title":"Keep me","type":"scene"}"#, "Library/101/project.json", in: destination)
+        targetDefaults.set("pause", forKey: "WallpaperMachine.otherAudioAction")
+        targetDefaults.set(try JSONSerialization.data(withJSONObject: [
+            ["id": "collection-one", "name": "Keep collection", "wallpaperIDs": ["old"]],
+            ["id": "collection-existing", "name": "Existing", "wallpaperIDs": ["old"]],
+        ]), forKey: "WallpaperMachine.collections")
+        let existing = WallpaperPropertyPreset(id: existingPresetID, wallpaperID: "101", name: "Existing", properties: [])
+        targetDefaults.set(try JSONEncoder().encode(PresetArchive(items: [existing])), forKey: "WallpaperMachine.wallpaperPresets")
+        try put("old preset", "UserAssets/PresetAssets/\(existingPresetID)/photo/old.png", in: destination)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preview = try importer.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertTrue(preview.conflicts.contains("Library/101"))
+        XCTAssertTrue(preview.conflicts.contains("Preferences/WallpaperMachine.collections"))
+        try importer.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        _ = try importer.applyPendingRestore(defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "old config")
+        XCTAssertEqual(try json("Library/101/project.json", in: destination)["title"] as? String, "Keep me")
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "pause")
+        let collections = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(targetDefaults.data(forKey: "WallpaperMachine.collections"))) as? [[String: Any]])
+        XCTAssertEqual(collections.first?["name"] as? String, "Keep collection")
+        let presets = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(targetDefaults.data(forKey: "WallpaperMachine.wallpaperPresets"))) as? [String: Any])
+        XCTAssertEqual(Set((presets["items"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }), [existingPresetID, presetID])
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("UserAssets/PresetAssets/\(presetID)/photo/retained.png"), encoding: .utf8), "preset bytes")
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("UserAssets/PresetAssets/\(existingPresetID)/photo/old.png"), encoding: .utf8), "old preset")
+    }
+
+    func testReplaceChangesConflictingStateButKeepsUnrelatedWallpaper() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try put("old config", "config.toml", in: destination)
+        try put(#"{"title":"Unrelated","type":"web"}"#, "Library/999/project.json", in: destination)
+        targetDefaults.set("pause", forKey: "WallpaperMachine.otherAudioAction")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: false, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preview = try importer.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertFalse(preview.includesLibrary)
+        XCTAssertTrue(preview.warnings.contains(where: { $0.contains("101") }))
+        try importer.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try importer.applyPendingRestore(defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
+        XCTAssertEqual(try json("Library/999/project.json", in: destination)["title"] as? String, "Unrelated")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Library/101").path))
+    }
+
+    func testFailureAfterPublicationRollsBackAllFilesAndPreferencesAndRetainsPending() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try put("old config", "config.toml", in: destination)
+        targetDefaults.set("pause", forKey: "WallpaperMachine.otherAudioAction")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preview = try importer.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        try importer.stageRestore(package: package, preview: preview, policy: .replace)
+        XCTAssertThrowsError(try importer.applyPendingRestore(defaults: targetDefaults, domainName: domainName(for: targetDefaults), beforePublish: { path in
+            if path == "Preferences" { throw CocoaError(.fileWriteOutOfSpace) }
+        }))
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "old config")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Library/101").path))
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "pause")
+        XCTAssertNil(targetDefaults.object(forKey: "WallpaperMachine.collections"))
+        XCTAssertTrue(importer.pendingRestore)
+        _ = try importer.applyPendingRestore(defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
+    }
+
+    func testInterruptedUncommittedJournalRestoresOriginalBeforeStoresReadPreferences() throws {
+        let targetDefaults = try defaults()
+        let transaction = destination.appendingPathComponent(WallpaperBackupService.transactionDirectoryName)
+        try put("original", "old/config.toml", in: transaction)
+        try put("half published", "config.toml", in: destination)
+        targetDefaults.set("mute", forKey: "WallpaperMachine.otherAudioAction")
+        let original = try WallpaperBackupPreferences.encode("pause")
+        let journal = WallpaperBackupJournal(units: [.init(path: "config.toml", existed: true)],
+            originalPreferences: ["WallpaperMachine.otherAudioAction": original], absentPreferences: [])
+        try JSONEncoder().encode(journal).write(to: transaction.appendingPathComponent("journal.json"))
+        let report = try XCTUnwrap(WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertTrue(report.recoveredInterruptedRestore)
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "original")
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "pause")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: transaction.path))
+    }
+
+    func testChangedPackageCannotStageOverAnExistingPendingRestore() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preview = try importer.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        try importer.stageRestore(package: package, preview: preview, policy: .replace)
+        try put("changed bytes", "data/Library/101/scene.json", in: package)
+        XCTAssertThrowsError(try importer.stageRestore(package: package, preview: preview, policy: .keepExisting))
+        XCTAssertTrue(importer.pendingRestore)
+        _ = try importer.applyPendingRestore(defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        XCTAssertEqual(try json("Library/101/scene.json", in: destination)["layers"] as? [String], [])
+    }
+
+    func testTraversalLinksSpecialFilesAndDisallowedPreferencesAreRejected() throws {
+        let original = try fixture()
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let emptyDefaults = try defaults()
+        let preferences = try WallpaperBackupPreferences(defaults: emptyDefaults, domainName: domainName(for: emptyDefaults))
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        try FileManager.default.createSymbolicLink(at: package.appendingPathComponent("data/Library/101/escape"), withDestinationURL: root)
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        try FileManager.default.removeItem(at: package.appendingPathComponent("data/Library/101/escape"))
+        let fifo = package.appendingPathComponent("data/Library/101/fifo")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        try FileManager.default.removeItem(at: fifo)
+        let hardLink = package.appendingPathComponent("data/Library/101/hardlink")
+        try FileManager.default.linkItem(at: package.appendingPathComponent("data/Library/101/scene.json"), to: hardLink)
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        try FileManager.default.removeItem(at: hardLink)
+        var manifest = try json("manifest.json", in: package)
+        var entries = try XCTUnwrap(manifest["entries"] as? [[String: Any]])
+        entries[0]["path"] = "../escape"
+        manifest["entries"] = entries
+        try JSONSerialization.data(withJSONObject: manifest).write(to: package.appendingPathComponent("manifest.json"))
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        XCTAssertThrowsError(try WallpaperBackupService(supportRoot: source).export(to: root.appendingPathComponent("Forbidden.wmbackup"), includeLibrary: false,
+            preferences: .init(values: ["WallpaperMachine.steamCookie": WallpaperBackupPreferences.encode("secret")])))
+    }
+
+    func testCopyLimitsAndCancelledExportLeaveNoPublishedPackage() async throws {
+        let original = try fixture()
+        var limits = WallpaperBackupLimits()
+        limits.maximumBytes = 8
+        let bounded = WallpaperBackupService(supportRoot: source, limits: limits)
+        XCTAssertThrowsError(try bounded.export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original))))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.path))
+        let service = WallpaperBackupService(supportRoot: source)
+        let preferences = try WallpaperBackupPreferences(defaults: original, domainName: domainName(for: original))
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try service.export(to: package, includeLibrary: true, preferences: preferences)
+        }
+        do { try await cancelled.value; XCTFail("A cancelled copy must not publish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.path))
+    }
+
+    func testStoreStagesWithoutMutatingRunningPreferencesAndCancelsPending() async throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let store = WallpaperBackupStore(service: .init(supportRoot: destination), defaults: targetDefaults, domainName: domainName(for: targetDefaults),
+            exportDestination: { nil }, restoreSource: { self.package })
+        try await store.choosePreview()
+        try await store.stageRestore(policy: .replace)
+        XCTAssertTrue(store.pendingRestore)
+        XCTAssertNil(targetDefaults.object(forKey: "WallpaperMachine.otherAudioAction"))
+        try store.cancelRestore()
+        XCTAssertFalse(store.pendingRestore)
+        XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+    }
+
+    func testStartupRestoredPreferencesHydrateRealPresetCollectionPlanAndPlacementStores() throws {
+        struct Archive: Codable { var version = 1; var items: [WallpaperPropertyPreset] }
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        let presetID = "00000000-0000-4000-8000-000000000001"
+        let assetPath = "UserAssets/PresetAssets/\(presetID)/photo/retained.png"
+        try put("retained by the preset", assetPath, in: source)
+        let sourceAsset = source.appendingPathComponent(assetPath).path
+        let property = WallpaperPresetProperty(id: "photo", kind: "file", value: .string(sourceAsset),
+            usesDefault: false, retainedPath: sourceAsset)
+        let preset = WallpaperPropertyPreset(id: presetID, wallpaperID: "101", name: "Night", properties: [property])
+        original.set(try JSONEncoder().encode(Archive(items: [preset])), forKey: WallpaperPresetStore.preferenceKey)
+        let collections = WallpaperCollectionStore(defaults: original)
+        let collection = try collections.create(name: "Night collection", wallpaperIDs: ["101"])
+        let playlists = PlaylistStore(defaults: original)
+        playlists.update("display-one") {
+            $0.mode = .rotate
+            $0.source = .collection
+            $0.collectionID = collection.id
+            $0.interval = 15
+        }
+        let plan = try playlists.savePlan(from: "display-one", name: "Night plan")
+        let placement = try StillImagePlacement(x: 0.2, y: 0.7, zoom: 1.5)
+        try StillImagePlacementStore(defaults: original, library: source.appendingPathComponent("Library"))
+            .set(placement, wallpaperID: "image-test", displayID: "display-one")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        let restoredPresets = WallpaperPresetStore(defaults: targetDefaults,
+            managed: ManagedUserAssetStore(root: destination.appendingPathComponent("UserAssets")))
+        let restoredProperty = try XCTUnwrap(restoredPresets.preset(id: presetID).properties.first)
+        let destinationAsset = destination.appendingPathComponent(assetPath).path
+        XCTAssertEqual(restoredProperty.retainedPath, destinationAsset)
+        XCTAssertEqual(restoredProperty.value, .string(destinationAsset))
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: destinationAsset), encoding: .utf8), "retained by the preset")
+        XCTAssertEqual(WallpaperCollectionStore(defaults: targetDefaults).collection(id: collection.id), collection)
+        let restoredPlaylists = PlaylistStore(defaults: targetDefaults)
+        XCTAssertEqual(restoredPlaylists.plan(id: plan.id), plan)
+        XCTAssertEqual(restoredPlaylists.playlist(for: "display-one").collectionID, collection.id)
+        XCTAssertEqual(StillImagePlacementStore(defaults: targetDefaults, library: destination.appendingPathComponent("Library"))
+            .placement(wallpaperID: "image-test", displayID: "display-one"), placement)
+    }
+
+    func testCommittedRecoveryCleansPendingWithoutRollingBackOrReapplying() throws {
+        let targetDefaults = try defaults()
+        let transaction = destination.appendingPathComponent(WallpaperBackupService.transactionDirectoryName)
+        try put("old", "old/config.toml", in: transaction)
+        try put("committed new", "config.toml", in: destination)
+        try put("stale pending bytes", "manifest.json", in: destination.appendingPathComponent(WallpaperBackupService.pendingDirectoryName))
+        targetDefaults.set("mute", forKey: "WallpaperMachine.otherAudioAction")
+        var journal = WallpaperBackupJournal(units: [.init(path: "config.toml", existed: true)],
+            originalPreferences: ["WallpaperMachine.otherAudioAction": try WallpaperBackupPreferences.encode("pause")], absentPreferences: [])
+        journal.preferencesCommitted = true
+        try JSONEncoder().encode(journal).write(to: transaction.appendingPathComponent("journal.json"))
+        let report = try XCTUnwrap(WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertTrue(report.recoveredInterruptedRestore)
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "committed new")
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
+        XCTAssertFalse(WallpaperBackupService(supportRoot: destination).pendingRestore)
+        XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+    }
+
+    func testNonFinitePreferencesUnknownVersionsAndCaseAliasedPathsCannotBeRestored() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        let exporter = WallpaperBackupService(supportRoot: source)
+        XCTAssertThrowsError(try exporter.export(to: package, includeLibrary: false, preferences: .init(values: [
+            "WallpaperMachine.playlistNextChange": try WallpaperBackupPreferences.encode(["screen": Double.infinity]),
+        ])))
+        try exporter.export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let importer = WallpaperBackupService(supportRoot: destination)
+        let preferences = try WallpaperBackupPreferences(defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        let manifestURL = package.appendingPathComponent("manifest.json")
+        let baseline = try Data(contentsOf: manifestURL)
+        var manifest = try json("manifest.json", in: package)
+        manifest["version"] = 2
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        try baseline.write(to: manifestURL)
+        manifest = try json("manifest.json", in: package)
+        var entries = try XCTUnwrap(manifest["entries"] as? [[String: Any]])
+        var duplicate = try XCTUnwrap(entries.first(where: { ($0["path"] as? String) == "Library/101/scene.json" }))
+        duplicate["path"] = "Library/101/SCENE.JSON"
+        entries.append(duplicate)
+        manifest["entries"] = entries
+        try JSONSerialization.data(withJSONObject: manifest).write(to: manifestURL)
+        XCTAssertThrowsError(try importer.preview(package: package, preferences: preferences))
+        XCTAssertFalse(importer.pendingRestore)
+        XCTAssertNil(targetDefaults.object(forKey: "WallpaperMachine.otherAudioAction"))
+    }
+
+    func testStartupFailureIsVisibleAndDoesNotRetryUntilExplicitlyRestaged() async throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        try put("old current config", "config.toml", in: destination)
+        targetDefaults.set("pause", forKey: "WallpaperMachine.otherAudioAction")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        let pending = destination.appendingPathComponent(WallpaperBackupService.pendingDirectoryName)
+        try put("corrupted pending bytes", "data/config.toml", in: pending)
+        XCTAssertThrowsError(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        let store = WallpaperBackupStore(service: service, defaults: targetDefaults, domainName: domainName(for: targetDefaults),
+            exportDestination: { nil }, restoreSource: { self.package })
+        XCTAssertNotNil(store.error)
+        XCTAssertTrue(store.pendingRestore)
+        XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "old current config")
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "pause")
+        try await store.choosePreview()
+        try await store.stageRestore(policy: .replace)
+        _ = try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
+        XCTAssertFalse(service.pendingRestore)
+        XCTAssertNil(service.lastStartupError)
+    }
+
+    func testManagedPathsFromSymlinkedSupportOverrideRemainPortableAfterOriginalDisappears() throws {
+        let original = try fixture()
+        let targetDefaults = try defaults()
+        let alias = root.appendingPathComponent("source-alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: source)
+        let configURL = source.appendingPathComponent("wallpapers/101.json")
+        let aliasedConfig = try String(contentsOf: configURL, encoding: .utf8)
+            .replacingOccurrences(of: source.path, with: alias.path)
+        try Data(aliasedConfig.utf8).write(to: configURL)
+        try WallpaperBackupService(supportRoot: alias).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        try FileManager.default.removeItem(at: alias)
+        try FileManager.default.removeItem(at: source)
+        _ = try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults))
+        let overrides = try XCTUnwrap(json("wallpapers/101.json", in: destination)["property_overrides"] as? [String: String])
+        XCTAssertEqual(overrides["photo"], destination.appendingPathComponent("UserAssets/101/photo/asset/画 像.png").path)
+    }
+
+    private func replaceManifestPreference(_ key: String, value: Any) throws {
+        var manifest = try json("manifest.json", in: package)
+        var preferences = try XCTUnwrap(manifest["preferences"] as? [String: Any])
+        preferences[key] = try WallpaperBackupPreferences.encode(value).base64EncodedString()
+        manifest["preferences"] = preferences
+        try JSONSerialization.data(withJSONObject: manifest).write(to: package.appendingPathComponent("manifest.json"))
+    }
+
+    func testStructuredPreferenceRejectionPreservesPendingAndLiveArchive() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let archive = try XCTUnwrap(original.data(forKey: "WallpaperMachine.wallpaperPresets"))
+        live.set(archive, forKey: "WallpaperMachine.wallpaperPresets")
+        let service = WallpaperBackupService(supportRoot: destination)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        let pendingManifest = destination.appendingPathComponent("\(WallpaperBackupService.pendingDirectoryName)/manifest.json")
+        let baseline = try Data(contentsOf: pendingManifest)
+        let invalidValues: [(String, Data)] = [
+            ("WallpaperMachine.wallpaperPresets", Data("not json".utf8)),
+            ("WallpaperMachine.wallpaperPresets", Data(#"{"version":2,"items":[]}"#.utf8)),
+            ("WallpaperMachine.collections", Data(#"[{"id":"x","name":"Missing members"}]"#.utf8)),
+            ("WallpaperMachine.playlistPlans", Data(#"[{"id":"p","name":"Bad","playlist":{"mode":"unknown"}}]"#.utf8)),
+            ("WallpaperMachine.playlists", Data(#"{"screen":{"wallpaperIDs":["a"],"interval":7}}"#.utf8)),
+            ("WallpaperMachine.imagePlacements", Data(#"{"version":1,"placements":{"w":{"screen":{"x":2,"y":0.5,"zoom":1}}}}"#.utf8)),
+            ("WallpaperMachine.imagePlacements", Data(#"{"version":2,"placements":{}}"#.utf8)),
+            ("WallpaperMachine.hotKeys", Data(#"{"togglePlayback":{"keyCode":"oops","modifiers":0,"label":"P"}}"#.utf8)),
+            ("WallpaperMachine.appRules", Data(#"[{"id":"not-uuid"}]"#.utf8)),
+        ]
+        let manifestBaseline = try Data(contentsOf: package.appendingPathComponent("manifest.json"))
+        for (key, value) in invalidValues {
+            try manifestBaseline.write(to: package.appendingPathComponent("manifest.json"))
+            try replaceManifestPreference(key, value: value)
+            XCTAssertThrowsError(try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))), key)
+            XCTAssertThrowsError(try service.stageRestore(package: package, preview: preview, policy: .replace), key)
+            XCTAssertEqual(try Data(contentsOf: pendingManifest), baseline)
+            XCTAssertEqual(live.data(forKey: "WallpaperMachine.wallpaperPresets"), archive)
+        }
+    }
+
+    func testProductionRendererParserRejectsMalformedAndFutureConfigurationsBeforePublication() throws {
+        let original = try fixture()
+        let live = try defaults()
+        try put("live config must survive", "config.toml", in: destination)
+        for invalid in ["[broken", "schema_version = 4294967295\n"] {
+            try put(invalid, "config.toml", in: source)
+            try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+            XCTAssertThrowsError(try WallpaperBackupService(supportRoot: destination).preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+            XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("config.toml"), encoding: .utf8), "live config must survive")
+        }
+        try put("schema_version = 1\n", "config.toml", in: source)
+        try put(#"{"schema_version":4294967295,"workshop_id":"101","type":"scene"}"#, "wallpapers/101.json", in: source)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        XCTAssertThrowsError(try WallpaperBackupService(supportRoot: destination).preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+    }
+
+    func testExistingExternalFileCannotAuthorizeIncomingOverridesDefaultsOrPresets() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let privatePath = root.appendingPathComponent("private-photo.png").path
+        try put("private bytes", "private-photo.png", in: root)
+        let originalConfig = try Data(contentsOf: source.appendingPathComponent("wallpapers/101.json"))
+        let originalProject = try Data(contentsOf: source.appendingPathComponent("Library/101/project.json"))
+        let service = WallpaperBackupService(supportRoot: destination)
+        try put(#"{"workshop_id":"101","type":"scene","property_overrides":{"photo":"\#(privatePath)"}}"#, "wallpapers/101.json", in: source)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        XCTAssertThrowsError(try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+        try originalConfig.write(to: source.appendingPathComponent("wallpapers/101.json"))
+        var project = try json("Library/101/project.json", in: source)
+        project["general"] = ["properties": ["photo": ["type": "file", "value": privatePath]]]
+        try JSONSerialization.data(withJSONObject: project).write(to: source.appendingPathComponent("Library/101/project.json"))
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        XCTAssertThrowsError(try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+        try originalProject.write(to: source.appendingPathComponent("Library/101/project.json"))
+        let property = WallpaperPresetProperty(id: "photo", kind: "file", value: .string(privatePath), usesDefault: false)
+        original.set(try JSONEncoder().encode(PresetArchive(items: [
+            WallpaperPropertyPreset(id: presetID, wallpaperID: "101", name: "Unsafe", properties: [property]),
+        ])), forKey: "WallpaperMachine.wallpaperPresets")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        XCTAssertThrowsError(try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: privatePath), encoding: .utf8), "private bytes")
+        XCTAssertFalse(service.pendingRestore)
+    }
+
+    func testAlreadySelectedExternalReferenceIsScopedToSameWallpaperAndProperty() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let external = root.appendingPathComponent("chosen.png").path
+        try put("chosen", "chosen.png", in: root)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"photo":"\#(external)"}}"#, "wallpapers/101.json", in: source)
+        try put(#"{"type":"scene","general":{"properties":{"photo":{"type":"file","value":""}}}}"#, "Library/101/project.json", in: destination)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"other":"\#(external)"}}"#, "wallpapers/101.json", in: destination)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        XCTAssertThrowsError(try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"photo":"\#(external)"}}"#, "wallpapers/101.json", in: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        XCTAssertEqual((try json("wallpapers/101.json", in: destination)["property_overrides"] as? [String: String])?["photo"], external)
+    }
+
+    func testManagedMetadataCannotAuthorizeExternalReadAndCopiedBytesStillRecover() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let external = root.appendingPathComponent("unselected-private.png").path
+        try put("private original", "unselected-private.png", in: root)
+        let managed = ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets"))
+        var manifest = managed.manifest(wallpaperId: "101")
+        manifest.properties["photo"]?.sourcePath = external
+        manifest.properties["photo"]?.assets[0].sourcePath = external
+        try managed.write(manifest)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"photo":"\#(external)"}}"#, "wallpapers/101.json", in: source)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        // An installed author's shipped default is not a user-selected source.
+        try put(#"{"type":"scene","general":{"properties":{"photo":{"type":"file","value":"\#(external)"}}}}"#, "Library/101/project.json", in: destination)
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        XCTAssertTrue(preview.warnings.contains { $0.contains(external) })
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        let restored = ManagedUserAssetStore(root: destination.appendingPathComponent("UserAssets"))
+        let safePath = try XCTUnwrap(restored.manifest(wallpaperId: "101").properties["photo"]?.sourcePath)
+        XCTAssertEqual(safePath, external)
+        XCTAssertEqual(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
+        let store = UserAssetStore(projectURL: destination.appendingPathComponent("Library/101"), wallpaperId: "101", managed: restored)
+        let asset = try store.importFile(at: URL(fileURLWithPath: safePath), propertyId: "photo", filter: .image)
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: asset.stagedPath), encoding: .utf8), "retained image bytes")
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: external), encoding: .utf8), "private original")
+        let secondPackage = root.appendingPathComponent("second.wmbackup")
+        try service.export(to: secondPackage, includeLibrary: true, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        let secondPreview = try service.preview(package: secondPackage, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: secondPackage, preview: secondPreview, policy: .replace)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        XCTAssertEqual(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
+        let secondStore = UserAssetStore(projectURL: destination.appendingPathComponent("Library/101"), wallpaperId: "101", managed: restored)
+        let again = try secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: again.stagedPath)), Data("retained image bytes".utf8))
+        try restored.authorizeSelection(wallpaperId: "101", propertyId: "photo", selectedSourcePath: external)
+        let reselected = try secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: reselected.stagedPath)), Data("private original".utf8))
+        XCTAssertNil(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized)
+    }
+
+    func testSceneTextureOverridesAndDefaultsReadRetainedImagesNotExistingOriginals() throws {
+        let original = try fixture()
+        let live = try defaults()
+        original.removeObject(forKey: WallpaperPresetStore.preferenceKey)
+        let originalURL = root.appendingPathComponent("private original.png")
+        let retainedURL = root.appendingPathComponent("retained.png")
+        let privateBytes = try texturePNG(red: 1)
+        let retainedBytes = try texturePNG(red: 0)
+        try privateBytes.write(to: originalURL)
+        try retainedBytes.write(to: retainedURL)
+        let managed = ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets"))
+        var manifest = UserAssetManifest(wallpaperId: "101")
+        for property in ["photo", "defaultPhoto"] {
+            let asset = try managed.adopt(readingFrom: retainedURL, fileName: "retained.png",
+                sourcePath: originalURL.path, wallpaperId: "101", propertyId: property, known: nil)
+            manifest.properties[property] = .init(kind: .file, sourcePath: originalURL.path, assets: [asset])
+        }
+        try managed.write(manifest)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"photo":"\#(originalURL.path)"}}"#,
+            "wallpapers/101.json", in: source)
+        let project: [String: Any] = ["type": "scene", "title": "Retained textures", "file": "scene.json",
+            "general": ["properties": [
+                "photo": ["type": "scenetexture", "value": ""],
+                "defaultPhoto": ["type": "texture", "value": originalURL.path],
+            ]]]
+        try JSONSerialization.data(withJSONObject: project).write(to: source.appendingPathComponent("Library/101/project.json"))
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+
+        let overrides = try XCTUnwrap(json("wallpapers/101.json", in: destination)["property_overrides"] as? [String: String])
+        let general = try XCTUnwrap(json("Library/101/project.json", in: destination)["general"] as? [String: Any])
+        let properties = try XCTUnwrap(general["properties"] as? [String: [String: Any]])
+        let restored = ManagedUserAssetStore(root: destination.appendingPathComponent("UserAssets"))
+        let paths = ["photo": try XCTUnwrap(overrides["photo"]),
+                     "defaultPhoto": try XCTUnwrap(properties["defaultPhoto"]?["value"] as? String)]
+        for (property, path) in paths {
+            let record = try XCTUnwrap(restored.manifest(wallpaperId: "101").properties[property])
+            let stored = try restored.storedURL(wallpaperId: "101", propertyId: property, asset: XCTUnwrap(record.assets.first))
+            XCTAssertEqual(URL(fileURLWithPath: path).resolvingSymlinksInPath(), stored.resolvingSymlinksInPath())
+            // Scene textures open the committed absolute path directly, without UserAssetStore.
+            XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: path)), retainedBytes)
+            XCTAssertNotEqual(path, originalURL.path)
+            XCTAssertEqual(record.sourcePath, originalURL.path)
+            XCTAssertEqual(record.originalSourceUnauthorized, true)
+        }
+        XCTAssertEqual(try Data(contentsOf: originalURL), privateBytes)
+    }
+
+    func testSceneRetainedReferenceCannotUseMissingBytesFromKeepExistingAssetTree() throws {
+        let original = try fixture()
+        let live = try defaults()
+        original.removeObject(forKey: WallpaperPresetStore.preferenceKey)
+        let external = root.appendingPathComponent("private.png").path
+        try put("private", "private.png", in: root)
+        let managed = ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets"))
+        var manifest = managed.manifest(wallpaperId: "101")
+        manifest.properties["photo"]?.sourcePath = external
+        manifest.properties["photo"]?.assets[0].sourcePath = external
+        try managed.write(manifest)
+        try put(#"{"type":"scene","workshop_id":"101","property_overrides":{"photo":"\#(external)"}}"#,
+            "wallpapers/101.json", in: source)
+        try put(#"{"type":"scene","file":"scene.json","general":{"properties":{"photo":{"type":"scenetexture","value":""}}}}"#,
+            "Library/101/project.json", in: source)
+        let existing = ManagedUserAssetStore(root: destination.appendingPathComponent("UserAssets"))
+        try existing.write(UserAssetManifest(wallpaperId: "101"))
+        let before = try Data(contentsOf: destination.appendingPathComponent("UserAssets/101/manifest.json"))
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        XCTAssertThrowsError(try service.applyPendingRestore(defaults: live, domainName: domainName(for: live)))
+        XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("UserAssets/101/manifest.json")), before)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("wallpapers/101.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Library/101").path))
+    }
+
+    private func texturePNG(red: CGFloat) throws -> Data {
+        let bitmap = try XCTUnwrap(CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        bitmap.setFillColor(red: red, green: 0, blue: 1 - red, alpha: 1)
+        bitmap.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let bytes = NSMutableData()
+        let output = try XCTUnwrap(CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(output, try XCTUnwrap(bitmap.makeImage()), nil)
+        guard CGImageDestinationFinalize(output) else { throw CocoaError(.fileWriteUnknown) }
+        return bytes as Data
+    }
+
+    func testKeepExistingPreservesAtomicPlaybackOrderPlanAndAbsentDeadline() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let current = PlaylistStore(defaults: live)
+        current.update("shared") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["300", "100", "200"] }
+        let plan = try current.savePlan(from: "shared", name: "Current")
+        try current.applyPlan(plan.id, to: "shared")
+        let deadline = Date(timeIntervalSince1970: 123456)
+        current.schedule("shared", at: deadline)
+        current.update("unscheduled") { $0.wallpaperIDs = ["b", "a"] }
+        let before = current.playlist(for: "shared")
+        let incoming = PlaylistStore(defaults: original)
+        incoming.update("shared") { $0.mode = .dayNight; $0.wallpaperIDs = ["other"] }
+        incoming.schedule("shared", at: Date(timeIntervalSince1970: 987654))
+        incoming.update("unscheduled") { $0.mode = .rotate; $0.wallpaperIDs = ["intruder"] }
+        incoming.schedule("unscheduled", at: deadline)
+        incoming.update("new") { $0.mode = .rotate; $0.wallpaperIDs = ["z", "x", "y"] }
+        incoming.schedule("new", at: deadline)
+        live.set(try JSONEncoder().encode(["300"]), forKey: "WallpaperMachine.favoriteWallpaperIDs")
+        original.set(try JSONEncoder().encode(["100"]), forKey: "WallpaperMachine.favoriteWallpaperIDs")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        let after = PlaylistStore(defaults: live)
+        XCTAssertEqual(after.playlist(for: "shared"), before)
+        XCTAssertEqual(after.nextChange["shared"], deadline)
+        XCTAssertEqual(after.playlist(for: "unscheduled").wallpaperIDs, ["b", "a"])
+        XCTAssertNil(after.nextChange["unscheduled"])
+        XCTAssertEqual(after.playlist(for: "new").wallpaperIDs, ["z", "x", "y"])
+        XCTAssertEqual(after.nextChange["new"], deadline)
+        XCTAssertEqual(Set(try JSONDecoder().decode([String].self, from: XCTUnwrap(live.data(forKey: "WallpaperMachine.favoriteWallpaperIDs")))), ["300", "100"])
+    }
+
+    func testPlainTextAndNamesKeepSourceRootWhileOnlyResourcePathsMove() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let text = source.path + "/UserAssets/101/photo/asset/画 像.png"
+        var config = try json("wallpapers/101.json", in: source)
+        var overrides = config["property_overrides"] as! [String: Any]
+        overrides["caption"] = text
+        config["property_overrides"] = overrides
+        try JSONSerialization.data(withJSONObject: config).write(to: source.appendingPathComponent("wallpapers/101.json"))
+        var project = try json("Library/101/project.json", in: source)
+        var general = project["general"] as! [String: Any]
+        var properties = general["properties"] as! [String: [String: Any]]
+        properties["caption"]?["value"] = text
+        general["properties"] = properties
+        project["general"] = general
+        project["title"] = text
+        try JSONSerialization.data(withJSONObject: project).write(to: source.appendingPathComponent("Library/101/project.json"))
+        let preset = WallpaperPropertyPreset(id: presetID, wallpaperID: "101", name: text.prefix(120).description,
+            properties: [.init(id: "caption", kind: "textInput", value: .string(text), usesDefault: false)])
+        original.set(try JSONEncoder().encode(PresetArchive(items: [preset])), forKey: "WallpaperMachine.wallpaperPresets")
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        let restoredConfig = try json("wallpapers/101.json", in: destination)["property_overrides"] as! [String: String]
+        XCTAssertEqual(restoredConfig["caption"], text)
+        XCTAssertEqual(restoredConfig["photo"], destination.appendingPathComponent("UserAssets/101/photo/asset/画 像.png").path)
+        let restoredProject = try json("Library/101/project.json", in: destination)
+        XCTAssertEqual(restoredProject["title"] as? String, text)
+        let defaults = (restoredProject["general"] as? [String: Any])?["properties"] as? [String: [String: Any]]
+        XCTAssertEqual(defaults?["caption"]?["value"] as? String, text)
+        let restoredPreset = try JSONDecoder().decode(PresetArchive.self, from: XCTUnwrap(live.data(forKey: "WallpaperMachine.wallpaperPresets"))).items[0]
+        XCTAssertEqual(restoredPreset, preset)
+    }
+
+    func testKeepExistingCannotReinterpretPreservedTextAsNewExternalFileSelection() throws {
+        let original = try fixture()
+        let live = try defaults()
+        let privatePath = root.appendingPathComponent("private.png").path
+        try put("private", "private.png", in: root)
+        try put(#"{"workshop_id":"101","type":"scene","property_overrides":{"photo":"\#(privatePath)"}}"#, "wallpapers/101.json", in: destination)
+        // Restoring a file descriptor cannot upgrade an old untyped string to read authority.
+        let baseline = try Data(contentsOf: destination.appendingPathComponent("wallpapers/101.json"))
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        XCTAssertThrowsError(try service.applyPendingRestore(defaults: live, domainName: domainName(for: live)))
+        XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("wallpapers/101.json")), baseline)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Library/101").path))
+        XCTAssertTrue(service.pendingRestore)
+        XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: privatePath), encoding: .utf8), "private")
+    }
+
+
+}
