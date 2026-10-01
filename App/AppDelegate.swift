@@ -607,6 +607,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 AppLog.error("Quit cancelled because wallpaper restoration failed: \(error.localizedDescription)")
                 lastError = error
                 shutdownInProgress = false
+                // Native restoration may already have released the desktop even
+                // though poster restoration failed. Resume without waiting for
+                // another bridge snapshot, but never overwrite an owned provider.
+                if store?.lockScreenWallpaper?.ownsDesktopProvider != true {
+                    do { try startDesktopWallpaperSync() } catch {
+                        AppLog.error("Desktop poster sync could not be restarted: \(error.localizedDescription)")
+                    }
+                }
                 presentationPolicy?.evaluate()
                 rebuildMenu()
                 sender.reply(toApplicationShouldTerminate: false)

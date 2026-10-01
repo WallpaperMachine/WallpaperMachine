@@ -190,6 +190,8 @@ Swift keeps the *system* wallpaper consistent with that window:
   retains still-referenced posters and their journal entries across WallpaperAgent reloads,
   and retries asynchronous restoration for about five seconds. Failure cancels quit before
   other services are torn down; provider callbacks cannot discard the restorer during quit.
+  A cancelled quit immediately restarts poster synchronization if the native provider has
+  released the desktop, without waiting for another wallpaper or settings change.
 - `WallpaperPresentationPolicy` suspends or unloads presentation when no wallpaper pixel can reach a
   display, without altering the user's play/pause choice. The strongest global condition wins:
   display sleep pauses (`setPresentationSuspended`) or stops and frees renderer memory

@@ -45,6 +45,7 @@ live under `testing/`.
 | [testing/power-benchmark.md](testing/power-benchmark.md) | Configuration manifest, per-process CPU/GPU, whole-machine and package-power measurement, runtime counters, condition matrix and comparison rules for power claims |
 | [testing/verification-log.md](testing/verification-log.md) | Dated verification history, ten newest entries |
 | [testing/archive/verification-log-2026-09.md](testing/archive/verification-log-2026-09.md) | Retired verification entries; historical only |
+| [testing/archive/verification-log-2026-10.md](testing/archive/verification-log-2026-10.md) | Retired October verification entries; historical only |
 | [testing/wallpaper-corpus.md](testing/wallpaper-corpus.md) | Local regression corpus checklist |
 
 ## Archive
