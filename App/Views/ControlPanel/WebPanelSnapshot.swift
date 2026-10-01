@@ -303,7 +303,6 @@ extension WebPanelController {
       setupStatus = String(localized: "Downloading SteamCMD…")
       if let expected, expected > 0 { setupProgress = min(1, Double(received) / Double(expected)) }
     case .extracting: setupStatus = String(localized: "Extracting SteamCMD…")
-    case .updating: setupStatus = String(localized: "Completing installation…")
     case .validating: setupStatus = String(localized: "Validating SteamCMD…")
     case .committing: setupStatus = String(localized: "Saving installation…")
     case .ready: setupStatus = String(localized: "Ready")

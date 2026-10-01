@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import XCTest
 @testable import WallpaperMachine
@@ -18,12 +19,13 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: executable, encoding: .utf8), "fixture-executable")
         XCTAssertEqual(try String(contentsOf: executable.deletingLastPathComponent().appendingPathComponent("steamconsole.dylib"), encoding: .utf8), "updated-library")
         XCTAssertEqual(fixture.defaults.string(forKey: preferenceKey), executable.path)
+        XCTAssertGreaterThan(getxattr(executable.path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW), 0)
         let second = fixture.store()
         await second.refresh()
         XCTAssertEqual(second.selectedRuntime, store.selectedRuntime)
         XCTAssertEqual(second.state, .ready)
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: fixture.root.appendingPathComponent("SteamCMD/MacOS/Frameworks/Breakpad.framework/Versions/Current").path), "A")
-        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: fixture.root.appendingPathComponent("SteamCMD/Frameworks").path), "MacOS/Frameworks")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: executable.deletingLastPathComponent().appendingPathComponent("package/steam_cmd_osx.manifest").path))
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path).contains { $0.hasPrefix(".steamcmd-") })
     }
 
@@ -181,15 +183,15 @@ final class SteamCMDSetupTests: XCTestCase {
         try await finished(store)
         XCTAssertEqual(try String(contentsOf: old, encoding: .utf8), "old-executable")
         XCTAssertEqual(store.selectedRuntime?.executableURL, old)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         guard case .failed = store.state else { return XCTFail("Replacement requires confirmation") }
     }
 
     func testExitZeroWithoutCompleteRuntimeDoesNotReplaceOldInstallation() async throws {
-        let fixture = try Fixture()
+        let fixture = try Fixture(body: Self.tar(Self.bootstrapEntries.filter { $0.path != "steamconsole.dylib" }))
         defer { fixture.remove() }
         let old = try fixture.oldRuntime()
-        let store = fixture.store(mode: .omitConsole)
+        let store = fixture.store()
         await store.refresh()
         store.install(replacingExisting: true)
         try await finished(store)
@@ -197,8 +199,8 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertEqual(fixture.defaults.string(forKey: preferenceKey), old.path)
         XCTAssertEqual(store.selectedRuntime?.executableURL, old)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
-        guard case .failed(let issue) = store.state else { return XCTFail("Incomplete update must fail") }
-        XCTAssertEqual(issue.kind, .incompleteRuntime)
+        guard case .failed(let issue) = store.state else { return XCTFail("Incomplete packages must fail") }
+        XCTAssertEqual(issue.kind, .invalidArchive)
     }
 
     func testRuntimeRemovedDuringSmokeDoesNotOverwriteOldPreferenceOrFiles() async throws {
@@ -216,8 +218,8 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertEqual(issue.kind, .incompleteRuntime)
     }
 
-    func testSignatureGatekeeperAndRosettaFailuresNeverRunBootstrap() async throws {
-        for kind: SteamCMDSetupIssue.Kind in [.invalidSignature, .securityApprovalRequired, .rosettaRequired] {
+    func testSignatureGatekeeperAndAppleSiliconFailuresNeverRunSmoke() async throws {
+        for kind: SteamCMDSetupIssue.Kind in [.invalidSignature, .securityApprovalRequired, .appleSiliconRequired] {
             let fixture = try Fixture()
             defer { fixture.remove() }
             let store = fixture.store(blocked: kind)
@@ -225,10 +227,10 @@ final class SteamCMDSetupTests: XCTestCase {
             try await finished(store)
             guard case .failed(let issue) = store.state else { XCTFail("Security failure must stop installation"); continue }
             XCTAssertEqual(issue.kind, kind)
-            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
             XCTAssertNil(fixture.defaults.string(forKey: preferenceKey))
-            if kind == .invalidSignature {
+            if kind != .securityApprovalRequired {
                 XCTAssertNil(store.retainedCandidateURL)
                 XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path).contains { $0.hasPrefix(".steamcmd-setup-") })
             } else {
@@ -260,7 +262,7 @@ final class SteamCMDSetupTests: XCTestCase {
             try await finished(store)
             guard case .failed = store.state else { XCTFail("Unsafe archive must fail"); continue }
             XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "untouched")
-            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
             XCTAssertNil(fixture.defaults.string(forKey: preferenceKey))
         }
@@ -281,7 +283,7 @@ final class SteamCMDSetupTests: XCTestCase {
             try await finished(store)
             guard case .failed = store.state else { XCTFail("Bad response must fail"); continue }
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
-            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
             XCTAssertNil(fixture.defaults.string(forKey: preferenceKey))
         }
     }
@@ -308,7 +310,7 @@ final class SteamCMDSetupTests: XCTestCase {
         guard case .failed(let issue) = store.state else { return XCTFail("Expanded-size limit must reject the archive") }
         XCTAssertEqual(issue.kind, .invalidArchive)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("extraction-started").path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
         XCTAssertNil(fixture.defaults.string(forKey: preferenceKey))
     }
@@ -322,7 +324,7 @@ final class SteamCMDSetupTests: XCTestCase {
         await store.shutdown()
         XCTAssertEqual(store.state, .cancelled)
         XCTAssertFalse(store.isBusy)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path).contains { $0.hasPrefix(".steamcmd-setup-") })
     }
@@ -336,8 +338,35 @@ final class SteamCMDSetupTests: XCTestCase {
             try await finished(store)
             guard case .failed(let issue) = store.state else { XCTFail("Unsafe redirect must fail"); continue }
             XCTAssertEqual(issue.kind, .network)
-            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
             XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
+        }
+    }
+
+    func testRejectedRedirectRetainsItsFailureWhenFinalResponseArrivesBeforeCancellation() async throws {
+        for destination in ["https://untrusted.invalid/steamcmd", "http://steamcdn-a.akamaihd.net/client/steam_cmd_osx"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            var failures: [SteamCMDSetupIssue] = []
+            for deliversFinalResponse in [false, true] {
+                let events = RejectedRedirectEvents(destination: URL(string: destination)!, deliversFinalResponse: deliversFinalResponse)
+                let output = fixture.root.appendingPathComponent("download-\(deliversFinalResponse)")
+                let download = SteamCMDDownload(source: SteamCMDPackageManifest.url, destination: output,
+                    maximum: SteamCMDPackageManifest.maximumSize, configuration: fixture.configuration,
+                    progress: { received, _ in events.rejectRedirect(received: received) })
+                events.attach(download)
+                do {
+                    _ = try await download.start()
+                    XCTFail("A rejected redirect must fail the download")
+                } catch let issue as SteamCMDSetupIssue {
+                    failures.append(issue)
+                }
+                XCTAssertEqual(try Data(contentsOf: output).count, 0)
+            }
+            XCTAssertEqual(failures.count, 2)
+            XCTAssertEqual(failures.first?.kind, .network)
+            // Preserve the original error value, without pinning localized diagnostic wording.
+            XCTAssertEqual(failures.first, failures.last)
         }
     }
 
@@ -353,7 +382,7 @@ final class SteamCMDSetupTests: XCTestCase {
         store.install(replacingExisting: true)
         try await finished(store)
         XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "untouched")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         guard case .failed(let issue) = store.state else { return XCTFail("Symlink destination must fail") }
         XCTAssertEqual(issue.kind, .fileSystem)
     }
@@ -371,7 +400,7 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path).contains { $0.hasPrefix(".steamcmd-setup-") })
     }
 
-    func testShutdownDuringBootstrapReapsChildrenBeforeCleaningStaging() async throws {
+    func testShutdownDuringSmokeReapsChildrenBeforeCleaningStaging() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let store = fixture.store(mode: .waitForCancellation)
@@ -472,10 +501,10 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertEqual(metadata.st_mode & 0o777, 0o600)
     }
 
-    func testRetryUsesSameApprovedBootstrapWithoutAnotherDownload() async throws {
+    func testRetryUsesSameApprovedRuntimeWithoutAnotherDownload() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let provider = ApprovalFixtureRuntime(blockComplete: false)
+        let provider = ApprovalFixtureRuntime()
         let store = fixture.store(provider: provider)
         store.install()
         try await finished(store)
@@ -497,36 +526,30 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMDPending.json").path))
     }
 
-    func testUpdatedRuntimeRequiresNewApprovalAndResumesWithoutBootstrap() async throws {
+    func testApprovedRuntimeSurvivesReopenAndResumesWithoutDownload() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let provider = ApprovalFixtureRuntime(blockComplete: true)
+        let provider = ApprovalFixtureRuntime()
         let store = fixture.store(provider: provider)
         store.install()
         try await finished(store)
-        let bootstrap = try await store.prepareApproval()
-        store.approveRetainedCandidate(bootstrap)
-        try await finished(store)
-        let complete = try await store.prepareApproval()
-        XCTAssertFalse(complete.bootstrap)
-        XCTAssertEqual(complete.rootURL, bootstrap.rootURL)
-        XCTAssertNotEqual(complete.fingerprint, bootstrap.fingerprint)
-        XCTAssertGreaterThan(getxattr(complete.rootURL.appendingPathComponent("steamconsole.dylib").path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW), 0)
+        let candidate = try await store.prepareApproval()
+        try await provider.approve(candidate)
         await store.shutdown()
         BootstrapURLProtocol.remove(fixture.identifier)
         let reopened = fixture.store(provider: provider)
         let reopenedCandidate = try await reopened.prepareApproval()
-        XCTAssertEqual(reopenedCandidate, complete)
+        XCTAssertEqual(reopenedCandidate, candidate)
         reopened.approveRetainedCandidate(reopenedCandidate)
         try await finished(reopened)
         XCTAssertEqual(reopened.state, .ready)
-        XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("update-count"), encoding: .utf8), "1")
+        XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("smoke-count"), encoding: .utf8), "1")
     }
 
     func testStaleApprovalCannotAuthorizeChangedOrDiscardedCandidate() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let provider = ApprovalFixtureRuntime(blockComplete: false)
+        let provider = ApprovalFixtureRuntime()
         let store = fixture.store(provider: provider)
         store.install()
         try await finished(store)
@@ -536,7 +559,7 @@ final class SteamCMDSetupTests: XCTestCase {
         try await finished(store)
         guard case .failed(let issue) = store.state else { return XCTFail("Stale approval must fail") }
         XCTAssertEqual(issue.kind, .invalidSelection)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         store.discardRetainedCandidate()
         try await finished(store)
         store.approveRetainedCandidate(candidate)
@@ -549,7 +572,7 @@ final class SteamCMDSetupTests: XCTestCase {
     func testCancelledRetainedRetryCannotResurrectCandidate() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let provider = ApprovalFixtureRuntime(blockComplete: false)
+        let provider = ApprovalFixtureRuntime()
         let store = fixture.store(mode: .waitForCancellation, provider: provider)
         store.install()
         try await finished(store)
@@ -611,7 +634,7 @@ final class SteamCMDSetupTests: XCTestCase {
         try await finished(store)
         XCTAssertNil(store.retainedCandidateURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("update-started").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
         XCTAssertNil(fixture.store().retainedCandidateURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMDPending.json").path))
     }
@@ -619,7 +642,7 @@ final class SteamCMDSetupTests: XCTestCase {
     func testDiscardDuringRetainedRetryWaitsForOwnedChildAndCannotRestart() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let provider = ApprovalFixtureRuntime(blockComplete: false)
+        let provider = ApprovalFixtureRuntime()
         let store = fixture.store(mode: .waitForCancellation, provider: provider)
         store.install()
         try await finished(store)
@@ -638,7 +661,185 @@ final class SteamCMDSetupTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.rootURL.path))
         XCTAssertNil(fixture.store(provider: provider).retainedCandidateURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
-        XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("update-count"), encoding: .utf8), "1")
+        XCTAssertEqual(try String(contentsOf: fixture.root.appendingPathComponent("smoke-count"), encoding: .utf8), "1")
+    }
+
+    func testMalformedAndOversizedManifestsNeverPublish() async throws {
+        let seed = try Fixture()
+        defer { seed.remove() }
+        let valid = String(decoding: try XCTUnwrap(BootstrapURLProtocol.routes(seed.identifier)["/client/steam_cmd_osx"]).body, as: UTF8.self)
+        let manifests = ["", "osx {}", "\"osx\" {", "\"osx\" { \"version\" \"1\\2\" }",
+            valid.replacingOccurrences(of: "steamcmd_bins_osx", with: "other"),
+            valid.replacingOccurrences(of: ".zip.", with: ".tar."),
+            valid.replacingOccurrences(of: ".zip.", with: ".zip.g"),
+            valid.replacingOccurrences(of: "\"size\"", with: "\"missing\""),
+            String(repeating: " ", count: 65537)]
+        for manifest in manifests {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            BootstrapURLProtocol.replace(fixture.identifier, path: "/client/steam_cmd_osx",
+                response: .init(body: Data(manifest.utf8), status: 200, headers: [:], hold: false, redirect: nil))
+            try await assertInvalidInstall(fixture)
+        }
+    }
+
+    func testBothPackageChecksumsAreRequired() async throws {
+        for field in ["sha2", "file"] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let routes = BootstrapURLProtocol.routes(fixture.identifier)
+            let original = try XCTUnwrap(routes["/client/steam_cmd_osx"])
+            let manifest = try SteamCMDPackageManifest(data: original.body)
+            let package = try XCTUnwrap(manifest.packages.first)
+            let old = field == "sha2" ? package.sha256 : package.sha1
+            let bad = String(repeating: "0", count: old.count)
+            let changed = String(decoding: original.body, as: UTF8.self).replacingOccurrences(of: old, with: bad)
+            if field == "file" {
+                BootstrapURLProtocol.replace(fixture.identifier, path: "/client/" + package.file.replacingOccurrences(of: old, with: bad),
+                    response: try XCTUnwrap(routes["/client/" + package.file]))
+            }
+            BootstrapURLProtocol.replace(fixture.identifier, path: "/client/steam_cmd_osx",
+                response: .init(body: Data(changed.utf8), status: 200, headers: [:], hold: false, redirect: nil))
+            try await assertInvalidInstall(fixture)
+        }
+    }
+
+    func testHTTPContentLengthUsesWireEncodingWhileChecksumsUseDecodedBytes() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        for (path, response) in BootstrapURLProtocol.routes(fixture.identifier) {
+            // URLSession has already decoded gzip before invoking the download delegate.
+            BootstrapURLProtocol.replace(fixture.identifier, path: path,
+                response: .init(body: response.body, status: 200,
+                    headers: ["Content-Encoding": "gzip", "Content-Length": "1"], hold: false, redirect: nil))
+        }
+        let store = fixture.store()
+        store.install()
+        try await finished(store)
+        XCTAssertEqual(store.state, .ready)
+    }
+
+    func testManifestNetworkFailureAndPackageLengthsNeverPublish() async throws {
+        for variant in 0..<5 {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let routes = BootstrapURLProtocol.routes(fixture.identifier)
+            let path = variant == 0 ? "/client/steam_cmd_osx" : try XCTUnwrap(routes.keys.first { $0.contains("steamcmd_osx.zip.") })
+            let original = try XCTUnwrap(routes[path])
+            let body = variant == 3 ? original.body.dropLast() : variant == 4 ? original.body + Data([1]) : original.body
+            let headers = variant == 1 ? ["Content-Length": String(body.count + 1)] : variant == 2 ? ["Content-Length": "1"] : [:]
+            BootstrapURLProtocol.replace(fixture.identifier, path: path,
+                response: .init(body: body, status: variant == 0 ? 503 : 200, headers: headers, hold: false, redirect: nil))
+            try await assertInvalidInstall(fixture, kind: variant == 0 ? .network : .invalidArchive)
+        }
+    }
+
+    func testDuplicateFileAcrossPackagesIsRejectedBeforeExtraction() async throws {
+        // The second package also contains bins-marker.
+        let fixture = try Fixture(body: Self.tar(Self.bootstrapEntries + [TarEntry("./bins-marker", contents: "duplicate")]))
+        defer { fixture.remove() }
+        try await assertInvalidInstall(fixture)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("extraction-started").path))
+    }
+
+    func testZipBackslashPathsAndPermissions() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let source = fixture.root.appendingPathComponent("zip-source")
+        let nested = source.appendingPathComponent("Frameworks\\Breakpad.framework")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data("framework".utf8).write(to: nested.appendingPathComponent("Breakpad"))
+        for name in ["steamcmd", "steamconsole.dylib", "crashhandler.dylib"] {
+            // Mach-O magic without execute bits exercises the zip permission repair, not signature verification.
+            try Data([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]).write(to: source.appendingPathComponent(name))
+        }
+        try Data("plain".utf8).write(to: source.appendingPathComponent("readme"))
+        let archive = fixture.root.appendingPathComponent("fixture.zip")
+        let status = try await SteamCMDProcessRunner().run(executable: URL(fileURLWithPath: "/usr/bin/tar"),
+            arguments: ["--format", "zip", "-c", "-f", archive.path, "-C", source.path, "."],
+            workingDirectory: fixture.root, environment: ["PATH": "/usr/bin:/bin", "COPYFILE_DISABLE": "1"], onOutput: { _ in })
+        XCTAssertEqual(status, 0)
+        BootstrapURLProtocol.register(fixture.identifier, response: .init(body: try Data(contentsOf: archive), status: 200, headers: [:], hold: false, redirect: nil))
+        let store = fixture.store()
+        store.install()
+        try await finished(store)
+        XCTAssertEqual(store.state, .ready)
+        let root = try XCTUnwrap(store.selectedRuntime?.rootURL)
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("Frameworks/Breakpad.framework/Breakpad"), encoding: .utf8), "framework")
+        for (name, mode): (String, mode_t) in [("steamcmd", 0o755), ("crashhandler.dylib", 0o755), ("readme", 0o644), ("Frameworks", 0o755), ("package/steam_cmd_osx.manifest", 0o644)] {
+            var info = stat()
+            XCTAssertEqual(lstat(root.appendingPathComponent(name).path, &info), 0)
+            XCTAssertEqual(info.st_mode & 0o777, mode)
+        }
+    }
+
+    func testRetiredBootstrapRecordIsDiscardedOnInit() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let store = fixture.store(blocked: .securityApprovalRequired)
+        store.install()
+        try await finished(store)
+        let candidate = try XCTUnwrap(store.retainedCandidateURL)
+        let record = fixture.root.appendingPathComponent("SteamCMDPending.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: record)) as? [String: Any])
+        json["stage"] = "bootstrap"
+        json["needsRosetta"] = true
+        try JSONSerialization.data(withJSONObject: json).write(to: record)
+        let reopened = fixture.store()
+        XCTAssertNil(reopened.retainedCandidateURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: candidate.deletingLastPathComponent().deletingLastPathComponent().path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.path))
+    }
+
+    func testIntelOnlyManagedCopyReportsNativeReinstall() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let binary = try fixture.oldRuntime()
+        var header = Data()
+        for word: UInt32 in [0xfeedfacf, SteamCMDArchitecture.x86_64, 3, 2, 0, 0, 0, 0] {
+            var little = word.littleEndian
+            withUnsafeBytes(of: &little) { header.append(contentsOf: $0) }
+        }
+        try header.write(to: binary)
+        XCTAssertEqual(chmod(binary.path, 0o755), 0)
+        fixture.defaults.removeObject(forKey: preferenceKey)
+        let store = fixture.store(provider: ManagedNativeFixtureRuntime(root: fixture.root))
+        await store.refresh()
+        guard case .failed(let issue) = store.state else { return XCTFail("Intel copy must offer reinstall") }
+        XCTAssertEqual(issue.kind, .appleSiliconRequired)
+        XCTAssertNil(store.selectedRuntime)
+    }
+
+    func testDownloadProgressNeverMovesBackwards() async throws {
+        let fixture = try Fixture(body: Self.tar(Self.bootstrapEntries + [TarEntry("large", contents: String(repeating: "x", count: 512 * 1024))]))
+        defer { fixture.remove() }
+        let store = fixture.store()
+        store.install()
+        var last: Int64 = 0
+        var observed = false
+        while store.isBusy {
+            if case .downloading(let received, let expected) = store.state, let expected {
+                observed = true
+                XCTAssertGreaterThanOrEqual(received, last)
+                XCTAssertLessThanOrEqual(received, expected)
+                last = received
+            }
+            await Task.yield()
+        }
+        XCTAssertTrue(observed)
+        XCTAssertEqual(store.state, .ready)
+    }
+
+    private func assertInvalidInstall(_ fixture: Fixture, kind: SteamCMDSetupIssue.Kind = .invalidArchive) async throws {
+        let store = fixture.store()
+        store.install()
+        try await finished(store)
+        guard case .failed(let issue) = store.state else { return XCTFail("Invalid response must fail: \(store.state)") }
+        XCTAssertEqual(issue.kind, kind)
+        XCTAssertNil(store.retainedCandidateURL)
+        XCTAssertNil(fixture.defaults.string(forKey: preferenceKey))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("SteamCMD").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("smoke-started").path))
     }
 
     private func finished(_ store: SteamCMDSetupStore) async throws { try await waitUntil { !store.isBusy } }
@@ -699,7 +900,7 @@ final class SteamCMDSetupTests: XCTestCase {
         }
     }
 
-    private struct TarEntry {
+    fileprivate struct TarEntry {
         let path: String
         let contents: String
         let type: Character
@@ -710,13 +911,14 @@ final class SteamCMDSetupTests: XCTestCase {
     }
     private static var bootstrapEntries: [TarEntry] {
         [TarEntry("steamcmd", contents: "fixture-executable"), TarEntry("steamcmd.sh", contents: "fixture-wrapper"),
+         TarEntry("steamconsole.dylib", contents: "updated-library"),
          TarEntry("crashhandler.dylib", contents: "fixture-library"),
          TarEntry("Frameworks/Breakpad.framework/Versions/A/Breakpad", contents: "fixture-framework"),
          TarEntry("Frameworks/Breakpad.framework/Versions/Current", type: "2", link: "A"),
          TarEntry("Frameworks/Breakpad.framework/Breakpad", type: "2", link: "Versions/Current/Breakpad")]
     }
     /// Raw POSIX ustar lets tests encode malicious entries without first writing them to the filesystem.
-    private static func tar(_ entries: [TarEntry]) -> Data {
+    nonisolated fileprivate static func tar(_ entries: [TarEntry]) -> Data {
         var archive = Data()
         for entry in entries {
             var header = [UInt8](repeating: 0, count: 512)
@@ -745,7 +947,7 @@ final class SteamCMDSetupTests: XCTestCase {
     }
 
     /// A gzip stream with stored DEFLATE blocks keeps malicious ustar fixtures deterministic.
-    private static func gzip(_ bytes: Data) -> Data {
+    nonisolated private static func gzip(_ bytes: Data) -> Data {
         var result = Data([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3])
         var offset = 0
         while offset < bytes.count {
@@ -768,6 +970,19 @@ final class SteamCMDSetupTests: XCTestCase {
     }
 }
 
+private struct ManagedNativeFixtureRuntime: SteamCMDRuntimeProviding {
+    let root: URL
+    private var service: SteamCMDRuntimeService { SteamCMDRuntimeService(approvalDirectory: root.appendingPathComponent("Approvals")) }
+    func resolve(executable: URL) throws -> SteamCMDRuntime {
+        guard executable.path.hasPrefix(root.path + "/") else {
+            throw SteamCMDSetupIssue(kind: .invalidSelection, detail: "Outside test fixture")
+        }
+        return try service.resolve(executable: executable)
+    }
+    func validate(at root: URL) async throws { try await service.validate(at: root) }
+    func prepare(executable: URL, staging: URL) async throws -> URL { try await service.prepare(executable: executable, staging: staging) }
+}
+
 private struct FixtureRuntime: SteamCMDRuntimeProviding {
     let blocked: SteamCMDSetupIssue.Kind?
     func resolve(executable: URL) throws -> SteamCMDRuntime {
@@ -776,10 +991,10 @@ private struct FixtureRuntime: SteamCMDRuntimeProviding {
         }
         return SteamCMDRuntime(rootURL: executable.deletingLastPathComponent(), executableURL: executable)
     }
-    func validateBootstrap(at root: URL) async throws {
-        if let blocked { throw SteamCMDSetupIssue(kind: blocked, detail: "Fixture security boundary") }
-    }
     func validate(at root: URL) async throws {
+        if root.path.contains(".steamcmd-setup-"), let blocked {
+            throw SteamCMDSetupIssue(kind: blocked, detail: "Fixture security boundary")
+        }
         guard FileManager.default.fileExists(atPath: root.appendingPathComponent("steamconsole.dylib").path),
               FileManager.default.fileExists(atPath: root.appendingPathComponent("steamcmd").path) else {
             throw SteamCMDSetupIssue(kind: .incompleteRuntime, detail: "Missing complete fixture runtime")
@@ -796,25 +1011,20 @@ private struct FixtureRuntime: SteamCMDRuntimeProviding {
 private final class ApprovalFixtureRuntime: SteamCMDRuntimeProviding, SteamCMDRuntimeApproving, @unchecked Sendable {
     private let lock = NSLock()
     private var approved: [String: Data] = [:]
-    private let blockComplete: Bool
-    init(blockComplete: Bool) { self.blockComplete = blockComplete }
     func resolve(executable: URL) throws -> SteamCMDRuntime {
         try FixtureRuntime(blocked: nil).resolve(executable: executable)
     }
-    func validateBootstrap(at root: URL) async throws {
-        try requireApproval(root)
-    }
     func validate(at root: URL) async throws {
         try await FixtureRuntime(blocked: nil).validate(at: root)
-        if blockComplete { try requireApproval(root) }
+        try requireApproval(root)
     }
     func prepare(executable: URL, staging: URL) async throws -> URL {
         try await FixtureRuntime(blocked: nil).prepare(executable: executable, staging: staging)
     }
-    func approvalCandidate(at root: URL, bootstrap: Bool) async throws -> SteamCMDApprovalCandidate {
+    func approvalCandidate(at root: URL) async throws -> SteamCMDApprovalCandidate {
         _ = try resolve(executable: root.appendingPathComponent("steamcmd"))
-        if !bootstrap { try await FixtureRuntime(blocked: nil).validate(at: root) }
-        return SteamCMDApprovalCandidate(rootURL: root, fingerprint: try fingerprint(root), bootstrap: bootstrap)
+        try await FixtureRuntime(blocked: nil).validate(at: root)
+        return SteamCMDApprovalCandidate(rootURL: root, fingerprint: try fingerprint(root))
     }
     func approve(_ candidate: SteamCMDApprovalCandidate) async throws {
         guard try fingerprint(candidate.rootURL) == candidate.fingerprint else {
@@ -854,7 +1064,7 @@ private final class ApprovalFixtureRuntime: SteamCMDRuntimeProviding, SteamCMDRu
 }
 
 private struct FixtureRunner: SteamCMDProcessRunning {
-    enum Mode: Sendable { case complete, omitConsole, removeBeforePublication, waitForCancellation, waitBeforePublication, pauseAfterExtraction }
+    enum Mode: Sendable { case complete, removeBeforePublication, waitForCancellation, waitBeforePublication, pauseAfterExtraction }
     let root: URL
     let mode: Mode
     func run(executable: URL, arguments: [String], workingDirectory: URL, environment: [String: String],
@@ -871,41 +1081,84 @@ private struct FixtureRunner: SteamCMDProcessRunning {
             }
             return status
         }
-        if executable.path == "/bin/bash" {
-            try Data().write(to: root.appendingPathComponent("update-started"))
-            let countURL = root.appendingPathComponent("update-count")
-            let count = (try? String(contentsOf: countURL, encoding: .utf8)).flatMap(Int.init) ?? 0
-            try Data(String(count + 1).utf8).write(to: countURL)
-            if mode == .waitForCancellation {
-                return try await SteamCMDProcessRunner().run(executable: URL(fileURLWithPath: "/bin/sh"),
-                    arguments: ["-c", "(sleep 3; printf late > late-write) & echo $! > child-started; wait"],
-                    workingDirectory: root, environment: environment, onOutput: onOutput)
-            }
-            if mode != .omitConsole { try Data("updated-library".utf8).write(to: workingDirectory.appendingPathComponent("steamconsole.dylib")) }
-            // Valve's updater publishes a Contents-style sibling next to MacOS.
-            let sibling = workingDirectory.deletingLastPathComponent().appendingPathComponent("Frameworks")
-            if !FileManager.default.fileExists(atPath: sibling.path) {
-                try FileManager.default.createSymbolicLink(atPath: sibling.path, withDestinationPath: "MacOS/Frameworks")
-            }
-            return 0
-        }
         try Data().write(to: root.appendingPathComponent("smoke-started"))
-        if mode == .removeBeforePublication { try FileManager.default.removeItem(at: workingDirectory.deletingLastPathComponent()) }
+        let countURL = root.appendingPathComponent("smoke-count")
+        let count = (try? String(contentsOf: countURL, encoding: .utf8)).flatMap(Int.init) ?? 0
+        try Data(String(count + 1).utf8).write(to: countURL)
+        if mode == .waitForCancellation {
+            return try await SteamCMDProcessRunner().run(executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "(sleep 3; printf late > late-write) & echo $! > child-started; wait"],
+                workingDirectory: root, environment: environment, onOutput: onOutput)
+        }
+        if mode == .removeBeforePublication {
+            try FileManager.default.removeItem(at: workingDirectory.deletingLastPathComponent().appendingPathComponent("runtime"))
+        }
         if mode == .waitBeforePublication { try await Task.sleep(for: .seconds(60)) }
         return 0
+    }
+}
+
+/// Replays the redirect/response race synchronously from the serial delegate's progress callback.
+/// The dummy task is never resumed; only the URLProtocol-backed download can deliver bytes.
+private final class RejectedRedirectEvents: @unchecked Sendable {
+    private let destination: URL
+    private let deliversFinalResponse: Bool
+    private let lock = NSLock()
+    private weak var download: SteamCMDDownload?
+
+    init(destination: URL, deliversFinalResponse: Bool) {
+        self.destination = destination
+        self.deliversFinalResponse = deliversFinalResponse
+    }
+
+    func attach(_ download: SteamCMDDownload) { lock.withLock { self.download = download } }
+
+    func rejectRedirect(received: Int64) {
+        guard received == 0, let download = lock.withLock({ self.download }) else { return }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: SteamCMDPackageManifest.url)
+        let redirect = HTTPURLResponse(url: SteamCMDPackageManifest.url, statusCode: 302, httpVersion: "HTTP/1.1",
+            headerFields: ["Location": destination.absoluteString])!
+        download.urlSession(session, task: task, willPerformHTTPRedirection: redirect,
+            newRequest: URLRequest(url: destination), completionHandler: { request in
+                guard request == nil, self.deliversFinalResponse else { return }
+                // completionHandler(nil) can turn the rejected 302 into a final response
+                // before the redirect delegate gets to task.cancel().
+                download.urlSession(session, dataTask: task, didReceive: redirect, completionHandler: { _ in })
+            })
     }
 }
 
 private final class BootstrapURLProtocol: URLProtocol, @unchecked Sendable {
     struct Response: Sendable { let body: Data; let status: Int; let headers: [String: String]; let hold: Bool; let redirect: URL? }
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var responses: [String: Response] = [:]
-    static func register(_ id: String, response: Response) { lock.withLock { responses[id] = response } }
+    nonisolated(unsafe) private static var responses: [String: [String: Response]] = [:]
+    static func register(_ id: String, response: Response) {
+        let bins = SteamCMDSetupTests.tar([SteamCMDSetupTests.TarEntry("bins-marker", contents: "bins")])
+        let packages = [("steamcmd_osx", response.body), ("steamcmd_bins_osx", bins)]
+        var manifest = "\"osx\" { \"version\" \"1788292693\"\n"
+        var routes: [String: Response] = [:]
+        for (name, body) in packages {
+            let sha1 = Insecure.SHA1.hash(data: body).map { String(format: "%02x", $0) }.joined()
+            let sha256 = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+            let file = "\(name).zip.\(sha1)"
+            manifest += "\"\(name)\" { \"file\" \"\(file)\" \"size\" \"\(body.count)\" \"sha2\" \"\(sha256)\" }\n"
+            routes["/client/" + file] = Response(body: body, status: response.status, headers: response.headers, hold: response.hold, redirect: response.redirect)
+        }
+        manifest += "}"
+        routes["/client/steam_cmd_osx"] = Response(body: Data(manifest.utf8), status: 200, headers: [:], hold: false, redirect: nil)
+        lock.withLock { responses[id] = routes }
+    }
+    static func replace(_ id: String, path: String, response: Response) {
+        lock.withLock { responses[id]?[path] = response }
+    }
+    static func routes(_ id: String) -> [String: Response] { lock.withLock { responses[id] ?? [:] } }
     static func remove(_ id: String) { _ = lock.withLock { responses.removeValue(forKey: id) } }
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "steamcdn-a.akamaihd.net" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let response = Self.lock.withLock { Self.responses[request.value(forHTTPHeaderField: "X-SteamCMD-Test") ?? ""] }
+        let response = Self.lock.withLock { Self.responses[request.value(forHTTPHeaderField: "X-SteamCMD-Test") ?? ""]?[request.url?.path ?? ""] }
         guard let response else {
             client?.urlProtocol(self, didFailWithError: URLError(.resourceUnavailable))
             return

@@ -10,7 +10,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         try fixture.attribute("com.apple.quarantine", value: "0081;fixture", at: fixture.executable)
         let service = fixture.service()
         await expect(.securityApprovalRequired) { try await service.validate(at: fixture.runtime) }
-        _ = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        _ = try await service.approvalCandidate(at: fixture.runtime)
         await expect(.securityApprovalRequired) { try await service.validate(at: fixture.runtime) }
         XCTAssertEqual(try fixture.attribute("com.apple.quarantine", at: fixture.executable), "0081;fixture")
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.receipts.path))
@@ -60,7 +60,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         try fixture.attribute("com.example.mwe.fixture", value: "preserved", at: fixture.executable)
         let runner = ApprovalSystemRunner()
         let service = fixture.service(runner: runner)
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         for url in [fixture.executable, fixture.resource, fixture.runtime] {
             XCTAssertNil(try fixture.attribute("com.apple.quarantine", at: url))
@@ -78,7 +78,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let executable = try await fresh.prepare(executable: fixture.executable, staging: privateCopy)
         XCTAssertEqual(executable, privateCopy.appendingPathComponent("steamcmd"))
         try await fresh.validate(at: privateCopy)
-        let copied = try await fresh.approvalCandidate(at: privateCopy, bootstrap: false)
+        let copied = try await fresh.approvalCandidate(at: privateCopy)
         XCTAssertEqual(copied.fingerprint, candidate.fingerprint)
         let record = fixture.receipts.appendingPathComponent(candidate.fingerprint)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: record.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
@@ -109,7 +109,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         var changed = try Data(contentsOf: fixture.executable)
         changed.append(0x41)
@@ -124,7 +124,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        try await service.approve(service.approvalCandidate(at: fixture.runtime, bootstrap: false))
+        try await service.approve(service.approvalCandidate(at: fixture.runtime))
         try Data("changed-resource".utf8).write(to: fixture.resource)
         await expect(.securityApprovalRequired) { try await service.validate(at: fixture.runtime) }
     }
@@ -133,7 +133,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        try await service.approve(service.approvalCandidate(at: fixture.runtime, bootstrap: false))
+        try await service.approve(service.approvalCandidate(at: fixture.runtime))
         let link = fixture.runtime.appendingPathComponent("Frameworks/Breakpad.framework/Breakpad")
         try FileManager.default.removeItem(at: link)
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "Versions/A/Breakpad")
@@ -144,7 +144,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        try await service.approve(service.approvalCandidate(at: fixture.runtime, bootstrap: false))
+        try await service.approve(service.approvalCandidate(at: fixture.runtime))
         try FileManager.default.setAttributes([.posixPermissions: 0o744], ofItemAtPath: fixture.executable.path)
         await expect(.securityApprovalRequired) { try await service.validate(at: fixture.runtime) }
     }
@@ -153,26 +153,24 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         try fixture.attribute("com.apple.quarantine", value: "0081;fixture", at: fixture.executable)
         let rejected = fixture.service(runner: ApprovalSystemRunner(signatureStatus: 1))
         await expect(.invalidSignature) { try await rejected.validate(at: fixture.runtime) }
-        await expect(.invalidSignature) { _ = try await rejected.approvalCandidate(at: fixture.runtime, bootstrap: false) }
+        await expect(.invalidSignature) { _ = try await rejected.approvalCandidate(at: fixture.runtime) }
         await expect(.invalidSignature) { try await rejected.approve(candidate) }
         XCTAssertEqual(try fixture.attribute("com.apple.quarantine", at: fixture.executable), "0081;fixture")
     }
 
-    func testBootstrapApprovalDoesNotApproveUpdatedCompleteRuntime() async throws {
+    func testApprovalOfAnIncompleteRuntimeDoesNotApproveItsCompletion() async throws {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let console = fixture.runtime.appendingPathComponent("steamconsole.dylib")
         let bytes = try Data(contentsOf: console)
         try FileManager.default.removeItem(at: console)
         let service = fixture.service()
-        let bootstrap = try await service.approvalCandidate(at: fixture.runtime, bootstrap: true)
-        try await service.approve(bootstrap)
-        try await service.validateBootstrap(at: fixture.runtime)
+        await expect(.incompleteRuntime) { _ = try await service.approvalCandidate(at: fixture.runtime) }
         try bytes.write(to: console)
         await expect(.securityApprovalRequired) { try await service.validate(at: fixture.runtime) }
     }
@@ -181,7 +179,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         let record = fixture.receipts.appendingPathComponent(candidate.fingerprint)
         let outside = fixture.directory.appendingPathComponent("outside-record")
@@ -198,7 +196,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         let outside = fixture.directory.appendingPathComponent("outside-receipts")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         try FileManager.default.createSymbolicLink(atPath: fixture.receipts.path, withDestinationPath: outside.path)
@@ -212,11 +210,11 @@ final class SteamCMDApprovalTests: XCTestCase {
         let fixture = try ApprovalFixture()
         defer { fixture.remove() }
         let service = fixture.service()
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         let failing = fixture.service(runner: ApprovalSystemRunner(assessmentStatus: 1))
         await expect(.securityApprovalRequired) { try await failing.validate(at: fixture.runtime) }
-        await expect(.securityApprovalRequired) { _ = try await failing.approvalCandidate(at: fixture.runtime, bootstrap: false) }
+        await expect(.securityApprovalRequired) { _ = try await failing.approvalCandidate(at: fixture.runtime) }
         await expect(.securityApprovalRequired) { try await failing.approve(candidate) }
     }
 
@@ -226,7 +224,7 @@ final class SteamCMDApprovalTests: XCTestCase {
         let library = try await fixture.makeUniversalLibrary()
         let original = try Data(contentsOf: library)
         let service = SteamCMDRuntimeService(processRunner: UniversalSignatureRunner(library: library), approvalDirectory: fixture.receipts)
-        let candidate = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false)
+        let candidate = try await service.approvalCandidate(at: fixture.runtime)
         try await service.approve(candidate)
         try await service.validate(at: fixture.runtime)
 
@@ -241,7 +239,7 @@ final class SteamCMDApprovalTests: XCTestCase {
             damaged[marker.lowerBound] ^= 1
             try damaged.write(to: library)
             await expect(.invalidSignature) { try await service.validate(at: fixture.runtime) }
-            await expect(.invalidSignature) { _ = try await service.approvalCandidate(at: fixture.runtime, bootstrap: false) }
+            await expect(.invalidSignature) { _ = try await service.approvalCandidate(at: fixture.runtime) }
             try original.write(to: library)
         }
     }
@@ -278,7 +276,7 @@ private struct ApprovalFixture {
         for (url, type) in [(executable, UInt32(2)), (runtime.appendingPathComponent("crashhandler.dylib"), UInt32(6)),
                             (runtime.appendingPathComponent("steamconsole.dylib"), UInt32(6)), (version.appendingPathComponent("Breakpad"), UInt32(6))] {
             var bytes = Data()
-            for value: UInt32 in [0xfeedfacf, 0x01000007, 3, type, 0, 0, 0, 0] {
+            for value: UInt32 in [0xfeedfacf, 0x0100000c, 0, type, 0, 0, 0, 0] {
                 var little = value.littleEndian
                 withUnsafeBytes(of: &little) { bytes.append(contentsOf: $0) }
             }
@@ -364,7 +362,6 @@ private actor ApprovalSystemRunner: SteamCMDProcessRunning {
             assessments += 1
             if !assessmentOutput.isEmpty { onOutput(Data(assessmentOutput.utf8)) }
             return assessmentStatus
-        case "/usr/bin/arch": return 0
         default: throw WorkshopFailure(message: "Approval fixtures must never execute runtime code")
         }
     }
@@ -385,7 +382,6 @@ private struct UniversalSignatureRunner: SteamCMDProcessRunning {
             return try await SteamCMDProcessRunner().run(executable: executable, arguments: arguments,
                 workingDirectory: workingDirectory, environment: environment, onOutput: onOutput)
         case "/usr/sbin/spctl": return 3
-        case "/usr/bin/arch": return 0
         default: throw WorkshopFailure(message: "Signature fixtures must never execute runtime code")
         }
     }
