@@ -9,6 +9,10 @@ extension WebPanelController {
     // Browsing and cancellation stay usable while a native operation awaits I/O. pixiv
     // browsing and downloads never touch the renderer, so they are always available.
     if try performPixiv(action, request: request) { return }
+    if try performLibraryOrganization(action, request: request) { return }
+    if try await performBackup(action, request: request) { return }
+    if try await performCompatibility(action, request: request) { return }
+    if try await performImagePlacement(action, request: request) { return }
     switch action {
     case "ready":
       // A page that reports ready has recovered, so a later crash may reload again.
@@ -270,9 +274,7 @@ extension WebPanelController {
       else { return }
       try await store.commands.run {
         try await store.deleteWallpaperAsync(id: id)
-        try forgetFavorites([id])
-        playlists.forget([id])
-        workshop.updates.forget([id])
+        try await forgetLibraryMetadata([id])
       }
     case "deleteMany":
       let ids = try wallpaperIDs(request)
@@ -293,9 +295,7 @@ extension WebPanelController {
       else { return }
       try await store.commands.run {
         let report = try await store.deleteWallpapersAsync(ids: ids)
-        try forgetFavorites(report.deleted)
-        playlists.forget(report.deleted)
-        workshop.updates.forget(report.deleted)
+        try await forgetLibraryMetadata(report.deleted)
         if !report.failures.isEmpty {
           let titles = Dictionary(
             store.librarySnapshot.wallpapers.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
@@ -333,6 +333,7 @@ extension WebPanelController {
   private func performQueued(_ action: String, request: WebPanelRequest, body: [String: Any])
     async throws
   {
+    if try await performPresets(action, request: request) { return }
     switch action {
     case "target":
       let id = try request.string("id")
@@ -724,6 +725,17 @@ extension WebPanelController {
       try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
   }
 
+  private func forgetLibraryMetadata(_ ids: [String]) async throws {
+    var firstError: Error?
+    do { try forgetFavorites(ids) } catch { firstError = error }
+    playlists.forget(ids)
+    workshop.updates.forget(ids)
+    do { try collections.forget(ids) } catch { firstError = firstError ?? error }
+    do { try await presets.forget(wallpaperIDs: ids) } catch { firstError = firstError ?? error }
+    do { try imagePlacement.forget(Set(ids)) } catch { firstError = firstError ?? error }
+    if let firstError { throw firstError }
+  }
+
   /// The display a playlist action names, or the target display when it names none. Only an
   /// enabled display that shows its own wallpaper has a playlist.
   func playlistDisplay(_ request: WebPanelRequest) throws -> String {
@@ -744,7 +756,19 @@ extension WebPanelController {
       playlists.update(display) { $0.mode = mode }
     case "source":
       guard let source = PlaylistSource(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
+      if source == .collection {
+        guard let id = playlists.playlist(for: display).collectionID,
+          collections.collection(id: id) != nil
+        else { throw LibraryOrganizationError.missingCollection }
+      }
       playlists.update(display) { $0.source = source }
+    case "collectionID":
+      let id = try request.string("value")
+      guard collections.collection(id: id) != nil else { throw LibraryOrganizationError.missingCollection }
+      playlists.update(display) {
+        $0.collectionID = id
+        $0.source = .collection
+      }
     case "order":
       guard let order = PlaylistOrder(rawValue: try request.string("value")) else { throw WebPanelRequest.invalid }
       playlists.update(display) { $0.order = order }
@@ -845,7 +869,15 @@ extension WebPanelController {
       propertyPathErrors[id, default: [:]][propertyID] = reason
       return
     }
-    try await store.setPropertyPathAsync(wallpaperId: id, propertyId: propertyID, path: url.path)
+    let current = try await store.wallpaperOptionsSnapshotAsync(wallpaperId: id)
+    guard current.properties.contains(where: {
+      $0.id == propertyID && $0.enabled && $0.kind == descriptor.kind
+    }) else { throw WebPanelRequest.invalid }
+    try await UserAssetSelectionAuthorization.perform(
+      managed: ManagedUserAssetStore(), wallpaperID: id, selections: [propertyID: url.path]
+    ) {
+      try await store.setPropertyPathAsync(wallpaperId: id, propertyId: propertyID, path: url.path)
+    }
   }
 
   /// Why this wallpaper cannot hold a staged copy of a user-chosen file.

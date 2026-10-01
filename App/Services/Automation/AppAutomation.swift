@@ -13,6 +13,8 @@ final class AppAutomation {
     var handler: (@MainActor (AutomationCommand) async throws -> Void)?
     /// The installed wallpapers that can play, as the Shortcuts app lists them.
     var wallpapers: (@MainActor () -> [(id: String, title: String)])?
+    /// Connected, enabled independent displays, keyed by the existing stable selector.
+    var displays: (@MainActor () -> [(id: String, title: String)])?
 
     private let wait: Duration
     private let poll: Duration
@@ -30,6 +32,11 @@ final class AppAutomation {
     func availableWallpapers() async -> [(id: String, title: String)] {
         _ = await readyHandler()
         return wallpapers?() ?? []
+    }
+
+    func availableDisplays() async -> [(id: String, title: String)] {
+        _ = await readyHandler()
+        return displays?() ?? []
     }
 
     private func readyHandler() async -> (@MainActor (AutomationCommand) async throws -> Void)? {

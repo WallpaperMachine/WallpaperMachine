@@ -15,6 +15,24 @@ renderer behaviour and known-failing tests into
 [../renderer.md](../renderer.md), build and code-signing traps into
 [../../build.md](../../build.md).
 
+## 2026-09-30 — Energy readout hierarchy and measurement disclosure
+
+- python3 scripts/test.py — exit 0; Python suites passed; native 853 passed, 0 failed, 11 skipped (9 opt-in media, 2 live Workshop). The shared tree includes unrelated concurrent window-sizing changes.
+- Headless Chromium on the real WebUI: 249 state/theme/language/layout cases passed at 1100px and the native 760px minimum, plus an isolated 360px settings container; no energy-card overflow. Tested text contrast stayed at least 5.33:1 across light/dark and neutral/warm/cool tones.
+- Space/Enter disclosure operation passed; open state and focus survived energy pushes and snapshots, and updates preserved focus on the quality slider. Measuring, unavailable, GPU contention, battery omission, watt units, zero values and before/after comparisons exercised.
+- Impeccable mechanical detector on settings.js and settings.css — exit 0, no findings.
+- No screenshots, desktop interaction or native visual review; power sampling behavior unchanged. No Release rebuild or app restart.
+
+## 2026-09-30 — Control-panel full-screen navigation (#17)
+
+- python3 scripts/test.py --only ControlPanelWindowSizingTests: 2 passed, 0 failed, 0 skipped.
+- Temporary offscreen AppKit smoke executable: opaque title-bar chrome intercepted navigation before the layout change; the fixed layout and restored windowed layout both delivered hits to content and preserved the window frame.
+- Regression coverage exercises 1920×1080, 960×1080 and 760×560 bounds, unobscured content, navigation hit-testing and restoration of the unified title-bar layout.
+- python3 scripts/test.py: all 17 Python test modules passed; native gate 853 passed, 0 failed, 11 skipped of 864.
+- Skipped: 9 opt-in NativeVideoPlayerMediaTests and 2 live-network WorkshopTests; no asset-dependent skips.
+- Live full-screen and Split View transitions and visual presentation remain unverified; no window was shown or Space transition requested.
+- Release app not rebuilt; the running app remains unchanged. Unrelated concurrent WebUI and documentation edits were preserved.
+
 ## 2026-09-30 — Keep the active-display filter on one line
 
 - Offscreen WKWebView smoke — exit 0; 24 cases across 760, 840, 841, 1040, 1041 and 1280px in English, Japanese, Simplified Chinese and Traditional Chinese. The full label occupies one line without overflow; checking and clearing Active filters the expected wallpapers. Discover widths and collapsed layout remain unchanged. Throwaway probe removed.

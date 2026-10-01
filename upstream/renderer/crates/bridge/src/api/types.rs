@@ -93,9 +93,12 @@ pub struct BridgeLockScreenScene {
 
 /// Committed inputs for a web wallpaper the host renders in a web view on one
 /// display. Mirrors of a web source display appear as separate entries.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct BridgeWebWallpaper {
     pub display_id: u32,
+    pub display_key: String,
+    /// Source display of this assignment; independent instances of one project remain separate.
+    pub audio_source_display_id: u32,
     pub wallpaper_id: String,
     pub title: String,
     /// Absolute project directory.
@@ -104,6 +107,8 @@ pub struct BridgeWebWallpaper {
     pub entry_file: String,
     pub fps: u32,
     pub paused: bool,
+    pub volume: f32,
+    pub muted: bool,
     pub audio_response_enabled: bool,
     /// Whether this wallpaper opted in to system media integration. The host
     /// still has to find a usable system media source; this is only the user's

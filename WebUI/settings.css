@@ -274,6 +274,23 @@ label.settings-label { cursor: pointer; }
 /* Standalone footnotes supply the bottom inset that a final row normally provides. */
 .settings-update-footnote { margin-bottom: 12px; }
 .settings-footnote { margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; max-width: 64ch; }
+/* An inline name field (saving or renaming a playlist) and a Delete waiting for its second
+   click take a row's control slot; both keep the row's own control metrics. */
+.settings-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; max-width: 100%; }
+#settings-content .settings-inline-form input[type="text"] { width: 220px; max-width: 100%; }
+.settings-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; width: 100%; }
+.settings-confirm .settings-note { flex: 1 1 200px; color: var(--text); }
+.settings-plan { align-items: center; padding: 6px 0; }
+.settings-plan + .settings-plan { border-top: 1px solid var(--divider); }
+.settings-plan .settings-rule-name { display: grid; gap: 2px; }
+.settings-plan-name { font-weight: 600; }
+/* Restore: what the backup and this Mac both have, and the one choice to make about it. */
+.settings-choices { display: grid; gap: 6px; margin-top: 8px; }
+.settings-choice { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); cursor: pointer; }
+.settings-choice input { margin: 0; }
+.settings-conflicts, .settings-warnings { list-style: disc; padding-left: 16px; }
+.settings-warnings { color: var(--warning); }
+.settings-readout .settings-control > .settings-choices { flex-basis: 100%; }
 
 /* Folder paths use the full measure, with actions separated below. */
 .settings-row:is([data-key="library-path"], [data-key="candidate"]) { flex-direction: column; align-items: stretch; }

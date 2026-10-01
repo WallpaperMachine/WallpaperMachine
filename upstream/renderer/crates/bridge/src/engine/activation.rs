@@ -49,8 +49,7 @@ pub struct ActivationInputs<'a> {
     /// into descriptors. Web and native-video rates use it because those
     /// hosts have no later `set_fps`.
     pub frame_rate_cap: Option<u32>,
-    /// Transient mute composed on top of each slot's saved mute. Web has no
-    /// mute channel and ignores this.
+    /// Transient mute composed on top of each slot's saved mute for every playback host.
     pub audio_suppressed: bool,
 }
 
@@ -164,11 +163,15 @@ const NATIVE_VIDEO_MEDIA_UNRESOLVED: &str =
 #[derive(Clone, Debug, PartialEq)]
 pub struct WebWallpaperDesc {
     pub display: DisplayDesc,
+    pub display_key: String,
+    pub audio_source_display_id: u32,
     pub wallpaper_id: String,
     pub project_dir: PathBuf,
     pub entry_file: String,
     pub fps: u32,
     pub paused: bool,
+    pub volume: f32,
+    pub muted: bool,
     pub audio_response_enabled: bool,
     /// Effective user-property values (overrides over manifest defaults),
     /// excluding group and label pseudo-properties.
@@ -359,12 +362,16 @@ impl ActivationInputs<'_> {
             let paused = self.display_paused(slot.display.display_id);
             let fps = self.slot_fps(&slot);
             web.push(WebWallpaperDesc {
+                audio_source_display_id: slot.display.display_id,
+                display_key: slot.monitor.selector.id(),
                 display: slot.display,
                 wallpaper_id: slot.wallpaper_id.to_string(),
                 project_dir: self.paths.steam_workshop_root().join(slot.wallpaper_id),
                 entry_file,
                 fps,
                 paused,
+                volume: slot.wallpaper.audio.volume,
+                muted: slot.wallpaper.audio.muted || self.audio_suppressed,
                 audio_response_enabled: slot.wallpaper.audio.response_enabled,
                 properties,
             });
@@ -389,9 +396,12 @@ impl ActivationInputs<'_> {
             let fps = self.mirror_fps(&mirror);
             let paused = self.display_paused(mirror.display.display_id);
             web.push(WebWallpaperDesc {
+                display_key: mirror.settings.selector.id(),
                 display: mirror.display,
                 fps,
                 paused,
+                volume: mirror.settings.volume,
+                muted: mirror.settings.muted || self.audio_suppressed,
                 ..source
             });
         }

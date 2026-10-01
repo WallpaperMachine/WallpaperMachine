@@ -150,8 +150,9 @@ wallpaper animating in the gaps. `WallpaperCoverageProbes` measures this with
 one fully transparent, mouse-transparent window per display just above the
 wallpaper; see [architecture](../architecture.md#desktop-wallpaper-windows-and-private-api-handling).
 
-**Mute** affects scene and video wallpapers only. Web wallpapers have no mute
-channel, so Mute does not silence them. **Pause** applies to every wallpaper
+**Mute** affects scene and video wallpapers and, where WebKit exposes its native
+output channel, Web wallpapers. Availability is shown in the wallpaper's details;
+see [Page sound](web-wallpapers.md#page-sound). **Pause** applies to every wallpaper
 and does not change the user's own Play/Pause.
 
 Another app counts as playing sound while Core Audio reports it running audio
@@ -197,8 +198,7 @@ rules' in `WallpaperPresentationPolicy`, so they pause, mute or stop wallpapers
 exactly as an app rule does and never change the user's own Play/Pause. It only
 observes notifications (`NSProcessInfoPowerStateDidChange`,
 `ProcessInfo.thermalStateDidChangeNotification`, the preferences and the Focus
-filter); nothing is polled. Mute has the same limit as above: web wallpapers have
-no mute channel.
+filter); nothing is polled. Web mute uses the same availability boundary as above.
 
 ### App rules
 
@@ -207,8 +207,8 @@ no mute channel.
 **Remove**. **Add app…** opens a native panel for one `.app` bundle. An app
 with no bundle identifier is refused. The same bundle is not added twice.
 Rules pause, mute or stop wallpapers while the chosen app matches. They do not
-change the user's own Play/Pause. Mute has the same limit as above: web
-wallpapers have no mute channel.
+change the user's own Play/Pause. Web mute uses the same output channel and
+availability boundary as above, without disabling its system-audio response.
 
 ## Quality
 

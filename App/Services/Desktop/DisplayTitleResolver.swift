@@ -45,6 +45,11 @@ struct ResolvedDisplayTitles {
         return title
     }
 
+    static func liveDisplayID(_ displayId: String, title: String) -> UInt32? {
+        if let id = UInt32(displayId) { return id }
+        return Self.liveId(in: Self.suffix(of: title)).flatMap(UInt32.init)
+    }
+
     /// The renderer's trailing `(id - Role)` group.
     private static func suffix(of title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespaces)

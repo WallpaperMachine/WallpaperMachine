@@ -16,6 +16,8 @@ enum PlaylistSource: String, Codable, CaseIterable, Sendable {
     case favorites
     /// The wallpapers the user added to this display's list, in the order they were added.
     case list
+    /// The live membership of a reusable local collection.
+    case collection
 }
 
 enum PlaylistOrder: String, Codable, CaseIterable, Sendable {
@@ -36,6 +38,9 @@ struct DisplayPlaylist: Codable, Equatable, Sendable {
     /// Minutes between changes; one of `intervals`.
     var interval = 30
     var wallpaperIDs: [String] = []
+    var collectionID: String?
+    /// Saved plan identity; an actual manual edit detaches the display's copy.
+    var planID: String?
     var dayWallpaperID: String?
     var nightWallpaperID: String?
     /// Minutes after local midnight at which the day and the night wallpapers take over.
@@ -53,6 +58,8 @@ struct DisplayPlaylist: Codable, Equatable, Sendable {
         let interval = (try? container.decodeIfPresent(Int.self, forKey: .interval)) ?? fallback.interval
         self.interval = Self.intervals.contains(interval) ? interval : fallback.interval
         wallpaperIDs = (try? container.decodeIfPresent([String].self, forKey: .wallpaperIDs)) ?? []
+        collectionID = try? container.decodeIfPresent(String.self, forKey: .collectionID)
+        planID = try? container.decodeIfPresent(String.self, forKey: .planID)
         dayWallpaperID = try? container.decodeIfPresent(String.self, forKey: .dayWallpaperID)
         nightWallpaperID = try? container.decodeIfPresent(String.self, forKey: .nightWallpaperID)
         dayStart = Self.minuteOfDay((try? container.decodeIfPresent(Int.self, forKey: .dayStart)) ?? nil)
@@ -66,4 +73,11 @@ struct DisplayPlaylist: Codable, Equatable, Sendable {
         guard let value, (0..<minutesPerDay).contains(value) else { return nil }
         return value
     }
+}
+
+/// A reusable playlist configuration with no display identity or timer state.
+struct PlaylistPlan: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    var name: String
+    var playlist: DisplayPlaylist
 }
