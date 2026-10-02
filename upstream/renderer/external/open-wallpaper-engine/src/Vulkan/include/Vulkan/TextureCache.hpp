@@ -217,7 +217,9 @@ public:
 
     /// Takes a render target out of the reuse pool so its pixels survive into
     /// the next frame. Fails when the key no longer owns an allocation,
-    /// because another key may already have been handed the same image.
+    /// because another key may already have been handed the same image, and
+    /// when the key took its image from a key that released it, because that
+    /// key's passes still draw into it.
     bool PinRenderTarget(std::string_view key);
 
     /// Points `key` at the allocation `source` already owns, so an eliminated

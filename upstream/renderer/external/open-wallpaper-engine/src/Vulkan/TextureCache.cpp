@@ -1905,8 +1905,20 @@ bool TextureCache::PinRenderTarget(std::string_view key) {
     // image may belong to another target by now. Reporting failure keeps the
     // caller from reusing pixels it no longer owns.
     if (it == m_query_map.end() || it->second == nullptr) return false;
-    it->second->persist     = true;
-    it->second->share_ready = false;
+    auto* query = it->second;
+    // The same holds the other way round: a key that took this image from the
+    // pool after an earlier key released it shares it with that key's passes,
+    // which were prepared against the image and keep drawing into it every
+    // frame. Pinned, its own skipped writers would leave it holding the other
+    // target's pixels. Keys still mapped here are aliases of an elided copy,
+    // which write nothing.
+    for (const auto& other : query->query_keys) {
+        if (other == key) continue;
+        auto mapped = m_query_map.find(other);
+        if (mapped == m_query_map.end() || mapped->second != query) return false;
+    }
+    query->persist     = true;
+    query->share_ready = false;
     return true;
 }
 

@@ -2505,6 +2505,30 @@ TEST_F(PlaybackGPU, CopyPreparesAgainAfterRenderTargetsAreDroppedAndResized) {
     ExpectSolid(Read(copy.desc().vk_dst), {0,255,0,255});
 }
 
+// Static reuse skips a pinned target's writers, so it may only pin an image no
+// other target's passes still draw into. A pooled image handed on by a key that
+// released it is drawn into by that key's prepared passes every frame: pinning
+// the new holder kept the other target's pixels where its own skipped draw
+// belonged, and a layer read another layer's picture from the second frame on.
+TEST_F(PlaybackGPU, APooledImageAnotherTargetStillDrawsIntoIsNeverPinned) {
+    auto&      cache = device.tex_cache();
+    const auto first = Target(), second = Target(), own = Target(), alias = Target();
+    const auto query = [&](const std::string& name) {
+        auto image = cache.Query(name, ToTexKey(scene.renderTargets.at(name)));
+        Require(image.has_value(), "allocate pooled target");
+        return image->handle;
+    };
+    const auto shared = query(first);
+    cache.MarkShareReady(first);
+    ASSERT_EQ(query(second), shared) << "the pool hands the released image on";
+    EXPECT_FALSE(cache.PinRenderTarget(first)) << "released, so no longer its own";
+    EXPECT_FALSE(cache.PinRenderTarget(second)) << "the first target's passes still draw into it";
+
+    EXPECT_NE(query(own), shared);
+    ASSERT_TRUE(cache.AliasRenderTarget(alias, own));
+    EXPECT_TRUE(cache.PinRenderTarget(own)) << "an elided copy's alias writes nothing";
+}
+
 TEST_F(PlaybackGPU, QueryFailureLeavesCopyAndFinalUnprepared) {
     const auto source = Target(), destination = Target();
     CopyPass copy(CopyPass::Desc {.src=source,.dst=destination});
