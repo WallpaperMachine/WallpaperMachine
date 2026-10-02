@@ -607,6 +607,7 @@ impl BridgeActorState {
         let backends = ActivationInputs {
             app_config: &self.app_config,
             wallpapers: &self.wallpaper_configs,
+            library: self.scanned_library(),
             displays,
             paused: self.playback_state == BridgePlaybackState::Paused,
             suspended_displays: &self.suspended_displays,

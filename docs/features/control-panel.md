@@ -419,7 +419,10 @@ that action in their browser. See [Supporter details](../../SPONSORS.md).
 
 Deletion always moves the managed library copy to the Mac's Trash after a
 confirmation sheet; imported source folders are never touched, and a wallpaper
-playing on a display is ejected first.
+playing on a display is ejected first. A disconnected display, or a wallpaper
+folder removed outside the app, can keep its assignment: once the library has
+been scanned the renderer leaves that display empty rather than failing every
+apply, and reinstalling the wallpaper brings the assignment back.
 
 - Single: the trash button in the inspector's action row (next to **Apply
   wallpaper**), or `Delete`/`Backspace` on a focused tile.

@@ -15,7 +15,7 @@ use wallpaper_core::{
 };
 
 use crate::{
-    api::{BridgeError, BridgeErrorKind},
+    api::{BridgeError, BridgeErrorKind, BridgeWallpaperEntry},
     config::{AppConfig, MonitorCfg, MonitorRender, MonitorSettingsCfg, WallpaperConfig},
     display::{DisplayDescExt, DisplaySelectorExt, DisplaySnapshotExt},
     paths::BridgePaths,
@@ -25,6 +25,13 @@ use crate::{
 pub struct ActivationInputs<'a> {
     pub app_config: &'a AppConfig,
     pub wallpapers: &'a BTreeMap<String, WallpaperConfig>,
+    /// Installed wallpapers from the last successful library scan; `None`
+    /// before one. A monitor assigned a wallpaper missing from a scanned
+    /// library (deleted while its display was disconnected, or removed outside
+    /// the app) gets nothing: handing the engine a project that no longer
+    /// exists fails the whole reconcile, so one stale display would block
+    /// applying a wallpaper to any other.
+    pub library: Option<&'a [BridgeWallpaperEntry]>,
     pub displays: &'a [DisplaySnapshotEntry],
     /// Conditions that apply to every display: the user's Play/Pause choice,
     /// power policy, display sleep and session lock.
@@ -797,6 +804,18 @@ impl ActivationInputs<'_> {
             let Some(wallpaper) = self.wallpapers.get(wallpaper_id) else {
                 continue;
             };
+
+            if self
+                .library
+                .is_some_and(|library| !library.iter().any(|entry| entry.id == wallpaper_id))
+            {
+                // Debug, not warn: snapshots rebuild this plan on every refresh.
+                log::debug!(
+                    "wallpaper {wallpaper_id} is assigned to a display but is not in the \
+                     library; leaving that display empty"
+                );
+                continue;
+            }
 
             if monitor.mode == "mirror" {
                 continue;

@@ -920,7 +920,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     }
 
     fn refresh_library(&mut self) -> Result<(), BridgeError> {
-        let workshop_root = BridgePaths::new().steam_workshop_root();
+        let workshop_root = self.paths.steam_workshop_root();
         let entries = scan(&workshop_root)?;
         let project_models = entries
             .iter()
@@ -938,6 +938,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                 .collect(),
         );
         self.state.project_models = project_models;
+        self.state.library_scanned = true;
         Ok(())
     }
 
@@ -1032,6 +1033,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         ActivationInputs {
             app_config: &self.state.app_config,
             wallpapers: &self.state.wallpaper_configs,
+            library: self.state.scanned_library(),
             displays,
             paused,
             suspended_displays: &self.state.suspended_displays,
@@ -1515,6 +1517,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         let engine = self.engine.clone();
         let app_config = self.state.app_config.clone();
         let wallpaper_configs = self.state.wallpaper_configs.clone();
+        let library = self.state.scanned_library().map(<[_]>::to_vec);
         let project_models = self.state.configured_project_models(&app_config);
         let paused = self.playback_paused();
         let suspended_displays = self.state.suspended_displays.clone();
@@ -1528,6 +1531,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                 engine,
                 app_config,
                 wallpaper_configs,
+                library,
                 project_models,
                 paused,
                 suspended_displays,
@@ -1592,6 +1596,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             self.engine.clone(),
             app_config,
             wallpaper_configs,
+            self.state.scanned_library().map(<[_]>::to_vec),
             project_models,
             self.playback_paused(),
             self.state.suspended_displays.clone(),
@@ -1612,6 +1617,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
         ctx: &mut Context<Self, DelegatedReply<messages::DisplayMutationReply>>,
     ) -> DelegatedReply<messages::DisplayMutationReply> {
         let wallpaper_configs = self.state.wallpaper_configs.clone();
+        let library = self.state.scanned_library().map(<[_]>::to_vec);
         let project_models = self.state.configured_project_models(&app_config);
         let generation = self.reserve_reconcile();
         let paused = self.playback_paused();
@@ -1628,6 +1634,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                 engine,
                 app_config.clone(),
                 wallpaper_configs.clone(),
+                library,
                 project_models,
                 paused,
                 suspended_displays,
@@ -1995,6 +2002,7 @@ async fn reconcile_with<E: EngineFacade>(
     engine: E,
     app_config: AppConfig,
     wallpaper_configs: BTreeMap<String, WallpaperConfig>,
+    library: Option<Vec<BridgeWallpaperEntry>>,
     project_models: BTreeMap<String, ProjectModel>,
     paused: bool,
     suspended_displays: BTreeSet<u32>,
@@ -2012,6 +2020,7 @@ async fn reconcile_with<E: EngineFacade>(
         ActivationInputs {
             app_config: &app_config,
             wallpapers: &wallpaper_configs,
+            library: library.as_deref(),
             suspended_displays: &suspended_displays,
             displays: &displays,
             paused,
@@ -2287,6 +2296,7 @@ impl<E: EngineFacade + Clone> Message<ClearShaderCache> for BridgeActor<E> {
             self.engine.clone(),
             app_config,
             wallpaper_configs,
+            self.state.scanned_library().map(<[_]>::to_vec),
             project_models,
             self.playback_paused(),
             self.state.suspended_displays.clone(),
@@ -4503,6 +4513,7 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
         );
         let app_config = candidates.app_config.clone();
         let wallpaper_configs = candidates.wallpaper_configs.clone();
+        let library = self.state.scanned_library().map(<[_]>::to_vec);
         let requires_reconcile = candidates.requires_reconcile;
         let paused = self.playback_paused();
         let suspended_displays = self.state.suspended_displays.clone();
@@ -4512,6 +4523,7 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
                     ActivationInputs {
                         app_config: &app_config,
                         wallpapers: &wallpaper_configs,
+                        library: self.state.scanned_library(),
                         displays: &displays,
                         paused,
                         suspended_displays: &suspended_displays,
@@ -4544,6 +4556,7 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
                     engine,
                     app_config,
                     wallpaper_configs,
+                    library,
                     project_models,
                     paused,
                     suspended_displays,

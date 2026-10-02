@@ -5,6 +5,7 @@ use wallpaper_core::{
 };
 
 use crate::{
+    api::{BridgeWallpaperEntry, BridgeWallpaperKind},
     config::{
         AppConfig, MonitorCfg, MonitorRender, MonitorSettingsCfg, SerializedSelector,
         WallpaperConfig,
@@ -47,6 +48,7 @@ fn activation_plan_marks_scenes_paused_when_global_playback_is_paused() {
     let scenes = ActivationInputs {
         app_config: &config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &displays,
         suspended_displays: &BTreeSet::new(),
         paused: true,
@@ -63,6 +65,56 @@ fn activation_plan_marks_scenes_paused_when_global_playback_is_paused() {
 
     assert_eq!(scenes.len(), 1);
     assert!(scenes[0].paused);
+}
+
+#[test]
+fn activation_plan_leaves_display_empty_when_assigned_wallpaper_left_the_library() {
+    // A wallpaper deleted while its display was disconnected keeps its
+    // assignment. Planning a scene for it would fail the whole reconcile and
+    // block applying anything to any other display.
+    let display_a = identified_display("a", 1);
+    let display_b = identified_display("b", 3);
+    let mut config = AppConfig::default();
+    for (display, wallpaper) in [(&display_a, "100"), (&display_b, "gone")] {
+        config.monitors.push(MonitorCfg {
+            selector: SerializedSelector::from_selector(&DisplaySelector::Identity(
+                display.identity.clone(),
+            )),
+            enabled: true,
+            mode: "independent".to_string(),
+            wallpaper: Some(wallpaper.to_string()),
+            mirror_target: None,
+        });
+    }
+    let mut wallpapers = BTreeMap::new();
+    for id in ["100", "gone"] {
+        wallpapers.insert(id.to_string(), WallpaperConfig::new_for(id, "scene"));
+    }
+    let mut library = installed(&wallpapers);
+    library.retain(|entry| entry.id != "gone");
+    let displays = vec![display_a, display_b];
+    let paths = BridgePaths::for_home("/Users/example");
+
+    let scenes = ActivationInputs {
+        app_config: &config,
+        wallpapers: &wallpapers,
+        library: Some(&library),
+        displays: &displays,
+        suspended_displays: &BTreeSet::new(),
+        paused: false,
+        paths: &paths,
+        force_shader_refresh: false,
+        project_models: &BTreeMap::new(),
+        native_video_enabled: false,
+        native_video_rejected: &BTreeMap::new(),
+        frame_rate_cap: None,
+        audio_suppressed: false,
+    }
+    .build()
+    .unwrap();
+
+    assert_eq!(scenes.len(), 1);
+    assert_scene(&scenes, 1, "100");
 }
 
 #[test]
@@ -105,6 +157,7 @@ fn activation_plan_gives_primary_wallpaper_to_current_primary_display() {
     let scenes = ActivationInputs {
         app_config: &config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &displays,
         suspended_displays: &BTreeSet::new(),
         paused: false,
@@ -126,6 +179,7 @@ fn activation_plan_gives_primary_wallpaper_to_current_primary_display() {
     let scenes = ActivationInputs {
         app_config: &config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &displays,
         suspended_displays: &BTreeSet::new(),
         paused: false,
@@ -171,6 +225,7 @@ fn activation_plan_uses_primary_render_override_for_identity_primary_monitor() {
     let scenes = ActivationInputs {
         app_config: &app_config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &[display],
         suspended_displays: &BTreeSet::new(),
         paused: false,
@@ -220,6 +275,7 @@ fn activation_plan_uses_identity_render_override_for_primary_monitor() {
     let scenes = ActivationInputs {
         app_config: &app_config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &[display],
         suspended_displays: &BTreeSet::new(),
         paused: false,
@@ -241,6 +297,22 @@ fn activation_plan_uses_identity_render_override_for_primary_monitor() {
         "a Primary assignment must inherit the saved identity render override for the same \
          primary display"
     );
+}
+
+/// Library entries for every configured wallpaper, so the plan treats them as installed.
+fn installed(wallpapers: &BTreeMap<String, WallpaperConfig>) -> Vec<BridgeWallpaperEntry> {
+    wallpapers
+        .keys()
+        .map(|id| BridgeWallpaperEntry {
+            id: id.clone(),
+            title: id.clone(),
+            kind: BridgeWallpaperKind::ProjectScene,
+            supported: true,
+            active: false,
+            selected: false,
+            preview_path: None,
+        })
+        .collect()
 }
 
 fn assert_scene(scenes: &[wallpaper_core::project::SceneDesc], display_id: u32, workshop_id: &str) {
@@ -295,6 +367,7 @@ fn mirror_scene_follows_source_wallpaper_with_monitor_overrides() {
     let scenes = ActivationInputs {
         app_config: &app_config,
         wallpapers: &wallpapers,
+        library: None,
         displays: &displays,
         suspended_displays: &BTreeSet::new(),
         paused: false,
@@ -426,6 +499,7 @@ fn a_rejection_recorded_for_another_admission_key_does_not_route_a_video_to_the_
         ActivationInputs {
             app_config,
             wallpapers,
+            library: None,
             displays,
             suspended_displays,
             paused: false,

@@ -58,6 +58,9 @@ pub struct BridgeActorState {
     pub active_wallpaper_ids: Vec<String>,
     pub errors: Vec<String>,
     pub library: Vec<BridgeWallpaperEntry>,
+    /// Whether `library` came from a successful scan of the workshop root.
+    /// Only then does a wallpaper missing from it mean the files are gone.
+    pub library_scanned: bool,
     pub app_config: AppConfig,
     pub wallpaper_configs: BTreeMap<String, WallpaperConfig>,
     pub wallpaper_drafts: BTreeMap<String, WallpaperOptionsDraft>,
@@ -97,6 +100,7 @@ impl Default for BridgeActorState {
             active_wallpaper_ids: Vec::new(),
             errors: Vec::new(),
             library: Vec::new(),
+            library_scanned: false,
             app_config: AppConfig::default(),
             wallpaper_configs: BTreeMap::new(),
             wallpaper_drafts: BTreeMap::new(),
@@ -409,6 +413,13 @@ impl BridgeActorState {
 
     pub fn configured_ids(&self) -> Vec<String> {
         Self::active_ids(&self.app_config)
+    }
+
+    /// The installed wallpapers, once a scan has established them; `None`
+    /// before that, when nothing is known to be missing.
+    #[must_use]
+    pub fn scanned_library(&self) -> Option<&[BridgeWallpaperEntry]> {
+        self.library_scanned.then_some(self.library.as_slice())
     }
 
     pub fn replace_library(&mut self, library: Vec<BridgeWallpaperEntry>) {
