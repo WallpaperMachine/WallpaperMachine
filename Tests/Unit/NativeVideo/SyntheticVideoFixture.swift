@@ -217,6 +217,31 @@ enum SyntheticVideoFixture {
         return url
     }
 
+    /// Two silent H.264 frames in Matroska, which the compatibility demuxer can
+    /// read even though AVFoundation does not accept the container. Embedding
+    /// the original generated clip keeps tests independent of an FFmpeg CLI.
+    /// Generated with: ffmpeg -f lavfi -i color=c=blue:s=16x16:r=24 -frames:v 2
+    /// -c:v libx264 -preset ultrafast -pix_fmt yuv420p -bsf:v filter_units=remove_types=6
+    /// -fflags +bitexact -flags:v +bitexact -map_metadata -1 compatibility-h264.mkv
+    static func writeMatroska(name: String, into directory: URL) throws -> URL {
+        let encoded = """
+            GkXfo6NChoEBQveBAULygQRC84EIQoKIbWF0cm9za2FCh4EEQoWBAhhTgGcBAAAAAAACEhFNm3TAv4TpW94QTbuLU6uEFUmpZlOs
+            gaFNu4tTq4QWVK5rU6yBzE27jFOrhBJUw2dTrIIBYE27jFOrhBxTu2tTrIIB9uwBAAAAAAAAUwAAAAAAAAAAAAAAAAAAAAAAAAAA
+            AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFUmpZqa/hD3cjzUq
+            17GDD0JATYCETGF2ZldBhExhdmZEiYhAVQAAAAAAABZUrmtAjr+EL1LyZa4BAAAAAAAAf9eBAXPFiAAAAAAAAAABnIEAIrWcg3Vu
+            ZIiBAIaPVl9NUEVHNC9JU08vQVZDg4EBI+ODhAJ7yGrgkLCBELqBEJqBAlWwhFW5gQFV7oEA7AEAAAAAAAACAABjoqQBQsAK/+EA
+            FWdCwAraewEQAAADABAAAAMDAPEiagEABGjOD8gSVMNn17+Ed7pbDXNzzmPAi2PFiAAAAAAAAAABZ8iZRaOHRU5DT0RFUkSHjExh
+            dmMgbGlieDI2NGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDAuMDg0MDAwMDAwAB9DtnW1v4SkAW0b54EAo5uBAACAAAAAE2WIhDoR
+            igACMXHAAEPKOAAIBeCjjYEAKgAAAAAFQZogJpQcU7trl7+E0Vo0b7uPs4EAt4r3gQHxggG88IEJ
+            """
+        guard let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else {
+            throw FixtureError.writerFailed("invalid embedded Matroska fixture")
+        }
+        let url = directory.appendingPathComponent("\(name).mkv")
+        try data.write(to: url)
+        return url
+    }
+
     /// A file that is not a movie at all, for the corrupt-input case.
     static func writeCorrupt(name: String, into directory: URL) throws -> URL {
         let url = directory.appendingPathComponent("\(name).mov")

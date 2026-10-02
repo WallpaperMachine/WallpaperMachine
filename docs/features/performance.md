@@ -473,6 +473,13 @@ running wallpaper and keeps anything that does not qualify on Compatibility.
 names the fallback reason when the user asked for native and did not get it. It
 reads `No video wallpaper is running.` when nothing is playing video.
 
+Applying a video checks that its entry is a readable, nonempty file. Container
+and codec support are decided by the playback backend: AVFoundation's native
+admission check must not block a file the Compatibility backend can decode,
+including H.264 in Matroska. This applies both to **Apply** and **Apply changes**,
+with either backend preference. Missing or empty files fail before display
+settings change; decoder failures still go through the engine's apply recovery.
+
 An unrecognised backend name is refused rather than silently mapped to
 Compatibility, so a stale page cannot report a choice that was never applied.
 

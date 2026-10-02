@@ -231,6 +231,13 @@ Swift tests cover, without starting the app:
   write failure followed by retry, and an external user choice during the wait.
   Native-store reference fixtures cover display/Space scope, inherited fallbacks,
   linked Desktop choices, and exclusion of Idle and inactive fields.
+- **Wallpaper activation** — `WallpaperActivationRecoveryTests` passes an original
+  synthetic H.264 Matroska clip through both Apply and Apply changes, with
+  Compatibility and Native video preferred. Missing, empty and non-file video
+  entries are rejected before application; injected decoder failures retain the
+  error and leave the library usable for retry. These tests use a fake renderer
+  bridge: they cover application preflight and recovery, not decoded frames or
+  desktop playback of Workshop content.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power
   Mode and thermal readings and a private notification center: Low Power Mode
   acting only once an action is chosen, only serious and critical heat counting

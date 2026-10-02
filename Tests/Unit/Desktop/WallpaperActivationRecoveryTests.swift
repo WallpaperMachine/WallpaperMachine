@@ -56,6 +56,109 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
                       "Without a trustworthy re-read the app must ask for a full refresh")
     }
 
+    func testMatroskaVideoCanBeActivatedWithEitherBackendPreference() async throws {
+        let folder = try writeVideoProject(entry: "compatibility.mkv")
+        _ = try SyntheticVideoFixture.writeMatroska(name: "compatibility", into: folder)
+
+        for backend in ["compatibility", "native_preferred"] {
+            let (store, _) = try await videoStore(backend: backend)
+            try await store.activateWallpaperAsync(id: "failing", displayId: "primary")
+
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "failing", backend)
+            XCTAssertNil(store.activatingWallpaperID)
+        }
+    }
+
+    func testMatroskaVideoOptionsCanBeAppliedWithEitherBackendPreference() async throws {
+        let folder = try writeVideoProject(entry: "compatibility.mkv")
+        _ = try SyntheticVideoFixture.writeMatroska(name: "compatibility", into: folder)
+
+        for backend in ["compatibility", "native_preferred"] {
+            let (store, _) = try await videoStore(backend: backend)
+            try await store.applyWallpaperOptionsAsync(wallpaperId: "failing")
+
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "failing", backend)
+            XCTAssertNil(store.applyingWallpaperID)
+        }
+    }
+
+    func testIncompleteVideoEntriesCannotChangeDisplayAssignment() async throws {
+        let folder = home.appendingPathComponent("Library/failing", isDirectory: true)
+        try Data().write(to: folder.appendingPathComponent("empty.mkv"))
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent("directory.mkv"), withIntermediateDirectories: false)
+
+        for entry in [nil, "", "missing.mkv", "empty.mkv", "directory.mkv"] as [String?] {
+            _ = try writeVideoProject(entry: entry)
+            let (store, _) = try await videoStore(backend: "compatibility")
+
+            await XCTAssertThrowsErrorAsync(
+                try await store.activateWallpaperAsync(id: "failing", displayId: "primary"))
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "")
+            await XCTAssertThrowsErrorAsync(
+                try await store.applyWallpaperOptionsAsync(wallpaperId: "failing"))
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "")
+            XCTAssertFalse(store.activationNeedsRefresh)
+            XCTAssertNil(store.activatingWallpaperID)
+            XCTAssertNil(store.applyingWallpaperID)
+        }
+    }
+
+    func testVideoDecoderFailurePreservesErrorAndAllowsRetry() async throws {
+        for applyChanges in [false, true] {
+            let folder = try writeVideoProject(entry: "broken.mov")
+            _ = try SyntheticVideoFixture.writeCorrupt(name: "broken", into: folder)
+            let (store, bridge) = try await videoStore(backend: "compatibility")
+            let decoderError = NSError(domain: "VideoDecoder", code: 23)
+            bridge.applyError = decoderError
+
+            do {
+                if applyChanges {
+                    try await store.applyWallpaperOptionsAsync(wallpaperId: "failing")
+                } else {
+                    try await store.activateWallpaperAsync(id: "failing", displayId: "primary")
+                }
+                XCTFail("A decoder failure must not be reported as a successful application")
+            } catch {
+                XCTAssertEqual((error as NSError).domain, decoderError.domain)
+                XCTAssertEqual((error as NSError).code, decoderError.code)
+            }
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "")
+            XCTAssertFalse(store.activationNeedsRefresh)
+            XCTAssertNil(store.activatingWallpaperID)
+            XCTAssertNil(store.applyingWallpaperID)
+
+            _ = try writeVideoProject(entry: "compatibility.mkv")
+            _ = try SyntheticVideoFixture.writeMatroska(name: "compatibility", into: folder)
+            bridge.applyError = nil
+            if applyChanges {
+                try await store.applyWallpaperOptionsAsync(wallpaperId: "failing")
+            } else {
+                try await store.activateWallpaperAsync(id: "failing", displayId: "primary")
+            }
+            XCTAssertEqual(store.monitorInformationSnapshot.rows.first?.wallpaperId, "failing")
+        }
+    }
+
+    private func writeVideoProject(entry: String?) throws -> URL {
+        let folder = home.appendingPathComponent("Library/failing", isDirectory: true)
+        var manifest = ["type": "video", "title": "Video"]
+        manifest["file"] = entry
+        try JSONSerialization.data(withJSONObject: manifest)
+            .write(to: folder.appendingPathComponent("project.json"))
+        return folder
+    }
+
+    private func videoStore(backend: String) async throws -> (BridgeStore, ApplyFailureBridge) {
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        bridge.kind = .video
+        bridge.videoBackend = backend
+        bridge.applyError = nil
+        let store = BridgeStore(bridge: bridge)
+        try await store.refreshAllAsync()
+        return (store, bridge)
+    }
+
     func testSupportPromptWaitsForSuccessfulDownloadedActivation() async throws {
         let suite = UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -180,6 +283,8 @@ private final class ApplyFailureBridge: WallpaperBridge {
     var applyError: Error? = WallpaperActionError(
         message: "The wallpaper did not render a first frame within 90 seconds.")
     var snapshotsFail = false
+    var kind: BridgeWallpaperKind = .projectScene
+    var videoBackend = "compatibility"
     var reportsActivation = true
     var holdApply: (@MainActor () async -> Void)?
     /// Whether the wallpaper was already active when the library rescan reached the bridge.
@@ -208,7 +313,7 @@ private final class ApplyFailureBridge: WallpaperBridge {
     override func wallpaperOptionsSnapshot(
         wallpaperId: String
     ) async throws -> BridgeWallpaperOptionsSnapshot {
-        Self.options
+        options
     }
 
     override func applyWallpaperOptions(
@@ -224,14 +329,14 @@ private final class ApplyFailureBridge: WallpaperBridge {
     private var active = false
 
     var bundle: BridgeSnapshotBundle {
-        BridgeSnapshotBundle(app: Self.app, library: Self.library, wallpaperOptions: Self.options,
-                             monitorInformation: monitors, settings: Self.settings)
+        BridgeSnapshotBundle(app: Self.app, library: library, wallpaperOptions: options,
+                             monitorInformation: monitors, settings: settings)
     }
 
     private var mutation: BridgeWallpaperMutationBundle {
-        BridgeWallpaperMutationBundle(app: Self.app, library: Self.library,
-                                      wallpaperOptions: Self.options,
-                                      monitorInformation: monitors, settings: Self.settings)
+        BridgeWallpaperMutationBundle(app: Self.app, library: library,
+                                      wallpaperOptions: options,
+                                      monitorInformation: monitors, settings: settings)
     }
 
     private var monitors: BridgeMonitorInformationSnapshot {
@@ -247,24 +352,32 @@ private final class ApplyFailureBridge: WallpaperBridge {
         playbackState: .playing, selectedWallpaperId: "failing",
         activeWallpaperIds: [], errors: [])
 
-    private static let library = BridgeLibrarySnapshot(
-        wallpapers: [BridgeWallpaperEntry(id: "failing", title: "Failing", kind: .projectScene,
-                                          supported: true, active: false, selected: true,
-                                          previewPath: nil)],
-        scanStatus: BridgeLibraryScanStatus(scanning: false, done: 1, total: 1),
-        sceneCount: 1, videoCount: 0, webpageCount: 0, unknownCount: 0)
+    private var library: BridgeLibrarySnapshot {
+        BridgeLibrarySnapshot(
+            wallpapers: [BridgeWallpaperEntry(id: "failing", title: "Failing", kind: kind,
+                                              supported: true, active: false, selected: true,
+                                              previewPath: nil)],
+            scanStatus: BridgeLibraryScanStatus(scanning: false, done: 1, total: 1),
+            sceneCount: kind == .projectScene ? 1 : 0, videoCount: kind == .video ? 1 : 0,
+            webpageCount: 0, unknownCount: 0)
+    }
 
-    private static let options = BridgeSnapshotFixtures.options(
-        wallpaperId: "failing", title: "Failing",
-        displayConfigurations: [BridgeDisplayConfigRow(
-            displayId: "primary", title: "Primary", enabled: false, scalingMode: .fill,
-            scalingFactor: 1, targetFps: 30, maxFps: 60, muted: false, volume: 1,
-            dirty: false, canRestoreDefaults: false)],
-        audioResponseEnabled: false)
+    private var options: BridgeWallpaperOptionsSnapshot {
+        BridgeSnapshotFixtures.options(
+            wallpaperId: "failing", title: "Failing", kind: kind,
+            displayConfigurations: [BridgeDisplayConfigRow(
+                displayId: "primary", title: "Primary", enabled: false, scalingMode: .fill,
+                scalingFactor: 1, targetFps: 30, maxFps: 60, muted: false, volume: 1,
+                dirty: false, canRestoreDefaults: false)],
+            audioResponseEnabled: false)
+    }
 
-    private static let settings = BridgeSnapshotFixtures.settings(
-        displays: [BridgeDisplaySettingsRow(
-            displayId: "primary", title: "Primary", enabled: true, mode: .standalone,
-            mirrorTargets: [], selectedMirrorTarget: nil, scalingMode: .fill, scalingFactor: 1,
-            targetFps: 30, maxFps: 60, muted: false, volume: 1)])
+    private var settings: BridgeSettingsSnapshot {
+        BridgeSnapshotFixtures.settings(
+            displays: [BridgeDisplaySettingsRow(
+                displayId: "primary", title: "Primary", enabled: true, mode: .standalone,
+                mirrorTargets: [], selectedMirrorTarget: nil, scalingMode: .fill, scalingFactor: 1,
+                targetFps: 30, maxFps: 60, muted: false, volume: 1)],
+            videoBackend: videoBackend)
+    }
 }

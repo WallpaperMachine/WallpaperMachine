@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import Observation
 
@@ -188,7 +187,7 @@ final class BridgeStore {
             throw WallpaperActionError(message: String(localized: "No configuration is available for this display. Refresh Displays and retry."))
         }
         try validatePendingWallpaperEdits(id: id, options: options)
-        try await validateWallpaperForPlaybackAsync(id: id)
+        try validateWallpaperForPlayback(id: id)
         try await commitPendingWallpaperEditsAsync(id: id)
         // Validation and async draft commits may outlive a display topology change.
         try validateActivationTarget(displayId)
@@ -573,7 +572,7 @@ final class BridgeStore {
         let previousDisplays = Set(monitorInformationSnapshot.rows.filter {
             $0.wallpaperId == wallpaperId && $0.mirrorTargetDisplayId == nil
         }.map(\.displayId))
-        try await validateWallpaperForPlaybackAsync(id: wallpaperId)
+        try validateWallpaperForPlayback(id: wallpaperId)
         try await commitPendingWallpaperEditsAsync(id: wallpaperId)
         do {
             try await applyValidatedWallpaperOptionsAsync(wallpaperId: wallpaperId)
@@ -591,12 +590,17 @@ final class BridgeStore {
         }
     }
 
-    private func validateWallpaperForPlaybackAsync(id wallpaperId: String) async throws {
+    private func validateWallpaperForPlayback(id wallpaperId: String) throws {
         let folder = ClientPaths.libraryURL.appendingPathComponent(wallpaperId)
         let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("project.json"))) as? [String: Any]
-        if let file = manifest?["file"] as? String, (manifest?["type"] as? String)?.lowercased() == "video" {
-            let asset = AVURLAsset(url: folder.appendingPathComponent(file))
-            guard try await asset.load(.isPlayable), !(try await asset.loadTracks(withMediaType: .video)).isEmpty else {
+        if (manifest?["type"] as? String)?.lowercased() == "video" {
+            // AVFoundation admission belongs to the native host, which can hand
+            // unsupported containers/codecs to Compatibility. Applying must let
+            // the chosen backend try decoding and report its own failures.
+            guard let file = manifest?["file"] as? String, !file.isEmpty,
+                  let values = try? folder.appendingPathComponent(file).resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true, (values.fileSize ?? 0) > 0,
+                  FileManager.default.isReadableFile(atPath: folder.appendingPathComponent(file).path) else {
                 throw NSError(domain: "WallpaperMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "This video cannot be decoded. Import a complete, playable video file before applying it.")])
             }
         }
