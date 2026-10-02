@@ -940,6 +940,109 @@ TEST_F(MetalSceneDraw, ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOf
     }
 }
 
+TEST_F(MetalSceneDraw, LightingViewDirectionFollowsTheAuthoredSceneThroughEffects)
+{
+    // Original shaders reproduce the view-dependent lighting shape, without
+    // private assets or the compatibility lighting helper. A 2D eye on the
+    // layer's plane must not turn front-facing artwork into ambient-only RGB.
+    for (bool ortho : { true, false }) {
+        for (bool effect : { false, true }) {
+            SCOPED_TRACE(std::string(ortho ? "2D" : "perspective") +
+                         (effect ? " effect" : " direct"));
+            const auto directory = root_ / (std::string(ortho ? "ortho" : "perspective") +
+                                             (effect ? "-effect" : "-direct"));
+            const auto project = WriteFixture(directory);
+            const std::string vertex = R"(
+attribute vec3 a_Position;
+attribute vec2 a_TexCoord;
+varying vec2 v_TexCoord;
+varying vec3 v_ViewDir;
+void main() {
+    gl_Position = vec4(a_TexCoord * 2.0 - 1.0, 0.0, 1.0);
+    v_TexCoord = a_TexCoord;
+    v_ViewDir = vec3(1.0, 0.0, 0.0);
+}
+)";
+            const std::string lighting = R"(
+#if SCENE_ORTHO
+    vec3 view = vec3(0.0, 0.0, 1.0);
+#else
+    vec3 view = normalize(v_ViewDir);
+#endif
+    // The unlit half must retain its authored colour under either projection.
+    if (v_TexCoord.x > 0.5)
+        color.rgb *= 0.2 + 0.8 * max(dot(vec3(0.0, 0.0, 1.0), view), 0.0);
+    gl_FragColor = color;
+}
+)";
+            const std::string declarations =
+                "varying vec2 v_TexCoord;\nvarying vec3 v_ViewDir;\n";
+            std::ofstream(directory / "shaders/metal_probe.vert") << vertex;
+            std::ofstream(directory / "shaders/metal_probe.frag") << declarations <<
+                "void main() {\nvec4 color = vec4(0.25, 0.5, 0.75, 1.0);\n" <<
+                (effect ? "gl_FragColor = color;\n}\n" : lighting);
+            auto material = nlohmann::json::parse(
+                std::ifstream(directory / "materials/tile.json"));
+            // The scene owns this switch even if a stale material disagrees.
+            material["passes"][0]["combos"]["SCENE_ORTHO"] = ortho ? 0 : 1;
+            std::ofstream(directory / "materials/tile.json") << material;
+            auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+            if (! ortho) layout["general"]["orthogonalprojection"] = nullptr;
+            if (effect) {
+                std::filesystem::create_directories(directory / "effects");
+                std::ofstream(directory / "effects/view.json") <<
+                    R"({"name":"view lighting","passes":[{"material":"materials/view.json"}]})";
+                material["passes"][0]["shader"] = "view";
+                material["passes"][0]["textures"] = nlohmann::json::array({ nullptr });
+                std::ofstream(directory / "materials/view.json") << material;
+                std::ofstream(directory / "shaders/view.vert") << vertex;
+                std::ofstream(directory / "shaders/view.frag") <<
+                    "uniform sampler2D g_Texture0;\n" << declarations <<
+                    "void main() {\nvec4 color = texture(g_Texture0, v_TexCoord);\n" << lighting;
+                layout["objects"][0]["effects"] = nlohmann::json::array({
+                    { { "file", "effects/view.json" }, { "visible", true } }
+                });
+            }
+            std::ofstream(directory / "layout.json") << layout;
+            LoadedScene loaded;
+            std::string error;
+            ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+            auto& scene = *loaded.scene;
+            const auto graph = sceneToRenderGraph(scene);
+            ASSERT_NE(graph, nullptr);
+            @autoreleasepool {
+                CAMetalLayer* layer = [CAMetalLayer layer];
+                layer.device = MTLCreateSystemDefaultDevice();
+                layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+                layer.drawableSize = CGSizeMake(384, 256);
+                MetalRender render;
+                ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                    .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                    .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+                }));
+                ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_GT(width, 0u);
+                ASSERT_GT(height, 0u);
+                for (bool lit : { false, true }) {
+                    const auto offset = ((height / 2) * width + width * (lit ? 3 : 1) / 4) * 4;
+                    for (size_t channel = 0; channel < 3; ++channel) {
+                        const float albedo = 0.25f * (channel + 1);
+                        const float gain = lit && ! ortho ? 0.2f : 1.0f;
+                        EXPECT_NEAR(pixels[offset + channel], 255.0f * albedo * gain, 1.0f);
+                    }
+                    EXPECT_EQ(pixels[offset + 3], 255u);
+                }
+                render.destroy();
+            }
+        }
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the

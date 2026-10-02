@@ -1288,6 +1288,10 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
         pWPShaderInfo->combos[el.first] = std::to_string(el.second);
     }
     pWPShaderInfo->combos["HDR"] = pScene->hdr ? "1" : "0";
+    // This describes the authored scene, not an effect pass's local camera.
+    // Lit 2D layers use a fixed view direction; a perspective eye on their
+    // plane makes their normal/view dot product zero.
+    pWPShaderInfo->combos["SCENE_ORTHO"] = pScene->display_sized ? "0" : "1";
 
     if (exists(pWPShaderInfo->combos, "LIGHTING")) {
         // pWPShaderInfo->combos["PRELIGHTING"] =

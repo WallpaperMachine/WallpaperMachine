@@ -635,6 +635,18 @@ desktop, or modify the imported wallpaper.
 
 ### HDR bloom, emissive masks and interactive scenes
 
+Material compilation sets `SCENE_ORTHO` from the authored scene projection on
+both backends, including effect passes. A 2D layer must use the shader's fixed
+view direction rather than a perspective eye on the layer's plane, which can
+reduce its lighting to ambient-only. Material overrides cannot change this
+scene-owned switch; the shader request/cache key includes it. This adds no
+passes, textures or per-frame CPU work. The original GPU regression
+`MetalSceneDraw.LightingViewDirectionFollowsTheAuthoredSceneThroughEffects`
+checks lit and unlit pixels for both projections, directly and through effects.
+This fixes projection selection, not the existing approximate
+`PerformLighting_V1` compatibility helper; full authored-light parity remains
+unverified.
+
 An authored `hdr` scene uses RGBA16F color intermediates on both backends.
 Masks and source media remain in their original formats; SDR scenes retain
 RGBA8. HDR shader combos are enabled before compilation, not approximated by
