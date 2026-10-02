@@ -1667,6 +1667,97 @@ fn pipeline_uses_annotation_combo_defaults_as_compile_macros() {
 }
 
 #[test]
+fn conditional_texture_annotations_enable_the_sampled_mask_on_both_backends() {
+    // The switch is declared inside the branch it enables, including through
+    // an include. Discovering it after condition stripping loses the mask.
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for (present, override_value, expected) in [
+            (true, None, true),
+            (false, None, false),
+            (true, Some("0"), false),
+            (true, Some("1"), true),
+        ] {
+            let mut provider = InMemoryShaderSourceProvider::new();
+            provider.insert(
+                IncludePath::new("mask.h").unwrap(),
+                concat!(
+                    "#if USE_MASK\n",
+                    "uniform sampler2D g_Texture2; // {\"combo\":\"USE_MASK\",\"default\":\"util/white\"}\n",
+                    "// [COMBO] {\"combo\":\"MASK_CHANNEL\",\"default\":1}\n",
+                    "#endif\n",
+                ),
+            );
+            let pipeline = DefaultShaderPipeline::new(provider, NagaCompiler);
+            let mut request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/conditional_texture").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(
+                ShaderStageKind::Vertex,
+                concat!(
+                    "attribute vec2 a_Position;\n",
+                    "#if USE_MASK\n",
+                    "varying vec2 v_MaskUV;\n",
+                    "#endif\n",
+                    "void main() {\n",
+                    "  gl_Position = vec4(a_Position, 0.0, 1.0);\n",
+                    "#if USE_MASK\n",
+                    "  v_MaskUV = a_Position * 0.5 + 0.5;\n",
+                    "#endif\n",
+                    "}\n",
+                ),
+            ))
+            .stage(ShaderStageSource::new(
+                ShaderStageKind::Fragment,
+                concat!(
+                    "#include \"mask.h\"\n",
+                    "#if USE_MASK\n",
+                    "varying vec2 v_MaskUV;\n",
+                    "#endif\n",
+                    "void main() {\n",
+                    "  float mask = 1.0;\n",
+                    "#if USE_MASK\n",
+                    "  mask = texture2D(g_Texture2, v_MaskUV)[MASK_CHANNEL];\n",
+                    "#endif\n",
+                    "  gl_FragColor = vec4(mask);\n",
+                    "}\n",
+                ),
+            ))
+            .texture(ShaderTextureInfo::with_presence(
+                TextureSlot::new(2).unwrap(),
+                present,
+                true,
+                TextureFormatHint::Rgba8,
+                [shader::TextureComponentState::disabled(); 4],
+            ));
+            if let Some(value) = override_value {
+                request = request.combo(ShaderComboValue::new(
+                    ComboName::new("USE_MASK").unwrap(),
+                    value,
+                ));
+            }
+            let program = pipeline.compile(&request.build().unwrap()).unwrap();
+            let slots: Vec<_> = program
+                .reflection()
+                .active_texture_slots()
+                .iter()
+                .map(|slot| slot.index())
+                .collect();
+            assert_eq!(
+                slots,
+                if expected { vec![2] } else { vec![] },
+                "{target:?}, present={present}, override={override_value:?}"
+            );
+            assert_eq!(
+                program.reflection().descriptor_bindings().iter()
+                    .any(|binding| binding.name() == "g_Texture2"),
+                expected
+            );
+        }
+    }
+}
+
+#[test]
 fn disabled_texture_slots_do_not_enable_texture_annotation_combos() {
     let pipeline = pipeline();
     let request =

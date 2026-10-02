@@ -3242,6 +3242,70 @@ TEST_F(PlaybackGPU, LiveTexelSizeOverridesParseDefaultsWhileMaterialValuesStayLi
     ExpectSolid(Read(pass.desc().vk_output), { 128, 64, 255, 255 });
 }
 
+TEST_F(PlaybackGPU, AConditionalMaskKeepsPulsesOutOfTheMaskedRegion) {
+    auto owned_images = std::make_unique<RuntimeImageSource>(nullptr);
+    auto* images = owned_images.get();
+    scene.imageParser = std::move(owned_images);
+    Bytes mask(32 * 32 * 4, 255);
+    for (size_t y = 0; y < 32; ++y)
+        for (size_t x = 0; x < 16; ++x)
+            mask[(y * 32 + x) * 4] = 0;
+    images->SetRgbaImage("$conditionalMask", 32, 32, mask.data(), mask.size());
+
+    shader::RustShaderRequest request;
+    request.shader_name = "conditional-mask-pulse";
+    request.scene_id = "synthetic";
+    request.cache_enabled = false;
+    request.textures.push_back(shader::RustShaderTextureInfo {
+        .slot = 0, .present = true, .enabled = true });
+    request.stages = {
+        { ShaderType::VERTEX,
+          "attribute vec2 a_Position;\nvarying vec2 v_Uv;\n"
+          "void main() { v_Uv = a_Position * 0.5 + vec2(0.5);"
+          "gl_Position = vec4(a_Position, 0.0, 1.0); }\n" },
+        { ShaderType::FRAGMENT,
+          "varying vec2 v_Uv;\nuniform vec4 g_TestColor;\n"
+          "#if USE_MASK\n"
+          "uniform sampler2D g_Texture0; // {\"combo\":\"USE_MASK\"}\n"
+          "#endif\n"
+          "void main() {\n"
+          "  float mask = 1.0;\n"
+          "#if USE_MASK\n"
+          "  mask = texture2D(g_Texture0, v_Uv).r;\n"
+          "#endif\n"
+          "  gl_FragColor = mix(vec4(0.0, 0.0, 0.25, 1.0), g_TestColor, mask);\n"
+          "}\n" },
+    };
+    shader::RustShaderOutput compiled;
+    ASSERT_TRUE(shader::CompileRustShaderProgram(request, compiled));
+    auto program = std::make_shared<SceneShader>();
+    program->name = request.shader_name;
+    program->codes = std::move(compiled.codes);
+    program->rust_reflection_json = std::move(compiled.reflection_json);
+    auto& pass = Pass(true, true, {}, false, VK_SAMPLE_COUNT_1_BIT, program,
+                     [](CustomShaderPass::Desc& desc) { desc.textures = {"$conditionalMask"}; });
+    for (int frame = 0; frame < 6; ++frame) {
+        SCOPED_TRACE(frame);
+        const bool bright = frame % 2 == 0;
+        updater->color = bright ? std::array<float, 4> {1, 1, 1, 1}
+                                : std::array<float, 4> {0, 0, 0, 1};
+        Draw(pass);
+        const auto pixels = Read(pass.desc().vk_output);
+        ASSERT_EQ(pixels.size(), 32u * 32u * 4u);
+        for (size_t y = 0; y < 32; ++y) {
+            const size_t masked = (y * 32 + 4) * 4;
+            const size_t lit = (y * 32 + 28) * 4;
+            EXPECT_EQ(pixels[masked], 0);
+            EXPECT_EQ(pixels[masked + 1], 0);
+            EXPECT_EQ(pixels[masked + 2], 64);
+            EXPECT_EQ(pixels[masked + 3], 255);
+            for (size_t channel = 0; channel < 3; ++channel)
+                EXPECT_EQ(pixels[lit + channel], bright ? 255 : 0);
+            EXPECT_EQ(pixels[lit + 3], 255);
+        }
+    }
+}
+
 // A texture slot whose name joins the runtime image source after prepare is
 // resolved through that source from the next frame on.
 TEST_F(PlaybackGPU, RuntimeImagePublishedAfterPrepareReachesTheNextFrame) {

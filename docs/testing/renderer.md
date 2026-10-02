@@ -917,7 +917,7 @@ conditional helper headers, source-defined `log10`, legacy scalar/vector
 argument conversion, compound assignment narrowing, and scalar initializer
 conversion. The pipeline revision is part of the cache key and is bumped
 whenever codegen can produce different output for source that already
-compiled; it is 8 now, and each bump invalidates previously compiled programs.
+compiled; it is 9 now, and each bump invalidates previously compiled programs.
 
 It also absorbs idioms author shaders inherit from the permissive path they
 were written against, each of which otherwise drops a whole effect rather than
@@ -950,6 +950,20 @@ the combo stays 0. Feeding the defaulted list back turned every
 corner radius from a white default instead of `u_Radius` and masked the layer
 it was applied to into a circle. A slot the combo leaves unsampled is cleared
 afterwards, so nothing holds a texture it never reads.
+
+Texture-driven switches are discovered before stripping conditional branches:
+`#if USE_MASK` can contain the sampler annotation that defines `USE_MASK`.
+Discovering it only after preprocessing dropped authored masks and let localized
+brightness pulses affect the whole image. Only texture-derived switches are
+seeded this way; ordinary combo defaults still follow evaluated branches, and
+explicit material overrides still win. This is compile-time work, with no added
+render passes, temporal filtering or quality reduction. An active mask retains
+its texture and sampling cost, as the authored shader requires.
+`conditional_texture_annotations_enable_the_sampled_mask_on_both_backends`
+covers includes, cross-stage switches, absent/default-only textures and explicit
+overrides for SPIR-V and MSL. `PlaybackGPU.AConditionalMaskKeepsPulsesOutOfTheMaskedRegion`
+reads six alternating-brightness frames: masked pixels stay fixed while the
+unmasked region continues to pulse.
 
 ## Rust crates
 

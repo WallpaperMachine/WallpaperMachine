@@ -12,8 +12,9 @@ use crate::{
         revision::{COMPILER_OPTIONS_CACHE_SALT, ShaderPipelineRevision},
         stage::StagePipeline,
     },
-    preprocess::PreprocessContext,
+    preprocess::{PreprocessContext, PreprocessedStage},
     reflect::NagaReflector,
+    syntax::{ParsingContext, ShaderSourceText},
 };
 
 pub type DefaultShaderPipeline<P> = ShaderPipeline<P, NagaCompiler, NagaReflector>;
@@ -106,13 +107,16 @@ where
 {
     /// Runs the full pipeline and builds the public program output.
     fn compile(&self) -> ShaderResult<CompiledShaderProgram> {
-        let request_with_metadata_combos =
-            self.request_with_annotation_combo_defaults(&self.pipeline.provider)?;
+        let metadata_sources = PreprocessContext::new(self.request, &self.pipeline.provider)
+            .expand_includes_preserving_conditionals()?;
+        let request_with_metadata_combos = self.request_with_annotation_combo_defaults(
+            &self.pipeline.provider,
+            metadata_sources.stages(),
+        )?;
         let request = request_with_metadata_combos
             .as_ref()
             .unwrap_or(self.request);
         let preprocess_context = PreprocessContext::new(request, &self.pipeline.provider);
-        let metadata_sources = preprocess_context.expand_includes_preserving_conditionals()?;
         let preprocessed = preprocess_context.preprocess()?;
         let stage_inputs =
             ProgramStageInputs::new(preprocessed.stages(), metadata_sources.stages())?;
@@ -194,8 +198,26 @@ where
     fn request_with_annotation_combo_defaults(
         &self,
         provider: &P,
+        metadata_sources: &[PreprocessedStage],
     ) -> ShaderResult<Option<ShaderProgramRequest>> {
-        let preprocess_context = PreprocessContext::new(self.request, provider);
+        // A sampler may declare its own switch inside #if SWITCH. Seed only
+        // texture-derived combos before evaluating that branch; seeding every
+        // annotation would revive ordinary defaults from inactive branches.
+        let mut texture_builder = RequestWithMetadataCombos::new(self.request);
+        for stage in metadata_sources {
+            let module = ParsingContext::new(
+                stage.kind(),
+                ShaderSourceText::new(stage.source()),
+            )?
+            .parse_metadata()?;
+            let textures = module.extract_texture_metadata(self.request.textures())?;
+            for combo in textures.combos() {
+                texture_builder.push_default(combo)?;
+            }
+        }
+        let texture_request = texture_builder.finish()?;
+        let request = texture_request.as_ref().unwrap_or(self.request);
+        let preprocess_context = PreprocessContext::new(request, provider);
         let stages = preprocess_context.preprocess()?;
         let stage_inputs = ProgramStageInputs::parse(stages.stages())?;
         let mut metadata = MetadataMerger::default();
@@ -209,14 +231,10 @@ where
         }
 
         let metadata = metadata.finish();
-        if metadata.combos().is_empty() {
-            return RequestWithMetadataCombos::new(self.request).finish();
-        }
-
-        let mut builder = RequestWithMetadataCombos::new(self.request);
+        let mut builder = RequestWithMetadataCombos::new(request);
         for combo in metadata.combos() {
             builder.push_default(combo)?;
         }
-        builder.finish()
+        Ok(builder.finish()?.or(texture_request))
     }
 }

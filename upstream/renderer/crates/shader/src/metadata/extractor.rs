@@ -1,6 +1,6 @@
 use crate::{
     ShaderMetadata, ShaderResult, ShaderTextureInfo,
-    metadata::builder::MetadataBuilder,
+    metadata::{annotation_json::TextureUniformName, builder::MetadataBuilder},
     syntax::{AnnotationKind, ShaderDeclaration, ShaderModule, SyntaxItem},
 };
 
@@ -16,6 +16,23 @@ impl ShaderModule<'_> {
     /// Returns an error when extracted names or texture slots cannot be
     /// represented by the typed shader model.
     pub fn extract_metadata(&self, textures: &[ShaderTextureInfo]) -> ShaderResult<ShaderMetadata> {
+        self.extract_metadata_kind(textures, false)
+    }
+
+    /// Discovers texture-driven switches even inside the branches they enable.
+    /// Ordinary combo defaults must still follow evaluated conditionals.
+    pub(crate) fn extract_texture_metadata(
+        &self,
+        textures: &[ShaderTextureInfo],
+    ) -> ShaderResult<ShaderMetadata> {
+        self.extract_metadata_kind(textures, true)
+    }
+
+    fn extract_metadata_kind(
+        &self,
+        textures: &[ShaderTextureInfo],
+        textures_only: bool,
+    ) -> ShaderResult<ShaderMetadata> {
         let extractor = MetadataExtractor {
             module: self,
             textures,
@@ -26,6 +43,7 @@ impl ShaderModule<'_> {
                 default_textures: Vec::new(),
             },
             pending_declaration: None,
+            textures_only,
         };
         extractor.extract()
     }
@@ -38,6 +56,8 @@ struct MetadataExtractor<'src, 'module> {
     module: &'module ShaderModule<'src>,
     /// Runtime texture availability used to derive texture combos.
     textures: &'module [ShaderTextureInfo],
+    /// Seed only texture switches, not defaults from inactive branches.
+    textures_only: bool,
     /// Accumulated metadata fields.
     builder: MetadataBuilder,
     /// Most recent declaration that may receive a same-line JSON annotation.
@@ -60,11 +80,23 @@ impl MetadataExtractor<'_, '_> {
                 SyntaxItem::Annotation(annotation) => {
                     let text = annotation.text_in(self.module);
                     match annotation.kind() {
-                        AnnotationKind::Combo => self.builder.handle_combo_annotation(text)?,
+                        AnnotationKind::Combo if !self.textures_only => {
+                            self.builder.handle_combo_annotation(text)?;
+                        }
+                        AnnotationKind::Combo => {}
                         AnnotationKind::Json => {
                             if let Some(declaration) = self.pending_declaration.take()
                                 && declaration.has_same_line_annotation(self.module, annotation)
                             {
+                                if self.textures_only
+                                    && (TextureUniformName {
+                                        source: declaration.name().unwrap_or_default(),
+                                    })
+                                    .slot()?
+                                    .is_none()
+                                {
+                                    continue;
+                                }
                                 self.builder.handle_uniform_annotation(
                                     declaration,
                                     text,
