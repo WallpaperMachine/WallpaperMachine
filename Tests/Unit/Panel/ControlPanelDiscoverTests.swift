@@ -530,7 +530,7 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     await workshop.steamCMDSetup.shutdown()
   }
 
-  func testDiscoverTilesRevealTheAnimatedPreviewOnlyWhileItIsBrightWithoutWindow() async throws {
+  func testDiscoverPreviewsPlayWithoutCanvasReadbackAndReleaseOffscreenImages() async throws {
     let fixture = makeStore()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "web-live-\(UUID().uuidString)")
@@ -542,8 +542,8 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     let bright = try Self.gif(frames: 3, brightness: 0.9)
     let black = try Self.gif(frames: 9, brightness: 0, closing: 0.9)
     let still = try Self.gif(frames: 1, brightness: 0.9)
-    // One download yields both the still and the animation. `b` is black but for one brief
-    // closing frame, which the still pass picks: a bright still over an animation that reads black. `c`'s still arrives last; no animation may start before it.
+    // One download yields both the still and the animation, including an authored dark fade.
+    // `c`'s still arrives last; no animation may start before it.
     let fetcher = PreviewFetcher(delay: { $0.path.contains("/c/") ? .milliseconds(400) : .zero }) { url in
       if url.path.contains("/c/") { return still }
       if url.path.contains("/b/") { return black }
@@ -601,6 +601,13 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
             await new Promise(resolve => setTimeout(resolve, 25));
           }
         };
+        // A stalled graphics backend must not be consulted to reveal a preview. Throw rather
+        // than actually hanging WebKit so the old synchronous canvas path fails deterministically.
+        let canvasRequests = 0;
+        HTMLCanvasElement.prototype.getContext = function() {
+          canvasRequests++;
+          throw new Error('Canvas rendering unavailable');
+        };
         const item = id => ({ id, title: `Tile ${id}`, creator: 'Test', summary: '', preview: `https://images.steamusercontent.com/ugc/${id}/preview/`,
           thumbnail: `mwe-ui://thumbnail/${id}`, animated: `mwe-ui://animated/${id}`, tags: ['Scene'], size: 1, subscriptions: 0, kind: 'Scene' });
         const grid = document.getElementById('wallpaper-grid');
@@ -616,10 +623,9 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
         const tile = id => grid.querySelector(`.wallpaper-tile[data-key="${id}"]`);
         const stillOf = id => tile(id)?.querySelector('img.tile-still');
         const liveOf = id => tile(id)?.querySelector('img.tile-live');
-        const diagnose = () => ['a', 'b', 'c'].map(id => `${id}: still=${stillOf(id)?.complete}/${stillOf(id)?.naturalWidth} live=${!!liveOf(id)}/${liveOf(id)?.complete}/${liveOf(id)?.naturalWidth} playing=${tile(id)?.classList.contains('playing')}`).join('; ');
-        // The panel samples animation brightness only while its page is visible. This web view
-        // has no window, so WebKit reports the page hidden: first prove no animation loads then,
-        // then show the page the way a visibility change would and let the sampling start.
+        const diagnose = () => `canvas requests=${canvasRequests}; ` + ['a', 'b', 'c'].map(id => `${id}: still=${stillOf(id)?.complete}/${stillOf(id)?.naturalWidth} live=${!!liveOf(id)}/${liveOf(id)?.complete}/${liveOf(id)?.naturalWidth} playing=${tile(id)?.classList.contains('playing')}`).join('; ');
+        // A windowless page is hidden. First prove no animation loads, then make it visible
+        // without opening a window and let real image-load events reveal the previews.
         let hiddenPlayed = null;
         try {
           if (!document.hidden) return { error: 'expected a windowless page to report itself hidden' };
@@ -628,8 +634,8 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
           if (grid.querySelector('img.tile-live')) throw new Error('hidden previews must not load animations');
           Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
           document.dispatchEvent(new Event('visibilitychange'));
-          await waitFor(() => tile('a')?.classList.contains('playing'), 'the bright animation to play');
-          await waitFor(() => liveOf('b')?.complete && liveOf('b').naturalWidth > 0, 'the black animation to arrive');
+          await waitFor(() => tile('a')?.classList.contains('playing') && tile('b')?.classList.contains('playing'), 'both animations to play without canvas access');
+          await waitFor(() => !liveOf('c'), 'single-frame preview to keep its still');
         } catch (error) { return { error: `${error.message} — ${diagnose()}` }; }
         await new Promise(resolve => setTimeout(resolve, 700));
         const discover = {
@@ -639,6 +645,9 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
           bLoaded: !!liveOf('b'), bPlaying: tile('b').classList.contains('playing'),
           cLive: !!liveOf('c'), cStill: !!stillOf('c'), hiddenPlayed,
         };
+        // A failed animation returns to the cached still instead of leaving an empty tile.
+        liveOf('b').dispatchEvent(new Event('error'));
+        discover.failedAnimationFallback = !liveOf('b') && !!stillOf('b') && !tile('b').classList.contains('playing');
         // Shrink to one visible tile. Scrolling releases offscreen decoders, but returning
         // to a tile reuses the disk cache. A failed/single-frame animation is not retried.
         grid.style.gridTemplateColumns = '1fr'; grid.style.maxHeight = '160px';
@@ -672,6 +681,7 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
         } catch (error) { return { error: `${error.message} — ${diagnose()}` }; }
         await new Promise(resolve => setTimeout(resolve, 500));
         return Object.assign(discover, {
+          canvasRequests,
           installedStillOpacity: getComputedStyle(stillOf('a')).opacity, installedLive: !!liveOf('a'),
         });
         """, arguments: ["base": base], in: nil, contentWorld: .page) as? [String: Any]
@@ -682,16 +692,18 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     XCTAssertEqual(result?["eagerStills"] as? Bool, true, "Discover stills are not lazy-loaded")
     XCTAssertEqual(
       result?["hiddenPlayed"] as? Bool, false,
-      "A hidden page samples no animation brightness, so nothing starts playing")
+      "A hidden page does not load or reveal animations")
+    XCTAssertEqual(result?["canvasRequests"] as? Int, 0, "Preview playback never waits on synchronous canvas rendering")
+    XCTAssertEqual(result?["failedAnimationFallback"] as? Bool, true, "A failed animation reveals its cached still")
     XCTAssertEqual(result?["retiredSource"] as? Bool, true, "Offscreen images release their source and leave the DOM")
     XCTAssertEqual(result?["failedPreviewRetried"] as? Bool, false, "Scrolling does not retry a single-frame preview")
     XCTAssertEqual(result?["hiddenAnimations"] as? Int, 0, "Hiding the page releases all animation sources")
     XCTAssertEqual(result?["settingsAnimations"] as? Int, 0, "Settings retains no Discover animation sources")
-    XCTAssertEqual(result?["aPlaying"] as? Bool, true, "A bright animation replaces its still")
-    XCTAssertEqual(result?["aStillKept"] as? Bool, true, "The still stays underneath for the dark loops")
-    XCTAssertEqual(result?["bLoaded"] as? Bool, true, "The black animation loads beneath its still")
+    XCTAssertEqual(result?["aPlaying"] as? Bool, true, "A loaded animation replaces its still")
+    XCTAssertEqual(result?["aStillKept"] as? Bool, true, "The still stays available as a fallback")
+    XCTAssertEqual(result?["bLoaded"] as? Bool, true, "A dark animation also loads")
     XCTAssertEqual(
-      result?["bPlaying"] as? Bool, false, "A black animation never replaces a bright still")
+      result?["bPlaying"] as? Bool, true, "Authored dark frames play without synchronous brightness checks")
     XCTAssertEqual(result?["cLive"] as? Bool, false, "A single-frame preview gets no animation layer")
     XCTAssertEqual(result?["cStill"] as? Bool, true)
     XCTAssertEqual(

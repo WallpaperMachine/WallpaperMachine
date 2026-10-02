@@ -56,8 +56,11 @@ Swift tests cover, without starting the app:
   lane and refuses single-frame sources without a request; the scheme handler
   refuses thumbnail and animated ids it has not announced. An offscreen WebKit
   regression (`ControlPanelDiscoverTests`) checks that Discover tiles load the
-  still first, admit the animation beneath it, fade the still out only for a
-  bright animation and never for a black one, and skip single-frame previews.
+  still first, reveal loaded animations (including authored dark frames) with
+  canvas access unavailable, fall back to the still on animation failure, and
+  skip single-frame previews. It also checks offscreen/hidden source release,
+  cached resume, and returning to Installed without an animation layer. This
+  does not reproduce an actual GPU-process hang or prove on-screen smoothness.
   Updates: `WorkshopTests` decodes a recorded details answer (served item,
   withdrawn item, another app's) and checks the request form;
   `WorkshopUpdateStoreTests` covers what counts as outdated, recorded downloads

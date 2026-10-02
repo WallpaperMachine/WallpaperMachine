@@ -110,13 +110,16 @@ is still downloading waits for that download rather than starting another). It
 is fetched again, two at a time on its own lane and then kept, only when that
 copy was pruned or the still predates this layout; a preview the still pass
 found to be a single frame is refused without a request. The animation is
-placed beneath the still, not over it. Steam's GIFs often open on, and loop
-back through, black frames, so the panel samples each playing animation four
-times a second on a 16px canvas (both images are served with CORS headers, so
-the canvas stays readable) and fades the still out only while the animation is
-at least 60% as bright as the still, fading it back in below 40%. A tile
-therefore never shows black where its still was bright. Leaving the page or
-flipping to another one drops the pending animation requests. The inspector
+placed beneath the still and revealed by its image-load event; a load failure
+keeps the still visible. The original animation plays as authored, including
+black fades. The panel does not sample animation pixels: synchronous WebKit
+canvas draw/readback calls can block its JavaScript thread in repeated
+15-second graphics-process waits, making every control appear frozen even
+while the native app remains responsive. Bright still selection remains in
+the native ImageIO cache, off the panel's JavaScript thread.
+Scrolling a tile offscreen, hiding the document, or leaving Discover releases
+its animation source; returning to a visible tile reuses the disk cache.
+Flipping to another page drops the pending animation requests. The inspector
 keeps the full-size preview for the selected item.
 
 ## Collections, authors and subscriptions

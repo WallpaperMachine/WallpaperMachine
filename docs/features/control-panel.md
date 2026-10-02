@@ -76,8 +76,8 @@ without shrinking or truncating the label.
 
 Wallpapers appear as square, image-first tiles with a transparent title overlay.
 Discover tiles show cached still thumbnails first and then, for tiles on
-screen, play Steam's animated preview beneath the still, which only fades out
-while the animation is bright (see
+screen, play Steam's animated preview once it loads, retaining the still as a
+loading/error fallback (see
 [Workshop downloads](workshop-downloads.md#tile-thumbnails)). Animations stop
 when the grid leaves Discover, so an installed copy of the same wallpaper shows
 its library preview on Installed.
@@ -285,10 +285,11 @@ navigation section, using the existing library, playback and download stores.
 Page-local scrolling, filters, disclosures and uncommitted input start fresh.
 An active local import keeps the window hidden until its next close, so releasing
 the page cannot cancel the import. Workshop downloads live in the retained store.
-Discover's live-preview luminance sampler
-(`panel.js`, `sampleLivePreviews`) runs only while Discover is the visible page
-and a ready animated preview is on screen; leaving Discover, hiding the
-document, or running out of ready tiles stops it.
+Discover releases animated preview sources when their tiles scroll offscreen,
+the document hides, or the grid leaves Discover. Returning to a visible tile
+loads its cached animation again. Preview readiness follows image load/error
+events, not a polling timer or synchronous canvas pixel reads; an unresponsive
+WebKit graphics backend must not trap the panel in repeated readback waits.
 
 ### After an update
 
