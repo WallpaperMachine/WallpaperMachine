@@ -50,3 +50,8 @@ __pycache__/
 .conductor/
 .commandcode/
 CLAUDE.local.md
+
+# Root npm files belong to local agent tooling; WebUI has no npm build.
+/node_modules/
+/package.json
+/package-lock.json
