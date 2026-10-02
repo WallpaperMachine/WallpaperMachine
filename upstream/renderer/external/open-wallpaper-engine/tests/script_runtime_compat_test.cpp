@@ -2069,6 +2069,45 @@ TEST(ScriptRuntimeCompat, ScalarTimelineUsesBezierTimeHandlesAndExactInitialKey)
     EXPECT_FLOAT_EQ(animation->Evaluate(1.0), 1.0f);
 }
 
+TEST(ScriptRuntimeCompat, AuthoredColorPropertiesStayVectorsAcrossTicksAndPropertyChanges) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .project_properties = {{"tint", RuntimeScalarValue::String("0.2 0.4 0.8")}},
+    });
+    ASSERT_NE(runtime, nullptr);
+    auto material = std::make_shared<SceneMaterial>();
+    runtime->RegisterMaterialConstant(material, "g_Tint", ResolveVec3Setting(*runtime, {
+        {"value", {1.0f, 1.0f, 1.0f}},
+        {"scriptproperties", {
+            {"tint", {{"value", "0.2 0.4 0.8"}, {"user", "tint"}}},
+            {"caption", "0.1 0.2 0.3"},
+        }},
+        {"script", R"JS(
+export var scriptProperties = createScriptProperties()
+    .addColor({name: 'tint', value: new Vec3(1)})
+    .addColor({name: 'multiplier', value: new Vec3(2)})
+    .addText({name: 'caption', value: ''}).finish();
+export function update(value) {
+    if (typeof scriptProperties.caption !== 'string') throw new Error('text was coerced');
+    return scriptProperties.tint.multiply(scriptProperties.multiplier);
+}
+)JS"},
+    }));
+    const auto expect_tint = [&](float r, float g, float b) {
+        for (int frame = 0; frame < 3; ++frame) {
+            runtime->Tick(1.0 / 60.0);
+            const auto& tint = material->customShader.constValues.at("g_Tint");
+            ASSERT_EQ(tint.size(), 3u);
+            EXPECT_FLOAT_EQ(tint[0], r);
+            EXPECT_FLOAT_EQ(tint[1], g);
+            EXPECT_FLOAT_EQ(tint[2], b);
+        }
+    };
+    expect_tint(0.4f, 0.8f, 1.6f);
+    runtime->ApplyProjectPropertyOverride({{"tint", RuntimeScalarValue::String("0.6 0.3 0.1")}});
+    expect_tint(1.2f, 0.6f, 0.2f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
 TEST(ScriptRuntimeCompat, MaterialConstantUserBindingUpdatesThroughRuntimeProperties) {
     auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
         .project_properties = {
