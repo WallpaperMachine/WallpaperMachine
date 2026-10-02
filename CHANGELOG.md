@@ -8,6 +8,70 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.3 — 2026-10-02
+
+### English
+
+SteamCMD now runs natively on Apple silicon, Workshop presets arrive with their base wallpapers, and many scene, web, video and multi-display problems are fixed
+
+#### Breaking changes
+
+- Existing Intel-only SteamCMD copies must be reinstalled from Settings → Library & Steam, and the app guides you through it
+
+#### New
+
+- Workshop presets can now be imported together with their base wallpaper, which downloads automatically if missing, as one self-contained library entry
+
+#### Improved
+
+- SteamCMD now installs and runs natively on Apple silicon without Rosetta, keeping your sign-in, saved sessions and Workshop downloads
+- Download errors now recognize connection problems and rate limits instead of blaming your Steam credentials for unknown failures
+- Pixiv downloads refused by the server now explain that access was denied instead of suggesting that a short wait will help
+
+#### Fixed
+
+- A deleted wallpaper assigned to one display no longer stops wallpapers from applying on other displays, and reinstalling it restores the assignment
+- Web wallpapers that load WebAssembly from their own files, such as those built with Unity, now start correctly
+- Video wallpapers in formats macOS cannot open itself, such as MKV, are no longer rejected and now try compatibility playback
+- Scenes whose camera parallax has no delay no longer show a flat grey screen and now follow the cursor immediately
+- With Compatibility rendering, some layers no longer show another layer's picture, such as a stained-glass window turning dark
+- Web wallpapers that react to music now receive audio even when no scene wallpaper is running
+- Brightness pulse effects in some scenes now stay inside the areas their authors intended instead of spreading across the picture
+- When the experimental animated lock screen fails to start, your screen saver setting is now kept instead of being changed
+- The frame rate slider in Performance can now cap at your display's full refresh rate, with No limit as its own position
+
+### 简体中文
+
+SteamCMD 现可在 Apple 芯片上原生运行，Workshop 预设会连同其基础壁纸一起导入，同时修复了场景、网页、视频和多显示器方面的诸多问题
+
+#### 不兼容变更
+
+- 现有的仅限 Intel 的 SteamCMD 需要在设置 → 壁纸库与 Steam 中重新安装，应用会引导你完成
+
+#### 新增
+
+- 现在可以将 Workshop 预设连同其基础壁纸一起导入，缺少的基础壁纸会自动下载，并合成为一个独立的壁纸库条目
+
+#### 改进
+
+- SteamCMD 现可在 Apple 芯片上原生安装和运行，无需 Rosetta，并保留你的登录状态、已保存会话和 Workshop 下载
+- 下载错误现在能识别网络连接问题和频率限制，不再把未知故障归咎于你的 Steam 账号凭据
+- 被服务器拒绝的 pixiv 下载现在会说明访问被拒绝，而不是提示稍等片刻即可解决
+
+#### 修复
+
+- 分配给某个显示器的壁纸被删除后不再导致其他显示器无法应用壁纸，重新安装该壁纸即可恢复分配
+- 从自身文件加载 WebAssembly 的网页壁纸（例如使用 Unity 制作的壁纸）现在可以正常启动
+- macOS 自身无法打开的视频壁纸格式（例如 MKV）不再被拒绝，现在会尝试使用兼容播放
+- 相机视差没有延迟的场景不再显示为一片灰屏，现在会立即跟随光标移动
+- 使用兼容渲染时，部分图层不再显示其他图层的画面，例如彩色玻璃窗变暗的问题
+- 随音乐变化的网页壁纸现在即使没有运行场景壁纸也能获取音频
+- 部分场景中的亮度脉冲效果现在会保持在作者设定的区域内，不再扩散到整个画面
+- 实验性的动态锁定屏幕启动失败时，现在会保留你的屏幕保护程序设置，而不会将其更改
+- 性能中的帧率滑块现在可以限制在显示器的完整刷新率，“无限制”单独作为一个档位
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.2...v1.2.3
+
 ## 1.2.2 — 2026-10-01
 
 ### English
