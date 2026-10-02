@@ -18,7 +18,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <thread>
 #include <unordered_map>
@@ -2628,6 +2630,68 @@ TEST(ShaderValueUpdaterCompat, CameraParallaxFollowsTheCursorAndDepthNotThePosit
     EXPECT_LT((displacement(*nested, 0.5f) - moved).norm(), 1e-3f);
     EXPECT_LT((displacement(*centred, 1.0f) - 2.0f * moved).norm(), 1e-3f);
     EXPECT_LT(displacement(*centred, 0.0f).norm(), 1e-3f) << "depth zero stays put";
+}
+
+// A parallax delay of zero is authored as "no smoothing": the cursor is
+// followed at once. Dividing the elapsed time by it made the smoothed cursor
+// NaN, which reached every parallax layer's model matrix, so a scene drew only
+// its clear colour.
+TEST(ShaderValueUpdaterCompat, ZeroParallaxDelayFollowsTheCursorAtOnce) {
+    Scene scene;
+    scene.ortho[0] = 1920;
+    scene.ortho[1] = 1080;
+    auto camera      = std::make_shared<SceneCamera>(1920, 1080, -1.0f, 1.0f);
+    auto camera_node = std::make_shared<SceneNode>();
+    camera_node->SetTranslate(Eigen::Vector3f(960, 540, 0));
+    camera->AttatchNode(camera_node);
+    scene.activeCamera = camera.get();
+
+    auto node = std::make_shared<SceneNode>();
+    auto mesh = std::make_shared<SceneMesh>();
+    mesh->AddMaterial(SceneMaterial {});
+    node->AddMesh(mesh);
+    node->SetTranslate(Eigen::Vector3f(960, 540, 0));
+
+    WPShaderValueUpdater updater(&scene);
+    WPShaderValueData    data;
+    data.parallaxDepth = { 1.0f, 1.0f };
+    updater.SetNodeData(node.get(), data);
+    updater.InitUniforms(node.get(), [](std::string_view name) {
+        return name == "g_ModelMatrix" || name == "g_PointerPosition";
+    });
+    const auto uniforms = [&] {
+        std::map<std::string, ShaderValue, std::less<>> values;
+        sprite_map_t                                    sprites;
+        updater.UpdateUniforms(node.get(), sprites,
+                               [&](std::string_view name, const ShaderValue& v) {
+                                   values[std::string(name)] = v;
+                               });
+        return values;
+    };
+
+    updater.SetCameraParallax({ .enable = true, .amount = 0.5f, .delay = 0.0f,
+                                .mouseinfluence = 0.5f });
+    scene.frameTime = 1.0 / 60.0;
+    updater.FrameBegin();
+    auto values = uniforms();
+    ASSERT_TRUE(values.contains("g_ModelMatrix"));
+    for (std::size_t i = 0; i < 16; ++i) {
+        ASSERT_TRUE(std::isfinite(values["g_ModelMatrix"][i])) << "model matrix element " << i;
+    }
+
+    updater.MouseInput(0.25, 0.75);
+    updater.FrameBegin();
+    values = uniforms();
+    ASSERT_TRUE(values.contains("g_PointerPosition"));
+    EXPECT_FLOAT_EQ(values["g_PointerPosition"][0], 0.25f) << "no delay, no smoothing";
+    EXPECT_FLOAT_EQ(values["g_PointerPosition"][1], 0.75f);
+    for (std::size_t i = 0; i < 16; ++i) {
+        ASSERT_TRUE(std::isfinite(values["g_ModelMatrix"][i])) << "model matrix element " << i;
+    }
+    node->UpdateTrans();
+    const auto model = node->ModelTrans();
+    EXPECT_GT(std::abs(values["g_ModelMatrix"][12] - static_cast<float>(model(0, 3))), 1.0f)
+        << "an off-centre cursor must still move a parallax layer";
 }
 
 // Camera parallax moves a layer through its model matrix, which neither the

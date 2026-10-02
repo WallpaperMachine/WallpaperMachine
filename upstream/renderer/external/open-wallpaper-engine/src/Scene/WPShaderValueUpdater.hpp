@@ -75,9 +75,9 @@ struct WPShaderValueData {
 
 struct WPCameraParallax {
     bool  enable { false };
-    float amount;
-    float delay;
-    float mouseinfluence;
+    float amount { 0.0f };
+    float delay { 0.0f };
+    float mouseinfluence { 0.0f };
     /// The scene is projected by its authored canvas (`orthogonalprojection`),
     /// the 2D case Wallpaper Engine's documentation of parallax describes.
     bool canvas_scene { true };

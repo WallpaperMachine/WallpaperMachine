@@ -41,10 +41,19 @@ void WPShaderValueUpdater::FrameBegin() {
             (((cTime->tm_hour * 60) + cTime->tm_min) * 60 + cTime->tm_sec) / (24.0f * 60.0f
        * 60.0f);
     */
-    double new_time    = m_mouseDelayedTime + m_scene->frameTime;
-    new_time           = new_time > m_parallax.delay ? m_parallax.delay : new_time;
-    m_mouseDelayedTime = new_time;
-    double t           = new_time / m_parallax.delay;
+    // A zero delay (authored as `cameraparallaxdelay: 0`) means no smoothing:
+    // the cursor is followed at once, the limit of the ramp below. Dividing by
+    // it made `t` NaN, which latched into the smoothed cursor and, through
+    // parallax, into every layer's model matrix, so only the clear colour drew.
+    double t = 1.0;
+    if (m_parallax.delay > 0.0f) {
+        double new_time    = m_mouseDelayedTime + m_scene->frameTime;
+        new_time           = new_time > m_parallax.delay ? m_parallax.delay : new_time;
+        m_mouseDelayedTime = new_time;
+        t                  = new_time / m_parallax.delay;
+    } else {
+        m_mouseDelayedTime = 0.0;
+    }
     m_mousePos         = std::array { (float)algorism::lerp(t, m_mousePos[0], m_mousePosInput[0]),
                               (float)algorism::lerp(t, m_mousePos[1], m_mousePosInput[1]) };
 }
