@@ -14,7 +14,7 @@ import subprocess
 from build import build_environment, cargo_environment
 from lib.paths import RENDERER, RENDERER_ARTIFACTS, ROOT
 
-GENERATED_CASE_COUNT = 10
+GENERATED_CASE_COUNT = 11
 
 
 def run(command, log, env, timeout=180, cwd=ROOT):
@@ -216,6 +216,42 @@ void main() {
     return folder / "project.json"
 
 
+def origin_animation_fixture(root):
+    """An opaque intro card must slide offscreen, not hide half the canvas forever."""
+    folder = root / "generated-origin-animation"
+    files = {
+        "project.json": {"title": "Origin curtain timeline", "type": "scene",
+                         "file": "layout.json", "general": {"properties": {}}},
+        "models/card.json": {"width": 192, "height": 256, "material": "materials/card.json"},
+        "materials/card.json": {"passes": [{"shader": "card", "blending": "normal",
+                                            "cullmode": "nocull", "depthtest": "disabled",
+                                            "depthwrite": "disabled"}]},
+        "shaders/card.vert": """uniform mat4 g_ModelViewProjectionMatrix;
+attribute vec3 a_Position;
+void main() {
+    gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1.0);
+}
+""",
+        "shaders/card.frag": "void main() {\n    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n}\n",
+        "layout.json": {
+            "camera": {"center": [0, 0, 0], "eye": [0, 0, 1], "up": [0, 1, 0]},
+            "general": {"clearcolor": [0.2, 0.4, 0.6], "cameraparallax": False,
+                        "orthogonalprojection": {"width": 384, "height": 256}},
+            "objects": [{"id": 1, "name": "curtain", "image": "models/card.json",
+                         "alignment": "left", "origin": {"value": [192, 128, 0], "animation": {
+                             "relative": True,
+                             "options": {"fps": 60, "length": 30, "mode": "single"},
+                             "c0": [{"frame": 0, "value": 0}, {"frame": 30, "value": 192}],
+                         }}}],
+        },
+    }
+    for name, contents in files.items():
+        path = folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents if isinstance(contents, str) else json.dumps(contents))
+    return folder / "project.json"
+
+
 def check_generated_pixels(data, index):
     """Independent assertions so two equally blank/corrupt outputs cannot pass."""
     magic, dimensions, maximum, pixels = data.split(b"\n", 3)
@@ -240,6 +276,11 @@ def check_generated_pixels(data, index):
                 all(abs(channel - expected) <= 1
                     for x, y in [(48, 32), (48, 224)]
                     for channel, expected in zip(pixel(x, y), (26, 51, 77))))
+    if index == 10:
+        # Both halves must reveal the coloured canvas once the curtain finishes.
+        return all(abs(channel - expected) <= 1
+                   for x in (48, 192, 336)
+                   for channel, expected in zip(pixel(x, 128), (51, 102, 153)))
     background = pixel(0, 0)
     # First effect must really draw; empty/hidden nested layers must not leak
     # that earlier effect's pixels. Visible children must survive their clears.
@@ -288,7 +329,8 @@ def main():
         status = run([build / "tests" / binary], out / (binary + ".log"), env, 600)
         report[ binary ] = status
     for project in [*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
-                    perspective_animation_fixture(out / "fixtures"), *args.project]:
+                    perspective_animation_fixture(out / "fixtures"),
+                    origin_animation_fixture(out / "fixtures"), *args.project]:
         project = project.resolve()
         manifest_bytes = project.read_bytes()
         manifest = json.loads(manifest_bytes)

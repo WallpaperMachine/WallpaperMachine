@@ -83,5 +83,16 @@ class PerspectiveCornerPixelTests(unittest.TestCase):
                 self.assertFalse(check_renderer.check_generated_pixels(ppm(shade), 9))
 
 
+class OriginCurtainPixelTests(unittest.TestCase):
+    def test_accepts_both_halves_revealed_after_the_intro(self):
+        self.assertTrue(check_renderer.check_generated_pixels(
+            ppm(lambda u, v: bytes((51, 102, 153))), 10))
+
+    def test_rejects_a_stuck_curtain_or_blank_frame(self):
+        for shade in [lambda u, v: bytes((51, 102, 153)) if u < 0.5 else bytes(3),
+                      lambda u, v: bytes(3)]:
+            self.assertFalse(check_renderer.check_generated_pixels(ppm(shade), 10))
+
+
 if __name__ == "__main__":
     unittest.main()

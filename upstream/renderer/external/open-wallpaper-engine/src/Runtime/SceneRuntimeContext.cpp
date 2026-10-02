@@ -495,6 +495,7 @@ void SceneRuntimeContext::Tick(double frame_time) {
         (void)name;
         if (binding.node == nullptr || binding.value == nullptr ||
             binding.transform_node == nullptr || binding.alignment == nullptr) continue;
+        ApplyNodeOriginAnimation(binding);
         auto& alignment = *binding.alignment;
         const auto& value = binding.value->getVec3();
         if (! (alignment.origin.array() == value.array()).all()) {
@@ -1215,18 +1216,36 @@ void SceneRuntimeContext::RegisterNodeVisibility(std::string name, SceneNode* no
     };
 }
 
+void SceneRuntimeContext::ApplyNodeOriginAnimation(NodeVec3Binding& binding) {
+    if (binding.animation == nullptr || binding.animation->playback == nullptr) return;
+    const auto& animation = *binding.animation;
+    const double frame = animation.playback->frame;
+    if (frame == binding.sampled_animation_frame) return;
+    Eigen::Vector3f origin;
+    for (std::size_t i = 0; i < animation.components.size(); ++i) {
+        const auto& curve = animation.components[i];
+        origin[i] = animation.offset[i] + curve.Evaluate(curve.fps > 0.0 ? frame / curve.fps : 0.0);
+    }
+    binding.value->update(origin);
+    binding.sampled_animation_frame = frame;
+}
+
 void SceneRuntimeContext::RegisterNodeTranslate(std::string name, SceneNode* node,
-                                                std::unique_ptr<DynamicValue> value) {
+                                                std::unique_ptr<DynamicValue> value,
+                                                std::shared_ptr<const NodeOriginAnimation> animation) {
     if (node == nullptr || value == nullptr) return;
 
     RegisterNode(name, node);
-    SetNodeTranslate(name, value->getVec3());
     auto* raw = value.get();
     m_owned_values.push_back(std::move(value));
-    m_node_translate[name] = NodeVec3Binding {
+    auto& binding = m_node_translate[name];
+    binding = NodeVec3Binding {
         .node  = node,
         .value = raw,
+        .animation = std::move(animation),
     };
+    ApplyNodeOriginAnimation(binding);
+    SetNodeTranslate(name, raw->getVec3());
     RefreshNodeTransformBindings(name);
 }
 

@@ -31,6 +31,7 @@
     "snapshotStorageChanges": "Shader-cache size measurements are shared across snapshot bursts for at most two seconds; explicit settings reads and cache clearing invalidate the measurement. Regression coverage checks directory-walk counts, expiry, new files, and clearing without changing the bridge API."
   },
   "sceneEngine": {
+    "nodeOriginTimelineChanges": "2026-10-02: Authored layer origin timelines now bind through the shared runtime for images, text, groups, particles, models and perspective camera nodes. Three component curves share one existing playback clock; relative offsets use the authored base, missing axes retain their values, and unchanged frames reuse their sample. Script/user bindings retain precedence, alignment and effect-final transforms use the existing path, and orthographic camera shots keep their linked zoom/origin clock. Completed single-shot timelines relinquish animation demand. Synthetic CPU and Metal direct/effect regressions plus the generated Compatibility curtain case cover playback and full-canvas reveal. No wallpaper-specific rules, extra render passes, texture allocations or disabled optimizations.",
     "repository": "https://github.com/bigsaltyfishes/open-wallpaper-engine",
     "revision": "c4c36357a40c363f7f9e03e624f3c8820b620ef6",
     "directory": "upstream/renderer/external/open-wallpaper-engine",

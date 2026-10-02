@@ -1043,6 +1043,82 @@ void main() {
     }
 }
 
+TEST_F(MetalSceneDraw, AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen)
+{
+    for (bool effect : { false, true }) {
+        SCOPED_TRACE(effect ? "effect chain" : "direct layer");
+        const auto directory = root_ / (effect ? "effect-curtain" : "direct-curtain");
+        const auto project = WriteFixture(directory);
+        std::ofstream(directory / "models/tile.json") <<
+            R"({"width":192,"height":256,"material":"materials/tile.json"})";
+        std::ofstream(directory / "shaders/metal_probe.frag") <<
+            "void main() {\n gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n}\n";
+        auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+        layout["general"]["clearcolor"] = { 0.2, 0.4, 0.6 };
+        auto& card = layout["objects"][0];
+        card["alignment"] = "left";
+        card["origin"] = nlohmann::json::parse(R"({
+            "value":[192,128,0],"animation":{
+                "relative":true,"options":{"fps":60,"length":30,"mode":"single"},
+                "c0":[{"frame":0,"value":0},{"frame":30,"value":192}]
+            }
+        })");
+        if (effect) {
+            std::filesystem::create_directories(directory / "effects");
+            std::ofstream(directory / "effects/copy.json") <<
+                R"({"name":"copy","passes":[{"material":"materials/copy.json"}]})";
+            std::ofstream(directory / "materials/copy.json") <<
+                R"({"passes":[{"shader":"copy","textures":[null],"blending":"normal","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+            std::filesystem::copy_file(directory / "shaders/metal_probe.vert",
+                                       directory / "shaders/copy.vert");
+            std::ofstream(directory / "shaders/copy.frag") <<
+                "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+                "void main() {\n gl_FragColor = texture(g_Texture0, v_TexCoord);\n}\n";
+            card["effects"] = nlohmann::json::array({ { { "file", "effects/copy.json" } } });
+        }
+        std::ofstream(directory / "layout.json") << layout;
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+        auto& scene = *loaded.scene;
+        const auto graph = sceneToRenderGraph(scene);
+        ASSERT_NE(graph, nullptr);
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+            double elapsed = 0.0;
+            for (double delta : { 0.0, 0.25, 0.25, 5.0 }) {
+                scene.runtime->Tick(delta);
+                elapsed += delta;
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_EQ(width, 384u);
+                ASSERT_EQ(height, 256u);
+                for (unsigned x : { 48u, 224u, 336u }) {
+                    const bool covered = x >= 192.0 + 384.0 * std::min(elapsed, 0.5);
+                    const auto offset = ((height / 2) * width + x) * 4;
+                    for (unsigned channel = 0; channel < 3; ++channel) {
+                        EXPECT_NEAR(pixels[offset + channel],
+                                    covered ? 0u : 51u * (channel + 1), 1u);
+                    }
+                }
+            }
+            render.destroy();
+        }
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the

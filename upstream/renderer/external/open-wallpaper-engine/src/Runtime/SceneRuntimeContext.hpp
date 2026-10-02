@@ -150,7 +150,8 @@ public:
     void          RegisterNodeVisibility(std::string name, SceneNode* node,
                                          std::unique_ptr<DynamicValue> value);
     void          RegisterNodeTranslate(std::string name, SceneNode* node,
-                                        std::unique_ptr<DynamicValue> value);
+                                        std::unique_ptr<DynamicValue> value,
+                                        std::shared_ptr<const NodeOriginAnimation> animation = {});
     void RegisterNodeScale(std::string name, SceneNode* node, std::unique_ptr<DynamicValue> value);
     void RegisterNodeRotation(std::string name, SceneNode* node,
                               std::unique_ptr<DynamicValue> value);
@@ -357,7 +358,10 @@ private:
         SceneNode* transform_node { nullptr };
         NodeAlignmentBinding* alignment { nullptr };
         const Eigen::Vector2f* size { nullptr };
+        std::shared_ptr<const NodeOriginAnimation> animation;
+        double sampled_animation_frame { std::numeric_limits<double>::quiet_NaN() };
     };
+    static void ApplyNodeOriginAnimation(NodeVec3Binding& binding);
     struct NodeEffectFinalBinding {
         SceneNode*             node { nullptr };
         SceneImageEffectLayer* layer { nullptr };

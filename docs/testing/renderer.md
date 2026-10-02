@@ -74,7 +74,7 @@ generated pixel assertion failed. `report.json` records
 authored-reference comparison, so rendering without a crash does not prove all
 authored effects loaded.
 
-The generated matrix is ten original synthetic scenes; it contains no workshop
+The generated matrix is eleven original synthetic scenes; it contains no workshop
 identifiers and no workshop-specific rendering rules.
 
 ## Probes
@@ -706,6 +706,19 @@ projection policies, hierarchy, depth and reflection.
   writer before an effect samples its empty input.
 
 ### Animation and puppets
+
+- Authored layer `origin.animation` uses one playback clock for its three curves.
+  Relative keys offset the authored origin, not the previous tick; unkeyed axes
+  retain their values. Scripts/user properties keep precedence, anchors and
+  effect-final cards follow the existing transform path, and orthographic shots
+  retain their shared origin/zoom clock. `SceneSchema.OriginTimeline*` covers
+  aligned images, text/groups, absolute/relative keys, loop duration, paused
+  playback, seek/replay and completed timelines releasing animation demand.
+  `MetalSceneDraw.AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen` reads pixels
+  before, during and after a reveal on direct and effect-chain layers; the
+  `generated-origin-animation` Compatibility case verifies both halves after
+  the intro, under pooled and isolated allocation. Static origins add no tick
+  binding; held animation frames do not re-evaluate curves.
 
 - Puppet attachments use the animated bone affine each frame while preserving
   the child layer's authored/script transform. Character-sheet reference poses

@@ -296,6 +296,7 @@ struct RawLayerObject {
     bool                 dynamic_scale { false };
     bool                 dynamic_angles { false };
     bool                 dynamic_visible { false };
+    bool                 schema_placeholder { false };
     nlohmann::json       origin_setting;
     nlohmann::json       scale_setting;
     nlohmann::json       angles_setting;
@@ -550,6 +551,7 @@ bool ParseLayerObject(const nlohmann::json& json, const nlohmann::json& objects,
         (! IsSchemaOnlyObject(json) || layer.id == 0 || ! HasChildObject(objects, layer.id)))
         return false;
 
+    layer.schema_placeholder = IsSchemaOnlyObject(json);
     GET_JSON_NAME_VALUE_NOWARN(json, "parent", layer.parent_id);
     GET_JSON_NAME_VALUE_NOWARN(json, "name", layer.name);
     ReadVec3Setting(json, "origin", &layer.origin, &layer.origin_setting, &layer.dynamic_origin);
@@ -594,15 +596,10 @@ void ParseLayerNodes(ParseContext& context, const nlohmann::json& objects) {
                                    layer.dynamic_visible ? layer.visible_setting
                                                          : nlohmann::json(layer.visible),
                                    runtime_name));
-            if (layer.dynamic_origin) {
-                context.scene->runtime->RegisterNodeTranslate(
-                    runtime_name,
-                    node.get(),
-                    ResolveVec3Setting(*context.scene->runtime,
-                                       layer.origin_setting,
-                                       runtime_name,
-                                       Vec3SettingSemantic::Generic));
-            }
+            // Typed parents get their timeline when their real object is
+            // parsed; registering it on the placeholder creates a second clock.
+            RegisterNodeOriginSetting(*context.scene->runtime, node.get(), runtime_name,
+                                      layer.origin_setting, !layer.schema_placeholder);
             if (layer.dynamic_scale) {
                 context.scene->runtime->RegisterNodeScale(
                     runtime_name,
@@ -1814,15 +1811,8 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& obj) {
         }
         context.scene->runtime->SetNodeAnchorAlignment(
             runtime_name, anchor, Vector3f(obj.origin.data()));
-        if (obj.dynamic_origin) {
-            context.scene->runtime->RegisterNodeTranslate(
-                runtime_name,
-                node.get(),
-                ResolveVec3Setting(*context.scene->runtime,
-                                   obj.origin_setting,
-                                   runtime_name,
-                                   Vec3SettingSemantic::Generic));
-        }
+        RegisterNodeOriginSetting(*context.scene->runtime, node.get(), runtime_name,
+                                  obj.origin_setting);
         if (obj.dynamic_scale) {
             context.scene->runtime->RegisterNodeScale(
                 runtime_name,
@@ -3314,15 +3304,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                wpimgobj.dynamic_visible ? wpimgobj.visible_setting
                                                         : nlohmann::json(wpimgobj.visible),
                                runtime_name));
-        if (wpimgobj.dynamic_origin) {
-            context.scene->runtime->RegisterNodeTranslate(
-                runtime_name,
-                spImgNode.get(),
-                ResolveVec3Setting(*context.scene->runtime,
-                                   wpimgobj.origin_setting,
-                                   runtime_name,
-                                   Vec3SettingSemantic::Generic));
-        }
+        RegisterNodeOriginSetting(*context.scene->runtime, spImgNode.get(), runtime_name,
+                                  wpimgobj.origin_setting);
         if (wpimgobj.dynamic_scale) {
             context.scene->runtime->RegisterNodeScale(
                 runtime_name,
@@ -3904,15 +3887,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                    wppartobj.dynamic_visible ? wppartobj.visible_setting
                                                              : nlohmann::json(wppartobj.visible),
                                    runtime_name));
-            if (wppartobj.dynamic_origin) {
-                context.scene->runtime->RegisterNodeTranslate(
-                    runtime_name,
-                    spNode.get(),
-                    ResolveVec3Setting(*context.scene->runtime,
-                                       wppartobj.origin_setting,
-                                       runtime_name,
-                                       Vec3SettingSemantic::Generic));
-            }
+            RegisterNodeOriginSetting(*context.scene->runtime, spNode.get(), runtime_name,
+                                      wppartobj.origin_setting);
             if (wppartobj.dynamic_scale) {
                 context.scene->runtime->RegisterNodeScale(
                     runtime_name,
@@ -4248,7 +4224,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
 
 void RegisterCommonNodeBindings(ParseContext& context, SceneNode& node, std::string_view runtime_name,
                                 const wpscene::WPMiscObjectBase& obj,
-                                const std::string& previous_runtime_name) {
+                                const std::string& previous_runtime_name,
+                                bool animate_origin = true) {
     if (context.scene->runtime == nullptr) return;
     if (! previous_runtime_name.empty() && previous_runtime_name != runtime_name) {
         context.scene->runtime->UnregisterNode(previous_runtime_name);
@@ -4260,15 +4237,8 @@ void RegisterCommonNodeBindings(ParseContext& context, SceneNode& node, std::str
         ResolveBoolSetting(*context.scene->runtime,
                            obj.dynamic_visible ? obj.visible_setting : nlohmann::json(obj.visible),
                            std::string(runtime_name)));
-    if (obj.dynamic_origin) {
-        context.scene->runtime->RegisterNodeTranslate(
-            std::string(runtime_name),
-            &node,
-            ResolveVec3Setting(*context.scene->runtime,
-                               obj.origin_setting,
-                               std::string(runtime_name),
-                               Vec3SettingSemantic::Generic));
-    }
+    RegisterNodeOriginSetting(*context.scene->runtime, &node, runtime_name,
+                              obj.origin_setting, animate_origin);
     if (obj.dynamic_scale) {
         context.scene->runtime->RegisterNodeScale(
             std::string(runtime_name),
@@ -4470,7 +4440,9 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
         }
     }
 
-    RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name);
+    // Orthographic shots already share an origin/zoom clock below.
+    RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name,
+                               !context.is_ortho);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.visible_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.origin_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.scale_setting);

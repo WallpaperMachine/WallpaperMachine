@@ -2712,6 +2712,164 @@ export function update() { return on; }
     EXPECT_EQ(runtime.scriptErrorCount(), 0u);
 }
 
+TEST(SceneSchema, OriginTimelineMovesAlignedLayersAndStopsRequestingFrames) {
+    for (bool relative : { false, true }) {
+        for (const auto* anchor : { "left", "right" }) {
+            SCOPED_TRACE(std::string(anchor) + (relative ? " relative" : " absolute"));
+            fs::VFS vfs;
+            MountSceneFiles(vfs);
+            audio::SoundManager sound;
+            nlohmann::json object = {
+                { "id", 21 }, { "name", "moving card" }, { "image", "image.json" },
+                { "alignment", anchor }, { "scale", { 2, 1, 1 } },
+                { "origin", {
+                    { "value", { 100, 70, 3 } },
+                    { "animation", {
+                        { "relative", relative },
+                        { "options", { { "fps", 20 }, { "length", 20 },
+                                         { "mode", "single" }, { "name", "slide" } } },
+                        { "c0", nlohmann::json::array({
+                            { { "frame", 0 }, { "value", 0 } },
+                            { { "frame", 20 }, { "value", 80 } } }) }
+                    } }
+                } }
+            };
+            auto scene = ParseOrthoShotScene(vfs, sound, object.dump());
+            ASSERT_NE(scene, nullptr);
+            auto& runtime = *scene->runtime;
+            auto node = FindRootChildByName(*scene, "moving card");
+            ASSERT_NE(node, nullptr);
+            const float base = relative ? 100.0f : 0.0f;
+            const float offset = runtime.NodeSize("moving card").x() *
+                                 (std::string_view(anchor) == "left" ? 1.0f : -1.0f);
+            const auto expect_origin = [&](float x) {
+                EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving card").x(), x);
+                EXPECT_FLOAT_EQ(node->Translate().x(), x + offset);
+                EXPECT_FLOAT_EQ(node->Translate().y(), 70.0f);
+                EXPECT_FLOAT_EQ(node->Translate().z(), 3.0f);
+            };
+            expect_origin(base);
+            EXPECT_NE(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+            runtime.Tick(0.5);
+            expect_origin(base + 40.0f);
+            runtime.Tick(0.5);
+            expect_origin(base + 80.0f);
+            EXPECT_EQ(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+            runtime.Tick(10.0);
+            expect_origin(base + 80.0f); // no accumulated relative displacement
+            auto* clock = runtime.FindScalarAnimation("moving card", "slide");
+            ASSERT_NE(clock, nullptr);
+            clock->Play();
+            runtime.Tick(0.25);
+            expect_origin(base + 20.0f);
+            clock->playing = false;
+            runtime.Tick(10.0);
+            expect_origin(base + 20.0f);
+            clock->SetFrame(15.0);
+            runtime.Tick(0.0);
+            expect_origin(base + 60.0f);
+        }
+    }
+}
+
+TEST(SceneSchema, OriginTimelineComponentsUseOneLoopAndPreserveUnkeyedAxes) {
+    fs::VFS vfs;
+    MountSceneFiles(vfs);
+    audio::SoundManager sound;
+    auto scene = ParseOrthoShotScene(vfs, sound, R"({
+        "id":21,"name":"looping card","image":"image.json",
+        "origin":{"value":[10,20,30],"animation":{
+            "relative":true,
+            "options":{"fps":10,"mode":"loop","name":"orbit","startpaused":true},
+            "c0":[{"frame":2,"value":4},{"frame":5,"value":10}],
+            "c1":[{"frame":0,"value":0},{"frame":20,"value":40}]
+        }}
+    })");
+    ASSERT_NE(scene, nullptr);
+    auto& runtime = *scene->runtime;
+    const auto expect_origin = [&](float x, float y) {
+        EXPECT_EQ(runtime.NodeTranslate("looping card"), Eigen::Vector3f(x, y, 30));
+    };
+    runtime.Tick(5.0);
+    expect_origin(10, 20); // before the first x key: zero relative offset
+    auto* clock = runtime.FindScalarAnimation("looping card", "orbit");
+    ASSERT_NE(clock, nullptr);
+    clock->Play();
+    runtime.Tick(0.5);
+    expect_origin(20, 30);
+    runtime.Tick(0.5);
+    expect_origin(20, 40); // the short x curve holds, it does not loop on its own
+    runtime.Tick(1.0);
+    expect_origin(10, 20); // the longest component defines the inferred clock length
+    EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+}
+
+TEST(SceneSchema, OriginTimelineMovesGroupsAndTextParentsOnOneClock) {
+    for (bool text : { false, true }) {
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound;
+        auto parent = nlohmann::json::parse(R"({
+            "id":21,"name":"moving parent",
+            "origin":{"value":[10,20,0],"animation":{
+                "relative":true,
+                "options":{"fps":10,"length":10,"mode":"single"},
+                "c0":[{"frame":0,"value":0},{"frame":10,"value":40}]
+            }}
+        })");
+        if (text) {
+            parent["text"] = "caption";
+            parent["font"] = "Arial";
+            parent["pointsize"] = 24;
+        }
+        auto scene = ParseOrthoShotScene(vfs, sound, parent.dump() + R"(,
+            {"id":22,"name":"child card","image":"image.json","parent":21,
+             "origin":[5,6,0]}
+        )");
+        ASSERT_NE(scene, nullptr);
+        auto& runtime = *scene->runtime;
+        runtime.Tick(0.5);
+        EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving parent").x(), 30.0f);
+        auto node = FindRootChildByName(*scene, "moving parent");
+        ASSERT_NE(node, nullptr);
+        ASSERT_EQ(node->GetChildren().size(), 1u);
+        node->GetChildren().front()->UpdateTrans();
+        EXPECT_NEAR(node->GetChildren().front()->ModelTrans()(0, 3),
+                    node->Translate().x() + 5.0f, 1e-4);
+        runtime.Tick(0.5);
+        EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving parent").x(), 50.0f);
+        EXPECT_EQ(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+        EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+    }
+}
+
+TEST(SceneSchema, OriginTimelineDoesNotOverrideAScriptOrUserProperty) {
+    for (bool scripted : { false, true }) {
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound;
+        nlohmann::json object = nlohmann::json::parse(R"({
+            "id":21,"name":"bound card","image":"image.json",
+            "origin":{"value":[1,2,3],"animation":{
+                "options":{"fps":10,"length":10,"mode":"single","name":"unused"},
+                "c0":[{"frame":0,"value":999}]
+            }}
+        })");
+        if (scripted) object["origin"]["script"] =
+            "export function update() { return new Vec3(7, 8, 9); }";
+        else object["origin"]["user"] = "position";
+        auto scene = ParseOrthoShotScene(vfs, sound, object.dump(), {
+            { "position", RuntimeScalarValue::String("7 8 9") }
+        });
+        ASSERT_NE(scene, nullptr);
+        auto& runtime = *scene->runtime;
+        runtime.Tick(1.0);
+        EXPECT_EQ(runtime.NodeTranslate("bound card"), Eigen::Vector3f(7, 8, 9));
+        EXPECT_EQ(runtime.FindScalarAnimation("bound card", "unused"), nullptr);
+        EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+    }
+}
+
 TEST(SceneSchema, ImageAlignmentAnchorSurvivesScriptedOriginAndScale) {
     fs::VFS vfs;
     MountSceneFiles(vfs);

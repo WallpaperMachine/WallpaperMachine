@@ -14,6 +14,13 @@ namespace wallpaper
 {
 
 class SceneRuntimeContext;
+class SceneNode;
+
+// Binds scripts/properties as before, or an authored absolute/relative origin
+// timeline. Static settings allocate no per-tick binding.
+void RegisterNodeOriginSetting(SceneRuntimeContext& context, SceneNode* node,
+                               std::string_view layer_name, const nlohmann::json& setting,
+                               bool animate = true);
 
 enum class Vec3SettingSemantic
 {
