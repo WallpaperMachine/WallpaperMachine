@@ -3374,8 +3374,16 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
 
         shaderInfo.baseConstSvs = baseConstSvs;
 
+        // Effects on a puppet run over its unassembled texture sheet. The
+        // final skinned pass below uses the authored material in world space;
+        // lighting the sheet as well both darkens it twice and bakes different
+        // illumination into adjacent cut-out pieces (notably eyelids).
+        auto input_material = wpimgobj.material;
+        if (hasEffect && has_puppet_bones) {
+            input_material.combos["LIGHTING"] = 0;
+        }
         if (! LoadMaterial(vfs,
-                           wpimgobj.material,
+                           input_material,
                            context.scene.get(),
                            spImgNode.get(),
                            &material,

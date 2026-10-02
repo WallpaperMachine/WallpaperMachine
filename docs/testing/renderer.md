@@ -707,6 +707,18 @@ projection policies, hierarchy, depth and reflection.
 
 ### Animation and puppets
 
+- Puppet layers with effects light their assembled geometry only in the final
+  skinned pass. The input texture-sheet pass is unlit, so lighting is not
+  multiplied twice or baked into the separate cut-out pieces. Unskinned layers,
+  effect-free puppets and unlit materials retain their lighting paths. This
+  removes shader work without adding passes or targets. The original pixel test
+  `PuppetEffectsApplyLightingOnceAfterAssembly` covers all eight combinations
+  of puppet/card, effects/direct and lit/unlit over repeated draws.
+- Legacy four-light shaders pack the fourth light's RGB into the `w` lanes of
+  three color uniforms. `FourLightColorsRoundTripThroughPackedUniforms` checks
+  zero through five lights, channel order, radius/intensity premultiplication,
+  the four-light limit and clearing after lights are removed.
+
 - Authored layer `origin.animation` uses one playback clock for its three curves.
   Relative keys offset the authored origin, not the previous tick; unkeyed axes
   retain their values. Scripts/user properties keep precedence, anchors and

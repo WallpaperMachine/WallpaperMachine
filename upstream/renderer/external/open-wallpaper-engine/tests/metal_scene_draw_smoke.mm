@@ -1119,6 +1119,159 @@ TEST_F(MetalSceneDraw, AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen)
     }
 }
 
+TEST_F(MetalSceneDraw, PuppetEffectsApplyLightingOnceAfterAssembly)
+{
+    // Original one-bone card and shaders exercise the real model parser and
+    // effect-chain builder, not a hand-constructed approximation of the graph.
+    for (bool puppet : { false, true }) {
+        for (bool effect : { false, true }) {
+            for (bool lit : { false, true }) {
+                const std::string label = std::to_string(puppet) + std::to_string(effect) +
+                                          std::to_string(lit);
+                SCOPED_TRACE(label);
+                const auto directory = root_ / ("puppet-lighting-" + label);
+                const auto project = WriteFixture(directory);
+                if (puppet) {
+                    std::ofstream model(directory / "models/card.mdl", std::ios::binary);
+                    const auto put = [&model](auto value) {
+                        model.write(reinterpret_cast<const char*>(&value), sizeof(value));
+                    };
+                    const auto str = [&model](const char* value) {
+                        model.write(value, std::strlen(value) + 1);
+                    };
+                    const uint32_t flags = 0x00800000u | 0x01000000u | 0x00000008u;
+                    str("MDLV0021");
+                    put(flags); put(uint32_t(1)); put(uint32_t(1));
+                    str("materials/tile.json"); put(uint32_t(0));
+                    for (float v : { -128.f, -96.f, 0.f, 128.f, 96.f, 0.f }) put(v);
+                    put(flags); put(uint32_t(4 * 52));
+                    for (const auto& vertex : std::array<std::array<float, 4>, 4> {{
+                             { -128, -96, 0, 1 }, { 128, -96, 1, 1 },
+                             { 128, 96, 1, 0 }, { -128, 96, 0, 0 } }}) {
+                        put(vertex[0]); put(vertex[1]); put(0.f);
+                        for (int i = 0; i < 4; ++i) put(uint32_t(0));
+                        for (float weight : { 1.f, 0.f, 0.f, 0.f }) put(weight);
+                        put(vertex[2]); put(vertex[3]);
+                    }
+                    put(uint32_t(12));
+                    for (uint16_t index : { 0, 1, 2, 0, 2, 3 }) put(index);
+                    put(uint8_t(1)); put(uint8_t(1)); put(uint16_t(0)); put(uint8_t(0));
+                    put(uint32_t(4 * 12));
+                    for (int i = 0; i < 4; ++i) {
+                        put(0.f); put(0.f); put(uint32_t(0));
+                    }
+                    put(uint8_t(1)); put(uint32_t(16));
+                    for (uint32_t value : { 1u, 0u, 0u, 6u }) put(value);
+                    str("MDLS0001"); put(uint32_t(0)); put(uint16_t(1)); put(uint16_t(0));
+                    str("root"); put(int32_t(0)); put(uint32_t(0xFFFFFFFFu)); put(uint32_t(64));
+                    for (int col = 0; col < 4; ++col)
+                        for (int row = 0; row < 4; ++row) put(row == col ? 1.f : 0.f);
+                    str("{}"); str("MDLA0000"); put(uint8_t(0));
+                    std::ofstream(directory / "models/tile.json") <<
+                        R"({"width":256,"height":192,"material":"materials/tile.json","puppet":"models/card.mdl"})";
+                }
+                // A white texture keeps the material identical on its input and
+                // final pass: repeated lighting alone must account for any loss.
+                std::filesystem::create_directories(directory / "materials");
+                {
+                    std::ofstream texture(directory / "materials/white.tex", std::ios::binary);
+                    const auto put = [&texture](uint32_t value) {
+                        texture.write(reinterpret_cast<const char*>(&value), sizeof(value));
+                    };
+                    texture.write("TEXV0005", 9); texture.write("TEXI0001", 9);
+                    for (uint32_t value : { 0u, 0u, 1u, 1u, 1u, 1u, 0u }) put(value);
+                    texture.write("TEXB0001", 9);
+                    for (uint32_t value : { 1u, 1u, 1u, 1u, 4u, 0xFFFFFFFFu }) put(value);
+                }
+                const std::string vertex = R"(
+uniform mat4 g_ModelViewProjectionMatrix;
+attribute vec3 a_Position;
+attribute vec2 a_TexCoord;
+varying vec2 v_TexCoord;
+#if SKINNING
+uniform mat4x3 g_Bones[BONECOUNT];
+attribute uvec4 a_BlendIndices;
+#endif
+void main() {
+    vec3 position = a_Position;
+#if SKINNING
+    position = g_Bones[a_BlendIndices.x] * vec4(position, 1.0);
+#endif
+    gl_Position = g_ModelViewProjectionMatrix * vec4(position, 1.0);
+    v_TexCoord = a_TexCoord;
+}
+)";
+                const std::string fragment = R"(
+uniform sampler2D g_Texture0;
+varying vec2 v_TexCoord;
+void main() {
+    vec4 color = texture(g_Texture0, v_TexCoord);
+#if LIGHTING
+    color.rgb *= vec3(0.4, 0.6, 0.8);
+#endif
+    gl_FragColor = color;
+}
+)";
+                std::ofstream(directory / "shaders/metal_probe.vert") << vertex;
+                std::ofstream(directory / "shaders/metal_probe.frag") << fragment;
+                auto material = nlohmann::json::parse(
+                    std::ifstream(directory / "materials/tile.json"));
+                material["passes"][0]["textures"] = { "white" };
+                material["passes"][0]["combos"]["LIGHTING"] = lit ? 1 : 0;
+                std::ofstream(directory / "materials/tile.json") << material;
+                if (effect) {
+                    std::filesystem::create_directories(directory / "effects");
+                    std::ofstream(directory / "effects/identity.json") <<
+                        R"({"name":"identity","passes":[{"material":"materials/identity.json"}]})";
+                    material["passes"][0]["combos"]["LIGHTING"] = 0;
+                    material["passes"][0]["textures"] = nlohmann::json::array({ nullptr });
+                    std::ofstream(directory / "materials/identity.json") << material;
+                    auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+                    layout["objects"][0]["effects"] = nlohmann::json::array({
+                        { { "file", "effects/identity.json" }, { "visible", true } }
+                    });
+                    std::ofstream(directory / "layout.json") << layout;
+                }
+                LoadedScene loaded;
+                std::string error;
+                ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+                const auto graph = sceneToRenderGraph(*loaded.scene);
+                ASSERT_NE(graph, nullptr);
+                @autoreleasepool {
+                    CAMetalLayer* layer = [CAMetalLayer layer];
+                    layer.device = MTLCreateSystemDefaultDevice();
+                    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+                    layer.drawableSize = CGSizeMake(384, 256);
+                    MetalRender render;
+                    ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                        .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                        .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+                    }));
+                    ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+                    for (int frame = 0; frame < 3; ++frame) {
+                        ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+                        std::vector<uint8_t> pixels;
+                        uint32_t width = 0, height = 0;
+                        ASSERT_TRUE(render.ReadRenderTargetForTests(
+                            loaded.scene->ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                        ASSERT_EQ(width, 384u);
+                        ASSERT_EQ(height, 256u);
+                        for (uint32_t x : { 128u, 192u, 256u }) {
+                            SCOPED_TRACE(x);
+                            const auto offset = (128 * width + x) * 4;
+                            for (size_t channel = 0; channel < 3; ++channel)
+                                EXPECT_NEAR(pixels[offset + channel],
+                                            255.f * (lit ? 0.4f + 0.2f * channel : 1.f), 1.f);
+                            EXPECT_EQ(pixels[offset + 3], 255u);
+                        }
+                    }
+                    render.destroy();
+                }
+            }
+        }
+    }
+}
+
 TEST_F(MetalSceneDraw, APerspectiveCameraDrawsThroughTheAuthoredShader)
 {
     // A scene that last round was refused only for a perspective camera: the
