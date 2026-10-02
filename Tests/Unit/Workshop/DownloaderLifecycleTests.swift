@@ -386,6 +386,48 @@ final class DownloaderLifecycleTests: DownloaderTestCase {
     }
   }
 
+  func testPresetDownloadFetchesItsBaseInTheSameRunAndInstallsOneWallpaper() async throws {
+    let root = try makeRuntime(
+      """
+      item=''
+      while [ "$#" -gt 0 ]; do
+          case "$1" in +workshop_download_item) shift; shift; item="$1" ;; esac
+          shift
+      done
+      printf '%s\\n' "$item" >> ../invocations
+      printf 'Waiting for user info...OK\\nDownloading item %s ...\\n' "$item"
+      content="steamapps/workshop/content/431960/$item"
+      mkdir -p "$content"
+      if [ "$item" = 123456 ]; then
+          printf '{"title":"Purple preset","dependency":"654321","preset":{"speed":7}}' > "$content/project.json"
+      else
+          printf '{"title":"Base","type":"video","file":"movie.mp4","general":{"properties":{"speed":{"type":"slider","value":1}}}}' > "$content/project.json"
+          printf 'base-content' > "$content/movie.mp4"
+      fi
+      printf 'Success. Downloaded item %s\\n' "$item"
+      """)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let downloader = startDownload(in: root)
+    try await waitForStop(downloader)
+    XCTAssertNil(downloader.errorMessage)
+    XCTAssertEqual(downloader.downloadedID, "123456")
+    let invocations = try String(contentsOf: root.appendingPathComponent("invocations"), encoding: .utf8)
+    XCTAssertEqual(invocations.split(separator: "\n"), ["123456", "654321"])
+    let installed = root.appendingPathComponent("Library/123456")
+    XCTAssertEqual(try Data(contentsOf: installed.appendingPathComponent("movie.mp4")), Data("base-content".utf8))
+    let manifest = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(contentsOf: installed.appendingPathComponent("project.json")))
+        as? [String: Any])
+    XCTAssertEqual(manifest["title"] as? String, "Purple preset")
+    XCTAssertEqual(manifest["type"] as? String, "video")
+    let speed = (manifest["general"] as? [String: Any])?["properties"] as? [String: Any]
+    XCTAssertEqual((speed?["speed"] as? [String: Any])?["value"] as? Int, 7)
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: root.appendingPathComponent("Library/654321").path),
+      "Only the requested preset joins the library")
+    try assertNoStaging(in: root)
+  }
+
   func testMobileApprovalCanAdvanceToIndeterminateDownload() async throws {
     let root = try makeRuntime(
       """

@@ -721,6 +721,9 @@ most 512 MB). A picture becomes a still `web` wallpaper with the id
 web view shows as it is (`jpg`, `png`, `gif`, `webp`) or the long side exceeds
 8,192 px. Its **Image fit** and **Background color** labels are translated like
 pixiv's. A picture ImageIO cannot measure or scale is reported and not imported.
+A Workshop preset folder is imported as one self-contained wallpaper built on
+its base, found next to it (a Steam library) or already in the library; see
+[Workshop presets](workshop-downloads.md#workshop-presets).
 Files dropped on the Dock icon, or opened with WallpaperMachine from Finder
 (`CFBundleDocumentTypes` in `Info.plist`, rank Alternate, so the app never
 becomes a default), are imported the same way with **Skip duplicates**, and the

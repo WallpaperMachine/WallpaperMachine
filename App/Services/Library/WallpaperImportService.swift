@@ -98,7 +98,16 @@ actor WallpaperImportService {
                         }
                         let staged = staging.appendingPathComponent(UUID().uuidString, isDirectory: true)
                         defer { try? fm.removeItem(at: staged) }
-                        if isDirectory {
+                        if isDirectory, let preset = presetManifest(at: candidate) {
+                            // A Steam library keeps the preset's base next to it; the managed library may hold it too.
+                            let base = try presetBase(of: preset, among: [
+                                candidate.deletingLastPathComponent().appendingPathComponent(preset.dependency, isDirectory: true),
+                                managedRoot.appendingPathComponent(preset.dependency, isDirectory: true),
+                            ])
+                            try copySafely(base, to: staged)
+                            try overlay(candidate, onto: staged) { try self.copySafely($0, to: $1) }
+                            try writePresetManifest(preset, into: staged, workshopID: nil)
+                        } else if isDirectory {
                             try validateProject(at: candidate)
                             try copySafely(candidate, to: staged)
                         } else if isImage {
@@ -186,10 +195,13 @@ actor WallpaperImportService {
     /// Consumes a complete item from disposable Steam staging without copying payload bytes.
     /// A valid existing item is left untouched unless `replacing`, when the new tree takes its
     /// place; the caller remains responsible for staging cleanup.
+    ///
+    /// A Workshop preset is assembled first: its base's content, the preset's own files on top,
+    /// and the base's manifest carrying the preset's title and property values. The base comes
+    /// from the same staging (see `presetBaseToDownload`) or, failing that, from the library.
     func importDownloadedItem(_ itemID: String, from staging: URL, into library: URL, replacing: Bool = false) throws {
         try Task.checkCancellation()
-        guard !itemID.isEmpty, itemID.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }),
-              let numericID = UInt64(itemID), numericID > 0 else {
+        guard Self.workshopID(itemID) != nil else {
             throw ImportError(message: String(localized: "Choose a valid numeric Workshop item identifier."))
         }
         let fm = FileManager.default
@@ -200,14 +212,9 @@ actor WallpaperImportService {
             throw ImportError(message: String(localized: "Download staging must be outside the managed library."))
         }
 
-        // Check each fixed ancestor before descending: resolving the final path alone would
-        // silently accept a Steam content directory redirected through a symbolic link.
-        var source = stagingRoot
-        try requireDownloadDirectory(source)
-        for component in ["steamapps", "workshop", "content", "431960", itemID] {
-            try Task.checkCancellation()
-            source.appendPathComponent(component, isDirectory: true)
-            try requireDownloadDirectory(source)
+        var source = try downloadedItemFolder(itemID, in: stagingRoot)
+        if let preset = presetManifest(at: source) {
+            source = try assembleDownloadedPreset(itemID, preset: preset, at: source, staging: stagingRoot, library: library)
         }
         try validateDownloadedProject(at: source)
         try Task.checkCancellation()
@@ -263,6 +270,171 @@ actor WallpaperImportService {
         }
     }
 
+    /// The Workshop item a downloaded preset is built on, when neither the download's own staging
+    /// nor the library already holds it; nil for an ordinary wallpaper. The downloader fetches it
+    /// into the same staging before `importDownloadedItem` assembles the preset.
+    func presetBaseToDownload(_ itemID: String, in staging: URL, library: URL) throws -> String? {
+        try Task.checkCancellation()
+        guard Self.workshopID(itemID) != nil else {
+            throw ImportError(message: String(localized: "Choose a valid numeric Workshop item identifier."))
+        }
+        let stagingRoot = staging.standardizedFileURL
+        guard let preset = presetManifest(at: try downloadedItemFolder(itemID, in: stagingRoot)) else { return nil }
+        guard preset.dependency != itemID else {
+            throw ImportError(message: String(localized: "This preset names itself as the wallpaper it is based on, so it cannot be used."))
+        }
+        let staged = Self.downloadedContent(in: stagingRoot).appendingPathComponent(preset.dependency, isDirectory: true)
+        if (try? downloadMetadata(at: staged)) != nil { return nil }
+        let installed = library.resolvingSymlinksInPath().standardizedFileURL
+            .appendingPathComponent(preset.dependency, isDirectory: true)
+        if (try? requireDownloadDirectory(installed)) != nil, (try? validateProject(at: installed)) != nil { return nil }
+        return preset.dependency
+    }
+
+    /// A Workshop preset: no wallpaper `type`, only the Workshop item it is `dependency` on and,
+    /// under `preset`, values for that item's properties.
+    private struct Preset {
+        let manifest: [String: Any]
+        let dependency: String
+    }
+
+    nonisolated static func workshopID(_ value: Any?) -> String? {
+        let text: String
+        if let string = value as? String {
+            text = string
+        } else if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.int64Value > 0 {
+            text = number.stringValue
+        } else {
+            return nil
+        }
+        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }), let id = UInt64(text), id > 0 else { return nil }
+        return text
+    }
+
+    private static func downloadedContent(in staging: URL) -> URL {
+        staging.appendingPathComponent("steamapps/workshop/content/431960", isDirectory: true)
+    }
+
+    /// Checks each fixed ancestor before descending: resolving the final path alone would
+    /// silently accept a Steam content directory redirected through a symbolic link.
+    private func downloadedItemFolder(_ itemID: String, in staging: URL) throws -> URL {
+        var source = staging
+        try requireDownloadDirectory(source)
+        for component in ["steamapps", "workshop", "content", "431960", itemID] {
+            try Task.checkCancellation()
+            source.appendPathComponent(component, isDirectory: true)
+            try requireDownloadDirectory(source)
+        }
+        return source
+    }
+
+    /// The preset described by `root/project.json`, or nil when it is anything else; ordinary
+    /// validation then reports what is wrong with it.
+    private func presetManifest(at root: URL) -> Preset? {
+        let url = root.appendingPathComponent("project.json")
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true, (values.fileSize ?? 0) <= 16 * 1024 * 1024,
+              let data = try? Data(contentsOf: url), !data.starts(with: [0xEF, 0xBB, 0xBF]),
+              let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              ((manifest["type"] as? String) ?? "").isEmpty,
+              let dependency = Self.workshopID(manifest["dependency"]) else { return nil }
+        return Preset(manifest: manifest, dependency: dependency)
+    }
+
+    /// The first candidate folder holding an installable wallpaper to build the preset on.
+    private func presetBase(of preset: Preset, among candidates: [URL]) throws -> URL {
+        for base in candidates {
+            try Task.checkCancellation()
+            guard let metadata = try? downloadMetadata(at: base), metadata.st_mode & S_IFMT == S_IFDIR else { continue }
+            if presetManifest(at: base) != nil {
+                throw ImportError(message: String(localized: "This preset is based on another preset (Workshop item \(preset.dependency)). Presets of presets are not supported."))
+            }
+            try validateProject(at: base)
+            return base
+        }
+        throw ImportError(message: String(localized: "This preset is based on Workshop item \(preset.dependency), which is not in your library. Download or import that wallpaper first, then try again."))
+    }
+
+    /// Builds the downloaded preset in staging. A base downloaded alongside it is moved, one from
+    /// the library is cloned, and the preset's own files are moved over it.
+    private func assembleDownloadedPreset(_ itemID: String, preset: Preset, at source: URL, staging: URL, library: URL) throws -> URL {
+        guard preset.dependency != itemID else {
+            throw ImportError(message: String(localized: "This preset names itself as the wallpaper it is based on, so it cannot be used."))
+        }
+        try requireRegularTree(source)
+        let staged = Self.downloadedContent(in: staging).appendingPathComponent(preset.dependency, isDirectory: true)
+        let installed = library.resolvingSymlinksInPath().standardizedFileURL
+            .appendingPathComponent(preset.dependency, isDirectory: true)
+        let base = try presetBase(of: preset, among: [staged, installed])
+        try requireRegularTree(base)
+        let fm = FileManager.default
+        let built = staging.appendingPathComponent("preset-\(UUID().uuidString)", isDirectory: true)
+        if base == staged {
+            try fm.moveItem(at: base, to: built)
+        } else {
+            // On APFS this clones the files rather than duplicating their bytes.
+            try fm.copyItem(at: base, to: built)
+        }
+        try requireRegularTree(built)
+        try overlay(source, onto: built) { try fm.moveItem(at: $0, to: $1) }
+        try writePresetManifest(preset, into: built, workshopID: itemID)
+        return built
+    }
+
+    /// Places every file of the preset over the base, replacing what is there; the preset's own
+    /// manifest is merged separately.
+    private func overlay(_ preset: URL, onto base: URL, root: Bool = true, transfer: (URL, URL) throws -> Void) throws {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        for child in try fm.contentsOfDirectory(at: preset, includingPropertiesForKeys: keys) {
+            try Task.checkCancellation()
+            if root && child.lastPathComponent == "project.json" { continue }
+            let target = base.appendingPathComponent(child.lastPathComponent)
+            let values = try child.resourceValues(forKeys: Set(keys))
+            let existing = try? downloadMetadata(at: target)
+            if values.isDirectory == true, values.isSymbolicLink != true, let existing, existing.st_mode & S_IFMT == S_IFDIR {
+                try overlay(child, onto: target, root: false, transfer: transfer)
+                continue
+            }
+            if existing != nil { try fm.removeItem(at: target) }
+            try transfer(child, target)
+        }
+    }
+
+    /// Rewrites the base's manifest in `built` as the preset's: its title, description, tags,
+    /// rating and preview, its Workshop id, and its values for the base's properties.
+    private func writePresetManifest(_ preset: Preset, into built: URL, workshopID: String?) throws {
+        let url = built.appendingPathComponent("project.json")
+        guard var manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any] else {
+            throw ImportError(message: String(localized: "project.json must describe a scene, video, or web wallpaper."))
+        }
+        for key in ["title", "description", "tags", "contentrating"] {
+            if let value = preset.manifest[key], !(value is NSNull) { manifest[key] = value }
+        }
+        if let preview = preset.manifest["preview"] as? String, isSafeRelativePath(preview),
+           (try? built.appendingPathComponent(preview).resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+            manifest["preview"] = preview
+        }
+        // The base's Workshop identity must not follow it into the preset.
+        manifest.removeValue(forKey: "workshopurl")
+        manifest["workshopid"] = workshopID ?? Self.workshopID(preset.manifest["workshopid"])
+        manifest["dependency"] = preset.dependency
+        if let values = preset.manifest["preset"] as? [String: Any],
+           var general = manifest["general"] as? [String: Any],
+           var properties = general["properties"] as? [String: Any] {
+            // Only properties the base declares take a value; nulls are the preset's group headings.
+            for (name, value) in values where !(value is NSNull) {
+                guard var property = properties[name] as? [String: Any] else { continue }
+                property["value"] = value
+                properties[name] = property
+            }
+            general["properties"] = properties
+            manifest["general"] = general
+        }
+        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: url, options: .atomic)
+    }
+
     private func downloadMetadata(at url: URL) throws -> stat {
         var metadata = stat()
         // URL directory representations can include a trailing slash, which makes
@@ -283,6 +455,12 @@ actor WallpaperImportService {
     }
 
     private func validateDownloadedProject(at root: URL) throws {
+        try requireRegularTree(root)
+        try Task.checkCancellation()
+        try validateProject(at: root, requireNonemptyContent: true)
+    }
+
+    private func requireRegularTree(_ root: URL) throws {
         try requireDownloadDirectory(root)
         var pending = [root]
         while let next = pending.popLast() {
@@ -297,8 +475,6 @@ actor WallpaperImportService {
                 throw ImportError(message: String(localized: "Downloaded projects may contain only regular files and folders, not symbolic links or special files: \(next.lastPathComponent)."))
             }
         }
-        try Task.checkCancellation()
-        try validateProject(at: root, requireNonemptyContent: true)
     }
 
     private func discover(_ source: URL) throws -> [URL] {

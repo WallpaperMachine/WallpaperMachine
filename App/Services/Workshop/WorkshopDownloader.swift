@@ -41,6 +41,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     @ObservationIgnored private var cachedCredentialsRejected = false
     @ObservationIgnored private var assetsDownloadCompleted = false
     @ObservationIgnored private var workshopDownloadCompleted = false
+    /// The run's second pass, which fetches the wallpaper a downloaded preset is based on.
+    @ObservationIgnored private var fetchingPresetBase = false
     @ObservationIgnored private var process: SteamCMDTerminalProcess?
     @ObservationIgnored private var terminal: FileHandle?
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -96,7 +98,11 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             return
         }
         download(itemID: item.id, username: username, executable: executable, root: library.deletingLastPathComponent(),
-                 rememberSession: rememberSession, expectedBytes: item.size > 0 ? item.size : nil) { staging in
+                 rememberSession: rememberSession, expectedBytes: item.size > 0 ? item.size : nil,
+                 followUp: { staging in
+                     // A Workshop preset is only property values; the wallpaper it is based on comes too.
+                     try await WallpaperImportService().presetBaseToDownload(item.id, in: staging, library: library)
+                 }) { staging in
             self.phase = .finishing
             self.status = String(localized: "Validating and adding to your library…")
             // A download of a wallpaper already in the library is its update, and replaces it.
@@ -128,8 +134,11 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         }
     }
 
+    /// `followUp` may name one more Workshop item to fetch into the same staging, in the same
+    /// session, once the first has arrived.
     private func download(itemID: String?, signInOnly: Bool = false, username: String, executable: URL, root: URL, rememberSession: Bool,
-                          expectedBytes: Int64? = nil, onDownloaded: @escaping @MainActor (URL) async throws -> Void) {
+                          expectedBytes: Int64? = nil, followUp: (@MainActor (URL) async throws -> String?)? = nil,
+                          onDownloaded: @escaping @MainActor (URL) async throws -> Void) {
         guard !isRunning else { return }
         guard let account = Self.normalizedAccount(username) else {
             errorMessage = String(localized: "Enter your Steam account login name (not your display name). An account that owns Wallpaper Engine is required.")
@@ -148,6 +157,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         wallpaperEngineOwnership = .unknown
         assetsDownloadCompleted = false
         workshopDownloadCompleted = false
+        fetchingPresetBase = false
         authenticationFailed = false
         steamGuardChallenge = nil
         if itemID != nil { downloadedID = nil }
@@ -202,78 +212,90 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                 }
                 AppLog.info("SteamCMD \(label): runtime prepared; saved sign-in restored: \(restoredSessionRevision != nil)")
                 try Task.checkCancellation()
-                let started = Date()
-                var restarts = 0
-                repeat {
-                    try Task.checkCancellation()
-                    try await runtimeProvider.validate(at: staging)
-                    try Task.checkCancellation()
-                    try launch(executable: prepared, staging: staging, account: account, itemID: itemID, claim: claim)
-                    while let process, process.isRunning {
+                var passItemID = itemID
+                while true {
+                    let started = Date()
+                    var restarts = 0
+                    repeat {
                         try Task.checkCancellation()
+                        try await runtimeProvider.validate(at: staging)
+                        try Task.checkCancellation()
+                        try launch(executable: prepared, staging: staging, account: account, itemID: passItemID, claim: claim)
+                        while let process, process.isRunning {
+                            try Task.checkCancellation()
+                            try readTerminalOutput()
+                            if status != loggedStatus {
+                                loggedStatus = status
+                                AppLog.info("SteamCMD \(label): \(status)")
+                            }
+                            if !isAuthenticating && !signInHandedOff && failure == nil {
+                                signInHandedOff = true
+                                var savedEarly = false
+                                if rememberSession { savedEarly = await saveAcceptedSession(from: staging, account: account) }
+                                AppLog.info("SteamCMD \(label): sign-in accepted; session saved for siblings: \(savedEarly)")
+                                onAuthenticated?()
+                            }
+                            if receivesNetwork {
+                                if !networkStarted {
+                                    networkMonitor.start(processID: process.processIdentifier)
+                                    networkStarted = true
+                                }
+                                bytesPerSecond = networkMonitor.rate(at: ProcessInfo.processInfo.systemUptime)
+                                sampleWorkshopDisk(in: staging)
+                            } else {
+                                bytesPerSecond = nil
+                            }
+                            if failure != nil || Date().timeIntervalSince(started) > 1800 || Date().timeIntervalSince(lastActivity) > 300 {
+                                if failure == nil {
+                                    authenticationFailed = isAuthenticating
+                                    failure = String(localized: "SteamCMD timed out. If Steam Guard was not completed, retry signing in and approve the new request or enter a fresh code. Otherwise check your connection and available disk space.")
+                                }
+                                await stopProcess()
+                                break
+                            }
+                            try await Task.sleep(for: .milliseconds(200))
+                        }
+                        // Reap our child and stop any descendants before a restart or staging cleanup.
+                        await stopProcess()
+                        // Drain the last output before closing, even when SteamCMD has already exited.
                         try readTerminalOutput()
-                        if status != loggedStatus {
-                            loggedStatus = status
-                            AppLog.info("SteamCMD \(label): \(status)")
+                        consumeOwnershipLine(recentOutput)
+                        try? terminal?.close()
+                        terminal = nil
+                        restarts += 1
+                    } while process?.terminationStatus == 42 && restarts < 4 && failure == nil
+                    AppLog.info("SteamCMD \(label): exited with status \(process.map { String($0.terminationStatus) } ?? "unknown")\(failure.map { "; failure: \($0)" } ?? "")")
+                    try Task.checkCancellation()
+                    if let failure { throw WorkshopFailure(message: failure) }
+                    guard process?.terminationStatus == 0 else {
+                        authenticationFailed = isAuthenticating
+                        if isSigningInOnly {
+                            throw WorkshopFailure(message: String(localized: "SteamCMD exited before confirming the sign-in. Check the account name and password, approve Steam Guard, and retry."))
                         }
-                        if !isAuthenticating && !signInHandedOff && failure == nil {
-                            signInHandedOff = true
-                            var savedEarly = false
-                            if rememberSession { savedEarly = await saveAcceptedSession(from: staging, account: account) }
-                            AppLog.info("SteamCMD \(label): sign-in accepted; session saved for siblings: \(savedEarly)")
-                            onAuthenticated?()
-                        }
-                        if receivesNetwork {
-                            if !networkStarted {
-                                networkMonitor.start(processID: process.processIdentifier)
-                                networkStarted = true
-                            }
-                            bytesPerSecond = networkMonitor.rate(at: ProcessInfo.processInfo.systemUptime)
-                            sampleWorkshopDisk(in: staging)
-                        } else {
-                            bytesPerSecond = nil
-                        }
-                        if failure != nil || Date().timeIntervalSince(started) > 1800 || Date().timeIntervalSince(lastActivity) > 300 {
-                            if failure == nil {
-                                authenticationFailed = isAuthenticating
-                                failure = String(localized: "SteamCMD timed out. If Steam Guard was not completed, retry signing in and approve the new request or enter a fresh code. Otherwise check your connection and available disk space.")
-                            }
-                            await stopProcess()
-                            break
-                        }
-                        try await Task.sleep(for: .milliseconds(200))
+                        throw WorkshopFailure(message: String(localized: "SteamCMD exited before completing the download. Confirm this account owns Wallpaper Engine, approve Steam Guard, and retry."))
                     }
-                    // Reap our child and stop any descendants before a restart or staging cleanup.
-                    await stopProcess()
-                    // Drain the last output before closing, even when SteamCMD has already exited.
-                    try readTerminalOutput()
-                    consumeOwnershipLine(recentOutput)
-                    try? terminal?.close()
-                    terminal = nil
-                    restarts += 1
-                } while process?.terminationStatus == 42 && restarts < 4 && failure == nil
-                AppLog.info("SteamCMD \(label): exited with status \(process.map { String($0.terminationStatus) } ?? "unknown")\(failure.map { "; failure: \($0)" } ?? "")")
-                try Task.checkCancellation()
-                if let failure { throw WorkshopFailure(message: failure) }
-                guard process?.terminationStatus == 0 else {
-                    authenticationFailed = isAuthenticating
-                    if isSigningInOnly {
-                        throw WorkshopFailure(message: String(localized: "SteamCMD exited before confirming the sign-in. Check the account name and password, approve Steam Guard, and retry."))
+                    progress = nil
+                    receivesNetwork = false
+                    bytesPerSecond = nil
+                    if isSigningInOnly && isAuthenticating {
+                        authenticationFailed = true
+                        throw WorkshopFailure(message: String(localized: "Steam closed the session without confirming the sign-in. Check the account name and password, then retry."))
                     }
-                    throw WorkshopFailure(message: String(localized: "SteamCMD exited before completing the download. Confirm this account owns Wallpaper Engine, approve Steam Guard, and retry."))
-                }
-                progress = nil
-                receivesNetwork = false
-                bytesPerSecond = nil
-                if isSigningInOnly && isAuthenticating {
-                    authenticationFailed = true
-                    throw WorkshopFailure(message: String(localized: "Steam closed the session without confirming the sign-in. Check the account name and password, then retry."))
-                }
-                if isInstallingAssets && !assetsDownloadCompleted {
-                    throw WorkshopFailure(message: String(localized: "Steam exited without confirming a complete Wallpaper Engine installation. Retry installing scene assets; existing assets have not been changed."))
-                }
-                if !isInstallingAssets && !isSigningInOnly && !workshopDownloadCompleted {
-                    throw WorkshopFailure(message: String(localized: "Steam exited without confirming a complete Workshop download. Retry; no partial wallpaper has been added to your library."))
+                    if isInstallingAssets && !assetsDownloadCompleted {
+                        throw WorkshopFailure(message: String(localized: "Steam exited without confirming a complete Wallpaper Engine installation. Retry installing scene assets; existing assets have not been changed."))
+                    }
+                    if !isInstallingAssets && !isSigningInOnly && !workshopDownloadCompleted {
+                        throw WorkshopFailure(message: String(localized: "Steam exited without confirming a complete Workshop download. Retry; no partial wallpaper has been added to your library."))
+                    }
+                    // At most one follow-up: a preset's base is never itself fetched for another.
+                    guard !fetchingPresetBase, let followUp, let next = try await followUp(staging) else { break }
+                    AppLog.info("SteamCMD \(label): preset is based on Workshop item \(next); downloading it in the same session")
+                    passItemID = next
+                    fetchingPresetBase = true
+                    workshopDownloadCompleted = false
+                    self.expectedBytes = nil
+                    phase = .requesting
+                    status = String(localized: "Downloading the wallpaper this preset is based on…")
                 }
                 try await onDownloaded(staging)
             } catch is CancellationError {
@@ -554,7 +576,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             bytesExpected = nil
             progress = nil
             phase = .transferring
-            status = String(localized: "Downloading Workshop files…")
+            status = fetchingPresetBase ? String(localized: "Downloading the wallpaper this preset is based on…")
+                : String(localized: "Downloading Workshop files…")
         } else if output.contains("logged in ok") || output.contains("waiting for user info...ok") {
             prompt = nil
             steamGuardChallenge = nil

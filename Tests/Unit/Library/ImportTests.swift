@@ -314,4 +314,125 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: library.appendingPathComponent("123/marker")),
                        Data((firstRemains ? "second" : "first").utf8))
     }
+
+    // MARK: Workshop presets
+
+    /// A web wallpaper with two properties, as a Workshop preset's base.
+    private func presetBase(at url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try Data("<html></html>".utf8).write(to: url.appendingPathComponent("index.html"))
+        try Data("base-preview".utf8).write(to: url.appendingPathComponent("preview.jpg"))
+        let manifest: [String: Any] = [
+            "title": "Fluid", "type": "web", "file": "index.html", "preview": "preview.jpg", "workshopid": "100",
+            "general": ["supportsaudioprocessing": true, "properties": [
+                "speed": ["type": "slider", "value": 1],
+                "backgroundimage": ["type": "file", "value": ""],
+                "group": ["type": "group"],
+            ]],
+        ]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url.appendingPathComponent("project.json"))
+    }
+
+    /// A Workshop preset of item 100: no type, its own preview and a picture its values point at.
+    private func preset(at url: URL, dependency: Any = "100") throws {
+        try FileManager.default.createDirectory(at: url.appendingPathComponent("files"), withIntermediateDirectories: true)
+        try Data("preset-preview".utf8).write(to: url.appendingPathComponent("preview.gif"))
+        try Data("picture".utf8).write(to: url.appendingPathComponent("files/bg.png"))
+        let manifest: [String: Any] = [
+            "title": "Purple Ink", "dependency": dependency, "preview": "preview.gif", "workshopid": "200",
+            "preset": ["speed": 7, "backgroundimage": "files/bg.png", "group": NSNull(), "undeclared": 3],
+        ]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url.appendingPathComponent("project.json"))
+    }
+
+    private func content(_ staging: URL, _ id: String) -> URL {
+        staging.appendingPathComponent("steamapps/workshop/content/431960/\(id)")
+    }
+
+    private func assertAssembledPreset(_ id: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let installed = library.appendingPathComponent(id)
+        XCTAssertEqual(try Data(contentsOf: installed.appendingPathComponent("index.html")), Data("<html></html>".utf8), file: file, line: line)
+        XCTAssertEqual(try Data(contentsOf: installed.appendingPathComponent("files/bg.png")), Data("picture".utf8), file: file, line: line)
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: installed.appendingPathComponent("project.json"))) as? [String: Any])
+        XCTAssertEqual(manifest["type"] as? String, "web", file: file, line: line)
+        XCTAssertEqual(manifest["file"] as? String, "index.html", file: file, line: line)
+        XCTAssertEqual(manifest["title"] as? String, "Purple Ink", file: file, line: line)
+        XCTAssertEqual(manifest["preview"] as? String, "preview.gif", file: file, line: line)
+        XCTAssertEqual(manifest["workshopid"] as? String, "200", file: file, line: line)
+        XCTAssertEqual(manifest["dependency"] as? String, "100", file: file, line: line)
+        let general = try XCTUnwrap(manifest["general"] as? [String: Any])
+        XCTAssertEqual(general["supportsaudioprocessing"] as? Bool, true, file: file, line: line)
+        let properties = try XCTUnwrap(general["properties"] as? [String: [String: Any]])
+        XCTAssertEqual(properties["speed"]?["value"] as? Int, 7, file: file, line: line)
+        XCTAssertEqual(properties["backgroundimage"]?["value"] as? String, "files/bg.png", file: file, line: line)
+        XCTAssertNil(properties["group"]?["value"], "A heading takes no value", file: file, line: line)
+        XCTAssertNil(properties["undeclared"], "Only the base's own properties take values", file: file, line: line)
+    }
+
+    func testDownloadedPresetIsAssembledOnTheBaseDownloadedWithIt() async throws {
+        let staging = root.appendingPathComponent("download-preset")
+        try preset(at: content(staging, "200"))
+        let found = try await importer.presetBaseToDownload("200", in: staging, library: library)
+        XCTAssertEqual(found, "100")
+        try presetBase(at: content(staging, "100"))
+        let fetched = try await importer.presetBaseToDownload("200", in: staging, library: library)
+        XCTAssertNil(fetched, "A base already in staging is not fetched again")
+        try await importer.importDownloadedItem("200", from: staging, into: library)
+        try assertAssembledPreset("200")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.appendingPathComponent("100").path))
+    }
+
+    func testDownloadedPresetReusesAnInstalledBaseWithoutChangingIt() async throws {
+        try presetBase(at: library.appendingPathComponent("100"))
+        let original = try Data(contentsOf: library.appendingPathComponent("100/project.json"))
+        let staging = root.appendingPathComponent("download-preset")
+        try preset(at: content(staging, "200"), dependency: 100)
+        let found = try await importer.presetBaseToDownload("200", in: staging, library: library)
+        XCTAssertNil(found)
+        try await importer.importDownloadedItem("200", from: staging, into: library, replacing: true)
+        try assertAssembledPreset("200")
+        XCTAssertEqual(try Data(contentsOf: library.appendingPathComponent("100/project.json")), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.appendingPathComponent("100/files").path))
+    }
+
+    func testOrdinaryDownloadNeedsNoBase() async throws {
+        let staging = root.appendingPathComponent("download")
+        _ = try downloadedProject("123", staging: staging)
+        let found = try await importer.presetBaseToDownload("123", in: staging, library: library)
+        XCTAssertNil(found)
+    }
+
+    func testPresetWithoutAUsableBaseIsNeverPublished() async throws {
+        let missing = root.appendingPathComponent("download-missing")
+        try preset(at: content(missing, "200"))
+        await assertDownloadRejected("200", staging: missing)
+        let nested = root.appendingPathComponent("download-nested")
+        try preset(at: content(nested, "200"))
+        try preset(at: content(nested, "100"), dependency: "50")
+        await assertDownloadRejected("200", staging: nested)
+        let itself = root.appendingPathComponent("download-itself")
+        try preset(at: content(itself, "200"), dependency: "200")
+        do {
+            _ = try await importer.presetBaseToDownload("200", in: itself, library: library)
+            XCTFail("A preset of itself has no base to fetch")
+        } catch {}
+        await assertDownloadRejected("200", staging: itself)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.appendingPathComponent("200").path))
+    }
+
+    func testImportedPresetIsAssembledFromItsSteamLibrarySiblingNonDestructively() async throws {
+        let steamContent = root.appendingPathComponent("Steam/steamapps/workshop/content/431960")
+        try presetBase(at: steamContent.appendingPathComponent("100"))
+        try preset(at: steamContent.appendingPathComponent("200"))
+        let report = try await importOne(steamContent.appendingPathComponent("200"))
+        XCTAssertEqual(report.importedIDs, ["200"], "\(report.failures)")
+        try assertAssembledPreset("200")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: steamContent.appendingPathComponent("200/files/bg.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: steamContent.appendingPathComponent("100/index.html").path))
+        let orphan = root.appendingPathComponent("orphan/300")
+        try preset(at: orphan)
+        let failed = try await importOne(orphan)
+        XCTAssertTrue(failed.importedIDs.isEmpty)
+        XCTAssertEqual(failed.failures.count, 1)
+    }
 }

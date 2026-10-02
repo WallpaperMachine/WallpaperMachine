@@ -13,7 +13,10 @@ Swift tests cover, without starting the app:
 
 - **Library** — complete atomic adoption, concurrent destinations, duplicates,
   cancellation, and rejection of linked, special, or incomplete content;
-  deletion; scene-asset installation. `ImageImportTests` imports real ImageIO
+  deletion; scene-asset installation; Workshop presets assembled on a base
+  downloaded with them, installed, or next to them in a Steam library, and
+  rejected without a usable base (`ImportTests`; the second SteamCMD pass is in
+  `DownloaderLifecycleTests`). `ImageImportTests` imports real ImageIO
   pictures: the still `web` project, the original's bytes kept, the file name
   kept out of the page, the fit chosen from the shape, a JPEG display copy for a
   TIFF, an undecodable file refused, **Keep both** keeping the `image-` prefix,

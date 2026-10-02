@@ -510,6 +510,28 @@ remain non-destructive copies.
 A download interrupted by a crash leaves staging behind. The app reclaims only
 staging directories it can prove nothing is writing to.
 
+### Workshop presets
+
+A Workshop preset (category **Preset**, "Required items" on its page) is not a
+wallpaper by itself: its `project.json` has no `type`, only `"dependency":
+"<base id>"` and, under `preset`, values for the base's properties, plus any
+files those values point at. After the preset arrives,
+`WallpaperImportService.presetBaseToDownload` names the base unless the same
+staging or the library already holds it, and `WorkshopDownloader` fetches it in
+a second SteamCMD pass of the same job, staging and sign-in (status "Downloading
+the wallpaper this preset is based on…"). The importer then assembles one
+self-contained wallpaper under the preset's id: the base's content (moved from
+staging, or cloned from the library, which stays unchanged), the preset's files
+over it, and the base's manifest with the preset's title, description, tags,
+rating, preview and Workshop id, `dependency` recorded, and each preset value
+written into the base property of the same name (`null` headings and
+undeclared names are ignored). A base fetched for a preset is not added to the
+library. A preset of a preset, or one naming itself, is rejected without
+publishing anything. Updating a preset reassembles it on the current base; an
+update of the base alone does not reach presets already installed. Importing a
+preset folder works the same way with the base found next to it or in the
+library.
+
 ## Updates
 
 `WorkshopUpdateStore` finds installed Workshop wallpapers (numeric ids) whose
