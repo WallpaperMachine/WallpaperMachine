@@ -35,7 +35,16 @@ for them.
 
 The page is loaded from `file://` with sibling-file access, matching Wallpaper
 Engine's CEF host: ES modules, `fetch()` and media inside the project folder work,
-and `location.protocol` is `file:`. A document-start script installs the host side:
+and `location.protocol` is `file:`. WebKit resolves a `fetch()` of a project file
+with status 0, `ok === false` and no headers, where Chromium answers 200 with a
+`Content-Type` from the extension; the host script gives a found `file://` GET/HEAD
+response that status and type (body streamed through, missing files still reject),
+so WebGL exports such as Unity and Emscripten, which check `ok` and stream `.wasm`
+into `WebAssembly.instantiateStreaming`, start. Those served `.wasm` responses are
+compiled from their bytes rather than by WebKit's streaming compiler, which
+measured about 190 ms slower to boot a 22 MB Unity module; every other response
+keeps WebKit's native streaming and MIME check. XHR is untouched.
+A document-start script installs the host side:
 
 | Call into the page | When |
 |---|---|

@@ -97,6 +97,57 @@ final class WebWallpaperPageTests: XCTestCase {
     XCTAssertEqual(page.webView.url?.standardizedFileURL, page.entryURL.standardizedFileURL)
   }
 
+  /// WebKit answers a `file://` fetch with status 0 and no headers; Wallpaper
+  /// Engine's Chromium host answers 200 with a type from the extension. WebGL
+  /// exports (Unity, Emscripten) check `ok` and stream `.wasm` files, so without
+  /// parity they never start.
+  func testProjectFileFetchesLookServedSoWasmLoadersStart() async throws {
+    // (module (func (export "f") (result i32) i32.const 42))
+    let wasm: [UInt8] = [
+      0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7F,
+      0x03, 0x02, 0x01, 0x00, 0x07, 0x05, 0x01, 0x01, 0x66, 0x00, 0x00, 0x0A, 0x06, 0x01, 0x04,
+      0x00, 0x41, 0x2A, 0x0B,
+    ]
+    try Data(wasm).write(to: project.appendingPathComponent("assets/answer.wasm"))
+    let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
+    page.load()
+    let deadline = Date().addingTimeInterval(10)
+    while !page.isLoaded && Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertTrue(page.isLoaded)
+
+    let value = try await page.webView.callAsyncJavaScript(
+        """
+        const script = await fetch("assets/main.js");
+        const text = await script.clone().text();
+        const missing = await fetch("assets/missing.wasm").then(() => "resolved", () => "rejected");
+        const streamed = await WebAssembly.instantiateStreaming(fetch("assets/answer.wasm"), {});
+        const compiled = await WebAssembly.compileStreaming(fetch("./assets/answer.wasm"));
+        let wrongType = "resolved";
+        try {
+          await WebAssembly.compileStreaming(new Response(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])));
+        } catch (error) { wrongType = error.name; }
+        return {
+          ok: script.ok, status: script.status, type: script.headers.get("Content-Type"),
+          url: script.url.endsWith("/assets/main.js"), text: text.includes("loaded = true"),
+          missing, answer: streamed.instance.exports.f(),
+          compiledExports: WebAssembly.Module.exports(compiled).map(e => e.name).join(),
+          wrongType,
+        };
+        """, arguments: [:], in: nil, contentWorld: .page)
+    let result = try XCTUnwrap(value as? [String: Any])
+    XCTAssertEqual(result["ok"] as? Bool, true, "\(result)")
+    XCTAssertEqual(result["status"] as? Int, 200)
+    XCTAssertEqual(result["type"] as? String, "text/javascript")
+    XCTAssertEqual(result["url"] as? Bool, true, "A served response must keep its file URL")
+    XCTAssertEqual(result["text"] as? Bool, true, "The body must reach the page unchanged")
+    XCTAssertEqual(result["missing"] as? String, "rejected", "A missing file must still fail")
+    XCTAssertEqual(result["answer"] as? Int, 42)
+    XCTAssertEqual(result["compiledExports"] as? String, "f")
+    XCTAssertEqual(
+      result["wrongType"] as? String, "TypeError",
+      "A response that is not a served project file keeps WebKit's own MIME check")
+  }
+
   func testForwardedPointerEventsReachThePageWithoutANativeContextMenu() async throws {
     try """
       <!doctype html><html><body style="margin:0"><div id="stage" style="position:absolute;left:0;top:0;width:640px;height:400px"></div>

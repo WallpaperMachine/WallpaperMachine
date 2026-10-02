@@ -29,6 +29,77 @@ enum WebWallpaperProtocol {
     static let hostScript = """
     (() => {
       if (window.__mweWallpaperHost) return;
+      // WebKit resolves fetch() of a project file with status 0, ok === false and
+      // no headers. Wallpaper Engine's Chromium host answers like a server: 200 OK
+      // with a Content-Type from the extension. Loaders that check response.ok,
+      // or stream into WebAssembly.instantiateStreaming (which demands
+      // application/wasm), fail without it, so a found file:// GET/HEAD gets the
+      // same status and type. The body stream is handed over, never buffered;
+      // missing files and every other response are left exactly as WebKit made them.
+      const nativeFetch = window.fetch;
+      if (typeof nativeFetch === "function" && typeof Response === "function") {
+        const FILE_TYPES = {
+          html: "text/html", htm: "text/html", js: "text/javascript", mjs: "text/javascript",
+          css: "text/css", json: "application/json", wasm: "application/wasm", txt: "text/plain",
+          xml: "text/xml", svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg",
+          jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif",
+          bmp: "image/bmp", ico: "image/x-icon", mp3: "audio/mpeg", wav: "audio/wav",
+          ogg: "audio/ogg", oga: "audio/ogg", m4a: "audio/mp4", flac: "audio/flac",
+          mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", ogv: "video/ogg",
+          woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf",
+        };
+        const fileType = url => {
+          const path = url.split(/[?#]/)[0];
+          const dot = path.lastIndexOf(".");
+          return dot > path.lastIndexOf("/") ? FILE_TYPES[path.slice(dot + 1).toLowerCase()] : undefined;
+        };
+        const served = new WeakSet();
+        // A constructed Response forgets its URL; keep what the page would read.
+        const asFetched = (response, url, redirected) => {
+          served.add(response);
+          return Object.defineProperties(response, {
+            url: { value: url, enumerable: true },
+            type: { value: "basic", enumerable: true },
+            redirected: { value: redirected, enumerable: true },
+            clone: { configurable: true, writable: true,
+              value() { return asFetched(Response.prototype.clone.call(this), url, redirected); } },
+          });
+        };
+        const asServed = response => {
+          if (response.status !== 0 || response.type !== "basic" || !response.url.startsWith("file:")) return response;
+          const headers = new Headers();
+          const type = fileType(response.url);
+          if (type) headers.set("Content-Type", type);
+          return asFetched(new Response(response.body, { status: 200, statusText: "OK", headers }),
+            response.url, response.redirected);
+        };
+        window.fetch = function fetch(input, init) {
+          const pending = nativeFetch.apply(this, arguments);
+          const method = String((init && init.method) || (input instanceof Request ? input.method : "GET")).toUpperCase();
+          return method === "GET" || method === "HEAD" ? pending.then(asServed) : pending;
+        };
+        // Now that a project .wasm streams as application/wasm, the streaming
+        // APIs would take WebKit's streaming compiler, which starts a large module
+        // measurably later than compiling the same bytes from an ArrayBuffer (a
+        // whole local file is already there to read). Only responses served above
+        // take that path; anything else, including errors, stays native.
+        const wasm = typeof WebAssembly === "object" ? WebAssembly : null;
+        const wrapStreaming = (name, fromBytes) => {
+          const native = wasm && wasm[name];
+          if (typeof native !== "function") return;
+          wasm[name] = async function (source, ...rest) {
+            const response = await source;
+            if (!served.has(response) || response.status !== 200 || response.bodyUsed
+                || response.headers.get("Content-Type") !== "application/wasm") {
+              return native.call(this, response, ...rest);
+            }
+            return fromBytes(await response.arrayBuffer(), ...rest);
+          };
+        };
+        const compile = wasm && wasm.compile, instantiate = wasm && wasm.instantiate;
+        wrapStreaming("compileStreaming", bytes => compile.call(wasm, bytes));
+        wrapStreaming("instantiateStreaming", (bytes, imports) => instantiate.call(wasm, bytes, imports));
+      }
       const post = message => {
         try { window.webkit.messageHandlers.\(WebWallpaperProtocol.messageHandlerName).postMessage(message); }
         catch (error) { console.error("wallpaper host channel unavailable", error); }
