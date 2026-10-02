@@ -406,6 +406,13 @@ fn wait_for_paused_calls(engine: &FakeEngineFacade, expected: &[bool]) {
 struct FailingPlaybackEngine;
 
 impl EngineFacade for FailingPlaybackEngine {
+    fn set_audio_capture_demand(
+        &self,
+        _demand: crate::engine::AudioCaptureDemand,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok(()) }.boxed()
+    }
+
     fn set_user_shortcut_callback(
         &self,
         _callback: Option<wallpaper_core::UserShortcutObserverCallback>,
@@ -638,6 +645,13 @@ enum ShutdownEvent {
 }
 
 impl EngineFacade for ShutdownEngine {
+    fn set_audio_capture_demand(
+        &self,
+        _demand: crate::engine::AudioCaptureDemand,
+    ) -> BoxFuture<'static, Result<(), EngineError>> {
+        async move { Ok(()) }.boxed()
+    }
+
     fn set_user_shortcut_callback(
         &self,
         _callback: Option<wallpaper_core::UserShortcutObserverCallback>,

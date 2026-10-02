@@ -982,6 +982,11 @@ cargo test -p shader --test pipeline -- --nocapture
 
 - `wallpaper-core` audio coverage: capture ownership and failures,
   mono/multichannel conversion, resampling including sample-rate changes.
+  `capture_controller_tests` includes non-scene consumers sharing one tap with
+  scenes, cleanup, suspension, permission and failed-transition rollback.
+  The bridge's `tests::web_audio_media` replays web capture decisions through the
+  production demand handler and real controller with a device-free backend:
+  checking only the fake engine's suspension flag cannot prove capture starts.
 - `wallpaper_background`: renders unattached production Metal layers over a white
   bitmap with no drawable, before and after a resize and after recreation. Every
   pixel must be opaque black. Its harness runs on the process's main thread; no

@@ -446,6 +446,7 @@ pub struct AudioCaptureController<B: AudioCaptureBackend> {
     backend: B,
     enabled_handles: HashSet<SceneHandle>,
     suspended: bool,
+    external_consumers: bool,
 }
 
 impl<B: AudioCaptureBackend> AudioCaptureController<B> {
@@ -456,6 +457,7 @@ impl<B: AudioCaptureBackend> AudioCaptureController<B> {
             backend,
             enabled_handles: HashSet::new(),
             suspended: false,
+            external_consumers: false,
         }
     }
 
@@ -525,17 +527,23 @@ impl<B: AudioCaptureBackend> AudioCaptureController<B> {
         self.sync_capture_state()
     }
 
-    /// Globally stops capture without forgetting which scenes requested it.
-    /// Resuming restores capture for every scene still enabled.
+    /// Updates presentation suspension and demand from consumers without scene
+    /// handles (such as web pages) together, without briefly restarting capture.
+    /// Scene ownership is preserved. A failed transition restores both inputs.
     ///
     /// # Errors
     ///
     /// Returns [`AudioCaptureError`] when starting or stopping capture fails.
-    pub fn set_suspended(&mut self, suspended: bool) -> Result<(), AudioCaptureError> {
-        let previous = self.suspended;
+    pub fn set_demand(
+        &mut self,
+        suspended: bool,
+        external_consumers: bool,
+    ) -> Result<(), AudioCaptureError> {
+        let previous = (self.suspended, self.external_consumers);
         self.suspended = suspended;
+        self.external_consumers = external_consumers;
         if let Err(error) = self.sync_capture_state() {
-            self.suspended = previous;
+            (self.suspended, self.external_consumers) = previous;
             if let Err(rollback) = self.sync_capture_state() {
                 return Err(AudioCaptureError::Platform(format!(
                     "{error}; audio capture rollback failed: {rollback}"
@@ -562,7 +570,8 @@ impl<B: AudioCaptureBackend> AudioCaptureController<B> {
     }
 
     fn sync_capture_state(&mut self) -> Result<(), AudioCaptureError> {
-        let should_run = !self.suspended && !self.enabled_handles.is_empty();
+        let should_run = !self.suspended
+            && (self.external_consumers || !self.enabled_handles.is_empty());
         if should_run {
             if !self.backend.is_running() && self.backend.has_permission()? {
                 self.backend.start(Arc::clone(&self.consumer))?;
@@ -713,6 +722,8 @@ mod capture_controller_tests {
         permission_pending: bool,
         fail_start: bool,
         fail_stop: bool,
+        starts: usize,
+        stops: usize,
     }
 
     impl AudioCaptureBackend for TestBackend {
@@ -733,6 +744,7 @@ mod capture_controller_tests {
                 return Err(AudioCaptureError::Platform("start failed".into()));
             }
             self.running = true;
+            self.starts += 1;
             Ok(())
         }
 
@@ -741,12 +753,79 @@ mod capture_controller_tests {
                 return Err(AudioCaptureError::Platform("stop failed".into()));
             }
             self.running = false;
+            self.stops += 1;
             Ok(())
         }
 
         fn is_running(&self) -> bool {
             self.running
         }
+    }
+
+    #[test]
+    fn external_consumers_capture_without_scenes_and_share_the_existing_tap() {
+        let mut controller =
+            AudioCaptureController::new(Arc::new(TestConsumer), TestBackend::default());
+        controller.set_demand(false, false).unwrap();
+        assert!(!controller.is_capturing(), "resume alone is not capture demand");
+        controller.set_demand(false, true).unwrap();
+        assert!(controller.is_capturing(), "a web-only session needs no scene handle");
+        assert_eq!(controller.active_scene_count(), 0);
+        controller.set_demand(false, true).unwrap();
+        controller.retain_scenes(&[]).unwrap();
+        assert!(controller.is_capturing(), "scene cleanup must preserve web ownership");
+
+        let handle = SceneHandle::new(7);
+        controller.set_scene_capturing(handle, true).unwrap();
+        controller.set_demand(false, false).unwrap();
+        assert!(controller.is_capturing(), "the scene still owns capture");
+        controller.set_demand(false, true).unwrap();
+        controller.retain_scenes(&[]).unwrap();
+        assert_eq!(controller.backend().starts, 1, "all consumers share one tap");
+        assert_eq!(controller.backend().stops, 0);
+        controller.set_demand(false, false).unwrap();
+        assert!(!controller.is_capturing());
+        assert_eq!(controller.backend().stops, 1);
+    }
+
+    #[test]
+    fn external_demand_obeys_suspension_and_permission() {
+        let backend = TestBackend { permission_pending: true, ..TestBackend::default() };
+        let mut controller = AudioCaptureController::new(Arc::new(TestConsumer), backend);
+        controller.set_demand(true, true).unwrap();
+        controller.request_permission().unwrap();
+        assert!(!controller.is_capturing(), "permission does not override suspension");
+        controller.set_demand(false, true).unwrap();
+        assert!(controller.is_capturing());
+        controller.set_demand(true, true).unwrap();
+        assert!(!controller.is_capturing());
+        controller.set_demand(false, false).unwrap();
+        assert!(!controller.is_capturing(), "a departed page must not resume capture");
+
+        controller.backend.permission_pending = true;
+        controller.set_demand(false, true).unwrap();
+        assert!(!controller.is_capturing());
+        controller.request_permission().unwrap();
+        assert!(controller.is_capturing(), "pending external demand survives authorization");
+    }
+
+    #[test]
+    fn failed_external_transition_restores_both_demand_inputs() {
+        let backend = TestBackend { fail_start: true, ..TestBackend::default() };
+        let mut controller = AudioCaptureController::new(Arc::new(TestConsumer), backend);
+        controller.set_demand(true, false).unwrap();
+        assert!(controller.set_demand(false, true).is_err());
+        controller.retain_scenes(&[]).unwrap();
+        assert!(!controller.is_capturing(), "failed subscription left no demand");
+        controller.set_demand(false, false).unwrap();
+        assert!(!controller.is_capturing());
+        controller.set_demand(false, true).unwrap();
+        controller.backend.fail_stop = true;
+        assert!(controller.set_demand(true, false).is_err());
+        controller.retain_scenes(&[]).unwrap();
+        assert!(controller.is_capturing(), "failed stop restores the running intent");
+        controller.set_demand(false, false).unwrap();
+        assert!(!controller.is_capturing());
     }
 
     #[test]
@@ -841,11 +920,11 @@ mod capture_controller_tests {
             .unwrap();
         assert!(controller.is_capturing());
 
-        controller.set_suspended(true).unwrap();
+        controller.set_demand(true, false).unwrap();
         assert!(!controller.is_capturing());
         assert_eq!(controller.active_scene_count(), 1);
 
-        controller.set_suspended(false).unwrap();
+        controller.set_demand(false, false).unwrap();
         assert!(controller.is_capturing());
     }
 
@@ -856,10 +935,10 @@ mod capture_controller_tests {
         controller
             .set_scene_capturing(SceneHandle::new(1), true)
             .unwrap();
-        controller.set_suspended(true).unwrap();
+        controller.set_demand(true, false).unwrap();
         controller.backend.fail_start = true;
 
-        let error = controller.set_suspended(false).unwrap_err();
+        let error = controller.set_demand(false, false).unwrap_err();
         assert_eq!(error, AudioCaptureError::Platform("start failed".into()));
         assert!(!controller.is_capturing());
         controller
@@ -867,10 +946,10 @@ mod capture_controller_tests {
             .unwrap();
         assert!(!controller.is_capturing());
 
-        controller.set_suspended(true).unwrap();
-        controller.set_suspended(false).unwrap();
+        controller.set_demand(true, false).unwrap();
+        controller.set_demand(false, false).unwrap();
         assert!(controller.is_capturing());
-        controller.set_suspended(true).unwrap();
+        controller.set_demand(true, false).unwrap();
         assert!(!controller.is_capturing());
         assert_eq!(controller.active_scene_count(), 2);
     }
@@ -884,15 +963,15 @@ mod capture_controller_tests {
             .unwrap();
         controller.backend.fail_stop = true;
 
-        let error = controller.set_suspended(true).unwrap_err();
+        let error = controller.set_demand(true, false).unwrap_err();
         assert_eq!(error, AudioCaptureError::Platform("stop failed".into()));
         controller
             .set_scene_capturing(SceneHandle::new(2), true)
             .unwrap();
         assert!(controller.is_capturing());
-        controller.set_suspended(true).unwrap();
+        controller.set_demand(true, false).unwrap();
         assert!(!controller.is_capturing());
-        controller.set_suspended(false).unwrap();
+        controller.set_demand(false, false).unwrap();
         assert!(controller.is_capturing());
     }
 }

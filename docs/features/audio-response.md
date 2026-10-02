@@ -1,7 +1,7 @@
 # Audio-responsive wallpapers
 
-Scene wallpapers with authored audio effects can react to sound playing on the
-Mac.
+Scene wallpapers with authored audio effects and web wallpapers with an audio
+listener can react to sound playing on the Mac.
 
 ## Enabling it
 
@@ -19,6 +19,11 @@ script that starts reading later starts capture then, after a short warm-up.
 Capture stops when the last such wallpaper stops presenting or is removed.
 Activation errors are reported rather than silently ignored.
 
+A subscribed web page owns capture independently of renderer scene handles, so
+web-only sessions work and scene cleanup does not stop their audio. Both kinds
+of wallpaper share one capture tap; pause and the saved Audio response setting
+still gate delivery. Enabling media integration alone does not enable audio response.
+
 ## Permission
 
 macOS requests system audio recording permission at capture startup. If access
@@ -29,27 +34,31 @@ System Audio Recording**, then retry the switch.
 
 The input is sound playing in other apps. It is not the microphone, and it is
 not the wallpaper's own playback. The wallpaper mute and volume controls stay
-independent of audio response. Capture is downmixed to mono, so the left, right
-and average buffers contain the same signal.
+independent of audio response. Capture prefers stereo with separately analysed
+left and right channels; a mono fallback supplies the same signal to both. See
+[web audio response](web-wallpapers.md#audio-response) for the capture and
+128-band listener contract.
 
 ## Supported effect paths
 
 | Path | Notes |
 | --- | --- |
 | Shader spectrum effects | Authored audio-reactive shaders |
+| Web `wallpaperRegisterAudioListener()` | 64 bands per channel, one shared delivery pump capped at 30 Hz |
 | SceneScript `engine.registerAudioBuffers()` | 16, 32 and 64 bands |
 | Particle emitters | Box and sphere emitters with audio frequency, bounds and exponent settings |
 
 ## Non-goals
 
 - Pre-rendered video wallpapers do not gain reactive effects.
-- [Web wallpapers](web-wallpapers.md) do not receive audio samples.
 - The [lock-screen extension](lock-screen.md) does not capture system audio.
 
 ## Verification
 
 Synthetic offscreen checks cover audio-driven shader color and SceneScript
-scale; live capture and desktop behavior require a separately authorized manual
+scale. Device-free controller and bridge tests cover web-only capture startup,
+permission, shared ownership, suspension and shutdown; offscreen WebKit tests
+cover listener delivery. Live capture and desktop behavior require a separately authorized manual
 check. See [Testing](../testing/README.md) and the
 [verification log](../testing/verification-log.md).
 

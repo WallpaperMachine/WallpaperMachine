@@ -99,11 +99,50 @@ async fn web_bridge(engine: &FakeEngineFacade) -> WallpaperBridge {
 }
 
 fn tap_open(engine: &FakeEngineFacade) -> bool {
-    !engine
-        .audio_capture_suspend_calls()
-        .last()
-        .copied()
-        .expect("a subscription change must reach the capture tap")
+    use std::sync::Arc;
+    use wallpaper_core::media::audio::{
+        AudioCaptureBackend, AudioCaptureController, AudioCaptureError, AudioFrameConsumer,
+        InterleavedStereoF32, MonoPcmF32,
+    };
+
+    struct Consumer;
+    impl AudioFrameConsumer for Consumer {
+        fn submit_audio_frames(&self, _: InterleavedStereoF32<'_>) -> Result<(), AudioCaptureError> {
+            Ok(())
+        }
+        fn submit_mono_audio_frames(&self, _: MonoPcmF32<'_>) -> Result<(), AudioCaptureError> {
+            Ok(())
+        }
+    }
+    #[derive(Default)]
+    struct Backend { authorized: bool, running: bool }
+    impl AudioCaptureBackend for Backend {
+        fn has_permission(&self) -> Result<bool, AudioCaptureError> { Ok(self.authorized) }
+        fn request_permission(&mut self) -> Result<bool, AudioCaptureError> {
+            self.authorized = true;
+            Ok(true)
+        }
+        fn start(&mut self, _: Arc<dyn AudioFrameConsumer>) -> Result<(), AudioCaptureError> {
+            assert!(self.authorized);
+            self.running = true;
+            Ok(())
+        }
+        fn stop(&mut self) -> Result<(), AudioCaptureError> {
+            self.running = false;
+            Ok(())
+        }
+        fn is_running(&self) -> bool { self.running }
+    }
+
+    // Replay the bridge's decisions through the production worker's handler and
+    // the real controller. Merely observing `suspended == false` missed the bug:
+    // the controller still required a scene handle before starting its backend.
+    let mut controller = AudioCaptureController::new(Arc::new(Consumer), Backend::default());
+    for demand in engine.audio_capture_demands() {
+        crate::engine::apply_audio_capture_demand(&mut controller, demand).unwrap();
+        controller.retain_scenes(&[]).unwrap();
+    }
+    controller.is_capturing()
 }
 
 async fn audio_consumers(bridge: &WallpaperBridge) -> u32 {
@@ -144,6 +183,40 @@ async fn capture_tap_follows_web_subscribers_with_no_scene_handle() {
         "losing the last consumer must close the tap"
     );
     assert_eq!(audio_consumers(&bridge).await, 0);
+}
+
+#[tokio::test]
+async fn web_capture_obeys_consent_pause_and_display_suspension() {
+    let engine = FakeEngineFacade::default();
+    let bridge = web_bridge(&engine).await;
+    bridge.set_audio_response_enabled("300".into(), false).await.unwrap();
+    bridge.set_web_audio_subscribed("300".into(), 7, true).await.unwrap();
+    assert!(!tap_open(&engine), "a listener is not consent to capture");
+    bridge.set_audio_response_enabled("300".into(), true).await.unwrap();
+    // The page recomputes its demand when the host applies the new setting.
+    bridge.set_web_audio_subscribed("300".into(), 7, true).await.unwrap();
+    assert!(tap_open(&engine));
+    bridge.set_display_presentation_suspended("7".into(), true).await.unwrap();
+    assert!(!tap_open(&engine));
+    bridge.set_display_presentation_suspended("7".into(), false).await.unwrap();
+    assert!(tap_open(&engine));
+    bridge.set_presentation_suspended(true).await.unwrap();
+    assert!(!tap_open(&engine));
+    bridge.set_presentation_suspended(false).await.unwrap();
+    assert!(tap_open(&engine));
+    bridge.set_audio_response_enabled("300".into(), false).await.unwrap();
+    bridge.set_web_audio_subscribed("300".into(), 7, false).await.unwrap();
+    assert!(!tap_open(&engine));
+}
+
+#[tokio::test]
+async fn shutdown_releases_web_capture_without_waiting_for_a_page_to_unsubscribe() {
+    let engine = FakeEngineFacade::default();
+    let bridge = web_bridge(&engine).await;
+    bridge.set_web_audio_subscribed("300".into(), 7, true).await.unwrap();
+    assert!(tap_open(&engine));
+    bridge.shutdown().await.unwrap();
+    assert!(!tap_open(&engine));
 }
 
 #[tokio::test]

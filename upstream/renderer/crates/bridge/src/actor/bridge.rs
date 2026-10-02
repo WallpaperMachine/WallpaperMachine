@@ -70,7 +70,7 @@ use crate::{
         WallpaperConfig,
     },
     display::{DisplaySelectorExt, DisplaySnapshotExt},
-    engine::{ActivationInputs, EngineFacade, NativeVideoRejection, NativeVideoRejections},
+    engine::{ActivationInputs, AudioCaptureDemand, EngineFacade, NativeVideoRejection, NativeVideoRejections},
     library::scan,
     login::LaunchAtLoginController,
     paths::BridgePaths,
@@ -265,7 +265,7 @@ fn scene_reads_audio<E: EngineFacade>(
 
 /// Registers one scene as a system-audio consumer: the user's audio-response
 /// setting AND the renderer's report that the loaded scene reads audio. Pause
-/// is not part of this: it is the global `set_audio_capture_suspended` gate,
+/// is not part of this: it is the global `set_audio_capture_demand` gate,
 /// which every pause and resume path already re-evaluates, whereas a paused
 /// registration would have to be re-made on every resume.
 ///
@@ -1422,20 +1422,25 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     /// handle. A web page has no handle at all and consumes only once it has
     /// registered an audio listener, so leaving it out would keep the tap shut
     /// on a display showing nothing but web wallpapers.
-    fn audio_capture_suspended(&self) -> bool {
+    fn audio_capture_demand(&self, paused: bool) -> AudioCaptureDemand {
         let displays = self.engine.display_snapshot();
-        let inputs = self.activation_inputs(&displays, self.playback_paused());
+        let inputs = self.activation_inputs(&displays, paused);
+        let external_consumers = web_audio_consumers(&inputs, &self.state.web_audio_subscribers) > 0;
         let Ok(scenes) = inputs.build() else {
             // Without a resolvable scene list, fall back to the coarse global
             // condition rather than guessing that nothing consumes audio.
-            return self.playback_paused();
+            return AudioCaptureDemand { suspended: paused, external_consumers };
         };
 
-        !scenes.iter().any(|scene| {
+        let scene_consumers = scenes.iter().any(|scene| {
             scene.audio_response_enabled
                 && !scene.paused
                 && scene_reads_audio(&self.engine, &displays, scene)
-        }) && web_audio_consumers(&inputs, &self.state.web_audio_subscribers) == 0
+        });
+        AudioCaptureDemand {
+            suspended: !scene_consumers && !external_consumers,
+            external_consumers,
+        }
     }
 
     /// Wallpapers that enable audio response, whose scene reads audio and that
@@ -1465,7 +1470,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
 
     async fn apply_engine_pause(&self, previous_paused: bool) -> Result<(), BridgeError> {
         let paused = self.playback_paused();
-        let audio_suspended = self.audio_capture_suspended();
+        let audio_demand = self.audio_capture_demand(paused);
         // Each scene takes `paused || its display is covered` in one pass, so a
         // global resume never runs a display that is still hidden on its own.
         let suspended_displays: Vec<u32> = self.state.suspended_displays.iter().copied().collect();
@@ -1473,7 +1478,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             self.engine
                 .set_all_paused(paused, suspended_displays.clone())
                 .await?;
-            self.engine.set_audio_capture_suspended(audio_suspended).await
+            self.engine.set_audio_capture_demand(audio_demand).await
         }
         .await;
         if let Err(error) = result {
@@ -1489,7 +1494,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             }
             if let Err(rollback) = self
                 .engine
-                .set_audio_capture_suspended(previous_paused)
+                .set_audio_capture_demand(self.audio_capture_demand(previous_paused))
                 .await
             {
                 message.push_str(&format!("; audio capture rollback failed: {rollback}"));
@@ -3169,11 +3174,11 @@ impl<E: EngineFacade + Clone> Message<SetDisplayPresentationSuspended> for Bridg
         // whatever they already had, so a hidden screen cannot stop a visible
         // one and a visible screen cannot restart a hidden one.
         let paused = self.playback_paused() || msg.suspended;
-        let audio_suspended = self.audio_capture_suspended();
+        let audio_demand = self.audio_capture_demand(self.playback_paused());
         let result = async {
             self.engine.set_display_paused(display_id, paused).await?;
             self.engine
-                .set_audio_capture_suspended(audio_suspended)
+                .set_audio_capture_demand(audio_demand)
                 .await
         }
         .await;
@@ -3193,7 +3198,7 @@ impl<E: EngineFacade + Clone> Message<SetDisplayPresentationSuspended> for Bridg
             }
             if let Err(rollback) = self
                 .engine
-                .set_audio_capture_suspended(self.audio_capture_suspended())
+                .set_audio_capture_demand(self.audio_capture_demand(self.playback_paused()))
                 .await
             {
                 message.push_str(&format!("; audio capture rollback failed: {rollback}"));
@@ -3485,7 +3490,7 @@ impl<E: EngineFacade + Clone> Message<SetWebAudioSubscribed> for BridgeActor<E> 
         // The last consumer of either kind going away has to close the tap,
         // so this is re-evaluated rather than only ever opened.
         self.engine
-            .set_audio_capture_suspended(self.audio_capture_suspended())
+            .set_audio_capture_demand(self.audio_capture_demand(self.playback_paused()))
             .await
             .map_err(|error| BridgeError::engine(error.to_string()))
     }
@@ -3527,7 +3532,7 @@ impl<E: EngineFacade + Clone> Message<AudioRequirementChanged> for BridgeActor<E
                 .map_err(|error| BridgeError::engine(error.to_string()))?;
         }
         self.engine
-            .set_audio_capture_suspended(self.audio_capture_suspended())
+            .set_audio_capture_demand(self.audio_capture_demand(self.playback_paused()))
             .await
             .map_err(|error| BridgeError::engine(error.to_string()))
     }
@@ -4115,6 +4120,10 @@ impl<E: EngineFacade + Clone> Message<Shutdown> for BridgeActor<E> {
         }
 
         let result = async {
+            self.engine.set_audio_capture_demand(AudioCaptureDemand {
+                suspended: true,
+                external_consumers: false,
+            }).await?;
             for handle in active_handles {
                 self.engine.set_audio_capture_enabled(handle, false).await?;
             }

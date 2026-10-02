@@ -19,12 +19,19 @@ use wallpaper_core::{
     AudioSpectrum128, DisplaySelector, DisplaySnapshotEntry, EngineError, FirstFrameCallback,
     SceneBackend, SceneDemandReasons, SceneRendererPreference, SceneUpdateMode,
     WallpaperAssignment, WallpaperEngine,
-    media::audio::{AudioCaptureController, AudioVolume, PlatformAudioCaptureBackend},
+    media::audio::{AudioCaptureBackend, AudioCaptureController, AudioVolume, PlatformAudioCaptureBackend},
     project::{ScalingMode, SceneDesc, SceneHandle, SceneResult},
     render::RendererSurfaceCounters,
 };
 
 pub type EngineFuture<T> = BoxFuture<'static, Result<T, EngineError>>;
+
+/// Presentation gate and live consumers that do not own renderer scene handles.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AudioCaptureDemand {
+    pub suspended: bool,
+    pub external_consumers: bool,
+}
 
 /// What the renderer process actually has switched on, and what its video
 /// decode is actually doing, right now.
@@ -155,12 +162,9 @@ pub trait EngineFacade: Send + Sync + 'static {
         &self,
         callback: Option<wallpaper_core::AudioRequirementCallback>,
     );
-    /// Globally suspends or resumes system-audio capture. Per-scene audio
-    /// response settings are preserved across the transition.
-    fn set_audio_capture_suspended(&self, suspended: bool) -> EngineFuture<()> {
-        let _ = suspended;
-        async move { Ok(()) }.boxed()
-    }
+    /// Atomically updates the capture gate and non-scene demand. Scene ownership
+    /// is preserved; resuming alone must not create a capture consumer.
+    fn set_audio_capture_demand(&self, demand: AudioCaptureDemand) -> EngineFuture<()>;
     /// Turns renderer counting on or off for the whole process. Off by
     /// default; enabling starts no thread, timer or output stream.
     fn set_renderer_counters_enabled(&self, enabled: bool) -> Result<(), EngineError> {
@@ -516,13 +520,13 @@ impl EngineFacade for RealEngineFacade {
         .boxed()
     }
 
-    fn set_audio_capture_suspended(&self, suspended: bool) -> EngineFuture<()> {
+    fn set_audio_capture_demand(&self, demand: AudioCaptureDemand) -> EngineFuture<()> {
         let audio_capture = self.audio_capture.clone();
         let audio_mutation = self.audio_mutation.clone();
         async move {
             let _audio_guard = audio_mutation.lock().await;
             audio_capture
-                .set_suspended(suspended)
+                .set_demand(demand)
                 .await
                 .map_err(EngineError::Platform)
         }
@@ -652,6 +656,22 @@ impl EngineFacade for RealEngineFacade {
     }
 }
 
+/// Shared by the production worker and device-free capture regressions.
+/// A web-only session must take the same authorization path as a scene.
+pub(crate) fn apply_audio_capture_demand<B: AudioCaptureBackend>(
+    controller: &mut AudioCaptureController<B>,
+    demand: AudioCaptureDemand,
+) -> Result<(), String> {
+    if demand.external_consumers && !demand.suspended
+        && !controller.has_permission().map_err(|error| error.to_string())?
+        && !controller.request_permission().map_err(|error| error.to_string())?
+    {
+        return Err("System audio capture permission was not granted.".to_string());
+    }
+    controller.set_demand(demand.suspended, demand.external_consumers)
+        .map_err(|error| format!("Audio response could not update: {error}. Check WallpaperMachine in System Settings > Privacy & Security > Screen & System Audio Recording."))
+}
+
 #[derive(Clone)]
 struct AudioCaptureWorker {
     sender: Sender<AudioCaptureCommand>,
@@ -663,8 +683,8 @@ enum AudioCaptureCommand {
         enabled: bool,
         reply: tokio::sync::oneshot::Sender<Result<(), String>>,
     },
-    SetSuspended {
-        suspended: bool,
+    SetDemand {
+        demand: AudioCaptureDemand,
         reply: tokio::sync::oneshot::Sender<Result<(), String>>,
     },
     RetainScenes {
@@ -674,7 +694,7 @@ enum AudioCaptureCommand {
 
 enum AudioCaptureRequest {
     Scene { handle: SceneHandle, enabled: bool },
-    Suspend { suspended: bool },
+    Demand(AudioCaptureDemand),
 }
 
 impl AudioCaptureWorker {
@@ -690,8 +710,8 @@ impl AudioCaptureWorker {
                     let (request, reply) = match command {
                         AudioCaptureCommand::SetEnabled { handle, enabled, reply } =>
                             (Some(AudioCaptureRequest::Scene { handle, enabled }), reply),
-                        AudioCaptureCommand::SetSuspended { suspended, reply } =>
-                            (Some(AudioCaptureRequest::Suspend { suspended }), reply),
+                        AudioCaptureCommand::SetDemand { demand, reply } =>
+                            (Some(AudioCaptureRequest::Demand(demand)), reply),
                         AudioCaptureCommand::RetainScenes { reply } => (None, reply),
                     };
                     let result = (|| {
@@ -700,9 +720,8 @@ impl AudioCaptureWorker {
                             .filter_map(|display| display.handle).collect();
                         controller.retain_scenes(&handles).map_err(|error| error.to_string())?;
                         match request {
-                            Some(AudioCaptureRequest::Suspend { suspended }) => {
-                                controller.set_suspended(suspended)
-                                    .map_err(|error| error.to_string())?;
+                            Some(AudioCaptureRequest::Demand(demand)) => {
+                                apply_audio_capture_demand(controller, demand)?;
                             }
                             Some(AudioCaptureRequest::Scene { handle, enabled }) => {
                                 if enabled {
@@ -753,10 +772,10 @@ impl AudioCaptureWorker {
             .map_err(|error| format!("audio capture worker did not reply: {error}"))?
     }
 
-    async fn set_suspended(&self, suspended: bool) -> Result<(), String> {
+    async fn set_demand(&self, demand: AudioCaptureDemand) -> Result<(), String> {
         let (reply, response) = tokio::sync::oneshot::channel();
         self.sender
-            .send(AudioCaptureCommand::SetSuspended { suspended, reply })
+            .send(AudioCaptureCommand::SetDemand { demand, reply })
             .map_err(|error| format!("audio capture worker stopped: {error}"))?;
         response
             .await
@@ -767,6 +786,7 @@ impl AudioCaptureWorker {
 #[cfg(test)]
 #[derive(Clone, Default)]
 pub struct FakeEngineFacade {
+    audio_capture_demands: Arc<ArcSwap<Vec<AudioCaptureDemand>>>,
     media_calls: Arc<ArcSwap<Vec<(SceneHandle, bool, wallpaper_core::media::MediaPollResult)>>>,
     calls: Arc<ArcSwap<Vec<Vec<SceneDesc>>>>,
     rendered_scenes: Arc<ArcSwap<Vec<SceneDesc>>>,
@@ -982,6 +1002,11 @@ impl FakeEngineFacade {
     #[must_use]
     pub fn rendered_scenes(&self) -> Vec<SceneDesc> {
         self.rendered_scenes.load_full().as_ref().clone()
+    }
+
+    #[must_use]
+    pub fn audio_capture_demands(&self) -> Vec<AudioCaptureDemand> {
+        load_log(&self.audio_capture_demands)
     }
 
     #[must_use]
@@ -1645,9 +1670,11 @@ impl EngineFacade for FakeEngineFacade {
         .boxed()
     }
 
-    fn set_audio_capture_suspended(&self, suspended: bool) -> EngineFuture<()> {
+    fn set_audio_capture_demand(&self, demand: AudioCaptureDemand) -> EngineFuture<()> {
         let fake = self.clone();
         async move {
+            let suspended = demand.suspended;
+            push_log(&fake.audio_capture_demands, demand);
             push_log(&fake.audio_capture_suspend_calls, suspended);
             if let Some(message) = fake.suspend_failure.swap(Arc::new(None)).as_ref() {
                 return Err(EngineError::Platform(message.clone()));

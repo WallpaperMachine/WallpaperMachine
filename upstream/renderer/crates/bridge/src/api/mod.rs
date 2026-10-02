@@ -780,11 +780,11 @@ impl EngineFacade for ArcEngineFacade {
         self.0.set_audio_capture_enabled(handle, enabled)
     }
 
-    fn set_audio_capture_suspended(
+    fn set_audio_capture_demand(
         &self,
-        suspended: bool,
+        demand: crate::engine::AudioCaptureDemand,
     ) -> Pin<Box<dyn Future<Output = Result<(), wallpaper_core::EngineError>> + Send>> {
-        self.0.set_audio_capture_suspended(suspended)
+        self.0.set_audio_capture_demand(demand)
     }
 
     fn set_scaling_mode(
