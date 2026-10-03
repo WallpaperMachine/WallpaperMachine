@@ -265,6 +265,11 @@ final class BridgeStore {
     /// engine apply, even when triggered by that apply's own window changes. Reserve
     /// the same lane in both directions, including the returned snapshot publication.
     /// Explicit Play/Pause stays outside this lane so the user can still interrupt.
+    /// This lane is non-reentrant: an apply/activation or operation holding it must
+    /// never await another lane-taking method (including through a callback).
+    /// Suspend/unload deliberately wait too: they can invalidate engine apply even
+    /// without returning a snapshot. Cancelled waiters stay parked until release,
+    /// then fail the cancellation check without invoking their bridge operation.
     private func updatePlaybackEnvironment(_ operation: () async throws -> Void) async throws {
         await waitForIdleActivation()
         try Task.checkCancellation()

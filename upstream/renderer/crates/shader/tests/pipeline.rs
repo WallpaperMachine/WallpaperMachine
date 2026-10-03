@@ -3083,6 +3083,37 @@ fn pipeline_compiles_macro_sized_varyings_without_overlapping_locations() {
 }
 
 #[test]
+fn pipeline_rejects_unresolved_interface_array_bounds_before_layout() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for (prefix, suffix, late) in [
+            ("#define COUNT 4+1\n", "COUNT", ""),
+            ("#define COUNT (2+1)\n", "COUNT", ""),
+            ("#define COUNT 0\n", "COUNT", ""),
+            ("#define COUNT -1\n", "COUNT", ""),
+            ("", "COUNT", "#define COUNT 3\n"),
+            ("", "COUNT", ""),
+            ("", "2+1", ""),
+        ] {
+            let request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/unsupported_array_bound").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, format!(
+                "{prefix}varying vec2 taps[{suffix}];\n{late}varying vec2 uv;\n\
+                 void main() {{ taps[0]=vec2(0); uv=vec2(0); gl_Position=vec4(0); }}"
+            )))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, format!(
+                "{prefix}varying vec2 taps[{suffix}];\n{late}varying vec2 uv;\n\
+                 void main() {{ gl_FragColor=vec4(taps[0]+uv,0,1); }}"
+            )))
+            .build().unwrap();
+            let error = pipeline().compile(&request).expect_err("unsupported bounds must not reserve one location");
+            assert!(error.to_string().contains("unsupported stage-interface array bound"), "{error}");
+        }
+    }
+}
+
+#[test]
 fn pipeline_legalizes_nested_legacy_calls_in_macro_replacements() {
     for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
         let request = ShaderProgramRequest::builder(

@@ -74,7 +74,7 @@ generated pixel assertion failed. `report.json` records
 authored-reference comparison, so rendering without a crash does not prove all
 authored effects loaded.
 
-The generated matrix is eleven original synthetic scenes; it contains no workshop
+The generated matrix is twelve original synthetic scenes; it contains no workshop
 identifiers and no workshop-specific rendering rules.
 
 ## Probes
@@ -184,7 +184,7 @@ executable directly from the renderer check build directory.
 | --- | --- |
 | Camera zoom | `scene_schema_tests --gtest_filter='SceneSchema.*CameraZoom*'`. Scene `general.zoom` may contain an authored scalar animation, not just a fixed camera scale. |
 | Camera layers in 2D scenes | `SceneSchema.CameraObjectKeepsAnOrthographicSceneOnItsCanvas` next to `SceneSchema.DefaultCameraObjectBecomesActivePerspective`, plus `SceneSchema.CameraObjectTimelineGlidesFromItsFirstShotToWhereItRests`, `.TheLastVisibleCameraObjectFramesTheCanvas` and `.AScriptedShotOriginFramesTheViewOnceATickHasAppliedIt`, in `scene_schema_tests`. A scene with `orthogonalprojection` is projected by that canvas; a `camera` layer in one must not become the active perspective camera, but it does frame the canvas. Its zoom narrows the view, its origin moves the view centre away from the canvas centre, a timeline plays both on one clock, and the last visible shot wins. The perspective camera follows it. A single-play timeline that has ended no longer asks for frames, and a script-bound origin frames the view only once a tick has applied it (see below). |
-| Perspective camera shots and paths | `SceneSchema.PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverrides`, `.PerspectiveCameraPathsSampleAndQueueAuthoredCurves` and `.RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup`. The last effectively visible shot for a camera owns its pose and FOV; hidden presets cannot reattach that shared camera. Selection follows runtime visibility, and no visible shot restores the editor pose. Packaged eye/center/up/FOV curves share the path clock, with sequential or random queuing and bounded catch-up. Only selected paths advance; hidden paths add no animation demand. Curves are parsed once, not per frame. Camera-path zoom, path events and camera-cut fades are not implemented. |
+| Perspective camera shots and paths | `SceneSchema.PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverrides`, `.PerspectiveCameraPathsSampleAndQueueAuthoredCurves` and `.RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup`. The last effectively visible shot for a camera owns its pose and FOV; hidden presets cannot reattach that shared camera. Selection follows runtime visibility, and no visible shot restores the editor pose. Packaged eye/center/up/FOV curves share the path clock, with sequential or random queuing and bounded catch-up. Only selected paths advance; hidden paths add no animation demand. Curves are parsed once, not per frame. Camera-path zoom, path events and camera-cut fades are not implemented. `.CameraPathsPreserveSteepAndRolledLookAtOrientation` checks reconstructed look-at vectors near vertical and Euler singularities; `.CameraPathsAndLayerTimelinesShareScaledAndZeroDeltas` checks the shared scaled Tick delta, and `.PerspectiveFallbackCapturesTheCameraAtFirstRegistrationOnly` protects the editor-camera fallback against later shot registrations. |
 | 3D model materials and skinning | `SceneSchema.ModelMaterialDefaultsAreOpaqueDepthTestedAndExplicitStateWins` and `.ModelBonesReachEveryMaterialIncludingTheBindPose`. Model materials default to normal blending, back-face culling and enabled depth test/write; explicit pass settings win, and image defaults are unchanged. Skeletal models share one existing `WPPuppetLayer` playback across material slots, attachments and runtime animation controls, including bind-pose uploads when no clip matches. No new render passes or texture allocations are introduced. |
 | Layer textures tiled across models | `LayerTextureReference.CompositeAddressingFollowsTheSourceLayersClampUvs` in `layer_texture_reference_test`. `_rt_imageLayerComposite_<id>` repeats when the source layer says `"clampuvs": false` and clamps when it is true or absent. A model whose UVs run far outside 0..1 otherwise smeared the composite's edge texels into solid bands. |
 | Alpha-to-coverage passes | `MetalBlend.*` in `metal_backend_test`; the compatibility backend sets the same state in `SetBlend`. Coverage decides what an `alphatocoverage` pass keeps and kept samples are written unblended, as in Direct3D. Blending as well multiplied partially covered texels by alpha a second time, which dimmed thin lines. Scenes stay single-sampled, so edges are thresholded rather than antialiased. |
@@ -504,6 +504,17 @@ exactly as before. The `generated-alpha` case composites a half-covered source
 over transparent, half-covered and opaque destinations inside a compose layer
 and samples the composed alpha back as RGB: expected readback is 128/191/255,
 and the pre-fix binary produces 64/96/191. It uses synthetic shaders only.
+
+Alpha-to-coverage writes surviving samples unblended **only on multisampled
+attachments**. On single-sample targets both backends disable coverage and use
+source-over blending instead; otherwise transparent or partially covered pixels
+can become opaque. `generated-alpha-single-sample` verifies composed coverage
+on Compatibility (128/191/255), and
+`MetalSceneDraw.SingleSampleAlphaCoveragePreservesTransparentAndPartialPixels`
+checks zero, half, and full coverage as RGB on Native Metal across repeated
+frames. The new Compatibility fixture fails against the prior renderer binary.
+CPU blend-state tests also retain the unblended multisample contract. This adds
+no MSAA targets, render passes, or allocations.
 
 ### Vector material constant timelines
 
@@ -1014,7 +1025,13 @@ applied to a float (`!someFloat`), which still rejects
 
 Varying arrays sized by a numeric combo resolve the macro before generated
 interface declarations are emitted and reserve one location per element, just
-like literal-sized arrays. Legacy builtin calls in `#define` replacements are
+like literal-sized arrays. Location planning and emission use the same
+`interface_array_size` resolver. Bounds must be positive integer literals or
+leading object-like macros with positive integer values; expressions, missing
+or late definitions, zero and negative sizes produce an explicit diagnostic
+rather than silently reserving one location. The regression
+`pipeline_rejects_unresolved_interface_array_bounds_before_layout` covers both
+backends. Legacy builtin calls in `#define` replacements are
 rewritten inside function bodies too, not only in top-level directives. The
 original regressions `pipeline_compiles_macro_sized_varyings_without_overlapping_locations`
 and `pipeline_legalizes_nested_legacy_calls_in_macro_replacements` compile both

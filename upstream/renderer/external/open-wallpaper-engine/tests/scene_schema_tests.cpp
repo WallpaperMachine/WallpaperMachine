@@ -1475,6 +1475,89 @@ TEST(SceneSchema, PerspectiveCameraPathsSampleAndQueueAuthoredCurves) {
     EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,10,20), 1e-5));
 }
 
+TEST(SceneSchema, CameraPathsPreserveSteepAndRolledLookAtOrientation) {
+    for (const auto& up : { Eigen::Vector3d(0, 1, 0), Eigen::Vector3d(0.2, 1, 0.3) }) {
+        for (const auto& eye : { Eigen::Vector3d(0.001, 10, 0.002),
+                                Eigen::Vector3d(10, 0.001, 0.002) }) {
+            auto path = CameraPathFixture(0);
+            for (int axis = 0; axis < 3; ++axis) {
+                const auto key = "c" + std::to_string(axis);
+                path["eye"][key] = {{{"frame",0},{"value",eye[axis]}},
+                                    {{"frame",30},{"value",axis == 2 ? -eye[axis] : eye[axis]}}};
+                path["center"][key] = {{{"frame",0},{"value",0}}};
+                path["up"][key] = {{{"frame",0},{"value",up[axis]}}};
+            }
+            CameraPathPlayback playback(ParseCameraPaths({{"paths",{path}}}), "sequence");
+            auto node = std::make_shared<SceneNode>();
+            SceneCamera camera(1, 0.1, 100, 50);
+            camera.AttatchNode(node);
+            for (int frame = 0; frame < 5; ++frame) {
+                playback.Apply(*node, camera);
+                const Eigen::Vector3d sampled(eye.x(), eye.y(), eye.z() * (1 - frame * 0.4));
+                const Eigen::Vector3d forward = -sampled.normalized();
+                const Eigen::Vector3d right = forward.cross(up).normalized();
+                EXPECT_TRUE(camera.GetDirection().isApprox(forward, 1e-5));
+                EXPECT_TRUE(camera.GetUp().isApprox(right.cross(forward), 1e-5));
+                EXPECT_TRUE(camera.GetViewMatrix().allFinite());
+                playback.Advance(0.2);
+            }
+        }
+    }
+}
+
+TEST(SceneSchema, CameraPathsAndLayerTimelinesShareScaledAndZeroDeltas) {
+    const auto path = CameraPathFixture(0);
+    std::map<std::string, std::string> files;
+    files["/paths.json"] = nlohmann::json({{"paths",{path}}}).dump();
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest {
+        .scene_id = "shared-camera-clock", .project_properties = &properties,
+    }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"moving","camera":"default","path":"paths.json"},
+      {"id":2,"name":"layer","origin":{"value":[0,0,0],"animation":{
+        "options":{"fps":30,"length":30,"mode":"loop"},
+        "c0":[{"frame":0,"value":0},{"frame":30,"value":2}]}}}
+    ])"), vfs, sound);
+    ASSERT_NE(scene, nullptr);
+    ASSERT_NE(scene->runtime, nullptr);
+    double elapsed = 0;
+    // SceneWallpaper supplies IdeaTime * scene speed to this single Tick.
+    // Zero scene speed supplies zero; a paused scene does not tick at all.
+    // Resumed/scaled ticks must keep both clocks aligned.
+    for (double delta : { 0.1 * 2, 0.0, 0.4 * 0.5, 0.0, 0.8, 0.1 }) {
+        elapsed += delta;
+        scene->runtime->Tick(delta);
+        EXPECT_NEAR(scene->activeCamera->GetPosition().x(), std::fmod(elapsed, 1.0) * 2, 1e-5);
+        EXPECT_NEAR(scene->runtime->NodeTranslate("layer").x(), scene->activeCamera->GetPosition().x(), 1e-5);
+    }
+}
+
+TEST(SceneSchema, PerspectiveFallbackCapturesTheCameraAtFirstRegistrationOnly) {
+    Scene scene;
+    SceneCamera initial(1, 0.1, 100, 50), editor(1, 0.1, 100, 60), shot_camera(1, 0.1, 100, 70);
+    scene.activeCamera = &initial;
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {});
+    runtime->AttachScene(&scene);
+    scene.activeCamera = &editor; // parser chooses the editor camera before registering shots
+    auto shot = std::make_shared<SceneNode>();
+    shot->SetVisible(false);
+    runtime->RegisterPerspectiveCameraShot(shot, &shot_camera, 45, {});
+    EXPECT_EQ(scene.activeCamera, &editor);
+    shot->SetVisible(true);
+    runtime->Tick(0);
+    EXPECT_EQ(scene.activeCamera, &shot_camera);
+    auto hidden = std::make_shared<SceneNode>();
+    hidden->SetVisible(false);
+    runtime->RegisterPerspectiveCameraShot(hidden, &shot_camera, 80, {});
+    shot->SetVisible(false);
+    runtime->Tick(0);
+    EXPECT_EQ(scene.activeCamera, &editor); // registration must not capture a selected shot
+}
+
 TEST(SceneSchema, RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup) {
     const auto paths = ParseCameraPaths({{"paths", {CameraPathFixture(0), CameraPathFixture(20)}}});
     CameraPathPlayback playback(paths, "random");

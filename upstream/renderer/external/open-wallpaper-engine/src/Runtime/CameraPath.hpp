@@ -2,6 +2,7 @@
 
 #include "Runtime/ScalarAnimation.hpp"
 #include <Eigen/Core>
+#include <array>
 #include <optional>
 #include <string_view>
 #include <vector>

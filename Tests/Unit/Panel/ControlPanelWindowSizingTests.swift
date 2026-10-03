@@ -96,6 +96,31 @@ final class ControlPanelWindowSizingTests: XCTestCase {
     }
   }
 
+  func testHostedKeyViewLoopMovesForwardBackwardAndWrapsWithoutShowingWindow() async throws {
+    let first = NSTextField(string: "First")
+    let second = NSTextField(string: "Second")
+    let controller = NSHostingController(rootView: KeyLoopHost(fields: [first, second]))
+    controller.sizingOptions = []
+    let window = ControlPanelWindow.make(contentViewController: controller, delegate: nil)
+    defer { window.close() }
+    window.layoutIfNeeded()
+    let deadline = Date().addingTimeInterval(5)
+    while first.window == nil && Date() < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    controller.view.layoutSubtreeIfNeeded()
+    window.recalculateKeyViewLoop()
+    XCTAssertTrue(window.makeFirstResponder(first))
+    XCTAssertTrue(window.firstResponder === first.currentEditor())
+    try XCTUnwrap(first.currentEditor()).insertTab(nil)
+    XCTAssertTrue(window.firstResponder === second.currentEditor(), "Tab must pass through the hosting wrapper")
+    try XCTUnwrap(second.currentEditor()).insertTab(nil)
+    XCTAssertTrue(window.firstResponder === first.currentEditor(), "The forward loop must wrap")
+    try XCTUnwrap(first.currentEditor()).insertBacktab(nil)
+    XCTAssertTrue(window.firstResponder === second.currentEditor(), "Shift-Tab must wrap backward")
+    XCTAssertFalse(window.isVisible, "No desktop focus or window ordering is needed")
+  }
+
   func testFullScreenLayoutKeepsNavigationReachableAndRestoresWindowedBounds() throws {
     let controller = NSViewController()
     controller.view = NSView(frame: NSRect(origin: .zero, size: ControlPanelWindow.initialContentSize))
@@ -144,6 +169,17 @@ final class ControlPanelWindowSizingTests: XCTestCase {
       XCTAssertFalse(window.isVisible, "The window must stay offscreen")
     }
   }
+}
+
+private struct KeyLoopHost: NSViewRepresentable {
+  let fields: [NSTextField]
+
+  func makeNSView(context: Context) -> NSStackView {
+    let stack = NSStackView(views: fields)
+    stack.orientation = .vertical
+    return stack
+  }
+  func updateNSView(_ nsView: NSStackView, context: Context) {}
 }
 
 private struct ColorPickerHost: NSViewRepresentable {

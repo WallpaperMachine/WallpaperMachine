@@ -98,12 +98,9 @@ impl SourceEmitter<'_, '_> {
 
         for interface in self.declarations.stage_interfaces() {
             let mut resolved = interface.clone();
-            if let Some(suffix) = interface
-                .array_suffix
-                .as_deref()
-                .and_then(|suffix| leading_defines.resolved_array_suffix(suffix))
-            {
-                resolved.array_suffix = Some(suffix.into());
+            if let Some(suffix) = interface.array_suffix.as_deref() {
+                let size = super::interface_array_size(self.module, suffix)?;
+                resolved.array_suffix = Some(format!("[{size}]").into());
             }
             resolved.emit(output)?;
         }

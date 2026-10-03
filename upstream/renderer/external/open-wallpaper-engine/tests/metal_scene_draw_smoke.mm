@@ -844,6 +844,49 @@ TEST_F(MetalSceneDraw, TranslatedAuthorShaderCompilesAndDrawsTheScene)
     }
 }
 
+TEST_F(MetalSceneDraw, SingleSampleAlphaCoveragePreservesTransparentAndPartialPixels)
+{
+    const auto project = WriteFixture(root_ / "coverage");
+    std::ofstream(project.parent_path() / "materials/tile.json")
+        << R"({"passes":[{"shader":"metal_probe","blending":"alphatocoverage","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+    std::ofstream(project.parent_path() / "shaders/metal_probe.frag")
+        << "varying vec2 v_TexCoord;\nvoid main() {"
+        << "gl_FragColor=vec4(1,0,0,floor(v_TexCoord.x*3.0)*0.5); }\n";
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(project, root_ / "cache", loaded, error)) << error;
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        ASSERT_TRUE(render.init({
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        })) << render.lastError();
+        auto graph = sceneToRenderGraph(*loaded.scene);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+        render.UpdateCameraFillMode(*loaded.scene, FillMode::ASPECTFIT);
+        for (int frame = 0; frame < 3; ++frame) {
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            std::vector<uint8_t> pixels;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                loaded.scene->ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+            ASSERT_EQ(width, 384u);
+            ASSERT_EQ(height, 256u);
+            for (const auto& [x, red] : { std::pair {100, 0}, {192, 128}, {284, 255} }) {
+                const auto offset = (128 * width + x) * 4;
+                EXPECT_NEAR(pixels[offset], red, 1);
+                EXPECT_EQ(pixels[offset + 1], 0);
+                EXPECT_EQ(pixels[offset + 2], 0);
+            }
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, UnreferencedTargetsStayUnallocatedAcrossOptimizationChanges)
 {
     const auto project = WriteFixture(root_ / "project");

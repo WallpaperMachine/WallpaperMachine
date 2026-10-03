@@ -848,9 +848,11 @@ TEST(MetalBlend, EachModeProducesTheAuthoredFactors)
     {
         // Kept samples are written at full strength; blending as well would
         // dim every partially covered texel a second time.
-        const auto state = ToMetalBlendState(BlendMode::AlphaToCoverage);
+        const auto state = ToMetalBlendState(BlendMode::AlphaToCoverage, 4);
         EXPECT_FALSE(state.blending_enabled);
         EXPECT_TRUE(state.alpha_to_coverage);
+        EXPECT_EQ(ToMetalBlendState(BlendMode::AlphaToCoverage, 1),
+                  ToMetalBlendState(BlendMode::Translucent));
     }
 
     for (const auto mode : { BlendMode::Disable, BlendMode::Normal, BlendMode::Translucent,

@@ -78,7 +78,11 @@ Wallpapers appear as square, image-first tiles with a transparent title overlay.
 Discover tiles show cached still thumbnails first and then, for tiles on
 screen, play Steam's animated preview once it loads, retaining the still as a
 loading/error fallback (see
-[Workshop downloads](workshop-downloads.md#tile-thumbnails)). Animations stop
+[Workshop downloads](workshop-downloads.md#tile-thumbnails)). Authored black or
+transparent animation frames are shown unchanged, even at the start; the panel
+never samples their pixels to substitute the still, because synchronous canvas
+readback can freeze WebKit. Failed animated images are removed, revealing the
+cached still. Animations stop
 when the grid leaves Discover, so an installed copy of the same wallpaper shows
 its library preview on Installed.
 Tiles keep their size on hover or visible keyboard focus; they rise above their

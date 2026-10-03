@@ -111,7 +111,11 @@ inline VkRect2D ResolvePresentationScissor(const RenderingResources& rr, VkExten
     return VkRect2D { { 0, 0 }, extent };
 }
 
-inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state) {
+inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state,
+                     VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT) {
+    if (bm == BlendMode::AlphaToCoverage && sample_count == VK_SAMPLE_COUNT_1_BIT) {
+        bm = BlendMode::Translucent;
+    }
     state.blendEnable  = true;
     state.colorBlendOp = VK_BLEND_OP_ADD;
     state.alphaBlendOp = VK_BLEND_OP_ADD;

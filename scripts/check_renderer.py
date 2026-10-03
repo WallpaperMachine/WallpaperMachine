@@ -14,7 +14,7 @@ import subprocess
 from build import build_environment, cargo_environment
 from lib.paths import RENDERER, RENDERER_ARTIFACTS, ROOT
 
-GENERATED_CASE_COUNT = 11
+GENERATED_CASE_COUNT = 12
 
 
 def run(command, log, env, timeout=180, cwd=ROOT):
@@ -69,9 +69,9 @@ def fixtures(root):
         yield folder / "project.json"
 
 
-def alpha_composite_fixture(root):
+def alpha_composite_fixture(root, *, alpha_to_coverage=False):
     """Expose composed coverage as RGB, independent of source artwork or effects."""
-    folder = root / "generated-alpha"
+    folder = root / ("generated-alpha-single-sample" if alpha_to_coverage else "generated-alpha")
     vertex = """uniform mat4 g_ModelViewProjectionMatrix;
 attribute vec3 a_Position;
 attribute vec2 a_TexCoord;
@@ -104,7 +104,8 @@ void main() {
         "effects/coverage.json": {"name": "coverage readback", "passes": [{"material": "materials/coverage.json"}]},
     }
     for name, fragment in fragments.items():
-        files[f"materials/{name}.json"] = {"passes": [{"shader": name, "blending": "translucent", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled", "textures": [None]}]}
+        blend = "alphatocoverage" if alpha_to_coverage and name != "coverage" else "translucent"
+        files[f"materials/{name}.json"] = {"passes": [{"shader": name, "blending": blend, "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled", "textures": [None]}]}
         files[f"models/{name}.json"] = {"width": 288, "height": 144, "material": f"materials/{name}.json"}
         files[f"shaders/{name}.vert"] = vertex
         files[f"shaders/{name}.frag"] = fragment
@@ -263,7 +264,7 @@ def check_generated_pixels(data, index):
     def pixel(x, y):
         offset = (y * width + x) * 3
         return pixels[offset:offset + 3]
-    if index == 8:
+    if index in (8, 11):
         # A half-covered source over transparent, half-covered and opaque targets:
         # Aout = As + Ad * (1 - As). RGB readback makes lost coverage observable.
         return all(abs(channel - expected) <= 1
@@ -330,7 +331,8 @@ def main():
         report[ binary ] = status
     for project in [*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
                     perspective_animation_fixture(out / "fixtures"),
-                    origin_animation_fixture(out / "fixtures"), *args.project]:
+                    origin_animation_fixture(out / "fixtures"),
+                    alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True), *args.project]:
         project = project.resolve()
         manifest_bytes = project.read_bytes()
         manifest = json.loads(manifest_bytes)
