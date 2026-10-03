@@ -262,7 +262,11 @@ fn source_manifest(inputs: &ShaderCacheInputs) -> Result<Value, crate::EngineErr
                     if kind.is_dir() {
                         directories.push(path);
                     } else if kind.is_file() || kind.is_symlink() {
-                        let metadata = fs::metadata(&path).map_err(cache_source_error)?;
+                        let metadata = match fs::metadata(&path) {
+                            Ok(metadata) => metadata,
+                            Err(error) if kind.is_symlink() && error.kind() == std::io::ErrorKind::NotFound => continue,
+                            Err(error) => return Err(cache_source_error(error)),
+                        };
                         if metadata.is_file() {
                             files.push((path.strip_prefix(&root).unwrap().to_string_lossy().into_owned(),
                                 modified_timestamp(&path, "unpacked scene resource")?, metadata.len()));

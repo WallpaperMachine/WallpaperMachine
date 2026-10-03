@@ -622,7 +622,7 @@ impl BridgeActorState {
             native_video_enabled: self.app_config.video_backend
                 == VideoBackendModeCfg::NativePreferred,
             native_video_rejected: &self.native_video_rejected,
-            frame_rate_cap: self.app_config.quality.frame_rate_cap,
+            frame_rate_cap: self.active_target_fps_cap(),
             audio_suppressed: self.audio_suppressed,
         }
         .render_backends();

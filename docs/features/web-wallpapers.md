@@ -295,8 +295,10 @@ the design.
   no manifest. A referenced asset is never a purge candidate, which matters most for the
   property whose original has gone and whose stored copy is now the only one.
   A missing manifest is distinct from an unreadable, damaged, foreign or unsupported
-  manifest. The latter causes an explicit error before that wallpaper's files can be
-  purged or replaced. Clearing a property likewise commits its removal before deleting
+  manifest. The latter prevents that wallpaper's files from being purged or replaced.
+  Purge logs and skips the affected wallpaper while continuing to reclaim other
+  unreferenced files; cancellation still stops the operation. Clearing a property
+  likewise commits its removal before deleting
   its retained bytes.
 - The lock-screen extension is sandboxed
   (`Extension/WallpaperExtension.entitlements`) and cannot read either the store or the

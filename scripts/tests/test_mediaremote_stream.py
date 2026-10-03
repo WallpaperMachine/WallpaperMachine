@@ -45,6 +45,9 @@ class MediaRemoteStreamTests(unittest.TestCase):
     def test_same_player_notification_refreshes_metadata_after_superseding_old_requests(self):
         self.check_stream("same-player")
 
+    def test_empty_playback_notification_preserves_startup_and_track_lookups(self):
+        self.check_stream("missing-playback")
+
 
 if __name__ == "__main__":
     unittest.main()

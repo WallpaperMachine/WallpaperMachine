@@ -603,7 +603,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.accessory)
 
         Task {
-            await libraryImports.shutdown()
             do {
                 if let lockScreen = store?.lockScreenWallpaper {
                     try await lockScreen.shutdown {
@@ -643,6 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 sender.reply(toApplicationShouldTerminate: false)
                 return
             }
+            await libraryImports.shutdown()
             automaticUpdates?.cancel()
             appUpdater.cancel()
             await workshopStore.steamCMDSetup.shutdown()

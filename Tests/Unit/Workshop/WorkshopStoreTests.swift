@@ -968,6 +968,31 @@ final class WorkshopDownloadIntentTests: XCTestCase {
     XCTAssertTrue(restored.store.downloader.downloads.isEmpty)
   }
 
+  func testResumingSceneRechecksSharedAssetConsent() async throws {
+    for assetsReady in [false, true] {
+      let original = try makeFixture(sceneAssetsReady: true)
+      try await makeSetupReady(original)
+      original.store.username = "localtest"
+      original.store.requestDownload(item: scene, rememberSession: false, bridge: original.bridge)
+      await original.store.downloader.shutdown()
+      let restored = try makeFixture(sceneAssetsReady: assetsReady)
+      try await makeSetupReady(restored)
+      let paused = try XCTUnwrap(restored.store.downloader.download(for: scene.id))
+      XCTAssertTrue(paused.isPaused)
+      restored.store.resumeDownload(paused, bridge: restored.bridge)
+      if assetsReady {
+        XCTAssertTrue(restored.store.downloadRequests.isEmpty)
+        XCTAssertEqual(restored.store.downloader.downloads.map(\.id), [scene.id])
+      } else {
+        XCTAssertEqual(try stage(restored.store), .resources)
+        XCTAssertTrue(restored.store.downloader.downloads.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(restored.store.downloadRequests.first).includesResources)
+        restored.store.cancelDownload(id: scene.id)
+      }
+      await restored.store.downloader.shutdown()
+    }
+  }
+
   func testFailedRequestWriteKeepsThePausedJobAsDurableOwner() async throws {
     let original = try makeFixture()
     try await makeSetupReady(original)

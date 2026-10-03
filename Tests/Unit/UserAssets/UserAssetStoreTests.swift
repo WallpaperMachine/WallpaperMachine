@@ -966,7 +966,12 @@ final class UserAssetStoreTests: XCTestCase {
             .replacingOccurrences(of: "\"wallpaperId\":\"2001\"", with: "\"wallpaperId\":\"other\"")
         for bytes in [Data("incomplete manifest".utf8), Data(unsupported.utf8), Data(foreign.utf8)] {
             try bytes.write(to: manifestURL)
-            await assertFails(.manifestUnreadable) { _ = try await UserAssetStorage.purgeUnreferencedDerivedCaches() }
+            let orphan = managedRoot.appendingPathComponent("9999/orphan")
+            try FileManager.default.createDirectory(at: orphan.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("reclaim".utf8).write(to: orphan)
+            let released = try await UserAssetStorage.purgeUnreferencedDerivedCaches()
+            XCTAssertEqual(released, 7)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
             await assertFails(.manifestUnreadable) {
                 _ = try await makeStore().importFile(at: source, propertyId: "background", filter: .image)
             }
@@ -976,7 +981,8 @@ final class UserAssetStoreTests: XCTestCase {
         try original.write(to: manifestURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: manifestURL.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: manifestURL.path) }
-        await assertFails(.manifestUnreadable) { _ = try await UserAssetStorage.purgeUnreferencedDerivedCaches() }
+        let released = try await UserAssetStorage.purgeUnreferencedDerivedCaches()
+        XCTAssertEqual(released, 0)
         XCTAssertEqual(try Data(contentsOf: stored), Data("last-copy".utf8))
     }
 }

@@ -14,8 +14,9 @@
       ],
       "changes": "Pair process identity with now-playing metadata and fence asynchronous notification callbacks by generation so departed sources cannot replace current state. The regression compiles the adapter against controlled platform callbacks; no player is launched.",
       "sha256": {
-        "upstream/mediaremote-adapter/src/adapter/stream.m": "700aa0f865f94dc1d8003af532751d736138ca789184449428b3d8a52189939c"
-      }
+        "upstream/mediaremote-adapter/src/adapter/stream.m": "53c43b73011e944d2d06eb99f284e83c4d59f14a9e25c0e49428b88d4053c177"
+      },
+      "reviewFollowup": "PR #24 review: ignore playback notifications without a value before advancing the callback generation, preserving pending startup and track lookups."
     }
   },
   "sceneMediaChanges": "2026-09-21: media delivery follows the effective consumer set (pause, power policy, presentation suspend, per-display suspend) while consent stays a separate question; cover updates replace one texture instead of rebuilding the render graph, and an unchanged cover is a true no-op. 2026-09-20: SceneScript video.isPlaying, vector.mix and MediaPlaybackEvent compatibility; native host media snapshots routed through the bridge and core actor to scene scripts, $mediaThumbnail and $mediaPreviousThumbnail. Effect shaders receive owner layer and screen projection matrices; empty scenes initialize their camera pointer. Shader pipeline revision 6 reserves array varying locations, narrows unambiguous vector function arguments, and shares compatible custom uniform vector prefixes across stages. Synthetic media events/artwork and asset inspection options added to the offscreen probe. Regression coverage in Swift, bridge, shader and C++ tests.",
@@ -61,23 +62,23 @@
       ],
       "changes": "Repair bridge state, persistence and lifecycle consistency; report host startup by current display/wallpaper/reconcile revision instead of treating assignment as first-frame readiness; preserve audio ownership and partial successful work. Register resources without retaining renderer handles indefinitely and persist shader cache updates without dropping existing entries. Correct shader helper, macro and modulo transformations, advance shader pipeline revision to 10, carry affine video UV transforms, and reject unsupported used reflection resources. A zero-size empty media-artwork event explicitly clears cached artwork; malformed partial dimensions remain invalid.",
       "sha256": {
-        "upstream/renderer/crates/bridge/src/actor/bridge.rs": "d9bcc55e9d23e4537f6a6e94470947fd5c14b24e9ef4cecc0762234273697f1d",
+        "upstream/renderer/crates/bridge/src/actor/bridge.rs": "8674f6841ea4c2ad3e07d2b4cb4cb87cf39909bc8fff37e2dde40b130e0ca80a",
         "upstream/renderer/crates/bridge/src/actor/messages.rs": "5eea187747349b152b20f81e86886c611a0712ea73aa48151d39be98dd673f9e",
-        "upstream/renderer/crates/bridge/src/actor/snapshots.rs": "5522beb6503c70bf7d8c9928d4238c9a837cdce352eb8980f0d1f3449daddd7c",
+        "upstream/renderer/crates/bridge/src/actor/snapshots.rs": "96a241513979a4e132dca192669db2c5e07715e03098007e9663a8cc7862c9ba",
         "upstream/renderer/crates/bridge/src/api/mod.rs": "e2a56338f30eb3037e06d37526b57f96ff955bbb07578c9ebcf23e4f45b776a8",
-        "upstream/renderer/crates/bridge/src/api/types.rs": "d90fd9df4641794094a6b93f988b4ba5453359bc42a59fad48527e0d53b0f17e",
+        "upstream/renderer/crates/bridge/src/api/types.rs": "f3e0c87c74b090b38255d4fb46929d6b7a7525df33de3afeddf83da2d7cb05d9",
         "upstream/renderer/crates/bridge/src/engine/facade.rs": "2ce3f98e98799fe7b5064609c945d5820f2f9887afede11aab75e6205293745e",
         "upstream/renderer/crates/bridge/src/tests/display_presentation.rs": "7769a22742b9e3b1631b258b98c6d059fde4f20da20212d6dfd8f92c836a5411",
         "upstream/renderer/crates/bridge/src/tests/mod.rs": "3736449066f33b3c057edc2c9f71498046f882b33a53e59e5fcb8c9f0a0dbda1",
         "upstream/renderer/crates/bridge/src/tests/settings_intents.rs": "0ea2c2a941a36cfb04a648df99c5f07a133c7a8c8112b0e169aeabf1b151197f",
         "upstream/renderer/crates/bridge/src/tests/state_consistency.rs": "768f767c70ca1b147a387a94501d4dff45739ec667d23b88556844144ebf182c",
-        "upstream/renderer/crates/bridge/src/tests/web_audio_media.rs": "0551766e1927e1d6c98c132c08455aa6b839cb7e2bdbd177a85c420e97683685",
+        "upstream/renderer/crates/bridge/src/tests/web_audio_media.rs": "5bc3b136c15a005978cf3a9ae1ce64c2b40966f6eb09f4962f7db6daecb0930d",
         "upstream/renderer/crates/core/src/engine/runtime.rs": "8f839a9c31ba2107785ff7c491f0949ad44d8fef0681aed14ae86294bf69ea32",
         "upstream/renderer/crates/core/src/media/integration.rs": "17ba5031505d53d0f0982284b178f3eb12336a62acefa92b34fccfe6b553ed39",
         "upstream/renderer/crates/core/src/owe/backend.rs": "9e68329b54e3abd7f7cc2bcf9476986c1634644f2215c38cba4adf38d5cdbeb6",
         "upstream/renderer/crates/core/src/project/scene.rs": "68747017291a0683c94db83c83c73b069ad7eeb42334deb32ce3489298528c33",
-        "upstream/renderer/crates/core/src/render/cache.rs": "d5204fa4d192bc247aa5246e5ae81726da69fe94a23f32d0de1bed5053e9413a",
-        "upstream/renderer/crates/core/src/tests/general/shader_cache.rs": "ff1e8936db32142f85a22b2f5204e607cce50b9a68c8acbc54feeb734dc017b5",
+        "upstream/renderer/crates/core/src/render/cache.rs": "68e28138a22396152ed128ee72272ce6bb798aede472bf06f9b729950b72f2b7",
+        "upstream/renderer/crates/core/src/tests/general/shader_cache.rs": "e583f41cd040a07a05ec85de211b234fe95436d0d56b627d9fff4db62cd78303",
         "upstream/renderer/crates/shader/src/backend/naga/reflector.rs": "09d526fc0eff80a90c955f19d026ef35cf7d1ee38c7ac9443a2280ccd16a7467",
         "upstream/renderer/crates/shader/src/codegen/declarations/functions.rs": "a526ab6d7d279966fc6b9af7c5f59ff44f9141898033371d4e414288a9727580",
         "upstream/renderer/crates/shader/src/codegen/declarations/layout.rs": "886baaae19e7174115ba8bc1b8febb3de7e859e28e0136ce5dd0503925d655db",
@@ -95,8 +96,11 @@
         "upstream/renderer/crates/shader/tests/pipeline.rs": "1f13dca928537ab3befa89999c0dc0a78729f29f60512e76c43f34f416ce14c0",
         "upstream/renderer/crates/shader/tests/preprocess.rs": "a020864392ed48e2b28195955b8ec2d70f8d19b15cbb10c422724a6a9883b4c4",
         "upstream/renderer/crates/shader/tests/reflection.rs": "202a27db470a3c0103ca9031a90499dcdfc46aed425ca9e29b48f50de1ee2317",
-        "upstream/renderer/crates/shader/tests/video_planes.rs": "c8e410e191b63341097106cf536e48c66327171cfbab182cba25716d8ef392c9"
-      }
+        "upstream/renderer/crates/shader/tests/video_planes.rs": "c8e410e191b63341097106cf536e48c66327171cfbab182cba25716d8ef392c9",
+        "upstream/renderer/crates/bridge/src/actor/state.rs": "d69888e2228b2d534ce46e1d2f093e4988be77718b03fdc8a065792489623d99",
+        "upstream/renderer/crates/bridge/src/tests/quality_settings.rs": "fd88c7ac82da94eec09581d7db1cb0f119fc2810456077556e1e64f8373f558a"
+      },
+      "reviewFollowup": "PR #24 review: share effective battery/global frame-rate caps between routing and settings admission keys; simplify bounded artwork validation; ignore dangling source symlinks while retaining other metadata errors."
     }
   },
   "sceneEngine": {
@@ -158,7 +162,7 @@
         "upstream/renderer/external/open-wallpaper-engine/src/Runtime/SceneRuntimeContext.hpp": "b254124f509e529f44ba74694b20354a6418c76e7cd894cdcc3c1ce8c6fb5fe9",
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/MetalRender.mm": "a433d6cd51efc7d3fc31c55a96747a10981156983c9aade139afd3a55c7d4b04",
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/MetalVideoTextures.hpp": "0e78913b12900550b0b2f83fdc916ecdeb951946a144683ffa4f61375151d632",
-        "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/MetalVideoTextures.mm": "17321e9fdb3c8887429b6ebe0fb423fbe0109927f3317d396df7d78f5a822990",
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/MetalVideoTextures.mm": "1417867b07f71a7c1c9c8bdabe49973989f1a6d8e21c85a69643a8b3070ef5c8",
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/ScenePassDescription.cpp": "5dc484027dc9147d38d5bef7cb90f45eb01ca56cf6834d9afc7c670949f5a177",
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/MetalRender/include/MetalRender/ScenePassDescription.hpp": "e568a9feddcd67742658aa3487edef10a779f0956816283f57f2dd208e726bf2",
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/Parse/WPSceneParser.cpp": "f7b2bf110b34717eb4aecacee0c63f947eed537829e6ec87c20d67df931a9346",
@@ -194,7 +198,7 @@
         "upstream/renderer/external/open-wallpaper-engine/tests/audio/ffmpeg_sound_stream_test.cpp": "1dcf56008c42e448e760389eba385275434ce5b95e7f3003e6fd8c4557dc8abc",
         "upstream/renderer/external/open-wallpaper-engine/tests/audio/sound_layer_control_test.cpp": "ecdc8af7e5106f6f5892e4ed48f4d71e4a479282c69274026bb9d5017e1ac2fb",
         "upstream/renderer/external/open-wallpaper-engine/tests/media_thumbnail_texture_smoke.cpp": "5f6f692308a2ed676c47c528a75bb284308e840861986ddf866fdbd0fd4df19d",
-        "upstream/renderer/external/open-wallpaper-engine/tests/metal_scene_draw_smoke.mm": "b68e40e0430d6bc660c6417135ee341339baacdda9879b38bc1312ded9f60e46",
+        "upstream/renderer/external/open-wallpaper-engine/tests/metal_scene_draw_smoke.mm": "6c72917db97cefceede39b476e501f9ca56c244d51cee43825cfa23705f047af",
         "upstream/renderer/external/open-wallpaper-engine/tests/metal_video_texture_test.mm": "26a6a158f072d9a6f09834d6510f07d58d953a55daa6a75751ed6dad2747be80",
         "upstream/renderer/external/open-wallpaper-engine/tests/miniaudio_failure_paths_test.cpp": "fc8da93959b3c043be18e9a58796ddeb3f17fbabece58c97e109a81a07beb308",
         "upstream/renderer/external/open-wallpaper-engine/tests/playback_gpu_test.mm": "af29694b4f178147d6bc07cf3fca769f09296bdca7de6d250f15e3e5e4c44b3a",
@@ -204,7 +208,7 @@
         "upstream/renderer/external/open-wallpaper-engine/tests/script_runtime_compat_test.cpp": "f0f8c6b159a1bc38a168a87c423dae2d13c939cb037b5656c5952a8ca59e41ef",
         "upstream/renderer/external/open-wallpaper-engine/tests/shared_video_session_test.cpp": "d58b9c53e9b8ae37c6e86817c571e390b054242198c69ae3f868c8fc9e07d472",
         "upstream/renderer/external/open-wallpaper-engine/tests/sprite_animation_test.cpp": "1adba90b0250513f3369cf05d1ac60c4bb3c5cb1014823520eeec5dc154d0919",
-        "upstream/renderer/external/open-wallpaper-engine/tests/stb_image_regression_test.mm": "1f340717fa497f5ee268a6afd1324df2b218eb30a510a641f7dfc37e0b9d065e",
+        "upstream/renderer/external/open-wallpaper-engine/tests/stb_image_regression_test.mm": "efed976df8b0fae7f2f11612151d9c502d71e0c783410ebeccfedfbd824777e8",
         "upstream/renderer/external/open-wallpaper-engine/tests/stb_jpeg_variant.cpp": "f9ba6251de5ab757cfd01ceb0645ab276a4c94d291c9037a32edcf9408835ad0",
         "upstream/renderer/external/open-wallpaper-engine/tests/synthetic_video.hpp": "e355a2ec37b03a8538e3fd1dce83a13f7c6bb8baaa6a48c3798203cf4043db75",
         "upstream/renderer/external/open-wallpaper-engine/tests/tex_schema_tests.cpp": "4ec0915c7531a57b699ce3453802754137055006c5b4ed1113734fa0661fed29",
@@ -217,7 +221,8 @@
         "upstream/renderer/external/open-wallpaper-engine/third_party/miniaudio/miniaudio.h": "f61788d74acbd0b7117dee322e7b5d8599fdb7fc5584063fdc018aae1d05d1ca",
         "upstream/renderer/external/open-wallpaper-engine/third_party/stb_image.h": "8df6b00f5b3a35f13e6f1a78ce41cb3daa6159bf6ff66bd47993a5ba85b8491d",
         "upstream/renderer/external/open-wallpaper-engine/tests/offscreen_scene_probe.cpp": "1993901f40061e18ad05f4f394cecc7d0c233c113da1580e72849658c0468664"
-      }
+      },
+      "reviewFollowup": "PR #24 review: reject transformed BGRA sources when the conversion pipeline is unavailable; consistently skip unavailable video encoders and restore the test allocator through RAII."
     }
   },
   "applicationShell": {

@@ -750,18 +750,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     /// reduced quality is selected and the machine is on battery, or the
     /// stricter of the two.
     fn active_target_fps_cap(&self) -> Option<u32> {
-        let quality = &self.state.app_config.quality;
-        let global = quality.frame_rate_cap.map(|cap| cap.max(1));
-        let battery = (self.state.app_config.power.on_battery
-            == crate::config::BatteryModeCfg::ReducedQuality
-            && self.state.power_source == crate::power::PowerSource::Battery)
-            .then(|| quality.battery.target_fps.max(1));
-        match (global, battery) {
-            (Some(global), Some(battery)) => Some(global.min(battery)),
-            (Some(global), None) => Some(global),
-            (None, Some(battery)) => Some(battery),
-            (None, None) => None,
-        }
+        self.state.active_target_fps_cap()
     }
 
     /// Saved rate, never above the ceiling currently in force.

@@ -44,8 +44,15 @@ enum UserAssetStorage {
             else { continue }
             let id = wallpaper.lastPathComponent
             guard id != WallpaperPresetStore.retainedDirectoryName else { continue }
-            released += try await store.withPreparation(wallpaperId: id) {
-                try purgeWallpaper(wallpaper, id: id, store: store, manager: manager)
+            try Task.checkCancellation()
+            do {
+                released += try await store.withPreparation(wallpaperId: id) {
+                    try purgeWallpaper(wallpaper, id: id, store: store, manager: manager)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                AppLog.warn("User asset purge skipped \(id): \(error.localizedDescription)")
             }
         }
         return released

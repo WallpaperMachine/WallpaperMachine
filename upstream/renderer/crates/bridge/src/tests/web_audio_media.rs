@@ -68,6 +68,12 @@ async fn scene_media_requires_consent_and_clears_on_disable() {
 #[test]
 fn scene_media_rejects_invalid_artwork_and_timeline() {
     use crate::api::BridgeMediaSnapshot;
+    let cleared = BridgeMediaSnapshot::default().into_state().unwrap().artwork.unwrap();
+    assert_eq!((cleared.width, cleared.height, cleared.rgba.len()), (0, 0, 0));
+    for (width, height) in [(0, 1), (1, 0), (1, 1), (513, 0)] {
+        assert!(BridgeMediaSnapshot { artwork_width: width, artwork_height: height,
+            ..Default::default() }.into_state().is_err());
+    }
     assert!(BridgeMediaSnapshot { duration: f64::NAN, ..Default::default() }.into_state().is_err());
     assert!(BridgeMediaSnapshot { playback_state: 3, ..Default::default() }.into_state().is_err());
     assert!(BridgeMediaSnapshot { artwork_width: 1024, artwork_height: 1024,

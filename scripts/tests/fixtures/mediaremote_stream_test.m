@@ -33,6 +33,7 @@ static void (^heldApplication)(NSRunningApplication *);
 static int failures;
 static BOOL raceApplication;
 static BOOL refreshSamePlayer;
+static BOOL missingPlaybackValue;
 
 @interface FixtureApplication : NSObject
 @property(nonatomic) pid_t processIdentifier;
@@ -114,6 +115,33 @@ static void assertCurrent(int pid) {
 
 static void registerNotifications(dispatch_queue_t queue) {
     enqueue(^{
+        if (missingPlaybackValue) {
+            [[NSNotificationCenter defaultCenter]
+                postNotificationName:kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification
+                object:nil userInfo:@{kMRMediaRemoteNowPlayingApplicationPIDUserInfoKey: @101}];
+            enqueue(^{
+                MRMediaRemoteGetNowPlayingApplicationPIDCompletion_t pid = pidReplies[0];
+                MRMediaRemoteGetNowPlayingApplicationIsPlayingCompletion_t playing = playingReplies[0];
+                pid(101);
+                playing(true);
+                replyCurrent(101);
+                assertCurrent(101);
+                // Repeat while a track refresh is pending, not only at startup.
+                notifyPlaying(101);
+                enqueue(^{
+                    [[NSNotificationCenter defaultCenter]
+                        postNotificationName:kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification
+                        object:nil userInfo:nil];
+                    enqueue(^{
+                        replyMetadata(101, @"next track");
+                        require([payloads.lastObject[kMRATitle] isEqual:@"next track"],
+                                @"empty playback notification discarded pending track metadata");
+                        finish();
+                    });
+                });
+            });
+            return;
+        }
         notifyPlaying(101);
         enqueue(^{
             replyCurrent(101);
@@ -180,6 +208,7 @@ static void requestInfo(dispatch_queue_t q, MRMediaRemoteGetNowPlayingInfoComple
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        missingPlaybackValue = argc > 1 && strcmp(argv[1], "missing-playback") == 0;
         raceApplication = argc > 1 && strcmp(argv[1], "application-race") == 0;
         refreshSamePlayer = argc > 1 && strcmp(argv[1], "same-player") == 0;
         pidReplies = [NSMutableArray new]; clientReplies = [NSMutableArray new];

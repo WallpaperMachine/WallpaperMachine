@@ -26,6 +26,17 @@ fn unpacked_scene_cache_tracks_entries_and_resources_without_tracking_itself() {
         fs::write(&artifact, "cached").unwrap();
         assert_eq!(descriptor.shader_cache_path().unwrap().as_deref(), cache.to_str());
         assert!(artifact.is_file(), "cache outputs must not invalidate source fingerprints");
+        #[cfg(unix)]
+        {
+            let target = root.path().join("optional.glsl");
+            std::os::unix::fs::symlink(&target, root.path().join("optional-link.glsl")).unwrap();
+            descriptor.shader_cache_path().unwrap();
+            assert!(artifact.is_file(), "a dangling link must not prevent loading or invalidate the cache");
+            fs::write(&target, "float optional = 1.0;").unwrap();
+            descriptor.shader_cache_path().unwrap();
+            assert!(!artifact.exists(), "a repaired link must participate in cache freshness");
+            fs::write(&artifact, "cached").unwrap();
+        }
         fs::write(&shader, "float value = 22.0;\n").unwrap();
         descriptor.shader_cache_path().unwrap();
         assert!(!artifact.exists(), "changed physical shader resources invalidate the cache");

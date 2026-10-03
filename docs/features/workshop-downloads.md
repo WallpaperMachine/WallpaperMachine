@@ -368,7 +368,9 @@ owns Wallpaper Engine.
 - Closing the panel, popover or sign-in dialog does not stop work. **Pause download**
   releases the transfer's slot and retains its downloaded content. **Resume download**
   starts a fresh private SteamCMD runtime and lets Steam validate and reuse its
-  partial content and manifests. Cancelling discards this job's partial data;
+  partial content and manifests. Resuming a scene asks for shared-resource consent again
+  when those assets are missing and no shared-resource job is running.
+  Cancelling discards this job's partial data;
   removing a waiting request prevents it from starting.
 - Pending, paused and failed jobs keep their order in `Downloads/Workshop/queue.json`
   under the app support directory; prerequisite requests use `Downloads/workshop-requests.json`.
@@ -376,7 +378,10 @@ owns Wallpaper Engine.
   Relaunch restores them as paused, without starting a login or transfer automatically.
   Checkpoints contain only `steamapps` and `wallpaper-engine` download content;
   passwords, terminal state and private SteamCMD runtime files are never included.
-  The separately managed saved sign-in remains subject to **Keep me signed in**.
+  Checkpoint publication retains recoverable pending and previous directories until
+  the new checkpoint is published. Resume recovers interrupted publication; cancel
+  removes all three copies. The separately managed saved sign-in remains subject
+  to **Keep me signed in**.
   An interrupted process can lose bytes still in transient staging; the persisted
   job can still be resumed and Steam will redownload any missing content.
 - Failed and cancelled jobs stay visible with a primary **Try again** action;

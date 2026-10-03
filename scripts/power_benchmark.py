@@ -750,7 +750,7 @@ def main():
                   f"GPU {power['gpu_mw']}, ANE {power['ane_mw']}) over {power['samples']} samples")
         else:
             print(f"{MARK.warn} Package power not measured: {power['reason']}")
-    if document["build"]["dirty"]:
+    if document["workspace"]["dirty"]:
         print(f"{MARK.warn} Working tree is dirty; the commit alone does not identify this build.")
     return 0
 

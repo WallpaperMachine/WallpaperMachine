@@ -25,16 +25,11 @@ impl BridgeMediaSnapshot {
             return Err(super::BridgeError::invalid_input("invalid media timeline"));
         }
         let has_artwork = !self.artwork_rgba.is_empty();
-        let artwork = if has_artwork {
-            if self.artwork_width > 512 || self.artwork_height > 512 {
-                return Err(super::BridgeError::invalid_input("media artwork exceeds 512 pixels"));
-            }
-            MediaThumbnailRgba::new(self.artwork_width, self.artwork_height, self.artwork_rgba)
-                .map_err(super::BridgeError::invalid_input)?
-        } else {
-            MediaThumbnailRgba::new(self.artwork_width, self.artwork_height, self.artwork_rgba)
-                .map_err(super::BridgeError::invalid_input)?
-        };
+        if self.artwork_width > 512 || self.artwork_height > 512 {
+            return Err(super::BridgeError::invalid_input("media artwork exceeds 512 pixels"));
+        }
+        let artwork = MediaThumbnailRgba::new(self.artwork_width, self.artwork_height, self.artwork_rgba)
+            .map_err(super::BridgeError::invalid_input)?;
         let mut events = vec![Event::StatusChanged { enabled: true },
             Event::PropertiesChanged(MediaProperties { title: Some(self.title), artist: Some(self.artist), album_title: Some(self.album) }),
             Event::PlaybackChanged { state },

@@ -2357,7 +2357,7 @@ TEST_F(MetalSceneDraw, DisplayMatricesProduceMatchingConvertedAndDirectVideoPict
     const auto transform = video::ResolveVideoDisplayTransform(shear, kVideoWidth, kVideoHeight);
     ASSERT_TRUE(transform.has_value());
     const auto project = WriteVideoFixture(root_ / "shear", transform->width, transform->height, shear);
-    ASSERT_FALSE(project.empty());
+    if (project.empty()) GTEST_SKIP() << "no H.264 encoder is available";
     ScopedPlaneSampling sampling(false);
     const auto comparison = CompareVideoPaths(project, root_ / "shear-cache", transform->width, transform->height);
     if (comparison.unavailable) GTEST_SKIP() << comparison.reason;

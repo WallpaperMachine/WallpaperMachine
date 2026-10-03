@@ -4,6 +4,52 @@ import XCTest
 
 @MainActor
 final class WorkshopDownloadPersistenceTests: DownloaderTestCase {
+  func testCheckpointReplacementAndInterruptedPublicationRecoverNewestContent() throws {
+    let files = FileManager.default
+    for interruption in ["none", "pending", "backup", "published"] {
+      let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      defer { try? files.removeItem(at: root) }
+      let staging = root.appendingPathComponent("staging")
+      let checkpoint = root.appendingPathComponent("123456")
+      let pending = root.appendingPathComponent(".partial-123456")
+      let backup = root.appendingPathComponent(".previous-123456")
+      func write(_ directory: URL, _ value: String) throws {
+        let content = directory.appendingPathComponent("steamapps/part")
+        try files.createDirectory(at: content.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(value.utf8).write(to: content)
+      }
+      try write(staging, "old")
+      try WorkshopDownloadCheckpoint.save(from: staging, to: checkpoint)
+      try write(staging, "new")
+      if interruption == "none" {
+        try WorkshopDownloadCheckpoint.save(from: staging, to: checkpoint)
+      } else {
+        try files.createDirectory(at: pending, withIntermediateDirectories: true)
+        try files.moveItem(at: staging.appendingPathComponent("steamapps"), to: pending.appendingPathComponent("steamapps"))
+        if interruption != "pending" { try files.moveItem(at: checkpoint, to: backup) }
+        if interruption == "published" { try files.moveItem(at: pending, to: checkpoint) }
+      }
+      try WorkshopDownloadCheckpoint.restore(from: checkpoint, to: staging)
+      XCTAssertEqual(try Data(contentsOf: staging.appendingPathComponent("steamapps/part")), Data("new".utf8), interruption)
+      for directory in [checkpoint, pending, backup] {
+        XCTAssertFalse(files.fileExists(atPath: directory.path), interruption)
+      }
+    }
+  }
+
+  func testCheckpointCancelRemovesInterruptedPublication() throws {
+    let files = FileManager.default
+    let root = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? files.removeItem(at: root) }
+    for name in ["123456", ".partial-123456", ".previous-123456"] {
+      let directory = root.appendingPathComponent(name)
+      try files.createDirectory(at: directory, withIntermediateDirectories: true)
+      try Data("partial".utf8).write(to: directory.appendingPathComponent("part"))
+    }
+    try WorkshopDownloadCheckpoint.remove(at: root.appendingPathComponent("123456"))
+    XCTAssertTrue(try files.contentsOfDirectory(atPath: root.path).isEmpty)
+  }
+
   func testPauseRestoresContentAndQueueOrderWithoutKeepingThePrivateRuntime() async throws {
     let root = try makeRuntime(
       """

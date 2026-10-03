@@ -376,8 +376,9 @@ final class WorkshopStore {
 
   func resumeDownload(_ job: WorkshopDownload, bridge: BridgeStore) {
     guard job.isPaused, !job.isPending else { return }
+    // Resuming does not authorize a separate shared-assets download.
     _ = continueDownload(id: job.id, account: job.account, rememberSession: job.rememberSession,
-                         includeResources: true, bridge: bridge)
+                         includeResources: false, bridge: bridge)
   }
 
   @discardableResult

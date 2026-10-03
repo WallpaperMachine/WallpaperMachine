@@ -419,6 +419,13 @@ bool MetalVideoTextures::prepare(Scene&                          scene,
                                 : state.pipeline_error);
         }
 
+        if (! is_nv12 && frame.needsDisplayTransform() && state.bgra_pipeline == nil) {
+            return SetError(error,
+                            state.pipeline_error.empty()
+                                ? std::string("no BGRA display-transform pipeline for video textures")
+                                : state.pipeline_error);
+        }
+
         VideoSourceEntry entry;
         entry.source = std::move(source);
         state.sources.emplace(key, std::move(entry));

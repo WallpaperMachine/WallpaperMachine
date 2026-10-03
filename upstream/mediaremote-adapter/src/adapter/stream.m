@@ -398,6 +398,9 @@ extern void adapter_stream() {
                      queue:nil
                 usingBlock:^(NSNotification *notification) {
                   dispatch_async(g_serialdispatchQueue, ^() {
+                    id isPlayingValue = notification.userInfo
+                        [kMRMediaRemoteNowPlayingApplicationIsPlayingUserInfoKey];
+                    if (isPlayingValue == nil) return;
                     NSUInteger notificationGeneration = ++generation;
                     appForNotification(notification, ^(
                                            NSRunningApplication *process) {
@@ -408,12 +411,6 @@ extern void adapter_stream() {
                           // application anymore.
                           resetAll();
                           handle();
-                          return;
-                      }
-                      id isPlayingValue =
-                          notification.userInfo
-                              [kMRMediaRemoteNowPlayingApplicationIsPlayingUserInfoKey];
-                      if (isPlayingValue == nil) {
                           return;
                       }
                       if (liveData[kMRABundleIdentifier] != nil &&

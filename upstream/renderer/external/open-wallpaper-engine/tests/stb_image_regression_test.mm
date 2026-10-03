@@ -26,6 +26,11 @@ struct Allocations {
     std::unordered_set<void*> live;
 };
 thread_local Allocations* allocations = nullptr;
+struct AllocationScope {
+    explicit AllocationScope(Allocations& state) : previous(allocations) { allocations = &state; }
+    ~AllocationScope() { allocations = previous; }
+    Allocations* previous;
+};
 
 bool RefuseAllocation() {
     if (allocations == nullptr) return false;
@@ -103,10 +108,7 @@ Bytes EncodeImage(CFStringRef format, int depth, size_t width = 4, size_t height
 template<typename Decode>
 void CheckEveryAllocation(const Bytes& bytes, Decode decode) {
     Allocations state;
-    struct Scope {
-        explicit Scope(Allocations& state) { allocations = &state; }
-        ~Scope() { allocations = nullptr; }
-    } scope(state);
+    AllocationScope scope(state);
     int width = 0, height = 0, channels = 0;
     void* result = decode(bytes, &width, &height, &channels);
     ASSERT_NE(result, nullptr) << stbi_failure_reason();
@@ -138,12 +140,11 @@ TEST(StbImageRegression, ValidJpegReturnsCleanlyAtEachAllocationFailure) {
     });
     Allocations state;
     state.fail_at = 0;
-    allocations = &state;
+    AllocationScope scope(state);
     int w = 0, h = 0, c = 0;
     EXPECT_EQ(stbi_info_from_memory(jpeg.data(), static_cast<int>(jpeg.size()), &w, &h, &c), 0);
     EXPECT_TRUE(state.failed);
     EXPECT_TRUE(state.live.empty());
-    allocations = nullptr;
 }
 
 TEST(StbImageRegression, BitDepthConversionFailuresReleaseInputBeforeOptionalFlip) {

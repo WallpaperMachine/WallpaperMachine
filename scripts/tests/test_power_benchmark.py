@@ -24,6 +24,24 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(power_benchmark)
 
 
+class MainTests(unittest.TestCase):
+    def test_manifest_write_uses_workspace_dirty_state(self):
+        for dirty in (False, True):
+            with self.subTest(dirty=dirty), tempfile.TemporaryDirectory() as directory:
+                document = {"schema_version": 2, "workspace": {"dirty": dirty},
+                            "build": {"status": "unknown", "processes": {}}, "conditions": []}
+                with mock.patch.object(sys, "argv", ["power_benchmark.py"]), \
+                     mock.patch.object(power_benchmark, "manifest", return_value=document), \
+                     mock.patch.object(power_benchmark, "POWER_ARTIFACTS", Path(directory)), \
+                     mock.patch("builtins.print") as output:
+                    self.assertEqual(power_benchmark.main(), 0)
+                artifacts = list(Path(directory).glob("*.json"))
+                self.assertEqual(len(artifacts), 1)
+                self.assertEqual(json.loads(artifacts[0].read_text()), document)
+                warnings = [call for call in output.call_args_list if "Working tree is dirty" in str(call)]
+                self.assertEqual(len(warnings), int(dirty))
+
+
 class CommandOutputTests(unittest.TestCase):
     def test_a_failing_inspection_reports_nothing_rather_than_an_empty_string(self):
         self.assertIsNone(power_benchmark.command_output([sys.executable, "-c", "raise SystemExit(3)"]))
