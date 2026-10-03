@@ -13,7 +13,7 @@ extension WebPanelController {
         "displayTitle": display.map { titles.title($0.title, displayId: $0.displayId) } ?? String(state.displayID),
         "kind": state.kind.rawValue, "phase": state.phase.rawValue,
         "message": state.message as Any? ?? NSNull(),
-        "canRetry": state.kind == .web && state.phase == .failed && store.retryHostWallpaper != nil,
+        "canRetry": state.kind == .web && state.phase == .failed && state.canRetry && store.retryHostWallpaper != nil,
       ]
     }
   }

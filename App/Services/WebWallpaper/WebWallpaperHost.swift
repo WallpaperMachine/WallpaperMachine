@@ -398,7 +398,7 @@ final class WebWallpaperHost {
                     guard let self, let page, self.windows[displayID]?.page === page,
                           let current = self.descriptors[displayID] else { return }
                     AppLog.error("web wallpaper \(wallpaper.wallpaperId) on display \(displayID): \(message)", load: load)
-                    self.recordState(current, phase: .failed, message: message)
+                    self.recordState(current, phase: .failed, message: message, canRetry: true)
                     self.onError?(String(localized: "Web wallpaper “\(wallpaper.title)” could not load: \(message)"))
                 }
                 page.onLoaded = { [weak self, weak page] in
@@ -489,16 +489,17 @@ final class WebWallpaperHost {
         page.setPresentationSuspended(isSuspended(displayID: wallpaper.displayId))
         if page.isLoaded { recordState(wallpaper, phase: .ready) }
         else if let prior = states[wallpaper.displayId], prior.startupRevision != wallpaper.startupRevision {
-            recordState(wallpaper, phase: prior.phase, message: prior.message)
+            recordState(wallpaper, phase: prior.phase, message: prior.message, canRetry: prior.canRetry)
         }
     }
 
     private func recordState(
-        _ wallpaper: BridgeWebWallpaper, phase: HostWallpaperState.Phase, message: String? = nil
+        _ wallpaper: BridgeWebWallpaper, phase: HostWallpaperState.Phase,
+        message: String? = nil, canRetry: Bool = false
     ) {
         let state = HostWallpaperState(kind: .web, displayID: wallpaper.displayId,
             wallpaperID: wallpaper.wallpaperId, startupRevision: wallpaper.startupRevision,
-            nativeAdmissionKey: nil, phase: phase, message: message)
+            nativeAdmissionKey: nil, phase: phase, message: message, canRetry: canRetry)
         guard states[wallpaper.displayId] != state else { return }
         states[wallpaper.displayId] = state
         onStateChanged?(state)
@@ -506,7 +507,8 @@ final class WebWallpaperHost {
 
     func retry(wallpaperID: String, displayID: UInt32) {
         guard !stopped, let wallpaper = descriptors[displayID], wallpaper.wallpaperId == wallpaperID,
-              let page = windows[displayID]?.page, states[displayID]?.phase == .failed else { return }
+              let page = windows[displayID]?.page, states[displayID]?.phase == .failed,
+              states[displayID]?.canRetry == true else { return }
         recordState(wallpaper, phase: .loading)
         page.load()
     }

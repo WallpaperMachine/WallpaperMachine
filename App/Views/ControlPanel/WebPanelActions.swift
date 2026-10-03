@@ -24,7 +24,7 @@ extension WebPanelController {
       let id = try wallpaperID(request)
       guard let displayID = UInt32(try request.string("displayID")),
             store.hostWallpaperStates.values.contains(where: {
-              $0.kind == .web && $0.wallpaperID == id && $0.displayID == displayID && $0.phase == .failed
+              $0.kind == .web && $0.wallpaperID == id && $0.displayID == displayID && $0.phase == .failed && $0.canRetry
             }) else { throw WebPanelRequest.invalid }
       store.retryHostWallpaper?(id, displayID)
       return

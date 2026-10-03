@@ -38,9 +38,9 @@ final class ControlPanelHostStateTests: ControlPanelTestCase {
 
   private func state(_ id: String, display: UInt32, revision: UInt64,
     phase: HostWallpaperState.Phase, kind: HostWallpaperState.Kind = .web,
-    admission: UInt64? = nil, message: String? = nil) -> HostWallpaperState {
+    admission: UInt64? = nil, message: String? = nil, canRetry: Bool = false) -> HostWallpaperState {
     .init(kind: kind, displayID: display, wallpaperID: id, startupRevision: revision,
-      nativeAdmissionKey: admission, phase: phase, message: message)
+      nativeAdmissionKey: admission, phase: phase, message: message, canRetry: canRetry)
   }
 
   func testInspectorScopesHostStatesEscapesReasonsAndRetriesTheExactDisplay() async throws {
@@ -51,7 +51,7 @@ final class ControlPanelHostStateTests: ControlPanelTestCase {
       panel.store.retryHostWallpaper = { retries.append(($0, $1)) }
       let reason = #"Cannot open <strong>preview</strong> & "video" content."#
       panel.store.receiveHostState(state("alpha", display: 1, revision: 7, phase: .loading))
-      panel.store.receiveHostState(state("alpha", display: 2, revision: 8, phase: .failed, message: reason))
+      panel.store.receiveHostState(state("alpha", display: 2, revision: 8, phase: .failed, message: reason, canRetry: true))
       panel.store.receiveHostState(state("beta", display: 3, revision: 9, phase: .ready,
         kind: .nativeVideo, admission: 42))
       panel.show()
@@ -75,6 +75,24 @@ final class ControlPanelHostStateTests: ControlPanelTestCase {
       try await panel.expectJS("return document.querySelectorAll('#inspector [data-action=\"retryHostWallpaper\"]').length", equals: 0)
       try await panel.expectJS("return document.querySelector('#inspector [data-host-display=\"3\"] strong').textContent.includes('Wallpaper content is ready')", equals: true)
       XCTAssertNil(panel.controller.actionError)
+    }
+  }
+
+  func testFailureWithoutRetryCapabilityShowsTheErrorAndRejectsStaleRetryActions() async throws {
+    try await withPanel { panel in
+      try await panel.finishWelcome()
+      configure(panel)
+      panel.store.retryHostWallpaper = { _, _ in XCTFail("a failure without a retryable page must not reload") }
+      let reason = "The project could not be read."
+      panel.store.receiveHostState(state("alpha", display: 1, revision: 7, phase: .failed, message: reason))
+      panel.show()
+      try await panel.waitJS("document.querySelector('#inspector [data-host-display=\"1\"] p') !== null")
+      try await panel.expectJS("return document.querySelector('#inspector [data-host-display=\"1\"] p').textContent", equals: reason)
+      try await panel.expectJS("return document.querySelectorAll('#inspector [data-action=\"retryHostWallpaper\"]').length", equals: 0)
+      do {
+        try await panel.controller.perform("retryHostWallpaper", body: ["id": "alpha", "displayID": "1"])
+        XCTFail("an action from an older snapshot must recheck retry eligibility")
+      } catch is WallpaperActionError { }
     }
   }
 

@@ -99,13 +99,16 @@ final class WebWallpaperHostLifecycleTests: XCTestCase {
     XCTAssertEqual(fixture.model.states.first?.phase, .loading)
     try await wait { fixture.model.states.last?.phase == .ready }
     XCTAssertEqual(fixture.model.states.last?.startupRevision, 3)
+    XCTAssertEqual(fixture.model.states.last?.canRetry, false)
     page.webView(page.webView, didFail: nil, withError: NSError(domain: "fixture", code: 1,
       userInfo: [NSLocalizedDescriptionKey: "late load failure"]))
     XCTAssertEqual(fixture.model.states.last?.phase, .failed)
+    XCTAssertEqual(fixture.model.states.last?.canRetry, true)
     fixture.host.retry(wallpaperID: "another", displayID: 7)
     XCTAssertEqual(fixture.model.states.last?.phase, .failed)
     fixture.host.retry(wallpaperID: "wallpaper", displayID: 7)
     XCTAssertEqual(fixture.model.states.last?.phase, .loading)
+    XCTAssertEqual(fixture.model.states.last?.canRetry, false)
     try await wait { fixture.model.states.last?.phase == .ready }
     let staleFailure = page.onFailure
     try "<!doctype html><script>window.contentVersion = 2</script>".write(
@@ -119,6 +122,40 @@ final class WebWallpaperHostLifecycleTests: XCTestCase {
     staleFailure?("retired document")
     XCTAssertEqual(fixture.model.states.count, count)
     XCTAssertEqual(fixture.model.states.last?.wallpaperID, "replacement")
+  }
+
+  func testFailuresBeforePageCreationDoNotOfferRetry() async throws {
+    let fixture = try Fixture()
+    defer { fixture.close() }
+    var invalidEntry = fixture.descriptor
+    invalidEntry.entryFile = "../outside.html"
+    var missingProject = fixture.descriptor
+    missingProject.projectPath = fixture.root.appendingPathComponent("missing").path
+    for descriptor in [invalidEntry, missingProject] {
+      await fixture.host.apply([descriptor])
+      XCTAssertTrue(fixture.model.surfaces.isEmpty)
+      XCTAssertEqual(fixture.model.states.last?.phase, .failed)
+      XCTAssertEqual(fixture.model.states.last?.canRetry, false)
+      let count = fixture.model.states.count
+      fixture.host.retry(wallpaperID: descriptor.wallpaperId, displayID: descriptor.displayId)
+      XCTAssertEqual(fixture.model.states.count, count)
+    }
+  }
+
+  func testProjectScanFailureDoesNotRetryAnOlderLivePage() async throws {
+    let fixture = try Fixture()
+    defer { fixture.close() }
+    await fixture.host.apply([fixture.descriptor])
+    try await wait { fixture.model.states.last?.phase == .ready }
+    try FileManager.default.removeItem(at: fixture.root)
+    fixture.model.revision += 1
+    await fixture.host.apply([fixture.descriptor])
+    XCTAssertEqual(fixture.model.states.last?.phase, .failed)
+    XCTAssertEqual(fixture.model.states.last?.canRetry, false)
+    let count = fixture.model.states.count
+    fixture.host.retry(wallpaperID: "wallpaper", displayID: 7)
+    XCTAssertEqual(fixture.model.states.count, count)
+    XCTAssertEqual(fixture.model.surfaces.count, 1)
   }
 
   func testSamePathRefreshLoadsNewBytesButAnUnchangedRefreshReusesThePage() async throws {

@@ -125,7 +125,9 @@ a separate web view with its own handler.
   document, so a reload after a crash restores the page even though nothing in
   the descriptor changed.
 - The inspector reports each display's loading, ready or failed host state.
-  A failed Web page offers **Retry wallpaper**. Late callbacks from a replaced
+  A failed live Web page offers **Retry wallpaper**. Project validation and file-scan
+  failures display their error without offering a retry that cannot reload a page;
+  fix the project and refresh or reapply it. Late callbacks from a replaced
   surface are ignored. The host echoes the bridge's startup revision only after
   loading finishes (or fails); accepting an assignment does not imply ready content.
 - A library refresh checks active project file identities on a background actor.

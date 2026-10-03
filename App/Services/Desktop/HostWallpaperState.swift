@@ -12,6 +12,8 @@ struct HostWallpaperState: Equatable, Sendable {
     var nativeAdmissionKey: UInt64?
     var phase: Phase
     var message: String?
+    /// The host can retry the current failed surface without rebuilding its assignment.
+    var canRetry = false
 
     var key: String { "\(kind.rawValue):\(displayID)" }
 }
