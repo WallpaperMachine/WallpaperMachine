@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-03 — Shader macro fixes and pending scene/playback/panel PR
+
+- `python3 scripts/test.py` — passed: 1,071 native tests passed, 12 skipped; all Python script suites passed.
+- `cargo test -p shader -- --nocapture` from `upstream/renderer`, using `scripts/build.py` cargo environment — exit 0; 506 reported passed, including three asset-dependent early-return skips.
+- Shader corpus gaps: two auto-sway/depth-parallax fixtures and the genericimage4 asset case were unavailable; those cases are skipped, not verified.
+- New macro-sized varying and nested legacy macro regressions passed for SPIR-V and MSL.
+- `python3 scripts/check_renderer.py` — exit 0; all 11 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
+- Renderer gaps: two local text-scene cases and the environment-selected local-project Metal case skipped; no authored-reference parity claim.
+- `git diff --check` — passed before commit.
+- No desktop automation, visual validation, app launch, or Release app rebuild performed.
+
 ## 2026-10-03 — Tile layer textures, unblended alpha-to-coverage, random sprite frames
 
 - Composite render targets follow the source layer clampuvs; alphatocoverage writes kept samples unblended on both backends; randomframe particles get a fixed hashed per-particle frame. No wallpaper-specific rules, MSAA, extra passes or allocations.
@@ -119,14 +130,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py — exit 0; all 17 Python modules passed; native 1064 passed, 0 failed, 12 skipped (3 live-network and 9 opt-in media tests).
 - python3 scripts/build.py --swift-only --configuration Release — exit 0; bundled panel.js matches source and codesign --verify --deep --strict passes.
 - No renderer changes in this fix; concurrent renderer edits were left untouched. No live GPU-hang reproduction or desktop visual check; installed app not replaced or restarted.
-
-## 2026-10-02 — v1.2.3 pre-release gate
-
-- `python3 scripts/build.py --renderer-only` — exit 0; renderer rebuilt and Swift bindings regenerated.
-- `python3 scripts/test.py` — exit 0; 227 Python tests passed; native 1064 passed, 0 failed, 12 skipped (9 opt-in media, 3 live network/install).
-- `cargo test --release -p wallpaper-bridge --lib` with the build helper environment — exit 0; 367 passed, 0 failed.
-- `python3 scripts/check_renderer.py` — exit 0; 24 test binaries and reload cycles passed; all 10 generated pooled/isolated pairs matched with no diagnostics and expected pixels.
-- Three asset-dependent renderer cases skipped: two local text-project regressions and the native local-project matrix. No authored-reference compatibility claim.
-- `git diff --check` passed; origin/main is an ancestor of the reviewed main, with no unmerged paths. Version dry run: 1.2.2 (24) -> 1.2.3 (25).
-- Compiler warnings remain, including Swift concurrency diagnostics and Rust unused-code warnings; zero warnings/issues is not claimed.
-- No desktop run, wallpaper change, audio capture, live Steam login, or local Release app build. Release publication will use the Version workflow after the source push.

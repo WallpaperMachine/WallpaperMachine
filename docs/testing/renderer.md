@@ -994,6 +994,18 @@ operand is converted with `float(...)`. Known and not handled: logical-not
 applied to a float (`!someFloat`), which still rejects
 `workshop/2800594362/effects/clipping_mask`.
 
+Varying arrays sized by a numeric combo resolve the macro before generated
+interface declarations are emitted and reserve one location per element, just
+like literal-sized arrays. Legacy builtin calls in `#define` replacements are
+rewritten inside function bodies too, not only in top-level directives. The
+original regressions `pipeline_compiles_macro_sized_varyings_without_overlapping_locations`
+and `pipeline_legalizes_nested_legacy_calls_in_macro_replacements` compile both
+SPIR-V and MSL; they cover annotation defaults, explicit counts, consecutive
+arrays and nested object/function macros. These are compile-time repairs for
+previously rejected shaders, not brightness adjustments. Restoring a dropped
+effect restores its authored GPU work and target allocation; no new per-frame
+CPU path or compensating render pass is introduced.
+
 One repair is a layout contract rather than a spelling: a scalar or
 narrow-vector array in the generated uniform block is declared `vec4 name[N]`
 and every subscripted read is swizzled back. std140 pads each element to 16

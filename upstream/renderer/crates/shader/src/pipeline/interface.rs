@@ -7,6 +7,7 @@ use crate::{
         StageInterfaceLayoutBinding, SynthesizedStageInterface,
     },
     pipeline::inputs::ProgramStageInput,
+    preprocess::MacroTable,
     syntax::{InterfaceUseFacts, InterfaceUseQuery, ShaderModule, SyntaxItem, TopLevelQualifier},
 };
 
@@ -119,7 +120,10 @@ impl ProgramInterface {
         for stage in stages {
             match stage.stage.kind() {
                 ShaderStageKind::Vertex => {
-                    let outputs = StageInterfaceBinding::collect_from_module(&stage.module)
+                    let outputs = StageInterfaceBinding::collect_from_module(
+                        &stage.module,
+                        stage.stage.macros(),
+                    )
                         .into_iter()
                         .filter(|binding| {
                             matches!(
@@ -138,7 +142,10 @@ impl ProgramInterface {
                     interface.vertex_outputs.extend(outputs);
                 }
                 ShaderStageKind::Fragment => {
-                    let inputs = StageInterfaceBinding::collect_from_module(&stage.module)
+                    let inputs = StageInterfaceBinding::collect_from_module(
+                        &stage.module,
+                        stage.stage.macros(),
+                    )
                         .into_iter()
                         .filter(|binding| {
                             matches!(
@@ -339,7 +346,10 @@ struct StageInterfaceBinding {
 
 impl StageInterfaceBinding {
     /// Extracts top-level interface declarations from one parsed module.
-    fn collect_from_module(module: &ShaderModule<'_>) -> Vec<StageInterfaceBinding> {
+    fn collect_from_module(
+        module: &ShaderModule<'_>,
+        macros: &MacroTable,
+    ) -> Vec<StageInterfaceBinding> {
         module
             .items()
             .iter()
@@ -352,6 +362,13 @@ impl StageInterfaceBinding {
                 Some(Self {
                     location_count: match suffix.as_ref().and_then(|value| value.size()) {
                         Some(crate::syntax::DeclarationArraySize::Numeric(size)) => size.max(1),
+                        Some(crate::syntax::DeclarationArraySize::MacroIdentifier(identifier)) => {
+                            macros
+                                .value(identifier.as_str())
+                                .and_then(|value| value.parse::<u32>().ok())
+                                .unwrap_or(1)
+                                .max(1)
+                        }
                         _ => 1,
                     },
                     stage: module.stage(),
