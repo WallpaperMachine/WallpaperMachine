@@ -1043,6 +1043,96 @@ void main() {
     }
 }
 
+TEST_F(MetalSceneDraw, ParentedCardsStayJoinedWhileParallaxMovesAndReverses)
+{
+    for (bool effect : {false, true}) {
+        SCOPED_TRACE(effect ? "effect chain" : "direct cards");
+        const auto directory = root_ / (effect ? "parallax-effect" : "parallax-direct");
+        const auto project = WriteFixture(directory);
+        std::ofstream(directory / "models/tile.json") <<
+            R"({"width":64,"height":64,"material":"materials/tile.json"})";
+        std::ofstream(directory / "shaders/metal_probe.frag") <<
+            "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
+        auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+        layout["general"]["clearcolor"] = {0, 0, 0};
+        layout["general"]["cameraparallax"] = true;
+        layout["general"]["cameraparallaxamount"] = 1;
+        layout["general"]["cameraparallaxmouseinfluence"] = 1;
+        layout["general"]["cameraparallaxdelay"] = 0;
+        auto card = layout["objects"][0];
+        card["id"] = 1;
+        card["name"] = "left card";
+        card["parent"] = 3;
+        card["origin"] = {-32, 0, 0};
+        if (effect) {
+            std::filesystem::create_directories(directory / "effects");
+            std::ofstream(directory / "effects/copy.json") <<
+                R"({"name":"copy","passes":[{"material":"materials/copy.json"}]})";
+            std::ofstream(directory / "materials/copy.json") <<
+                R"({"passes":[{"shader":"copy","textures":[null],"blending":"normal","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+            std::filesystem::copy_file(directory / "shaders/metal_probe.vert",
+                                       directory / "shaders/copy.vert");
+            std::ofstream(directory / "shaders/copy.frag") <<
+                "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+                "void main() { gl_FragColor = texture(g_Texture0, v_TexCoord); }\n";
+            card["effects"] = nlohmann::json::array({{{"file", "effects/copy.json"}}});
+        }
+        auto right = card;
+        right["id"] = 2;
+        right["name"] = "right card";
+        right["origin"] = {32, 0, 0};
+        right["parallaxDepth"] = {9, -9}; // stale child values must not win
+        layout["objects"] = nlohmann::json::array({card, right,
+            {{"id", 3}, {"name", "inner"}, {"parent", 4}, {"parallaxDepth", {0, 0}}},
+            {{"id", 4}, {"name", "root"}, {"origin", {192, 128, 0}},
+             {"parallaxDepth", {0.5, 0.25}}}});
+        std::ofstream(directory / "layout.json") << layout;
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+        auto& scene = *loaded.scene;
+        const auto graph = sceneToRenderGraph(scene);
+        ASSERT_NE(graph, nullptr);
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+            // Include repeated frames: caching must not freeze inherited motion,
+            // and local effect targets must not receive parallax a second time.
+            for (float cursor : {0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 0.5f}) {
+                scene.shaderValueUpdater->MouseInput(cursor, 1.0f - cursor);
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_EQ(width, 384u);
+                ASSERT_EQ(height, 256u);
+                const float cx = 192 + (0.5f - cursor) * 192;
+                const float cy = 128 - (0.5f - cursor) * 64; // readback is top-down
+                for (unsigned y = 8; y < height; y += 16) {
+                    for (unsigned x = 8; x < width; x += 16) {
+                        const bool covered = std::abs(x - cx) < 64 && std::abs(y - cy) < 32;
+                        const auto offset = (y * width + x) * 4;
+                        ASSERT_EQ(pixels[offset], covered ? 255 : 0)
+                            << "cursor=" << cursor << " pixel=" << x << "," << y;
+                        ASSERT_EQ(pixels[offset + 1], 0);
+                        ASSERT_EQ(pixels[offset + 2], 0);
+                    }
+                }
+            }
+            render.destroy();
+        }
+    }
+}
+
 TEST_F(MetalSceneDraw, AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen)
 {
     for (bool effect : { false, true }) {

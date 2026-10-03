@@ -288,6 +288,27 @@ loop offscreen, so the host's half of the chain — polling the pointer and
 publishing the viewport — is still only covered by `mouse_input_test` at the
 unit level.
 
+### Parallax inheritance
+
+Parented layers take the outermost parent's `parallaxDepth`, including a zero or
+omitted depth, rather than adding or retaining their own stale child values.
+`ResolveLayerParallax` resolves this once during scene parsing, independent of
+declaration order, before image, puppet-slot, text and particle materials are
+built. The existing layer-local/effect-camera exclusions and cursor-driven reuse
+classification remain in force; there is no per-frame ancestor traversal, extra
+pass or texture. Missing/ambiguous parents do not supply a depth, and cycles are
+left unresolved. Wallpaper Engine's [release notes](https://steamcommunity.com/app/431960/allnews/)
+confirm that the parent controls parallax on child layers.
+
+`SceneSchema.ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationOrder`
+covers nesting, zero/default depth, missing/duplicate parents and cycles;
+`SceneSchema.ParentedPuppetSlotsFollowTheRootDepthAndKeepTheirLocalTransforms`
+checks both material slots and cursor reversal through the parsed scene.
+`MetalSceneDraw.ParentedCardsStayJoinedWhileParallaxMovesAndReverses` checks
+known pixels for direct and effect-chain cards across moving and repeated frames.
+The shared probe's `WE_TEST_INPUT_JSON` feeds both runtime cursor events and
+shader/particle pointer inputs, without reading or moving the desktop pointer.
+
 ### Camera layers in 2D scenes
 
 `orthogonalprojection` decides what a scene is. When it is present the scene is

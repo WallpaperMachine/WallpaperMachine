@@ -32,6 +32,7 @@
 #include "SpecTexs.hpp"
 #include "Type.hpp"
 #include "WPShaderValueUpdater.hpp"
+#include "Scene/Parse/LayerParallax.hpp"
 #include "Interface/IShaderValueUpdater.h"
 #include "WPSceneParser.hpp"
 #include "wpscene/WPImageObject.h"
@@ -3584,6 +3585,87 @@ TEST(SceneSchema, ParserRegistersPuppetSlotShaderValueDataByMaterialSlot) {
     ASSERT_TRUE(updates.contains("g_Texture0Resolution"));
     EXPECT_FLOAT_EQ(updates.at("g_Texture0Resolution")[0], 160.0f);
     EXPECT_FLOAT_EQ(updates.at("g_Texture0Resolution")[1], 90.0f);
+}
+
+TEST(SceneSchema, ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationOrder) {
+    auto objects = nlohmann::json::parse(R"([
+        {"id":3,"parent":2,"parallaxDepth":[9,9]},
+        {"id":2,"parent":1,"parallaxDepth":[0,0]},
+        {"id":1,"parallaxDepth":[0.75,-0.25]},
+        {"id":4,"parent":5,"parallaxDepth":[1,1]},
+        {"id":5},
+        {"id":6,"parent":99,"parallaxDepth":[0.2,0.4]},
+        {"id":7,"parent":8,"parallaxDepth":[2,3]},
+        {"id":8,"parent":7,"parallaxDepth":[4,5]},
+        {"id":9,"parallaxDepth":[6,7]},
+        {"id":9,"parallaxDepth":[8,9]},
+        {"id":10,"parent":9,"parallaxDepth":[10,11]}
+    ])");
+    const auto original = objects;
+    for (bool reversed : {false, true}) {
+        objects = original;
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        ResolveLayerParallax(objects);
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        EXPECT_EQ(objects[0]["parallaxDepth"], original[2]["parallaxDepth"]);
+        EXPECT_EQ(objects[1]["parallaxDepth"], original[2]["parallaxDepth"]);
+        EXPECT_EQ(objects[3]["parallaxDepth"], nlohmann::json::array({0, 0}));
+        for (std::size_t i : {2u, 4u, 5u, 6u, 7u, 8u, 9u, 10u})
+            EXPECT_EQ(objects[i], original[i]);
+    }
+}
+
+TEST(SceneSchema, ParentedPuppetSlotsFollowTheRootDepthAndKeepTheirLocalTransforms) {
+    for (bool reversed : {false, true}) {
+        auto files = std::map<std::string, std::string> {};
+        AddPuppetImageSceneFiles(files);
+        fs::VFS vfs;
+        ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+        audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+        auto source = nlohmann::json::parse(PuppetParallaxSceneJson());
+        auto& objects = source["objects"];
+        objects[0]["parent"] = 20;
+        objects[0]["origin"] = {13, 17, 0};
+        objects.push_back({{"id", 20}, {"name", "inner group"}, {"parent", 10},
+                           {"parallaxDepth", {9, 9}}, {"origin", {30, 40, 0}}});
+        objects.push_back({{"id", 10}, {"name", "root group"},
+                           {"parallaxDepth", {0.75, -0.25}}, {"origin", {100, 80, 0}}});
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        auto parsed = WPSceneParser().Parse("parent-parallax", source.dump(), vfs, sound);
+        ASSERT_NE(parsed, nullptr);
+        auto root = FindRootChildByName(*parsed, "root group");
+        ASSERT_NE(root, nullptr);
+        auto* inner = FindFirstChildByName(*root, "inner group");
+        ASSERT_NE(inner, nullptr);
+        auto* node = FindFirstChildByName(*inner, "puppet image");
+        ASSERT_NE(node, nullptr);
+        ASSERT_NE(node->Mesh(), nullptr);
+        ASSERT_EQ(node->Mesh()->MaterialSlots().size(), 2u);
+        auto& updater = *parsed->shaderValueUpdater;
+        for (uint32_t slot = 0; slot < 2; ++slot)
+            updater.InitUniforms(node, slot, [](std::string_view name) {
+                return name == "g_ModelMatrix";
+            });
+        for (float x : {0.5f, 1.0f, 0.0f, 0.5f}) {
+            updater.MouseInput(x, 1.0f - x);
+            parsed->frameTime = 0.25;
+            updater.FrameBegin();
+            node->UpdateTrans();
+            EXPECT_NEAR(node->ModelTrans()(0, 3), 143.0, 1e-5);
+            EXPECT_NEAR(node->ModelTrans()(1, 3), 137.0, 1e-5);
+            for (uint32_t slot = 0; slot < 2; ++slot) {
+                ShaderValue model;
+                sprite_map_t sprites;
+                updater.UpdateUniforms(node, slot, sprites,
+                    [&](std::string_view name, const ShaderValue& value) {
+                        if (name == "g_ModelMatrix") model = value;
+                    });
+                ASSERT_EQ(model.size(), 16u);
+                EXPECT_NEAR(model[12], 143.0f + (0.5f - x) * 640 * 2 * 0.75f, 1e-4);
+                EXPECT_NEAR(model[13], 137.0f + (0.5f - x) * 360 * 2 * -0.25f, 1e-4);
+            }
+        }
+    }
 }
 
 TEST(SceneSchema, ParserCopiesImageParallaxDepthToPuppetMaterialSlots) {

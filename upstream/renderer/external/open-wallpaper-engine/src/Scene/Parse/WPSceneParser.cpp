@@ -1,4 +1,5 @@
 #include "WPSceneParser.hpp"
+#include "LayerParallax.hpp"
 #include "WPJson.hpp"
 #include "Scene/SceneIndexArray.h"
 
@@ -4660,6 +4661,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
     sc.FromJson(json, request.pkg_version);
     //	LOG_INFO(nlohmann::json(sc).dump(4));
 
+    ResolveLayerParallax(json.at("objects"));
     ParseContext context;
     context.request     = &request;
     context.object_list = &json.at("objects");
