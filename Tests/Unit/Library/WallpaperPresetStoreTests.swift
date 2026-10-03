@@ -79,10 +79,11 @@ final class WallpaperPresetStoreTests: XCTestCase {
     descriptor.fileFilter = .image
     descriptor.assetManaged = true
     let saved = try await context.store.save(name: "Cover", options: options(properties: [descriptor]), hasPendingEdits: false)
+    try context.managed.write(UserAssetManifest(wallpaperId: "wallpaper"))
     context.managed.removeProperty(wallpaperId: "wallpaper", propertyId: "cover")
     try FileManager.default.removeItem(at: source)
     let retained = try XCTUnwrap(saved.properties.first?.retainedPath)
-    _ = try UserAssetStorage.purgeUnreferencedDerivedCaches(store: context.managed)
+    _ = try await UserAssetStorage.purgeUnreferencedDerivedCaches(store: context.managed)
     XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: retained)), bytes)
     let exported = try await context.reopen().exportDocument(id: saved.id)
     let imported = try await context.store.importDocument(exported, options: options(properties: [descriptor]))
@@ -241,7 +242,7 @@ final class WallpaperPresetStoreTests: XCTestCase {
       watcher = made
       return made
     })
-    let initial = try assets.importDirectory(at: source, propertyId: "slides", filter: .image, limit: 4096)
+    let initial = try await assets.importDirectory(at: source, propertyId: "slides", filter: .image, limit: 4096)
     // Reopening proves the active-source protection is not transient preset UI state.
     try await context.reopen().delete(id: imported.id)
     try XCTUnwrap(watcher).fire()
@@ -251,12 +252,12 @@ final class WallpaperPresetStoreTests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: file.stagedPath)), Data((name == "a.png" ? "a" : "b").utf8))
     }
     XCTAssertTrue(context.reopen().items.isEmpty)
-    XCTAssertEqual(context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]?.sourcePath, source.path)
+    XCTAssertEqual(try context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]?.sourcePath, source.path)
 
     let replacement = context.root.appendingPathComponent("replacement")
     try FileManager.default.createDirectory(at: replacement, withIntermediateDirectories: true)
     try Data("new".utf8).write(to: replacement.appendingPathComponent("c.png"))
-    let changed = try assets.importDirectory(at: replacement, propertyId: "slides", filter: .image, limit: 4096)
+    let changed = try await assets.importDirectory(at: replacement, propertyId: "slides", filter: .image, limit: 4096)
     let currentFile = URL(fileURLWithPath: try XCTUnwrap(changed.first).stagedPath)
     XCTAssertEqual(try Data(contentsOf: currentFile), Data("new".utf8), "replacement is readable before orphan cleanup")
     try await context.reopen().pruneRetainedAssets(options: options(properties: [property("slides", .directory, .string(value: replacement.path))]))
@@ -282,7 +283,7 @@ final class WallpaperPresetStoreTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
   }
 
-  func testArchiveValidatorRejectsMalformedTypedValuesAndUnsafeRetainedMetadata() throws {
+  func testArchiveValidatorRejectsMalformedTypedValuesAndUnsafeRetainedMetadata() async throws {
     let id = UUID().uuidString
     let base = WallpaperPropertyPreset(id: id, wallpaperID: "wallpaper", name: "Valid", properties: [
       .init(id: "cover", kind: "file", value: .string("/tmp/cover.png"), usesDefault: false,
@@ -329,7 +330,7 @@ final class WallpaperPresetStoreTests: XCTestCase {
     let plan = try context.store.mutations(for: selected, options: options(properties: [descriptor]))
     guard case .path(let source) = try XCTUnwrap(plan.first).operation else { return XCTFail("A restored selection needs retained bytes") }
     XCTAssertEqual(source, path)
-    XCTAssertEqual(context.managed.manifest(wallpaperId: "wallpaper").properties["cover"]?.originalSourceUnauthorized, true)
+    XCTAssertEqual(try context.managed.manifest(wallpaperId: "wallpaper").properties["cover"]?.originalSourceUnauthorized, true)
     let data = try await context.store.exportDocument(id: selected.id)
     let exported = try JSONDecoder().decode(WallpaperPresetDocument.self, from: data)
     XCTAssertEqual(exported.assets["cover"]?.first?.bytes, Data("restored bytes".utf8))
@@ -359,11 +360,11 @@ final class WallpaperPresetStoreTests: XCTestCase {
     let assets = UserAssetStore(projectURL: project, wallpaperId: "wallpaper", managed: context.managed,
       watcherFactory: { PresetManualWatcher(url: $0, callback: $1) })
     try await UserAssetSelectionAuthorization.perform(managed: context.managed, wallpaperID: "wallpaper", selections: ["slides": retained.path]) {
-      _ = try assets.importDirectory(at: retained, propertyId: "slides", filter: .image, limit: 4096)
+      _ = try await assets.importDirectory(at: retained, propertyId: "slides", filter: .image, limit: 4096)
     }
-    let served = try assets.importDirectory(at: original, propertyId: "slides", filter: .image, limit: 4096)
+    let served = try await assets.importDirectory(at: original, propertyId: "slides", filter: .image, limit: 4096)
     XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(served.first).stagedPath)), Data("new owned".utf8))
-    XCTAssertEqual(context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]?.authorizedSourcePath, retained.path)
+    XCTAssertEqual(try context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]?.authorizedSourcePath, retained.path)
     XCTAssertEqual(try Data(contentsOf: original.appendingPathComponent("a.png")), Data("private original".utf8))
   }
 
@@ -400,12 +401,12 @@ final class WallpaperPresetStoreTests: XCTestCase {
         await assertFailure {
           try await UserAssetSelectionAuthorization.perform(managed: context.managed, wallpaperID: "wallpaper", selections: ["slides": retained]) {
             try context.managed.authorizeSelection(wallpaperId: "wallpaper", propertyId: "slides", selectedSourcePath: newer.path)
-            staged = try assets.importDirectory(at: newer, propertyId: "slides", filter: .image, limit: 4096)
-            latest = context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]
+            staged = try await assets.importDirectory(at: newer, propertyId: "slides", filter: .image, limit: 4096)
+            latest = try context.managed.manifest(wallpaperId: "wallpaper").properties["slides"]
             throw CancellationError()
           }
         }
-        XCTAssertEqual(context.managed.manifest(wallpaperId: "wallpaper").properties["slides"], latest)
+        XCTAssertEqual(try context.managed.manifest(wallpaperId: "wallpaper").properties["slides"], latest)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(staged.first).stagedPath)), Data("newer bytes".utf8))
       } else {
         let other = context.root.appendingPathComponent("other.png")
@@ -414,17 +415,17 @@ final class WallpaperPresetStoreTests: XCTestCase {
         var latestOther: ManagedUserAssetProperty?
         await assertFailure {
           try await UserAssetSelectionAuthorization.perform(managed: context.managed, wallpaperID: "wallpaper", selections: ["slides": retained]) {
-            imported = try assets.importFile(at: other, propertyId: "other", filter: .image)
-            latestOther = context.managed.manifest(wallpaperId: "wallpaper").properties["other"]
+            imported = try await assets.importFile(at: other, propertyId: "other", filter: .image)
+            latestOther = try context.managed.manifest(wallpaperId: "wallpaper").properties["other"]
             throw CancellationError()
           }
         }
-        let restored = context.managed.manifest(wallpaperId: "wallpaper")
+        let restored = try context.managed.manifest(wallpaperId: "wallpaper")
         XCTAssertEqual(restored.properties["other"], latestOther)
         XCTAssertEqual(restored.properties["slides"]?.originalSourceUnauthorized, true)
         XCTAssertNil(restored.properties["slides"]?.authorizedSourcePath)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(imported).stagedPath)), Data("other user's bytes".utf8))
-        let old = try assets.importDirectory(at: original, propertyId: "slides", filter: .image, limit: 4096)
+        let old = try await assets.importDirectory(at: original, propertyId: "slides", filter: .image, limit: 4096)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(old.first).stagedPath)), Data("restored old".utf8))
       }
     }
@@ -458,8 +459,8 @@ final class WallpaperPresetStoreTests: XCTestCase {
     // A permission-only Apply still reaches real validation of the missing project.
     await assertFailure { try await context.store.apply(selected, options: initial, bridge: engineStore) }
     XCTAssertEqual(try Data(contentsOf: manifest), original)
-    XCTAssertEqual(context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.originalSourceUnauthorized, true)
-    XCTAssertNil(context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.authorizedSourcePath)
+    XCTAssertEqual(try context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.originalSourceUnauthorized, true)
+    XCTAssertNil(try context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.authorizedSourcePath)
   }
 
   func testSetterAndFinalApplyFailureKeepCommittedPathsAndAssetBytes() async throws {
@@ -475,8 +476,8 @@ final class WallpaperPresetStoreTests: XCTestCase {
       try Data("original image".utf8).write(to: oldSource.appendingPathComponent("same.png"))
       let assets = UserAssetStore(projectURL: project, wallpaperId: wallpaperID, managed: context.managed,
         watcherFactory: { PresetManualWatcher(url: $0, callback: $1) })
-      let staged = try assets.importDirectory(at: oldSource, propertyId: "slides", filter: .image, limit: 4096)
-      var restored = context.managed.manifest(wallpaperId: wallpaperID)
+      let staged = try await assets.importDirectory(at: oldSource, propertyId: "slides", filter: .image, limit: 4096)
+      var restored = try context.managed.manifest(wallpaperId: wallpaperID)
       restored.properties["slides"]?.originalSourceUnauthorized = true
       try context.managed.write(restored)
       var active = property("active", .bool, .bool(value: false))
@@ -508,9 +509,9 @@ final class WallpaperPresetStoreTests: XCTestCase {
       XCTAssertEqual(reverted, initial)
       XCTAssertEqual(assets.stagedFiles(propertyId: "slides"), staged)
       XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: try XCTUnwrap(staged.first).stagedPath)), Data("original image".utf8))
-      XCTAssertEqual(context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.sourcePath, oldSource.path)
-      XCTAssertEqual(context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.originalSourceUnauthorized, true)
-      XCTAssertNil(context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.authorizedSourcePath)
+      XCTAssertEqual(try context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.sourcePath, oldSource.path)
+      XCTAssertEqual(try context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.originalSourceUnauthorized, true)
+      XCTAssertNil(try context.managed.manifest(wallpaperId: wallpaperID).properties["slides"]?.authorizedSourcePath)
     }
   }
 
@@ -538,6 +539,50 @@ final class WallpaperPresetStoreTests: XCTestCase {
     let pending = try await bridge.wallpaperOptionsSnapshot(wallpaperId: "wallpaper")
     XCTAssertTrue(pending.dirty)
     XCTAssertEqual(WallpaperPresetValue(pending.properties[0].value), .bool(true))
+  }
+
+  func testConditionalPresetEnablesItsTargetFieldsAndRollsBackAnUnreachableTarget() async throws {
+    let context = try Context()
+    let previousHome = ProcessInfo.processInfo.environment["WALLPAPER_MACHINE_HOME"]
+    setenv("WALLPAPER_MACHINE_HOME", context.root.path, 1)
+    defer {
+      if let previousHome { setenv("WALLPAPER_MACHINE_HOME", previousHome, 1) }
+      else { unsetenv("WALLPAPER_MACHINE_HOME") }
+      context.close()
+    }
+    let project = ClientPaths.libraryURL.appendingPathComponent("wallpaper")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try Data("{\"type\":\"web\",\"file\":\"index.html\"}".utf8).write(to: project.appendingPathComponent("project.json"))
+    try Data("<!doctype html>".utf8).write(to: project.appendingPathComponent("index.html"))
+    for reachable in [true, false] {
+      var detail = property("detail", .textInput, .string(value: "before"))
+      detail.enabled = false
+      let initial = options(properties: [detail, property("mode", .bool, .bool(value: false))])
+      let bridge = PresetTransactionBridge(noPointer: .init())
+      let store = BridgeStore(bridge: bridge)
+      bridge.hostStore = store
+      bridge.enableDetailWithMode = reachable
+      let config = context.root.appendingPathComponent("committed.json")
+      try bridge.initialize(initial, config: config)
+      let original = try Data(contentsOf: config)
+      let preset = WallpaperPropertyPreset(id: UUID().uuidString, wallpaperID: "wallpaper", name: "Mode", properties: [
+        .init(id: "detail", kind: "textInput", value: .string("after"), usesDefault: false),
+        .init(id: "mode", kind: "bool", value: .bool(true), usesDefault: false),
+      ])
+      if reachable {
+        try await context.store.apply(preset, options: initial, bridge: store)
+        let committed = try await bridge.wallpaperOptionsSnapshot(wallpaperId: "wallpaper")
+        XCTAssertEqual(WallpaperPresetValue(committed.properties[0].value), .string("after"))
+        XCTAssertTrue(committed.properties[0].enabled)
+        XCTAssertFalse(committed.dirty)
+        XCTAssertNotEqual(try Data(contentsOf: config), original)
+      } else {
+        await assertFailure { try await context.store.apply(preset, options: initial, bridge: store) }
+        let unchanged = try await bridge.wallpaperOptionsSnapshot(wallpaperId: "wallpaper")
+        XCTAssertEqual(unchanged, initial)
+        XCTAssertEqual(try Data(contentsOf: config), original)
+      }
+    }
   }
 
   private func assertFailure(_ operation: () async throws -> Void, file: StaticString = #filePath, line: UInt = #line) async {
@@ -603,6 +648,7 @@ private final class PresetTransactionBridge: WallpaperBridge {
   @MainActor var assets: UserAssetStore?
   @MainActor var failedProperty: String?
   @MainActor var refuseCancel = false
+  @MainActor var enableDetailWithMode = false
   @MainActor private var committed: BridgeWallpaperOptionsSnapshot?
   @MainActor private var draft: BridgeWallpaperOptionsSnapshot?
   @MainActor private var config: URL?
@@ -634,22 +680,41 @@ private final class PresetTransactionBridge: WallpaperBridge {
     try await cancel()
   }
 
+  override func applyWallpaperOptions(wallpaperId: String) async throws -> BridgeWallpaperMutationBundle {
+    try await commit()
+  }
+
+  @MainActor private func commit() throws -> BridgeWallpaperMutationBundle {
+    var current = try self.current()
+    current.dirty = false
+    for index in current.properties.indices { current.properties[index].dirty = false }
+    committed = current
+    draft = current
+    try persist(current)
+    return try reply(current)
+  }
+
   @MainActor private func current() throws -> BridgeWallpaperOptionsSnapshot {
     try XCTUnwrap(draft)
   }
 
-  @MainActor private func change(_ id: String, value: BridgePropertyValue, immediate: Bool) throws -> BridgeWallpaperMutationBundle {
+  @MainActor private func change(_ id: String, value: BridgePropertyValue, immediate: Bool) async throws -> BridgeWallpaperMutationBundle {
     if failedProperty == id { throw failure("setter-boundary") }
     var current = try self.current()
     let index = try XCTUnwrap(current.properties.firstIndex { $0.id == id })
+    guard current.properties[index].enabled else { throw failure("disabled-property") }
     current.properties[index].value = value
+    if enableDetailWithMode, id == "mode", case .bool(let enabled) = value,
+       let dependent = current.properties.firstIndex(where: { $0.id == "detail" }) {
+      current.properties[dependent].enabled = enabled
+    }
     if immediate {
       var applied = try XCTUnwrap(committed)
       applied.properties[index].value = value
       committed = applied
       try persist(applied)
       if case .string(let path) = value, !path.isEmpty {
-        _ = try assets?.importDirectory(at: URL(fileURLWithPath: path), propertyId: id, filter: .image, limit: 4096)
+        _ = try await assets?.importDirectory(at: URL(fileURLWithPath: path), propertyId: id, filter: .image, limit: 4096)
       }
     }
     current.dirty = current.properties != committed?.properties
@@ -657,9 +722,9 @@ private final class PresetTransactionBridge: WallpaperBridge {
     return try reply(current)
   }
 
-  @MainActor private func restoreDefault(_ id: String) throws -> BridgeWallpaperMutationBundle {
+  @MainActor private func restoreDefault(_ id: String) async throws -> BridgeWallpaperMutationBundle {
     let current = try self.current()
-    return try change(id, value: try XCTUnwrap(current.properties.first { $0.id == id }).defaultValue, immediate: false)
+    return try await change(id, value: try XCTUnwrap(current.properties.first { $0.id == id }).defaultValue, immediate: false)
   }
 
   @MainActor private func cancel() throws -> BridgeWallpaperMutationBundle {

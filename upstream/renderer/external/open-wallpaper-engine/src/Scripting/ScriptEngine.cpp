@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -51,6 +52,12 @@ struct ScriptFrontEndResult {
     std::vector<std::string> imported_globals;
 };
 
+struct RegisteredAudioBuffer {
+    uint32_t resolution {64};
+    std::array<JSValue, 3> arrays {JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED};
+    bool active {true};
+};
+
 struct ContextScriptCacheState {
     bool                                     shared_bindings_installed { false };
     bool                                     shared_bootstrap_installed { false };
@@ -59,6 +66,7 @@ struct ContextScriptCacheState {
     uint64_t                                 last_audio_generation { 0 };
     bool                                     has_last_audio_generation { false };
     std::unordered_map<std::string, JSValue> factories;
+    std::vector<RegisteredAudioBuffer> audio_buffers;
 };
 
 constexpr uint32_t kScriptPipelineRevision = 1;
@@ -107,6 +115,9 @@ void ReleaseContextScriptCache(JSContext* context) {
     for (auto& [key, value] : state.factories) {
         (void)key;
         JS_FreeValue(context, value);
+    }
+    for (const auto& buffer : state.audio_buffers) {
+        for (const auto array : buffer.arrays) JS_FreeValue(context, array);
     }
 }
 
@@ -1489,15 +1500,27 @@ SceneScriptBridgeState* GetBridgeState(JSContext* context);
 
 JSValue CreateAudioArray(JSContext* context, uint32_t resolution) {
     JSValue length = JS_NewUint32(context, resolution);
-    return JS_NewTypedArray(context, 1, &length, JS_TYPED_ARRAY_FLOAT32);
+    JSValue array = JS_NewTypedArray(context, 1, &length, JS_TYPED_ARRAY_FLOAT32);
+    JS_FreeValue(context, length);
+    return array;
 }
 
-JSValue CreateAudioBufferObject(JSContext* context, uint32_t resolution) {
+JSValue CreateAudioBufferObject(JSContext* context, RegisteredAudioBuffer& registration) {
     JSValue buffer = JS_NewObject(context);
-    JS_SetPropertyStr(context, buffer, "left", CreateAudioArray(context, resolution));
-    JS_SetPropertyStr(context, buffer, "right", CreateAudioArray(context, resolution));
-    JS_SetPropertyStr(context, buffer, "average", CreateAudioArray(context, resolution));
-    JS_SetPropertyStr(context, buffer, "__resolution", JS_NewUint32(context, resolution));
+    if (JS_IsException(buffer)) return buffer;
+    const std::array<const char*, 3> names {"left", "right", "average"};
+    for (size_t index = 0; index < names.size(); ++index) {
+        registration.arrays[index] = CreateAudioArray(context, registration.resolution);
+        if (JS_IsException(registration.arrays[index]) ||
+            JS_SetPropertyStr(context, buffer, names[index], JS_DupValue(context, registration.arrays[index])) < 0) {
+            JS_FreeValue(context, buffer);
+            return JS_EXCEPTION;
+        }
+    }
+    if (JS_SetPropertyStr(context, buffer, "__resolution", JS_NewUint32(context, registration.resolution)) < 0) {
+        JS_FreeValue(context, buffer);
+        return JS_EXCEPTION;
+    }
     return buffer;
 }
 
@@ -1537,38 +1560,29 @@ JSValue JsRegisterAudioBuffers(JSContext* context, JSValueConst, int argc, JSVal
     uint32_t resolution = 64;
     if (argc > 0) {
         uint32_t requested = 64;
-        JS_ToUint32(context, &requested, argv[0]);
+        if (JS_ToUint32(context, &requested, argv[0]) < 0) return JS_EXCEPTION;
         if (requested == 16 || requested == 32 || requested == 64) {
             resolution = requested;
         }
     }
 
+    RegisteredAudioBuffer registration {.resolution = resolution};
+    JSValue buffer = CreateAudioBufferObject(context, registration);
+    if (JS_IsException(buffer)) {
+        for (const auto array : registration.arrays) JS_FreeValue(context, array);
+        return buffer;
+    }
+    try {
+        auto& cache = GetContextScriptCache(context);
+        cache.audio_buffers.push_back(registration);
+        cache.has_last_audio_generation = false;
+    } catch (const std::bad_alloc&) {
+        for (const auto array : registration.arrays) JS_FreeValue(context, array);
+        JS_FreeValue(context, buffer);
+        return JS_ThrowOutOfMemory(context);
+    }
     auto* bridge = GetBridgeState(context);
-    if (bridge != nullptr && bridge->runtime != nullptr) {
-        bridge->runtime->MarkSceneRequiresAudioResponse();
-    }
-
-    JSValue global_object = JS_GetGlobalObject(context);
-    JSValue registry      = JS_GetPropertyStr(context, global_object, "__registeredAudioBuffers");
-    if (! JS_IsObject(registry)) {
-        JS_FreeValue(context, registry);
-        registry = JS_NewArray(context);
-        JS_SetPropertyStr(
-            context, global_object, "__registeredAudioBuffers", JS_DupValue(context, registry));
-    }
-
-    JSValue buffer = CreateAudioBufferObject(context, resolution);
-
-    uint32_t length       = 0;
-    JSValue  length_value = JS_GetPropertyStr(context, registry, "length");
-    JS_ToUint32(context, &length, length_value);
-    JS_FreeValue(context, length_value);
-
-    JS_SetPropertyUint32(context, registry, length, JS_DupValue(context, buffer));
-    GetContextScriptCache(context).has_last_audio_generation = false;
-
-    JS_FreeValue(context, registry);
-    JS_FreeValue(context, global_object);
+    if (bridge != nullptr && bridge->runtime != nullptr) bridge->runtime->MarkSceneRequiresAudioResponse();
     return buffer;
 }
 
@@ -1730,60 +1744,40 @@ void UpdateEngineObject(JSContext* context, JSValue global_object,
     }
     JS_FreeValue(context, input_object);
 
-    JSValue registry = JS_GetPropertyStr(context, global_object, "__registeredAudioBuffers");
-    if (JS_IsObject(registry)) {
-        const auto* bridge        = GetBridgeState(context);
-        const auto  snapshot      = (bridge != nullptr && bridge->runtime != nullptr)
-                                        ? bridge->runtime->CurrentAudioSpectrumSnapshot()
-                                        : wallpaper::audio::AudioSpectrumSnapshot {};
-        const bool  audio_changed = ! cache_state.has_last_audio_generation ||
+    if (! cache_state.audio_buffers.empty()) {
+        const auto* bridge = GetBridgeState(context);
+        const auto snapshot = bridge != nullptr && bridge->runtime != nullptr
+            ? bridge->runtime->CurrentAudioSpectrumSnapshot() : wallpaper::audio::AudioSpectrumSnapshot {};
+        const bool audio_changed = ! cache_state.has_last_audio_generation ||
                                    cache_state.last_audio_generation != snapshot.generation;
-
-        uint32_t length       = 0;
-        JSValue  length_value = JS_GetPropertyStr(context, registry, "length");
-        JS_ToUint32(context, &length, length_value);
-        JS_FreeValue(context, length_value);
-
         if (audio_changed) {
-            for (uint32_t index = 0; index < length; ++index) {
-                JSValue buffer = JS_GetPropertyUint32(context, registry, index);
-
-                uint32_t resolution       = 64;
-                JSValue  resolution_value = JS_GetPropertyStr(context, buffer, "__resolution");
-                JS_ToUint32(context, &resolution, resolution_value);
-                JS_FreeValue(context, resolution_value);
-
-                auto write_array = [&](const char* name, const auto& values) {
-                    JSValue array = JS_GetPropertyStr(context, buffer, name);
-                    for (uint32_t band = 0; band < resolution; ++band) {
-                        JS_SetPropertyUint32(
-                            context, array, band, JS_NewFloat64(context, values[band]));
+            for (auto& registration : cache_state.audio_buffers) {
+                if (! registration.active) continue;
+                const auto write_array = [&](size_t index, const auto& values) {
+                    // The native registration owns both layout and original
+                    // typed view. Script properties never select native bounds.
+                    for (size_t band = 0; band < values.size(); ++band) {
+                        const int result = JS_SetPropertyUint32(context, registration.arrays[index],
+                            static_cast<uint32_t>(band), JS_NewFloat64(context, values[band]));
+                        if (result <= 0) {
+                            registration.active = false;
+                            if (result < 0) LogJsException(context, "registered audio view update");
+                            return false;
+                        }
                     }
-                    JS_FreeValue(context, array);
+                    return true;
                 };
-
-                if (resolution == 16) {
-                    write_array("left", snapshot.left16);
-                    write_array("right", snapshot.right16);
-                    write_array("average", snapshot.average16);
-                } else if (resolution == 32) {
-                    write_array("left", snapshot.left32);
-                    write_array("right", snapshot.right32);
-                    write_array("average", snapshot.average32);
-                } else {
-                    write_array("left", snapshot.left64);
-                    write_array("right", snapshot.right64);
-                    write_array("average", snapshot.average64);
-                }
-
-                JS_FreeValue(context, buffer);
+                const auto write = [&](const auto& left, const auto& right, const auto& average) {
+                    return write_array(0, left) && write_array(1, right) && write_array(2, average);
+                };
+                if (registration.resolution == 16) write(snapshot.left16, snapshot.right16, snapshot.average16);
+                else if (registration.resolution == 32) write(snapshot.left32, snapshot.right32, snapshot.average32);
+                else write(snapshot.left64, snapshot.right64, snapshot.average64);
             }
         }
-
-        cache_state.last_audio_generation     = snapshot.generation;
+        cache_state.last_audio_generation = snapshot.generation;
         cache_state.has_last_audio_generation = true;
     }
-    JS_FreeValue(context, registry);
 
     if (host_changed) {
         JS_SetPropertyStr(context,

@@ -1,19 +1,71 @@
 import Foundation
 
 /// An exact-source permission change participates in the caller's existing engine
-/// transaction. Metadata mutation remains MainActor-confined like UserAssetStore's
-/// manifest/watcher writes: no callback can overwrite a read-modify-write phase.
-/// Large attachment/document IO belongs to the caller's off-main preparation.
+/// transaction. Grant and rollback join background preparation's per-wallpaper
+/// turn queue and short metadata lock; neither remains held over the engine await.
 enum UserAssetSelectionAuthorization {
   private static let maximumManifestBytes = 48 * 1024 * 1024
+  // Accessed only inside ManagedUserAssetStore.withManifestTransaction. A scope
+  // string alone cannot distinguish two explicit selections of the same path.
+  private struct PermissionEdit {
+    let identity: UUID
+    let before: ManagedUserAssetProperty
+    let scope: String
+    var failed = false
+  }
+  private struct RollbackPlan {
+    let propertyID: String
+    let before: ManagedUserAssetProperty
+    let expectedScope: String
+    let firstFailed: Int
+  }
+  nonisolated(unsafe) private static var permissionEdits: [String: [String: [PermissionEdit]]] = [:]
 
   @MainActor
   static func perform(managed: ManagedUserAssetStore, wallpaperID: String,
                       selections: [String: String], commit: @MainActor () async throws -> Void) async throws {
     guard !selections.isEmpty else { try await commit(); return }
     let url = try managed.wallpaperRoot(wallpaperID).appendingPathComponent(UserAssetManifest.fileName)
+    let grant = try await managed.withPreparation(wallpaperId: wallpaperID) {
+      try managed.withManifestTransaction {
+        try prepareGrant(url: url, wallpaperID: wallpaperID, selections: selections)
+      }
+    }
+    guard let grant else { try await commit(); return }
+    do {
+      try Task.checkCancellation()
+      try await commit()
+      managed.withManifestTransaction { finishSuccessfulGrant(url: url, grant: grant) }
+    } catch {
+      let cause = error
+      // Rollback is cleanup and must complete even when the caller is cancelled.
+      let rollback = Task.detached {
+        try await managed.withPreparation(wallpaperId: wallpaperID) {
+          try managed.withManifestTransaction {
+            try Self.rollback(url: url, originalData: grant.originalData, original: grant.original,
+              grantedData: grant.grantedData, scopes: grant.scopes, identity: grant.identity)
+          }
+        }
+      }
+      do { try await rollback.value }
+      catch {
+        throw UserAssetSelectionAuthorizationError(message: String(localized: "The asset selection failed: \(cause.localizedDescription). Its permissions could not be restored: \(error.localizedDescription). Refresh before continuing."))
+      }
+      throw cause
+    }
+  }
+
+  private struct Grant: Sendable {
+    let identity: UUID
+    let originalData: Data
+    let original: UserAssetManifest
+    let grantedData: Data
+    let scopes: [String: String]
+  }
+
+  private static func prepareGrant(url: URL, wallpaperID: String, selections: [String: String]) throws -> Grant? {
     // No existing property record means there is no retained-only restriction to lift.
-    guard FileManager.default.fileExists(atPath: url.path) else { try await commit(); return }
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     let (data, original) = try read(url)
     guard original.wallpaperId == wallpaperID else { throw invalidManifest() }
     var granted = original
@@ -27,44 +79,79 @@ enum UserAssetSelectionAuthorization {
       granted.properties[propertyID] = record
       scopes[propertyID] = scope
     }
-    guard !scopes.isEmpty else { try await commit(); return }
+    guard !scopes.isEmpty else { return nil }
     let grantedData = try encode(granted)
-    do {
-      try grantedData.write(to: url, options: .atomic)
-      try await commit()
-    } catch {
-      let cause = error
-      do { try rollback(url: url, originalData: data, original: original, grantedData: grantedData, scopes: scopes) }
-      catch {
-        throw UserAssetSelectionAuthorizationError(message: String(localized: "The asset selection failed: \(cause.localizedDescription). Its permissions could not be restored: \(error.localizedDescription). Refresh before continuing."))
+    try grantedData.write(to: url, options: .atomic)
+    let identity = UUID()
+    let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+    for (propertyID, scope) in scopes {
+      guard let before = original.properties[propertyID] else { continue }
+      permissionEdits[key, default: [:]][propertyID, default: []].append(
+        PermissionEdit(identity: identity, before: before, scope: scope))
+    }
+    return Grant(identity: identity, originalData: data, original: original, grantedData: grantedData, scopes: scopes)
+  }
+
+  private static func rollback(url: URL, originalData: Data, original: UserAssetManifest,
+                               grantedData: Data, scopes: [String: String], identity: UUID) throws {
+    let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+    var plans: [RollbackPlan] = []
+    for propertyID in scopes.keys {
+      guard var edits = permissionEdits[key]?[propertyID],
+            let index = edits.firstIndex(where: { $0.identity == identity }) else { continue }
+      edits[index].failed = true
+      permissionEdits[key]?[propertyID] = edits
+      // A newer pending grant still owns the visible permission. Keep the failed
+      // ancestor so a later failure can unwind both edits, in either completion order.
+      guard index == edits.count - 1 else { continue }
+      var firstFailed = index
+      while firstFailed > 0 && edits[firstFailed - 1].failed { firstFailed -= 1 }
+      plans.append(RollbackPlan(propertyID: propertyID, before: edits[firstFailed].before,
+        expectedScope: edits[index].scope, firstFailed: firstFailed))
+    }
+    guard !plans.isEmpty else { return }
+    let (data, latest) = try read(url)
+    guard latest.wallpaperId == original.wallpaperId else { throw invalidManifest() }
+    var current = latest
+    var changed = false
+    for plan in plans {
+      guard var record = current.properties[plan.propertyID],
+            record.originalSourceUnauthorized != true, record.authorizedSourcePath == plan.expectedScope else { continue }
+      // Only permission fields belong to the grant: preserve new retained bytes,
+      // source metadata and unrelated properties produced by background workers.
+      record.originalSourceUnauthorized = plan.before.originalSourceUnauthorized
+      record.authorizedSourcePath = plan.before.authorizedSourcePath
+      current.properties[plan.propertyID] = record
+      changed = true
+    }
+    if changed {
+      if data == grantedData, current == original {
+        try originalData.write(to: url, options: .atomic)
+      } else {
+        try encode(current).write(to: url, options: .atomic)
       }
-      throw cause
+    }
+    for plan in plans {
+      permissionEdits[key]?[plan.propertyID]?.removeSubrange(plan.firstFailed...)
+      removeEmptyEdits(key: key, propertyID: plan.propertyID)
     }
   }
 
-  @MainActor
-  private static func rollback(url: URL, originalData: Data, original: UserAssetManifest,
-                               grantedData: Data, scopes: [String: String]) throws {
-    let (data, latest) = try read(url)
-    guard latest.wallpaperId == original.wallpaperId else { throw invalidManifest() }
-    // No concurrent manifest update: restore exact original bytes/serialization.
-    if data == grantedData {
-      try originalData.write(to: url, options: .atomic)
-      return
+  private static func finishSuccessfulGrant(url: URL, grant: Grant) {
+    let key = url.resolvingSymlinksInPath().standardizedFileURL.path
+    for propertyID in grant.scopes.keys {
+      guard let edits = permissionEdits[key]?[propertyID],
+            let index = edits.firstIndex(where: { $0.identity == grant.identity }) else { continue }
+      // A successful newer selection is now the durable baseline. Older failures
+      // must not revoke it; newer pending edits still retain their own rollback state.
+      permissionEdits[key]?[propertyID]?.removeFirst(index + 1)
+      removeEmptyEdits(key: key, propertyID: propertyID)
     }
-    var current = latest
-    var changed = false
-    for (propertyID, scope) in scopes {
-      guard var record = current.properties[propertyID], let previous = original.properties[propertyID],
-            record.originalSourceUnauthorized != true, record.authorizedSourcePath == scope else { continue }
-      // A newer selection wins. Restore only the two fields this transaction owns;
-      // keep watcher-produced assets, source metadata, and unrelated records intact.
-      record.originalSourceUnauthorized = previous.originalSourceUnauthorized
-      record.authorizedSourcePath = previous.authorizedSourcePath
-      current.properties[propertyID] = record
-      changed = true
-    }
-    if changed { try encode(current).write(to: url, options: .atomic) }
+  }
+
+  private static func removeEmptyEdits(key: String, propertyID: String) {
+    if permissionEdits[key]?[propertyID]?.isEmpty == true { permissionEdits[key]?.removeValue(forKey: propertyID) }
+    if permissionEdits[key]?.isEmpty == true { permissionEdits.removeValue(forKey: key) }
   }
 
   private static func read(_ url: URL) throws -> (Data, UserAssetManifest) {

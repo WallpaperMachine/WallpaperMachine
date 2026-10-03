@@ -30,9 +30,9 @@ enum UserAssetStorage {
     /// property whose source file has gone missing keeps the copy that is now the only
     /// thing keeping it alive.
     @discardableResult
-    static func purgeUnreferencedDerivedCaches(
+    nonisolated static func purgeUnreferencedDerivedCaches(
         store: ManagedUserAssetStore = ManagedUserAssetStore()
-    ) throws -> Int64 {
+    ) async throws -> Int64 {
         let manager = FileManager.default
         guard manager.fileExists(atPath: store.root.path) else { return 0 }
         var released: Int64 = 0
@@ -44,28 +44,37 @@ enum UserAssetStorage {
             else { continue }
             let id = wallpaper.lastPathComponent
             guard id != WallpaperPresetStore.retainedDirectoryName else { continue }
-            let manifest = store.manifest(wallpaperId: id)
-            let referenced = manifest.properties.filter { !$0.value.assets.isEmpty }
-            if referenced.isEmpty {
-                released += remove(wallpaper, manager: manager)
+            released += try await store.withPreparation(wallpaperId: id) {
+                try purgeWallpaper(wallpaper, id: id, store: store, manager: manager)
+            }
+        }
+        return released
+    }
+
+    nonisolated private static func purgeWallpaper(_ wallpaper: URL, id: String,
+        store: ManagedUserAssetStore, manager: FileManager) throws -> Int64 {
+        var released: Int64 = 0
+        let manifest = try store.manifest(wallpaperId: id)
+        let referenced = manifest.properties.filter { !$0.value.assets.isEmpty }
+        if referenced.isEmpty {
+            released += remove(wallpaper, manager: manager)
+            return released
+        }
+        let properties = (try? manager.contentsOfDirectory(
+            at: wallpaper, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [])) ?? []
+        for property in properties {
+            guard (try? property.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { continue }
+            guard let record = referenced[property.lastPathComponent] else {
+                released += remove(property, manager: manager)
                 continue
             }
-            let properties = (try? manager.contentsOfDirectory(
-                at: wallpaper, includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles])) ?? []
-            for property in properties {
-                guard (try? property.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                else { continue }
-                guard let record = referenced[property.lastPathComponent] else {
-                    released += remove(property, manager: manager)
-                    continue
-                }
-                let live = Set(record.assets.map(\.assetId))
-                let stored = (try? manager.contentsOfDirectory(
-                    at: property, includingPropertiesForKeys: nil, options: [])) ?? []
-                for entry in stored where !live.contains(entry.lastPathComponent) {
-                    released += remove(entry, manager: manager)
-                }
+            let live = Set(record.assets.map(\.assetId))
+            let stored = (try? manager.contentsOfDirectory(
+                at: property, includingPropertiesForKeys: nil, options: [])) ?? []
+            for entry in stored where !live.contains(entry.lastPathComponent) {
+                released += remove(entry, manager: manager)
             }
         }
         return released
@@ -73,13 +82,13 @@ enum UserAssetStorage {
 
     /// Bytes an unlink actually frees. A file another hard link still points at frees
     /// none, which is how every bridge entry on the same volume holds the store's copy.
-    private static func remove(_ url: URL, manager: FileManager) -> Int64 {
+    nonisolated private static func remove(_ url: URL, manager: FileManager) -> Int64 {
         let bytes = reclaimableBytes(at: url, manager: manager)
         guard (try? manager.removeItem(at: url)) != nil else { return 0 }
         return bytes
     }
 
-    private static func reclaimableBytes(at url: URL, manager: FileManager) -> Int64 {
+    nonisolated private static func reclaimableBytes(at url: URL, manager: FileManager) -> Int64 {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey, .fileResourceIdentifierKey]
         if let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true {
             return linkCount(url) > 1 ? 0 : Int64(values.fileSize ?? 0)
@@ -96,7 +105,7 @@ enum UserAssetStorage {
         return total
     }
 
-    private static func linkCount(_ url: URL) -> Int {
+    nonisolated private static func linkCount(_ url: URL) -> Int {
         var status = stat()
         guard stat(url.path, &status) == 0 else { return 1 }
         return Int(status.st_nlink)

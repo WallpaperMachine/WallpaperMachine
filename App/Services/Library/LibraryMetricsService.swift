@@ -38,6 +38,7 @@ final class LibraryMetricsService {
   /// Called on the main actor after a background walk stored new values.
   var onChange: (@MainActor () -> Void)?
   private(set) var measured: [String: Metrics] = [:]
+  private(set) var contentRevision: UInt64 = 0
   /// Ids the renderer lists but the library folder cannot show; left alone until a reload.
   private var unmeasurable: Set<String> = []
   private var pending: Set<String> = []
@@ -75,6 +76,7 @@ final class LibraryMetricsService {
 
   /// Drops everything measured so far; the next snapshot measures again.
   func invalidate() {
+    contentRevision &+= 1
     generation &+= 1
     task?.cancel()
     task = nil
@@ -120,7 +122,7 @@ final class LibraryMetricsService {
       }
       self.task = nil
       if !self.pending.isEmpty { self.schedule() }
-      if changed { self.onChange?() }
+      if changed { self.contentRevision &+= 1; self.onChange?() }
     }
   }
 

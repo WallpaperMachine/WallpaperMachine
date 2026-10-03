@@ -46,6 +46,7 @@ public:
     void setPresentQueueIndex(uint32_t);
 
     void prepare(Scene&, const Device&, RenderingResources&) override;
+    bool updateFrame(const Device&, RenderingResources&) override;
     VkResult execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
     /// The scene output image this pass samples when it composes the frame.
@@ -68,6 +69,7 @@ private:
     void resetPreparedState(RenderingResources&);
 
     Desc                                m_desc {};
+    const Scene*                        m_scene { nullptr };
     std::vector<CachedColorFramebuffer> m_framebuffers;
     vvk::RenderPass                     m_copy_source_pass;
 };

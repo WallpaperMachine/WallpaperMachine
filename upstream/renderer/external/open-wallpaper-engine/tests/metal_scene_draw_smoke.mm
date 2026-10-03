@@ -37,6 +37,8 @@
 #include "Scene/SceneMesh.h"
 #include "Scene/SceneTexture.h"
 #include "SpriteAnimation.hpp"
+#include "video_orientation_cases.hpp"
+#include "Scene/SceneRendererHandle.hpp"
 #include "SpecTexs.hpp"
 #include "WPShaderValueUpdater.hpp"
 #include "RenderGraph/RenderGraph.hpp"
@@ -1895,7 +1897,8 @@ constexpr uint32_t kVideoHeight = 360;
 /// at the media's own size maps one video texel onto one output pixel and a
 /// smaller one exercises the scaled case.
 std::filesystem::path WriteVideoFixture(const std::filesystem::path& root, uint32_t canvas_width,
-                                        uint32_t canvas_height)
+                                        uint32_t canvas_height,
+                                        std::optional<std::array<int32_t, 9>> display_matrix = std::nullopt)
 {
     const std::string vertex =
         "uniform mat4 g_ModelViewProjectionMatrix;\n"
@@ -1950,7 +1953,7 @@ std::filesystem::path WriteVideoFixture(const std::filesystem::path& root, uint3
     // shipped. `clip.mp4` is what the loose-asset resolver finds for "clip".
     std::filesystem::create_directories(root / "materials");
     if (! video::testing_media::WriteSyntheticVideo(root / "materials" / "clip.mp4", 1,
-                                                    "metal-video-draw")) {
+                                                    "metal-video-draw", display_matrix)) {
         return {};
     }
     return root / "project.json";
@@ -2177,7 +2180,8 @@ namespace
 /// two paths are compared at all.
 struct PathComparison {
     bool                 ran { false };
-    std::string          skip_reason;
+    bool                 unavailable { false };
+    std::string          reason;
     std::vector<uint8_t> converted;
     std::vector<uint8_t> direct;
 };
@@ -2190,7 +2194,7 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
     LoadedScene    loaded;
     std::string    error;
     if (! LoadScene(project, cache, loaded, error)) {
-        result.skip_reason = error;
+        result.reason = error;
         return result;
     }
 
@@ -2212,12 +2216,12 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
             .display_scale_factor = 1.0,
         };
         if (! render.init(info)) {
-            result.skip_reason = render.lastError();
+            result.reason = render.lastError();
             return result;
         }
         auto graph = sceneToRenderGraph(*loaded.scene);
         if (graph == nullptr || ! render.compileRenderGraph(*loaded.scene, *graph)) {
-            result.skip_reason = render.lastError();
+            result.reason = render.lastError();
             return result;
         }
         render.UpdateCameraFillMode(*loaded.scene, FillMode::ASPECTFIT);
@@ -2234,7 +2238,7 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
         SetMetalVideoPlaneSamplingEnabled(false);
         for (int frame = 0; frame < 2; ++frame) {
             if (! render.drawFrame(*loaded.scene)) {
-                result.skip_reason = render.lastError();
+                result.reason = render.lastError();
                 return result;
             }
             loaded.scene->PassFrameTime(1.0 / 60.0);
@@ -2249,7 +2253,7 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
         bool                 held = false;
         for (int settle = 0; settle < 16 && ! held; ++settle) {
             if (! render.drawFrame(*loaded.scene)) {
-                result.skip_reason = render.lastError();
+                result.reason = render.lastError();
                 return result;
             }
             auto current = read();
@@ -2257,11 +2261,12 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
             previous     = std::move(current);
         }
         if (! held) {
-            result.skip_reason = "the decoded frame never stopped advancing while paused";
+            result.reason = "the decoded frame never stopped advancing while paused";
             return result;
         }
         if (render.VideoPath() != SceneVideoPath::Nv12Converted) {
-            result.skip_reason = std::string("the decoder produced ") +
+            result.unavailable = true;
+            result.reason = std::string("the decoder produced ") +
                                  SceneVideoPathName(render.VideoPath()) +
                                  ", so there is no conversion to compare against";
             return result;
@@ -2271,24 +2276,33 @@ PathComparison CompareVideoPaths(const std::filesystem::path& project,
         SetMetalVideoPlaneSamplingEnabled(true);
         std::string variant_error;
         if (! SettleVariantTranslation(*loaded.scene, &variant_error)) {
-            result.skip_reason = variant_error;
+            result.reason = variant_error;
             return result;
         }
         // Without advancing the clock: the frame is held, and what is being
         // waited for is the optional pipeline, not a new picture.
         if (! DrawUntilVideoPath(render, *loaded.scene, SceneVideoPath::Nv12Direct)) {
-            result.skip_reason = "the running scene did not take the direct path";
+            result.reason = "the running scene did not take the direct path";
             return result;
         }
         result.direct = read();
         result.ran    = result.converted.size() == result.direct.size() &&
                      ! result.converted.empty();
+        if (! result.ran) result.reason = "video path readbacks are empty or have different sizes";
         render.destroy();
     }
     return result;
 }
 
 } // namespace
+
+TEST_F(MetalSceneDraw, MissingProjectIsAComparisonFailureInsteadOfAPlatformSkip)
+{
+    const auto result = CompareVideoPaths(root_ / "missing" / "project.json", root_ / "cache", 16, 16);
+    EXPECT_FALSE(result.ran);
+    EXPECT_FALSE(result.unavailable);
+    EXPECT_FALSE(result.reason.empty());
+}
 
 TEST_F(MetalSceneDraw, OneToOneSamplingProducesTheSamePictureOnBothPaths)
 {
@@ -2308,7 +2322,8 @@ TEST_F(MetalSceneDraw, OneToOneSamplingProducesTheSamePictureOnBothPaths)
     ScopedPlaneSampling sampling(false);
     const auto comparison =
         CompareVideoPaths(project, root_ / "video-1to1-cache", kVideoWidth, kVideoHeight);
-    if (! comparison.ran) GTEST_SKIP() << comparison.skip_reason;
+    if (comparison.unavailable) GTEST_SKIP() << comparison.reason;
+    ASSERT_TRUE(comparison.ran) << comparison.reason;
 
     int worst = 0;
     for (std::size_t i = 0; i < comparison.converted.size(); ++i) {
@@ -2317,6 +2332,41 @@ TEST_F(MetalSceneDraw, OneToOneSamplingProducesTheSamePictureOnBothPaths)
     }
     EXPECT_LE(worst, 1) << "the two paths disagree by " << worst
                         << " code values at a one-to-one mapping";
+}
+
+TEST_F(MetalSceneDraw, DisplayMatricesProduceMatchingConvertedAndDirectVideoPictures)
+{
+    for (const auto& orientation : video::testing_media::kOrientations) {
+        SCOPED_TRACE(orientation.name);
+        const uint32_t width = orientation.swaps_axes ? kVideoHeight : kVideoWidth;
+        const uint32_t height = orientation.swaps_axes ? kVideoWidth : kVideoHeight;
+        const auto directory = root_ / orientation.name;
+        const auto project = WriteVideoFixture(directory, width, height, orientation.matrix());
+        if (project.empty()) GTEST_SKIP() << "no H.264 encoder is available";
+        ScopedPlaneSampling sampling(false);
+        const auto comparison = CompareVideoPaths(project, directory / "cache", width, height);
+        if (comparison.unavailable) GTEST_SKIP() << comparison.reason;
+        ASSERT_TRUE(comparison.ran) << comparison.reason;
+        int worst = 0;
+        for (size_t index = 0; index < comparison.converted.size(); ++index) {
+            worst = std::max(worst, std::abs(int(comparison.converted[index]) - int(comparison.direct[index])));
+        }
+        EXPECT_LE(worst, 2);
+    }
+    const std::array<int32_t, 9> shear {65536, 0, 0, 32768, 65536, 0, 0, 0, 1 << 30};
+    const auto transform = video::ResolveVideoDisplayTransform(shear, kVideoWidth, kVideoHeight);
+    ASSERT_TRUE(transform.has_value());
+    const auto project = WriteVideoFixture(root_ / "shear", transform->width, transform->height, shear);
+    ASSERT_FALSE(project.empty());
+    ScopedPlaneSampling sampling(false);
+    const auto comparison = CompareVideoPaths(project, root_ / "shear-cache", transform->width, transform->height);
+    if (comparison.unavailable) GTEST_SKIP() << comparison.reason;
+    ASSERT_TRUE(comparison.ran) << comparison.reason;
+    int worst = 0;
+    for (size_t index = 0; index < comparison.converted.size(); ++index) {
+        worst = std::max(worst, std::abs(int(comparison.converted[index]) - int(comparison.direct[index])));
+    }
+    EXPECT_LE(worst, 2);
 }
 
 TEST_F(MetalSceneDraw, ScaledSamplingStaysInsideTheClampExcursionTheStreamImplies)
@@ -2345,7 +2395,8 @@ TEST_F(MetalSceneDraw, ScaledSamplingStaysInsideTheClampExcursionTheStreamImplie
     }
     ScopedPlaneSampling sampling(false);
     const auto comparison = CompareVideoPaths(project, root_ / "video-scaled-cache", 384, 256);
-    if (! comparison.ran) GTEST_SKIP() << comparison.skip_reason;
+    if (comparison.unavailable) GTEST_SKIP() << comparison.reason;
+    ASSERT_TRUE(comparison.ran) << comparison.reason;
 
     int       worst = 0;
     long long total = 0;
@@ -3147,6 +3198,49 @@ TEST_F(MetalSceneDraw, AnOptionalProgramTranslatedOnceIsRestoredFromDiskOnTheNex
     EXPECT_EQ(recovered_reflection, first_reflection);
 }
 
+TEST_F(MetalSceneDraw, BackgroundChangesInvalidateCachedPixelsWithoutRecompilingTheGraph)
+{
+    struct RestoreOptimization {
+        bool previous { vulkan::SceneOptimizationEnabled() };
+        ~RestoreOptimization() { vulkan::SetSceneOptimizationEnabled(previous); }
+    } restore;
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(WriteFixture(root_ / "background"), root_ / "cache", loaded, error)) << error;
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        ASSERT_TRUE(render.init(MetalRenderInitInfo {
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256,
+        })) << render.lastError();
+        auto graph = sceneToRenderGraph(*loaded.scene);
+        ASSERT_NE(graph, nullptr);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+        for (const bool optimization : {false, true}) {
+            vulkan::SetSceneOptimizationEnabled(optimization);
+            for (const auto color : {std::array<float, 3> {1, 0, 0}, std::array<float, 3> {0, 1, 0}}) {
+                loaded.scene->clearColor = color;
+                for (int frame = 0; frame < 2; ++frame) {
+                    ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+                    std::vector<uint8_t> pixels;
+                    uint32_t width = 0, height = 0;
+                    ASSERT_TRUE(render.ReadRenderTargetForTests(std::string(SpecTex_Default), pixels, width, height));
+                    ASSERT_GE(pixels.size(), 4u);
+                    EXPECT_EQ(pixels[0], static_cast<uint8_t>(color[0] * 255));
+                    EXPECT_EQ(pixels[1], static_cast<uint8_t>(color[1] * 255));
+                    EXPECT_EQ(pixels[2], 0u);
+                    EXPECT_EQ(pixels[3], 255u);
+                }
+            }
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, PipelinesThisProcessBuildsAreArchivedAndServeTheProductionPath)
 {
     // What the archive has to be able to say, and the only claim worth making
@@ -3172,8 +3266,8 @@ TEST_F(MetalSceneDraw, PipelinesThisProcessBuildsAreArchivedAndServeTheProductio
         layer.drawableSize    = CGSizeMake(384, 256);
         layer.framebufferOnly = NO;
 
-        MetalRender         render;
-        MetalRenderInitInfo info {
+        SceneRendererHandle render;
+        RenderInitInfo info {
             .metal_layer          = (__bridge void*)layer,
             .width                = 384,
             .height               = 256,
@@ -3181,14 +3275,15 @@ TEST_F(MetalSceneDraw, PipelinesThisProcessBuildsAreArchivedAndServeTheProductio
             .render_height        = 256,
             .display_scale_factor = 1.0,
         };
-        ASSERT_TRUE(render.init(info)) << render.lastError();
+        render.SetPipelineArchivePath(archive_root.string());
+        ASSERT_TRUE(render.createMetal(info, error)) << error;
         // Per surface, as the scene's own command sets it: another display
         // showing a different wallpaper keeps its own store.
-        render.SetPipelineArchivePath(archive_root.string());
         auto graph = sceneToRenderGraph(*loaded.scene);
         ASSERT_NE(graph, nullptr);
         ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
-        AdvanceSceneFrame(render, *loaded.scene);
+        loaded.scene->PassFrameTime(1.0 / 60.0);
+        ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
 
         // A first run has no file to read from, so nothing is attached to its
         // descriptors and everything is compiled -- which is the honest state

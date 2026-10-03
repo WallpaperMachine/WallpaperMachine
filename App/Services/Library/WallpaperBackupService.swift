@@ -138,8 +138,8 @@ struct WallpaperBackupService: Sendable {
     /// It is synchronous because those consumers must not race startup publication.
     @MainActor
     static func applyPendingRestore(supportRoot: URL = ClientPaths.supportURL,
-                                    defaults: UserDefaults = .standard,
-                                    domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine") throws -> WallpaperBackupRestoreReport? {
+                                    defaults: UserDefaults = ClientPreferences.defaults,
+                                    domainName: String = ClientPreferences.domainName) throws -> WallpaperBackupRestoreReport? {
         let service = WallpaperBackupService(supportRoot: supportRoot)
         do {
             return try service.applyPendingRestore(defaults: defaults, domainName: domainName)
@@ -153,7 +153,7 @@ struct WallpaperBackupService: Sendable {
 
     @MainActor
     func applyPendingRestore(defaults: UserDefaults,
-                             domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine",
+                             domainName: String = ClientPreferences.domainName,
                              beforePublish: ((String) throws -> Void)? = nil) throws -> WallpaperBackupRestoreReport? {
         let transaction = supportRoot.appendingPathComponent(Self.transactionDirectoryName)
         var recovered = false

@@ -545,9 +545,11 @@ int main() {
         rr.texture_prefetch = prefetch.get();
         for (std::size_t i = 0; i < nodes.size(); ++i) {
             auto* pass = static_cast<VulkanPass*>(graph->getPass(nodes[i]));
+            std::vector<std::string_view> release_keys;
             if (!std::getenv("WE_TEST_NO_REUSE")) {
-                for (auto* tex : releases[i]) pass->addReleaseTexs(spanone<const std::string_view> {tex->key()});
+                for (auto* tex : releases[i]) release_keys.push_back(tex->key());
             }
+            pass->setReleaseTexs(release_keys);
             pass->prepare(*scene, device, rr);
             Check(pass->prepared(), "pass failed to prepare");
             passes.push_back(pass);

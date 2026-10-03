@@ -2,6 +2,8 @@
 // its own 224 code-value excursion: treating it as `sample - 0.5` with the
 // standard coefficients desaturates and shifts every studio-swing frame.
 #include "Video/VideoColorConversion.hpp"
+#include "Video/VideoDisplayTransform.hpp"
+#include "video_orientation_cases.hpp"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +15,35 @@ namespace wallpaper::video
 {
 namespace
 {
+
+TEST(VideoDisplayTransform, EveryOrthogonalDisplayMatrixMapsTheExpectedCorners) {
+    constexpr std::array<std::array<float, 2>, 4> corners {{{0, 0}, {1, 0}, {0, 1}, {1, 1}}};
+    for (const auto& orientation : testing_media::kOrientations) {
+        SCOPED_TRACE(orientation.name);
+        const auto transform = ResolveVideoDisplayTransform(orientation.matrix(), 16, 8);
+        ASSERT_TRUE(transform.has_value());
+        EXPECT_EQ(transform->width, orientation.swaps_axes ? 8u : 16u);
+        EXPECT_EQ(transform->height, orientation.swaps_axes ? 16u : 8u);
+        for (size_t index = 0; index < corners.size(); ++index) {
+            const auto [u, v] = corners[index];
+            const auto& expected = corners[orientation.source_quadrants[index]];
+            EXPECT_FLOAT_EQ(transform->matrix[0] * u + transform->matrix[1] * v + transform->offset[0], expected[0]);
+            EXPECT_FLOAT_EQ(transform->matrix[2] * u + transform->matrix[3] * v + transform->offset[1], expected[1]);
+        }
+    }
+}
+
+TEST(VideoDisplayTransform, AffineScaleAndShearKeepTheImageCenterAndBoundingSize) {
+    const auto transform = ResolveVideoDisplayTransform({65536, 0, 0, 32768, 65536, 0, 0, 0, 1 << 30}, 16, 8);
+    ASSERT_TRUE(transform.has_value());
+    EXPECT_EQ(transform->width, 20u); EXPECT_EQ(transform->height, 8u);
+    EXPECT_FLOAT_EQ((transform->matrix[0] + transform->matrix[1]) * 0.5f + transform->offset[0], 0.5f);
+    EXPECT_FLOAT_EQ((transform->matrix[2] + transform->matrix[3]) * 0.5f + transform->offset[1], 0.5f);
+    const auto scaled = ResolveVideoDisplayTransform({131072, 0, 0, 0, 196608, 0, 0, 0, 1 << 30}, 16, 8);
+    ASSERT_TRUE(scaled.has_value());
+    EXPECT_EQ(scaled->width, 32u); EXPECT_EQ(scaled->height, 24u);
+    EXPECT_TRUE(scaled->identity());
+}
 
 YuvColorParams Params(YuvMatrix matrix, YuvRange range, uint32_t bit_depth = 8)
 {

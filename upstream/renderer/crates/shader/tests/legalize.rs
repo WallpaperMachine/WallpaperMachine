@@ -3274,10 +3274,13 @@ fn control_flow_coercion_strategy_lowers_float_modulo_assignments() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float a = fmod(5.5, 2.0);"));
-    assert!(source.contains("color.x = fmod(a, 2.0);"));
+    assert!(source.contains("float a = _we_Fmod(5.5, 2.0);"));
+    assert!(source.contains("color.x = _we_Fmod(a, 2.0);"));
     assert!(source.contains("x = ((x) - (y) * trunc((x) / (y)));"));
     assert!(source.contains("color.x = ((color.x) - (y) * trunc((color.x) / (y)));"));
 }
@@ -3293,10 +3296,13 @@ fn control_flow_coercion_strategy_lowers_float_modulo_assignment_without_builtin
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("fragLV = ((fragLV) - (2) * trunc((fragLV) / (2)));"));
-    assert!(!source.contains("fmod("));
+    assert!(!source.contains("_we_Fmod("));
     let _artifact = NagaCompiler
         .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
         .expect("lowered float modulo assignment should compile without fmod helper");
@@ -3315,6 +3321,9 @@ fn control_flow_coercion_strategy_modulo_assignment_preserves_nested_texture_sam
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains(
@@ -3342,13 +3351,16 @@ fn control_flow_coercion_strategy_does_not_lower_unknown_or_integer_member_modul
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("payload.x %= y;"));
     assert!(source.contains("counts.x %= y;"));
     assert!(source.contains("color.x = ((color.x) - (2.0) * trunc((color.x) / (2.0)));"));
-    assert!(!source.contains("payload.x = fmod(payload.x, y);"));
-    assert!(!source.contains("counts.x = fmod(counts.x, y);"));
+    assert!(!source.contains("payload.x = _we_Fmod(payload.x, y);"));
+    assert!(!source.contains("counts.x = _we_Fmod(counts.x, y);"));
 }
 
 #[test]
@@ -3366,11 +3378,14 @@ fn control_flow_coercion_strategy_respects_integer_vector_shadowing_for_member_m
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("color.x %= 2;"));
     assert!(source.contains("color.x = ((color.x) - (2.0) * trunc((color.x) / (2.0)));"));
-    assert!(!source.contains("color.x = fmod(color.x, 2);"));
+    assert!(!source.contains("color.x = _we_Fmod(color.x, 2);"));
 }
 
 #[test]
@@ -3390,13 +3405,16 @@ fn control_flow_coercion_strategy_keeps_for_initializer_blocker_through_if_else_
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("color.x %= 2;"));
     assert!(source.contains("color.x %= 3;"));
     assert!(source.contains("color.x = ((color.x) - (2.0) * trunc((color.x) / (2.0)));"));
-    assert!(!source.contains("color.x = fmod(color.x, 2);"));
-    assert!(!source.contains("color.x = fmod(color.x, 3);"));
+    assert!(!source.contains("color.x = _we_Fmod(color.x, 2);"));
+    assert!(!source.contains("color.x = _we_Fmod(color.x, 3);"));
 }
 
 #[test]
@@ -3423,8 +3441,8 @@ fn control_flow_coercion_strategy_respects_matrix_shadowing_for_member_modulo_as
     assert!(source.contains("color.x %= 2;"));
     assert!(source.contains("color_local.x %= 3;"));
     assert!(source.contains("color.x = ((color.x) - (2.0) * trunc((color.x) / (2.0)));"));
-    assert!(!source.contains("color.x = fmod(color.x, 2);"));
-    assert!(!source.contains("color_local.x = fmod(color_local.x, 3);"));
+    assert!(!source.contains("color.x = _we_Fmod(color.x, 2);"));
+    assert!(!source.contains("color_local.x = _we_Fmod(color_local.x, 3);"));
 }
 
 #[test]
@@ -3440,10 +3458,13 @@ fn control_flow_coercion_strategy_respects_struct_shadowing_for_member_modulo_as
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("payload.x %= 2;"));
-    assert!(!source.contains("payload.x = fmod(payload.x, 2);"));
+    assert!(!source.contains("payload.x = _we_Fmod(payload.x, 2);"));
 }
 
 #[test]
@@ -3462,11 +3483,14 @@ fn control_flow_coercion_strategy_respects_struct_parameter_shadowing_for_member
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("color.x %= 2;"));
     assert!(source.contains("color.x = ((color.x) - (2.0) * trunc((color.x) / (2.0)));"));
-    assert!(!source.contains("color.x = fmod(color.x, 2);"));
+    assert!(!source.contains("color.x = _we_Fmod(color.x, 2);"));
 }
 
 #[test]
@@ -3481,10 +3505,13 @@ fn control_flow_coercion_strategy_lowers_modulo_in_comma_declarators_independent
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float a = 0.0, b = fmod(x, y), c = fmod((x + 1.0), y);"));
-    assert!(!source.contains("fmod(0.0, b = x % y"));
+    assert!(source.contains("float a = 0.0, b = _we_Fmod(x, y), c = _we_Fmod((x + 1.0), y);"));
+    assert!(!source.contains("_we_Fmod(0.0, b = x % y"));
 }
 
 #[test]
@@ -3501,12 +3528,15 @@ fn control_flow_coercion_strategy_lowers_modulo_operands_without_swallowing_neig
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float left = a + fmod(b, c);"));
-    assert!(source.contains("float right = fmod(a, b) + c;"));
-    assert!(!source.contains("float left = fmod(a + b, c);"));
-    assert!(!source.contains("float right = fmod(a, b + c);"));
+    assert!(source.contains("float left = a + _we_Fmod(b, c);"));
+    assert!(source.contains("float right = _we_Fmod(a, b) + c;"));
+    assert!(!source.contains("float left = _we_Fmod(a + b, c);"));
+    assert!(!source.contains("float right = _we_Fmod(a, b + c);"));
 }
 
 #[test]
@@ -3522,10 +3552,13 @@ fn control_flow_coercion_strategy_lowers_chained_modulo_left_associatively() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float value = fmod(fmod(a, b), c);"));
-    assert!(!source.contains("float value = fmod(a, b % c);"));
+    assert!(source.contains("float value = _we_Fmod(_we_Fmod(a, b), c);"));
+    assert!(!source.contains("float value = _we_Fmod(a, b % c);"));
 }
 
 #[test]
@@ -3544,11 +3577,14 @@ fn control_flow_coercion_strategy_lowers_parenthesized_argument_and_nested_modul
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float x = (fmod(a, b));"));
-    assert!(source.contains("float y = passthrough(fmod(a, b));"));
-    assert!(source.contains("float z = fmod(a, (fmod(b, c)));"));
+    assert!(source.contains("float x = (_we_Fmod(a, b));"));
+    assert!(source.contains("float y = passthrough(_we_Fmod(a, b));"));
+    assert!(source.contains("float z = _we_Fmod(a, (_we_Fmod(b, c)));"));
     assert!(!source.contains("a % b"));
     assert!(!source.contains("b % c"));
 }
@@ -3566,10 +3602,13 @@ fn control_flow_coercion_strategy_lowers_modulo_with_signed_rhs_operands() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float x = fmod(a, -2.0);"));
-    assert!(source.contains("float y = fmod(a, -b);"));
+    assert!(source.contains("float x = _we_Fmod(a, -2.0);"));
+    assert!(source.contains("float y = _we_Fmod(a, -b);"));
     assert!(!source.contains("a % -2.0"));
     assert!(!source.contains("a % -b"));
 }
@@ -3587,12 +3626,15 @@ fn control_flow_coercion_strategy_preserves_integer_modulo_in_integer_operands()
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("float x = float(i % j);"));
     assert!(source.contains("float y = float(uint(i % j));"));
-    assert!(!source.contains("float(fmod(i, j))"));
-    assert!(!source.contains("uint(fmod(i, j))"));
+    assert!(!source.contains("float(_we_Fmod(i, j))"));
+    assert!(!source.contains("uint(_we_Fmod(i, j))"));
 }
 
 #[test]
@@ -3607,10 +3649,13 @@ fn control_flow_coercion_strategy_preserves_uint_constructor_integer_modulo() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("float x = float(uint(i % j));"));
-    assert!(!source.contains("uint(fmod(i, j))"));
+    assert!(!source.contains("uint(_we_Fmod(i, j))"));
 }
 
 #[test]
@@ -3625,9 +3670,12 @@ fn control_flow_coercion_strategy_lowers_uint_constructor_float_modulo() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("float out_value = float(uint(fmod(f, g)));"));
+    assert!(source.contains("float out_value = float(uint(_we_Fmod(f, g)));"));
     assert!(!source.contains("uint(f % g)"));
 }
 
@@ -3645,9 +3693,12 @@ fn control_flow_coercion_strategy_composes_assignment_rhs_and_constructor_modulo
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("x = uint(fmod(f, g)) + (fmod(f, h));"));
+    assert!(source.contains("x = uint(_we_Fmod(f, g)) + (_we_Fmod(f, h));"));
     assert!(!source.contains("uint(f % g)"));
     assert!(!source.contains("f % h"));
 }
@@ -3664,9 +3715,12 @@ fn control_flow_coercion_strategy_lowers_uint_declaration_constructor_float_modu
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("uint out_value = uint(fmod(f, g));"));
+    assert!(source.contains("uint out_value = uint(_we_Fmod(f, g));"));
     assert!(!source.contains("uint(f % g)"));
 }
 
@@ -3682,9 +3736,12 @@ fn control_flow_coercion_strategy_lowers_int_declaration_constructor_float_modul
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
-    assert!(source.contains("int out_value = int(fmod(f, g));"));
+    assert!(source.contains("int out_value = int(_we_Fmod(f, g));"));
     assert!(!source.contains("int(f % g)"));
 }
 
@@ -3700,10 +3757,13 @@ fn control_flow_coercion_strategy_preserves_uint_declaration_constructor_integer
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("uint out_value = uint(i % j);"));
-    assert!(!source.contains("uint out_value = uint(fmod(i, j));"));
+    assert!(!source.contains("uint out_value = uint(_we_Fmod(i, j));"));
 }
 
 #[test]
@@ -3718,10 +3778,13 @@ fn control_flow_coercion_strategy_preserves_uint_constructor_compound_int_modulo
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("uint x = uint((i + 1) % j);"));
-    assert!(!source.contains("uint x = uint(fmod((i + 1), j));"));
+    assert!(!source.contains("uint x = uint(_we_Fmod((i + 1), j));"));
 }
 
 #[test]
@@ -3736,10 +3799,13 @@ fn control_flow_coercion_strategy_preserves_uint_constructor_compound_uint_modul
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("uint y = uint((u * 2u + 1u) % v);"));
-    assert!(!source.contains("uint y = uint(fmod((u * 2u + 1u), v));"));
+    assert!(!source.contains("uint y = uint(_we_Fmod((u * 2u + 1u), v));"));
 }
 
 #[test]
@@ -3757,14 +3823,17 @@ fn control_flow_coercion_strategy_preserves_audio_bar_unsigned_modulo_forms() {
     );
 
     let legalized = legalize(ShaderStageKind::Fragment, source);
+    let _artifact = NagaCompiler
+        .compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+        .expect("lowered remainder expression must compile");
     let source = legalized.source();
 
     assert!(source.contains("uint barFreq1 = frequency % 16u;"));
     assert!(source.contains("uint barFreq2 = (barFreq1 + 1u) % 16u;"));
     assert!(source.contains("uint barFreq3 = frequency % uint(RESOLUTION);"));
     assert!(source.contains("uint barFreq4 = (barFreq1 + 1u) % uint(RESOLUTION);"));
-    assert!(!source.contains("uint(fmod("));
-    assert!(!source.contains("fmod(frequency"));
+    assert!(!source.contains("uint(_we_Fmod("));
+    assert!(!source.contains("_we_Fmod(frequency"));
 }
 
 #[test]

@@ -7903,6 +7903,7 @@ struct ma_device
             /*AudioBufferList**/ ma_ptr pAudioBufferList;   /* Only used for input devices. */
             ma_uint32 audioBufferCapInFrames;               /* Only used for input devices. The capacity in frames of each buffer in pAudioBufferList. */
             ma_event stopEvent;
+            ma_bool32 isStopEventInitialized;
             ma_uint32 originalPeriodSizeInFrames;
             ma_uint32 originalPeriodSizeInMilliseconds;
             ma_uint32 originalPeriods;
@@ -33700,6 +33701,11 @@ static OSStatus ma_default_device_changed__coreaudio(AudioObjectID objectID, UIn
             ma_device* pDevice;
 
             pDevice = g_ppTrackedDevices_CoreAudio[iDevice];
+            /* Tracking may overlap the tail of init or the start of uninit.
+               Neither phase publishes a device whose resources can be rerouted. */
+            if (ma_device_get_state(pDevice) == ma_device_state_uninitialized) {
+                continue;
+            }
             if (pDevice->type == deviceType || pDevice->type == ma_device_type_duplex) {
                 if (deviceType == ma_device_type_playback) {
                     pDevice->coreaudio.isSwitchingPlaybackDevice = MA_TRUE;
@@ -33712,8 +33718,6 @@ static OSStatus ma_default_device_changed__coreaudio(AudioObjectID objectID, UIn
                 }
 
                 if (reinitResult == MA_SUCCESS) {
-                    ma_device__post_init_setup(pDevice, deviceType);
-
                     /* Restart the device if required. If this fails we need to stop the device entirely. */
                     if (ma_device_get_state(pDevice) == ma_device_state_started) {
                         OSStatus status;
@@ -34022,13 +34026,21 @@ static ma_result ma_device_uninit__coreaudio(ma_device* pDevice)
 
     if (pDevice->coreaudio.audioUnitCapture != NULL) {
         ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
+        pDevice->coreaudio.audioUnitCapture = NULL;
     }
     if (pDevice->coreaudio.audioUnitPlayback != NULL) {
         ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitPlayback);
+        pDevice->coreaudio.audioUnitPlayback = NULL;
     }
 
     if (pDevice->coreaudio.pAudioBufferList) {
         ma_free(pDevice->coreaudio.pAudioBufferList, &pDevice->pContext->allocationCallbacks);
+        pDevice->coreaudio.pAudioBufferList = NULL;
+    }
+
+    if (pDevice->coreaudio.isStopEventInitialized) {
+        ma_event_uninit(&pDevice->coreaudio.stopEvent);
+        pDevice->coreaudio.isStopEventInitialized = MA_FALSE;
     }
 
     return MA_SUCCESS;
@@ -34065,6 +34077,16 @@ typedef struct
     ma_uint32 periodsOut;
     char deviceName[256];
 } ma_device_init_internal_data__coreaudio;
+
+static void ma_device_uninit_internal_data__coreaudio(ma_context* pContext, ma_device_init_internal_data__coreaudio* pData)
+{
+    if (pData->audioUnit != NULL) {
+        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+        pData->audioUnit = NULL;
+    }
+    ma_free(pData->pAudioBufferList, &pContext->allocationCallbacks);
+    pData->pAudioBufferList = NULL;
+}
 
 static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_device_type deviceType, const ma_device_id* pDeviceID, ma_device_init_internal_data__coreaudio* pData, void* pDevice_DoNotReference)   /* <-- pDevice is typed as void* intentionally so as to avoid accidentally referencing it. */
 {
@@ -34127,14 +34149,14 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 
     status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, MA_COREAUDIO_OUTPUT_BUS, &enableIOFlag, sizeof(enableIOFlag));
     if (status != noErr) {
-        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
         return ma_result_from_OSStatus(status);
     }
 
     enableIOFlag = (enableIOFlag == 0) ? 1 : 0;
     status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, MA_COREAUDIO_INPUT_BUS, &enableIOFlag, sizeof(enableIOFlag));
     if (status != noErr) {
-        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
         return ma_result_from_OSStatus(status);
     }
 
@@ -34143,8 +34165,8 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 #if defined(MA_APPLE_DESKTOP)
     status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &deviceObjectID, sizeof(deviceObjectID));
     if (status != noErr) {
-        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
-        return ma_result_from_OSStatus(result);
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
+        return ma_result_from_OSStatus(status);
     }
 #else
     /*
@@ -34164,6 +34186,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
             }
 
             if (found == MA_FALSE) {
+                ma_device_uninit_internal_data__coreaudio(pContext, pData);
                 return MA_DOES_NOT_EXIST;
             }
         }
@@ -34194,14 +34217,14 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
             status = ((ma_AudioUnitGetProperty_proc)pContext->coreaudio.AudioUnitGetProperty)(pData->audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, MA_COREAUDIO_INPUT_BUS, &origFormat, &origFormatSize);
         }
         if (status != noErr) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return ma_result_from_OSStatus(status);
         }
 
     #if defined(MA_APPLE_DESKTOP)
         result = ma_find_best_format__coreaudio(pContext, deviceObjectID, deviceType, pData->formatIn, pData->channelsIn, pData->sampleRateIn, &origFormat, &bestFormat);
         if (result != MA_SUCCESS) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return result;
         }
 
@@ -34286,19 +34309,19 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 
         status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioUnitProperty_StreamFormat, formatScope, formatElement, &bestFormat, sizeof(bestFormat));
         if (status != noErr) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return ma_result_from_OSStatus(status);
         }
     #endif
 
         result = ma_format_from_AudioStreamBasicDescription(&bestFormat, &pData->formatOut);
         if (result != MA_SUCCESS) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return result;
         }
 
         if (pData->formatOut == ma_format_unknown) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return MA_FORMAT_NOT_SUPPORTED;
         }
 
@@ -34356,6 +34379,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 #if defined(MA_APPLE_DESKTOP)
     result = ma_set_AudioObject_buffer_size_in_frames(pContext, deviceObjectID, deviceType, &actualPeriodSizeInFrames);
     if (result != MA_SUCCESS) {
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
         return result;
     }
 #else
@@ -34384,7 +34408,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
     */
     status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &actualPeriodSizeInFrames, sizeof(actualPeriodSizeInFrames));
     if (status != noErr) {
-        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
         return ma_result_from_OSStatus(status);
     }
 
@@ -34397,7 +34421,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 
         pBufferList = ma_allocate_AudioBufferList__coreaudio(pData->periodSizeInFramesOut, pData->formatOut, pData->channelsOut, (isInterleaved) ? ma_stream_layout_interleaved : ma_stream_layout_deinterleaved, &pContext->allocationCallbacks);
         if (pBufferList == NULL) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return MA_OUT_OF_MEMORY;
         }
 
@@ -34410,14 +34434,14 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
         callbackInfo.inputProc = ma_on_output__coreaudio;
         status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Global, 0, &callbackInfo, sizeof(callbackInfo));
         if (status != noErr) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return ma_result_from_OSStatus(status);
         }
     } else {
         callbackInfo.inputProc = ma_on_input__coreaudio;
         status = ((ma_AudioUnitSetProperty_proc)pContext->coreaudio.AudioUnitSetProperty)(pData->audioUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callbackInfo, sizeof(callbackInfo));
         if (status != noErr) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return ma_result_from_OSStatus(status);
         }
     }
@@ -34426,7 +34450,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
     if (pData->registerStopEvent) {
         status = ((ma_AudioUnitAddPropertyListener_proc)pContext->coreaudio.AudioUnitAddPropertyListener)(pData->audioUnit, kAudioOutputUnitProperty_IsRunning, on_start_stop__coreaudio, pDevice_DoNotReference);
         if (status != noErr) {
-            ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+            ma_device_uninit_internal_data__coreaudio(pContext, pData);
             return ma_result_from_OSStatus(status);
         }
     }
@@ -34434,9 +34458,7 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
     /* Initialize the audio unit. */
     status = ((ma_AudioUnitInitialize_proc)pContext->coreaudio.AudioUnitInitialize)(pData->audioUnit);
     if (status != noErr) {
-        ma_free(pData->pAudioBufferList, &pContext->allocationCallbacks);
-        pData->pAudioBufferList = NULL;
-        ((ma_AudioComponentInstanceDispose_proc)pContext->coreaudio.AudioComponentInstanceDispose)(pData->audioUnit);
+        ma_device_uninit_internal_data__coreaudio(pContext, pData);
         return ma_result_from_OSStatus(status);
     }
 
@@ -34455,10 +34477,39 @@ static ma_result ma_device_init_internal__coreaudio(ma_context* pContext, ma_dev
 }
 
 #if defined(MA_APPLE_DESKTOP)
+static void ma_device_move_converter__coreaudio(ma_data_converter* pDestination, ma_data_converter* pSource)
+{
+    *pDestination = *pSource;
+    /* Stock linear resampling embeds its backend in the converter itself.
+       Custom backend pointers/user data remain owned by their existing contract. */
+    if (pSource->hasResampler) {
+        if (pSource->resampler.pBackend == &pSource->resampler.state.linear) {
+            pDestination->resampler.pBackend = &pDestination->resampler.state.linear;
+        }
+        if (pSource->resampler.pBackendUserData == &pSource->resampler) {
+            pDestination->resampler.pBackendUserData = &pDestination->resampler;
+        }
+    }
+    MA_ZERO_OBJECT(pSource);
+}
+
 static ma_result ma_device_reinit_internal__coreaudio(ma_device* pDevice, ma_device_type deviceType, ma_bool32 disposePreviousAudioUnit)
 {
     ma_device_init_internal_data__coreaudio data;
+    ma_device replacement;
     ma_result result;
+
+    MA_ZERO_OBJECT(&data);
+    MA_ZERO_OBJECT(&replacement);
+    replacement.pContext = pDevice->pContext;
+    replacement.type = pDevice->type;
+    replacement.sampleRate = pDevice->sampleRate;
+    replacement.resampling = pDevice->resampling;
+    replacement.capture = pDevice->capture;
+    replacement.playback = pDevice->playback;
+    MA_ZERO_OBJECT(&replacement.capture.converter);
+    MA_ZERO_OBJECT(&replacement.playback.converter);
+    replacement.playback.pInputCache = NULL;
 
     /* This should only be called for playback or capture, not duplex. */
     if (deviceType == ma_device_type_duplex) {
@@ -34475,14 +34526,6 @@ static ma_result ma_device_reinit_internal__coreaudio(ma_device* pDevice, ma_dev
         data.shareMode              = pDevice->capture.shareMode;
         data.performanceProfile     = pDevice->coreaudio.originalPerformanceProfile;
         data.registerStopEvent      = MA_TRUE;
-
-        if (disposePreviousAudioUnit) {
-            ((ma_AudioOutputUnitStop_proc)pDevice->pContext->coreaudio.AudioOutputUnitStop)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
-            ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
-        }
-        if (pDevice->coreaudio.pAudioBufferList) {
-            ma_free(pDevice->coreaudio.pAudioBufferList, &pDevice->pContext->allocationCallbacks);
-        }
     } else if (deviceType == ma_device_type_playback) {
         data.formatIn               = pDevice->playback.format;
         data.channelsIn             = pDevice->playback.channels;
@@ -34491,11 +34534,6 @@ static ma_result ma_device_reinit_internal__coreaudio(ma_device* pDevice, ma_dev
         data.shareMode              = pDevice->playback.shareMode;
         data.performanceProfile     = pDevice->coreaudio.originalPerformanceProfile;
         data.registerStopEvent      = (pDevice->type != ma_device_type_duplex);
-
-        if (disposePreviousAudioUnit) {
-            ((ma_AudioOutputUnitStop_proc)pDevice->pContext->coreaudio.AudioOutputUnitStop)((AudioUnit)pDevice->coreaudio.audioUnitPlayback);
-            ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitPlayback);
-        }
     }
     data.periodSizeInFramesIn       = pDevice->coreaudio.originalPeriodSizeInFrames;
     data.periodSizeInMillisecondsIn = pDevice->coreaudio.originalPeriodSizeInMilliseconds;
@@ -34513,32 +34551,75 @@ static ma_result ma_device_reinit_internal__coreaudio(ma_device* pDevice, ma_dev
 
     if (deviceType == ma_device_type_capture) {
     #if defined(MA_APPLE_DESKTOP)
-        pDevice->coreaudio.deviceObjectIDCapture     = (ma_uint32)data.deviceObjectID;
-        ma_get_AudioObject_uid(pDevice->pContext, pDevice->coreaudio.deviceObjectIDCapture, sizeof(pDevice->capture.id.coreaudio), pDevice->capture.id.coreaudio);
+        replacement.coreaudio.deviceObjectIDCapture     = (ma_uint32)data.deviceObjectID;
+        ma_get_AudioObject_uid(replacement.pContext, replacement.coreaudio.deviceObjectIDCapture, sizeof(replacement.capture.id.coreaudio), replacement.capture.id.coreaudio);
     #endif
-        pDevice->coreaudio.audioUnitCapture          = (ma_ptr)data.audioUnit;
-        pDevice->coreaudio.pAudioBufferList          = (ma_ptr)data.pAudioBufferList;
-        pDevice->coreaudio.audioBufferCapInFrames    = data.periodSizeInFramesOut;
+        replacement.coreaudio.audioUnitCapture          = (ma_ptr)data.audioUnit;
+        replacement.coreaudio.pAudioBufferList          = (ma_ptr)data.pAudioBufferList;
+        replacement.coreaudio.audioBufferCapInFrames    = data.periodSizeInFramesOut;
 
-        pDevice->capture.internalFormat              = data.formatOut;
-        pDevice->capture.internalChannels            = data.channelsOut;
-        pDevice->capture.internalSampleRate          = data.sampleRateOut;
-        MA_COPY_MEMORY(pDevice->capture.internalChannelMap, data.channelMapOut, sizeof(data.channelMapOut));
-        pDevice->capture.internalPeriodSizeInFrames  = data.periodSizeInFramesOut;
-        pDevice->capture.internalPeriods             = data.periodsOut;
+        replacement.capture.internalFormat              = data.formatOut;
+        replacement.capture.internalChannels            = data.channelsOut;
+        replacement.capture.internalSampleRate          = data.sampleRateOut;
+        MA_COPY_MEMORY(replacement.capture.internalChannelMap, data.channelMapOut, sizeof(data.channelMapOut));
+        replacement.capture.internalPeriodSizeInFrames  = data.periodSizeInFramesOut;
+        replacement.capture.internalPeriods             = data.periodsOut;
     } else if (deviceType == ma_device_type_playback) {
     #if defined(MA_APPLE_DESKTOP)
-        pDevice->coreaudio.deviceObjectIDPlayback    = (ma_uint32)data.deviceObjectID;
-        ma_get_AudioObject_uid(pDevice->pContext, pDevice->coreaudio.deviceObjectIDPlayback, sizeof(pDevice->playback.id.coreaudio), pDevice->playback.id.coreaudio);
+        replacement.coreaudio.deviceObjectIDPlayback    = (ma_uint32)data.deviceObjectID;
+        ma_get_AudioObject_uid(replacement.pContext, replacement.coreaudio.deviceObjectIDPlayback, sizeof(replacement.playback.id.coreaudio), replacement.playback.id.coreaudio);
     #endif
-        pDevice->coreaudio.audioUnitPlayback         = (ma_ptr)data.audioUnit;
+        replacement.coreaudio.audioUnitPlayback         = (ma_ptr)data.audioUnit;
 
-        pDevice->playback.internalFormat             = data.formatOut;
-        pDevice->playback.internalChannels           = data.channelsOut;
-        pDevice->playback.internalSampleRate         = data.sampleRateOut;
-        MA_COPY_MEMORY(pDevice->playback.internalChannelMap, data.channelMapOut, sizeof(data.channelMapOut));
-        pDevice->playback.internalPeriodSizeInFrames = data.periodSizeInFramesOut;
-        pDevice->playback.internalPeriods            = data.periodsOut;
+        replacement.playback.internalFormat             = data.formatOut;
+        replacement.playback.internalChannels           = data.channelsOut;
+        replacement.playback.internalSampleRate         = data.sampleRateOut;
+        MA_COPY_MEMORY(replacement.playback.internalChannelMap, data.channelMapOut, sizeof(data.channelMapOut));
+        replacement.playback.internalPeriodSizeInFrames = data.periodSizeInFramesOut;
+        replacement.playback.internalPeriods            = data.periodsOut;
+    }
+
+    result = ma_device__post_init_setup(&replacement, deviceType);
+    if (result != MA_SUCCESS) {
+        ma_data_converter_uninit(&replacement.capture.converter, &pDevice->pContext->allocationCallbacks);
+        ma_data_converter_uninit(&replacement.playback.converter, &pDevice->pContext->allocationCallbacks);
+        ma_free(replacement.playback.pInputCache, &pDevice->pContext->allocationCallbacks);
+        ma_device_uninit_internal_data__coreaudio(pDevice->pContext, &data);
+        return result;
+    }
+
+    /* Nothing owned by the live device is released until all replacement
+       resources exist. A failed route therefore leaves no disposed handles. */
+    if (deviceType == ma_device_type_capture) {
+        ma_bool32 wasSwitching = pDevice->coreaudio.isSwitchingCaptureDevice;
+        pDevice->coreaudio.isSwitchingCaptureDevice = MA_TRUE;
+        if (disposePreviousAudioUnit && pDevice->coreaudio.audioUnitCapture != NULL) {
+            ((ma_AudioOutputUnitStop_proc)pDevice->pContext->coreaudio.AudioOutputUnitStop)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
+            ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
+        }
+        ma_free(pDevice->coreaudio.pAudioBufferList, &pDevice->pContext->allocationCallbacks);
+        ma_data_converter_uninit(&pDevice->capture.converter, &pDevice->pContext->allocationCallbacks);
+        pDevice->capture = replacement.capture;
+        ma_device_move_converter__coreaudio(&pDevice->capture.converter, &replacement.capture.converter);
+        pDevice->coreaudio.deviceObjectIDCapture = replacement.coreaudio.deviceObjectIDCapture;
+        pDevice->coreaudio.audioUnitCapture = replacement.coreaudio.audioUnitCapture;
+        pDevice->coreaudio.pAudioBufferList = replacement.coreaudio.pAudioBufferList;
+        pDevice->coreaudio.audioBufferCapInFrames = replacement.coreaudio.audioBufferCapInFrames;
+        pDevice->coreaudio.isSwitchingCaptureDevice = wasSwitching;
+    } else {
+        ma_bool32 wasSwitching = pDevice->coreaudio.isSwitchingPlaybackDevice;
+        pDevice->coreaudio.isSwitchingPlaybackDevice = MA_TRUE;
+        if (disposePreviousAudioUnit && pDevice->coreaudio.audioUnitPlayback != NULL) {
+            ((ma_AudioOutputUnitStop_proc)pDevice->pContext->coreaudio.AudioOutputUnitStop)((AudioUnit)pDevice->coreaudio.audioUnitPlayback);
+            ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitPlayback);
+        }
+        ma_free(pDevice->playback.pInputCache, &pDevice->pContext->allocationCallbacks);
+        ma_data_converter_uninit(&pDevice->playback.converter, &pDevice->pContext->allocationCallbacks);
+        pDevice->playback = replacement.playback;
+        ma_device_move_converter__coreaudio(&pDevice->playback.converter, &replacement.playback.converter);
+        pDevice->coreaudio.deviceObjectIDPlayback = replacement.coreaudio.deviceObjectIDPlayback;
+        pDevice->coreaudio.audioUnitPlayback = replacement.coreaudio.audioUnitPlayback;
+        pDevice->coreaudio.isSwitchingPlaybackDevice = wasSwitching;
     }
 
     return MA_SUCCESS;
@@ -34562,9 +34643,18 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
         return MA_SHARE_MODE_NOT_SUPPORTED;
     }
 
+    /* Stop callbacks may arrive during setup and cleanup, so their event must
+       exist before any AudioUnit listener is installed. */
+    result = ma_event_init(&pDevice->coreaudio.stopEvent);
+    if (result != MA_SUCCESS) {
+        return result;
+    }
+    pDevice->coreaudio.isStopEventInitialized = MA_TRUE;
+
     /* Capture needs to be initialized first. */
     if (pConfig->deviceType == ma_device_type_capture || pConfig->deviceType == ma_device_type_duplex) {
         ma_device_init_internal_data__coreaudio data;
+        MA_ZERO_OBJECT(&data);
         data.allowNominalSampleRateChange = pConfig->coreaudio.allowNominalSampleRateChange;
         data.formatIn                     = pDescriptorCapture->format;
         data.channelsIn                   = pDescriptorCapture->channels;
@@ -34584,6 +34674,7 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
 
         result = ma_device_init_internal__coreaudio(pDevice->pContext, ma_device_type_capture, pDescriptorCapture->pDeviceID, &data, (void*)pDevice);
         if (result != MA_SUCCESS) {
+            ma_device_uninit__coreaudio(pDevice);
             return result;
         }
 
@@ -34614,7 +34705,11 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
         switch the device in the background.
         */
         if (pConfig->capture.pDeviceID == NULL) {
-            ma_device__track__coreaudio(pDevice);
+            result = ma_device__track__coreaudio(pDevice);
+            if (result != MA_SUCCESS) {
+                ma_device_uninit__coreaudio(pDevice);
+                return result;
+            }
         }
     #endif
     }
@@ -34622,6 +34717,7 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
     /* Playback. */
     if (pConfig->deviceType == ma_device_type_playback || pConfig->deviceType == ma_device_type_duplex) {
         ma_device_init_internal_data__coreaudio data;
+        MA_ZERO_OBJECT(&data);
         data.allowNominalSampleRateChange   = pConfig->coreaudio.allowNominalSampleRateChange;
         data.formatIn                       = pDescriptorPlayback->format;
         data.channelsIn                     = pDescriptorPlayback->channels;
@@ -34644,12 +34740,7 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
 
         result = ma_device_init_internal__coreaudio(pDevice->pContext, ma_device_type_playback, pDescriptorPlayback->pDeviceID, &data, (void*)pDevice);
         if (result != MA_SUCCESS) {
-            if (pConfig->deviceType == ma_device_type_duplex) {
-                ((ma_AudioComponentInstanceDispose_proc)pDevice->pContext->coreaudio.AudioComponentInstanceDispose)((AudioUnit)pDevice->coreaudio.audioUnitCapture);
-                if (pDevice->coreaudio.pAudioBufferList) {
-                    ma_free(pDevice->coreaudio.pAudioBufferList, &pDevice->pContext->allocationCallbacks);
-                }
-            }
+            ma_device_uninit__coreaudio(pDevice);
             return result;
         }
 
@@ -34678,18 +34769,16 @@ static ma_result ma_device_init__coreaudio(ma_device* pDevice, const ma_device_c
         switch the device in the background.
         */
         if (pDescriptorPlayback->pDeviceID == NULL && (pConfig->deviceType != ma_device_type_duplex || pDescriptorCapture->pDeviceID != NULL)) {
-            ma_device__track__coreaudio(pDevice);
+            result = ma_device__track__coreaudio(pDevice);
+            if (result != MA_SUCCESS) {
+                ma_device_uninit__coreaudio(pDevice);
+                return result;
+            }
         }
     #endif
     }
 
 
-
-    /*
-    When stopping the device, a callback is called on another thread. We need to wait for this callback
-    before returning from ma_device_stop(). This event is used for this.
-    */
-    ma_event_init(&pDevice->coreaudio.stopEvent);
 
     /*
     We need to detect when a route has changed so we can update the data conversion pipeline accordingly. This is done
@@ -40651,6 +40740,7 @@ static ma_result ma_device__post_init_setup(ma_device* pDevice, ma_device_type d
         /* Make sure the old converter is uninitialized first. */
         if (ma_device_get_state(pDevice) != ma_device_state_uninitialized) {
             ma_data_converter_uninit(&pDevice->capture.converter, &pDevice->pContext->allocationCallbacks);
+            MA_ZERO_OBJECT(&pDevice->capture.converter);
         }
 
         result = ma_data_converter_init(&converterConfig, &pDevice->pContext->allocationCallbacks, &pDevice->capture.converter);
@@ -40681,6 +40771,7 @@ static ma_result ma_device__post_init_setup(ma_device* pDevice, ma_device_type d
         /* Make sure the old converter is uninitialized first. */
         if (ma_device_get_state(pDevice) != ma_device_state_uninitialized) {
             ma_data_converter_uninit(&pDevice->playback.converter, &pDevice->pContext->allocationCallbacks);
+            MA_ZERO_OBJECT(&pDevice->playback.converter);
         }
 
         result = ma_data_converter_init(&converterConfig, &pDevice->pContext->allocationCallbacks, &pDevice->playback.converter);
@@ -41640,6 +41731,8 @@ MA_API ma_device_config ma_device_config_init(ma_device_type deviceType)
     return config;
 }
 
+static void ma_device_uninit_internal(ma_device* pDevice, ma_bool32 waitForWorkerThread);
+
 MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pConfig, ma_device* pDevice)
 {
     ma_result result;
@@ -41804,9 +41897,11 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
 
     result = pContext->callbacks.onDeviceInit(pDevice, pConfig, &descriptorPlayback, &descriptorCapture);
     if (result != MA_SUCCESS) {
+        ma_event_uninit(&pDevice->stopEvent);
         ma_event_uninit(&pDevice->startEvent);
         ma_event_uninit(&pDevice->wakeupEvent);
         ma_mutex_uninit(&pDevice->startStopLock);
+        MA_ZERO_OBJECT(pDevice);
         return result;
     }
 
@@ -41817,7 +41912,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
     */
     if (pConfig->deviceType == ma_device_type_capture || pConfig->deviceType == ma_device_type_duplex || pConfig->deviceType == ma_device_type_loopback) {
         if (!ma_device_descriptor_is_valid(&descriptorCapture)) {
-            ma_device_uninit(pDevice);
+            ma_device_uninit_internal(pDevice, MA_FALSE);
             return MA_INVALID_ARGS;
         }
 
@@ -41835,7 +41930,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
 
     if (pConfig->deviceType == ma_device_type_playback || pConfig->deviceType == ma_device_type_duplex) {
         if (!ma_device_descriptor_is_valid(&descriptorPlayback)) {
-            ma_device_uninit(pDevice);
+            ma_device_uninit_internal(pDevice, MA_FALSE);
             return MA_INVALID_ARGS;
         }
 
@@ -41894,7 +41989,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
 
     result = ma_device_post_init(pDevice, pConfig->deviceType, &descriptorPlayback, &descriptorCapture);
     if (result != MA_SUCCESS) {
-        ma_device_uninit(pDevice);
+        ma_device_uninit_internal(pDevice, MA_FALSE);
         return result;
     }
 
@@ -41923,7 +42018,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
 
             pDevice->capture.pIntermediaryBuffer = ma_malloc((size_t)intermediaryBufferSizeInBytes, &pContext->allocationCallbacks);
             if (pDevice->capture.pIntermediaryBuffer == NULL) {
-                ma_device_uninit(pDevice);
+                ma_device_uninit_internal(pDevice, MA_FALSE);
                 return MA_OUT_OF_MEMORY;
             }
 
@@ -41949,7 +42044,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
 
             pDevice->playback.pIntermediaryBuffer = ma_malloc((size_t)intermediaryBufferSizeInBytes, &pContext->allocationCallbacks);
             if (pDevice->playback.pIntermediaryBuffer == NULL) {
-                ma_device_uninit(pDevice);
+                ma_device_uninit_internal(pDevice, MA_FALSE);
                 return MA_OUT_OF_MEMORY;
             }
 
@@ -41967,7 +42062,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
         /* The worker thread. */
         result = ma_thread_create(&pDevice->thread, pContext->threadPriority, pContext->threadStackSize, ma_worker_thread, pDevice, &pContext->allocationCallbacks);
         if (result != MA_SUCCESS) {
-            ma_device_uninit(pDevice);
+            ma_device_uninit_internal(pDevice, MA_FALSE);
             return result;
         }
 
@@ -41983,7 +42078,7 @@ MA_API ma_result ma_device_init(ma_context* pContext, const ma_device_config* pC
             if (pConfig->deviceType == ma_device_type_duplex) {
                 result = ma_duplex_rb_init(pDevice->capture.format, pDevice->capture.channels, pDevice->sampleRate, pDevice->capture.internalSampleRate, pDevice->capture.internalPeriodSizeInFrames, &pDevice->pContext->allocationCallbacks, &pDevice->duplexRB);
                 if (result != MA_SUCCESS) {
-                    ma_device_uninit(pDevice);
+                    ma_device_uninit_internal(pDevice, MA_FALSE);
                     return result;
                 }
             }
@@ -42138,11 +42233,9 @@ MA_API ma_result ma_device_init_ex(const ma_backend backends[], ma_uint32 backen
     return result;
 }
 
-MA_API void ma_device_uninit(ma_device* pDevice)
+static void ma_device_uninit_internal(ma_device* pDevice, ma_bool32 waitForWorkerThread)
 {
-    if (!ma_device__is_initialized(pDevice)) {
-        return;
-    }
+    /* Initialization rollback owns backend/resources but has no worker yet. */
 
     /*
     It's possible for the miniaudio side of the device and the backend to not be in sync due to
@@ -42166,7 +42259,7 @@ MA_API void ma_device_uninit(ma_device* pDevice)
     ma_device__set_state(pDevice, ma_device_state_uninitialized);
 
     /* Wake up the worker thread and wait for it to properly terminate. */
-    if (!ma_context_is_backend_asynchronous(pDevice->pContext)) {
+    if (waitForWorkerThread && !ma_context_is_backend_asynchronous(pDevice->pContext)) {
         ma_event_signal(&pDevice->wakeupEvent);
         ma_thread_wait(&pDevice->thread);
     }
@@ -42213,6 +42306,14 @@ MA_API void ma_device_uninit(ma_device* pDevice)
     }
 
     MA_ZERO_OBJECT(pDevice);
+}
+
+MA_API void ma_device_uninit(ma_device* pDevice)
+{
+    if (!ma_device__is_initialized(pDevice)) {
+        return;
+    }
+    ma_device_uninit_internal(pDevice, MA_TRUE);
 }
 
 MA_API ma_context* ma_device_get_context(ma_device* pDevice)

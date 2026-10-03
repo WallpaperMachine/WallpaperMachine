@@ -97,9 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         // A crash during a download leaves its staging behind, holding the whole downloaded item.
         let stagingRoot = ClientPaths.supportURL
         let pixivStagingRoot = PixivWallpaperPackager.stagingRoot(forLibrary: ClientPaths.libraryURL)
+        let importStagingRoot = WallpaperImportService.stagingRoot(forLibrary: ClientPaths.libraryURL)
         Task.detached(priority: .utility) {
             WorkshopDownloader.removeAbandonedStaging(in: stagingRoot)
             PixivWallpaperPackager.removeAbandonedStaging(in: pixivStagingRoot)
+            WallpaperImportService.removeAbandonedStaging(in: importStagingRoot)
         }
 
         NSApp.setActivationPolicy(.accessory)
@@ -111,8 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         installApplicationMenu()
         AppLog.info("startup: application menu installed")
         if let store {
+            workshopStore.startDownloadLifecycle(bridge: store)
             let lockScreen = LockScreenConfiguration.isSupportedBySystem
-                ? LockScreenWallpaperService(bridge: store.bridge) : nil
+                ? LockScreenWallpaperService(bridge: store.bridge, contentRevision: { [weak store] in store?.wallpaperContentRevision ?? 0 }) : nil
             if let lockScreen {
                 store.lockScreenWallpaper = lockScreen
                 lockScreen.beforeActivation = { [weak self] in
@@ -136,8 +139,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     fallback: AppleScriptMediaProvider(scheduler: mediaScheduler),
                     scheduler: mediaScheduler))
             desktopMediaSession = mediaSession
-            let webHost = WebWallpaperHost(bridge: store.bridge, mediaRelay: mediaSession.relay)
+            let webHost = WebWallpaperHost(bridge: store.bridge, mediaRelay: mediaSession.relay,
+                contentRevision: { [weak store] in store?.wallpaperContentRevision ?? 0 })
             webWallpaperHost = webHost
+            webHost.onStateChanged = { [weak store] state in store?.receiveHostState(state) }
+            webHost.onDeliveryStateChanged = { [weak store] in store?.webWallpaperDeliveryRevision &+= 1 }
+            webHost.onAssetsChanged = { [weak store] in
+                store?.wallpaperContentRevision &+= 1
+                if store?.lockScreenWallpaper?.canRefreshAutomatically == true { store?.lockScreenWallpaper?.refresh() }
+            }
+            store.retryHostWallpaper = { [weak webHost] wallpaperID, displayID in
+                webHost?.retry(wallpaperID: wallpaperID, displayID: displayID)
+            }
+            store.invalidateHostAsset = { [weak webHost] wallpaperID, propertyID in
+                webHost?.invalidateAsset(wallpaperID: wallpaperID, propertyID: propertyID)
+            }
             store.sceneMediaAvailability = { [weak mediaSession] in
                 mediaSession?.availability ?? .unavailable(reason: String(localized: "Media integration has not been started."))
             }
@@ -180,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // and starts no player by default.
             let nativeVideo = NativeVideoWallpaperHost(bridge: store.bridge)
             nativeVideoHost = nativeVideo
+            nativeVideo.onStateChanged = { [weak store] state in store?.receiveHostState(state) }
             nativeVideo.onError = { [weak self] message in
                 self?.lastError = WallpaperActionError(message: message)
                 self?.rebuildMenu()
@@ -442,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// The panel's favorites, which a playlist can rotate through.
     private static func favoriteWallpaperIDs() -> Set<String> {
-        guard let data = UserDefaults.standard.data(forKey: WebPanelController.favoriteKey),
+        guard let data = ClientPreferences.defaults.data(forKey: WebPanelController.favoriteKey),
               let ids = try? JSONDecoder().decode([String].self, from: data) else { return [] }
         return Set(ids)
     }
@@ -480,12 +497,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let reduced = settings.batteryMode == .reducedQuality && settings.onBatteryPower
         let cap = [settings.frameRateCap, reduced ? settings.batteryTargetFps : nil]
             .compactMap { $0 }.min()
+        let connected = Set(WebWallpaperHost.systemScreens().map(\.id))
+        let liveDisplays = Dictionary(store.monitorInformationSnapshot.rows.compactMap { row in
+            ResolvedDisplayTitles.liveDisplayID(row.displayId, title: row.title)
+                .flatMap { connected.contains($0) ? (row.displayId, $0) : nil }
+        }, uniquingKeysWith: { first, _ in first })
         return WallpaperEnergyContext.resolve(
             assignments: store.monitorInformationSnapshot.rows.map {
                 (display: $0.displayId, wallpaper: $0.wallpaperId)
             },
             suspendedDisplays: policy.suspendedDisplayIDs,
-            frameRateCap: cap, renderScale: settings.renderScale)
+            frameRateCap: cap, renderScale: settings.renderScale,
+            resolveDisplay: { liveDisplays[$0] })
     }
 
     /// Opens a bounded diagnostic window when the environment explicitly asks
@@ -580,6 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.accessory)
 
         Task {
+            await libraryImports.shutdown()
             do {
                 if let lockScreen = store?.lockScreenWallpaper {
                     try await lockScreen.shutdown {
@@ -914,7 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func runAutomaticUpdate() async {
         checkWorkshopUpdatesIfDue()
-        let state = await appUpdater.checkAndDownloadInBackground()
+        let state = await appUpdater.checkInBackground()
         rebuildMenu()
         guard !shutdownInProgress, !shutdownComplete, whatsNewWindow == nil,
               let version = state.availableVersion, version != promptedUpdateVersion else { return }
@@ -986,7 +1010,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         do {
             let history = try AppReleaseHistory()
             guard let announcement = whatsNewStore.announcement(
-                history: history, existingUser: UserDefaults.standard.bool(forKey: WebPanelController.welcomeSeenKey)
+                history: history, existingUser: ClientPreferences.defaults.bool(forKey: WebPanelController.welcomeSeenKey)
             ) else { return }
             let window = NSWindow(
                 contentRect: NSRect(origin: .zero, size: WhatsNewViewController.defaultContentSize),

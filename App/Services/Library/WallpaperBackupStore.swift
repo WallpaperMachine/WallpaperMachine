@@ -21,8 +21,8 @@ final class WallpaperBackupStore {
     @ObservationIgnored private let exportDestination: @MainActor () async -> URL?
     @ObservationIgnored private let restoreSource: @MainActor () async -> URL?
 
-    init(service: WallpaperBackupService = .init(), defaults: UserDefaults = .standard,
-         domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine",
+    init(service: WallpaperBackupService = .init(), defaults: UserDefaults = ClientPreferences.defaults,
+         domainName: String = ClientPreferences.domainName,
          exportDestination: (@MainActor () async -> URL?)? = nil,
          restoreSource: (@MainActor () async -> URL?)? = nil) {
         self.service = service

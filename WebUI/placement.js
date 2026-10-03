@@ -17,6 +17,8 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
   let draft = null; // { x, y, zoom } while dragging or sliding, until native has the values.
   let drag = null; // { pointerId, startX, startY, x, y, overflowX, overflowY }
   let container = null;
+  let draftRevision = 0;
+  let queuedDraftRevision = -1;
 
   const placement = () => state?.imagePlacement;
   const shown = (item) => placement() && placement().wallpaperID === item.id;
@@ -31,10 +33,14 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
 
   function sync(snapshot) {
     const before = placement();
+    const next = snapshot?.imagePlacement;
+    if (draft && draftRevision !== queuedDraftRevision && before && (!next || next.wallpaperID !== before.wallpaperID || next.displayID !== before.displayID)) {
+      void commit(before.wallpaperID).catch(() => {});
+    }
     state = snapshot;
     const now = placement();
     // A different wallpaper or display, or a placement that changed underneath, drops the draft.
-    if (!now || !before || now.wallpaperID !== before.wallpaperID || now.displayID !== before.displayID) { draft = null; drag = null; }
+    if (!now || !before || now.wallpaperID !== before.wallpaperID || now.displayID !== before.displayID) { draft = null; drag = null; draftRevision += 1; }
   }
 
   const slider = (id, key, label, value, min, max, output) => `<div class="field placement-field" ${keyAttr(`placement-${key}`)}><label for="placement-${key}">${escapeHTML(label)}</label><div class="range-field"><input id="placement-${key}" type="range" min="${min}" max="${max}" step="1" value="${Math.round(value)}" data-change="placement" data-placement="${key}" data-id="${escapeHTML(id)}"${disabled(pending())}><output>${escapeHTML(output)}</output></div></div>`;
@@ -120,23 +126,41 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
   // One request at a time. Values that change while one is on its way are sent once it is
   // back, latest value only, so the end of a drag is never dropped behind an earlier send and
   // the draft outlives every snapshot until native has the final numbers.
-  let inFlight = null;
-  let queued = false;
-  async function commit(id) {
-    if (inFlight) { queued = true; return inFlight; }
+  let draining = false;
+  const queued = new Map();
+  function commit(id) {
     const data = placement();
-    if (!data || data.wallpaperID !== id || !draft) return;
+    if (!data || data.wallpaperID !== id || !draft) return Promise.resolve();
     const current = values();
-    const sent = { x: round(current.x), y: round(current.y), zoom: round(current.zoom) };
-    inFlight = (async () => {
-      try { await send('imagePlacement', { id, displayID: data.displayID, ...sent }); }
-      finally {
-        inFlight = null;
-        if (queued) { queued = false; await commit(id); }
-        else { draft = null; render(); }
+    const key = JSON.stringify([id, data.displayID]);
+    queuedDraftRevision = draftRevision;
+    const args = { id, displayID: data.displayID, x: round(current.x), y: round(current.y), zoom: round(current.zoom) };
+    const done = new Promise((resolve, reject) => {
+      const waiters = queued.get(key)?.waiters || [];
+      waiters.push({ resolve, reject });
+      queued.set(key, { args, revision: draftRevision, waiters });
+    });
+    void drain();
+    return done;
+  }
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    try {
+      while (queued.size) {
+        const [key, request] = queued.entries().next().value;
+        queued.delete(key);
+        try {
+          await send('imagePlacement', request.args);
+          const data = placement();
+          if (data?.wallpaperID === request.args.id && data?.displayID === request.args.displayID
+              && draftRevision === request.revision) { draft = null; render(); }
+          for (const waiter of request.waiters) waiter.resolve();
+        } catch (error) {
+          for (const waiter of request.waiters) waiter.reject(error);
+        }
       }
-    })();
-    return inFlight;
+    } finally { draining = false; }
   }
 
   function bind(node) {
@@ -162,6 +186,7 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
       if (drag.overflowY > 0.5) next.y = clamp(drag.y - dy / drag.overflowY, 0, 1);
       if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
       draft = { ...(draft || {}), x: next.x, y: next.y };
+      draftRevision += 1;
       reflect();
     });
     const end = (event) => {
@@ -188,6 +213,7 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
     const value = Number(element.value) / 100;
     if (!Number.isFinite(value)) return true;
     draft = { ...(draft || {}), [key]: key === 'zoom' ? clamp(value, ZOOM_MIN, ZOOM_MAX) : clamp(value, 0, 1) };
+    draftRevision += 1;
     reflect();
     return true;
   }
@@ -206,6 +232,7 @@ export function createPlacement({ send, render, escapeHTML, icon, button, keyAtt
     event.preventDefault();
     const current = values();
     draft = { ...(draft || {}), x: clamp(current.x + delta[0], 0, 1), y: clamp(current.y + delta[1], 0, 1) };
+    draftRevision += 1;
     reflect();
     clearTimeout(handleKeydown.timer);
     handleKeydown.timer = setTimeout(() => commit(stage.dataset.id).catch(() => {}), 400);

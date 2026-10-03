@@ -108,6 +108,24 @@ final class WorkshopUpdateStoreTests: XCTestCase {
         XCTAssertNil(store.available["600"], "the check compared the version the download replaced")
     }
 
+    func testAnImportedItemForgottenDuringACheckDoesNotReappear() async throws {
+        try installed("601", writtenAt: clock.addingTimeInterval(-7200))
+        try installed("602", writtenAt: clock.addingTimeInterval(-7200))
+        let changed = [item("601", updated: clock.addingTimeInterval(-3600)),
+                       item("602", updated: clock.addingTimeInterval(-3600))]
+        let gate = Gate()
+        let store = WorkshopUpdateStore(defaults: defaults, fetch: { _ in
+            await gate.wait()
+            return changed
+        }, now: { self.clock })
+        store.check(installed: ["601", "602"], library: root)
+        store.forget(["601"])
+        await gate.open()
+        try await settle(store)
+        XCTAssertEqual(Set(store.available.keys), ["602"])
+        XCTAssertNil(makeStore().available["601"], "the delayed result must not be persisted again")
+    }
+
     func testAutomaticChecksWaitADayAndCanBeTurnedOff() async throws {
         let store = makeStore()
         store.checkIfDue(installed: ["1"], library: root)

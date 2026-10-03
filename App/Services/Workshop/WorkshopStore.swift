@@ -25,7 +25,7 @@ enum WorkshopDownloadStage: String, Sendable {
 
 /// A retained download intent. One click keeps the wallpaper the user asked for while
 /// the runtime, the Steam account, and shared scene assets are resolved in turn.
-struct WorkshopDownloadRequest: Identifiable, Sendable {
+struct WorkshopDownloadRequest: Identifiable, Codable, Sendable {
   /// Workshop item id, `WorkshopStore.sceneAssetsRequestID` for the shared assets download, or
   /// `WorkshopStore.signInRequestID` for a sign-in that downloads nothing.
   let id: String
@@ -37,6 +37,8 @@ struct WorkshopDownloadRequest: Identifiable, Sendable {
   /// The downloader rejected these inputs; only a fresh continuation may retry them, so
   /// automatic resumption cannot spin on the same rejected account.
   var refused = false
+  /// Restored requests wait for an explicit continuation after relaunch.
+  var isPaused = false
 }
 
 @MainActor
@@ -94,6 +96,10 @@ final class WorkshopStore {
   var selectedDownloadID: String?
   var showsDownloadDetails = false
   private(set) var downloadRequests: [WorkshopDownloadRequest] = []
+  private(set) var downloadPersistenceError: String?
+  @ObservationIgnored private let requestFile: URL
+  @ObservationIgnored private weak var downloadBridge: BridgeStore?
+  @ObservationIgnored private var observingDownloads = false
 
   static let sceneAssetsRequestID = "scene-assets"
   static let signInRequestID = WorkshopDownloadManager.signInID
@@ -128,7 +134,7 @@ final class WorkshopStore {
 
   init(
     service: WorkshopService = WorkshopService(), downloader: WorkshopDownloadManager,
-    supportDirectory: URL = ClientPaths.supportURL, defaults: UserDefaults = .standard,
+    supportDirectory: URL = ClientPaths.supportURL, defaults: UserDefaults = ClientPreferences.defaults,
     runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
     updates: WorkshopUpdateStore? = nil,
     sceneAssetsAvailable: @escaping @MainActor () -> Bool = {
@@ -136,6 +142,7 @@ final class WorkshopStore {
     }
   ) {
     self.service = service
+    requestFile = supportDirectory.appendingPathComponent("Downloads/workshop-requests.json")
     self.downloader = downloader
     self.updates = updates ?? WorkshopUpdateStore(defaults: defaults)
     self.defaults = defaults
@@ -147,6 +154,18 @@ final class WorkshopStore {
     self.steamCMDSetup = SteamCMDSetupStore(
       downloader: downloader, supportDirectory: supportDirectory,
       defaults: defaults, runtimeProvider: runtimeProvider)
+    downloader.configurePersistence(at: supportDirectory.appendingPathComponent("Downloads/Workshop"))
+    if let data = try? Data(contentsOf: requestFile),
+      let saved = try? JSONDecoder().decode([WorkshopDownloadRequest].self, from: data)
+    {
+      downloadRequests = saved.filter { $0.id != Self.signInRequestID }.map {
+        var request = $0
+        request.isPaused = true
+        return request
+      }
+      // A crash between queue handoff writes may leave both records; the retained request wins.
+      for request in downloadRequests { downloader.transferPausedToRequest(id: request.id) }
+    }
   }
 
   func showDownload(_ job: WorkshopDownload) {
@@ -164,6 +183,7 @@ final class WorkshopStore {
   /// The entry point for a single click: start immediately when every prerequisite is met,
   /// otherwise retain the intent and report which prerequisite it is waiting on.
   func requestDownload(item: WorkshopItem?, rememberSession: Bool, bridge: BridgeStore) {
+    startDownloadLifecycle(bridge: bridge)
     let id = item?.id ?? Self.sceneAssetsRequestID
     if let job = downloader.download(for: item?.id), job.isPending {
       showDownload(job)
@@ -185,6 +205,7 @@ final class WorkshopStore {
   /// place before the first download. Rides the same ladder as a download: SteamCMD must be set
   /// up first, and a running sign-in is shown rather than started twice.
   func requestSignIn(account: String, rememberSession: Bool, bridge: BridgeStore) {
+    startDownloadLifecycle(bridge: bridge)
     if let job = downloader.signIn, job.isPending {
       showDownload(job)
       return
@@ -204,6 +225,7 @@ final class WorkshopStore {
     id: String, account: String, rememberSession: Bool,
     includeResources: Bool, bridge: BridgeStore
   ) -> Bool {
+    startDownloadLifecycle(bridge: bridge)
     let existing = downloadRequests.first { $0.id == id }
     let itemless = id == Self.sceneAssetsRequestID || id == Self.signInRequestID
     let item = itemless ? nil : existing?.item ?? workshopItem(id: id)
@@ -219,7 +241,15 @@ final class WorkshopStore {
   }
 
   func removeDownloadRequest(id: String) {
+    guard downloadRequests.contains(where: { $0.id == id }) else { return }
     downloadRequests.removeAll { $0.id == id }
+    downloader.discardRetainedCheckpoint(id: id)
+    persistDownloadRequests()
+  }
+
+  func cancelDownload(id: String) {
+    removeDownloadRequest(id: id)
+    if let job = downloader.downloads.first(where: { $0.id == id }) { downloader.cancel(job) }
   }
 
   /// "Change account" stops exactly this job and keeps its wallpaper as an intent with no
@@ -240,10 +270,35 @@ final class WorkshopStore {
         refused: true))
   }
 
-  /// Driven by the control panel's observation loop: prerequisites change outside any user
-  /// action, so a request that becomes startable continues without a second click.
+  /// The app owns this observation for its whole lifetime, including while the panel is closed.
+  func startDownloadLifecycle(bridge: BridgeStore) {
+    downloadBridge = bridge
+    guard !observingDownloads else { return }
+    observingDownloads = true
+    observeDownloadPrerequisites()
+  }
+
+  private func observeDownloadPrerequisites() {
+    withObservationTracking {
+      _ = steamCMDSetup.isBusy
+      _ = steamCMDSetup.selectedRuntime
+      _ = sceneAssetsReady
+      _ = username
+      _ = downloader.savedAccount
+      _ = downloader.isRunning
+      _ = downloadRequests
+    } onChange: { [weak self] in
+      Task { @MainActor [weak self] in
+        guard let self, let bridge = self.downloadBridge else { return }
+        self.resumeDownloadRequests(bridge: bridge)
+        self.observeDownloadPrerequisites()
+      }
+    }
+  }
+
+  /// Prerequisites can complete with no panel attached.
   func resumeDownloadRequests(bridge: BridgeStore) {
-    for request in downloadRequests {
+    for request in downloadRequests where !request.isPaused {
       var request = request
       let suggestion = suggestedAccount
       // A rejected account must not be refilled from the saved or typed suggestion.
@@ -296,20 +351,56 @@ final class WorkshopStore {
     item.kind == .scene && !sceneAssetsReady
   }
 
-  private func upsert(_ request: WorkshopDownloadRequest) {
+  @discardableResult
+  private func persistDownloadRequests() -> Bool {
+    do {
+      let requests = downloadRequests.filter { $0.id != Self.signInRequestID }
+      try FileManager.default.createDirectory(at: requestFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try JSONEncoder().encode(requests).write(to: requestFile, options: .atomic)
+      downloadPersistenceError = nil
+      return true
+    } catch {
+      downloadPersistenceError = String(localized: "Could not save the download queue: \(error.localizedDescription)")
+      AppLog.warn("Could not save pending Workshop downloads: \(error.localizedDescription)")
+      return false
+    }
+  }
+
+  @discardableResult
+  func resumeDownloadRequest(id: String, bridge: BridgeStore) -> Bool {
+    guard var request = downloadRequests.first(where: { $0.id == id && $0.isPaused }) else { return false }
+    request.isPaused = false
+    resolve(request, bridge: bridge)
+    return true
+  }
+
+  func resumeDownload(_ job: WorkshopDownload, bridge: BridgeStore) {
+    guard job.isPaused, !job.isPending else { return }
+    _ = continueDownload(id: job.id, account: job.account, rememberSession: job.rememberSession,
+                         includeResources: true, bridge: bridge)
+  }
+
+  @discardableResult
+  private func upsert(_ request: WorkshopDownloadRequest) -> Bool {
     if let index = downloadRequests.firstIndex(where: { $0.id == request.id }) {
       downloadRequests[index] = request
     } else {
       downloadRequests.append(request)
     }
+    return persistDownloadRequests()
   }
 
   private func resolve(_ request: WorkshopDownloadRequest, bridge: BridgeStore) {
     guard stage(for: request) == .ready, let runtime = steamCMDSetup.selectedRuntime else {
-      upsert(request)
+      let previous = downloadRequests
+      if upsert(request) {
+        downloader.transferPausedToRequest(id: request.id)
+      } else if downloader.downloads.contains(where: { $0.id == request.id && $0.isPaused }) {
+        // Keep the durable paused owner when its replacement request could not be saved.
+        downloadRequests = previous
+      }
       return
     }
-    downloadRequests.removeAll { $0.id == request.id }
     if request.id == Self.signInRequestID {
       downloader.signIn(
         username: request.account, executable: runtime.executableURL,
@@ -343,6 +434,9 @@ final class WorkshopStore {
     }
     let started = request.id == Self.signInRequestID ? downloader.signIn : downloader.download(for: request.item?.id)
     if let job = started, job.isPending {
+      // Persist the started job before deleting its retained intent so a crash cannot lose both.
+      downloadRequests.removeAll { $0.id == request.id }
+      persistDownloadRequests()
       selectedDownloadID = job.id
     } else if downloader.errorMessage != nil {
       // The downloader refused the inputs; keep the intent so the user can correct them.

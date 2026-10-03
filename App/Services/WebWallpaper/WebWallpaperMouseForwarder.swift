@@ -84,7 +84,13 @@ struct WebWallpaperMouseRouting {
 /// events and replays them into the page under the pointer. Nothing is
 /// consumed, so no Accessibility or Input Monitoring grant is involved.
 @MainActor
-final class WebWallpaperMouseForwarder {
+protocol WebWallpaperPointerMonitoring: AnyObject {
+    var isActive: Bool { get }
+    func setActive(_ active: Bool)
+}
+
+@MainActor
+final class WebWallpaperMouseForwarder: WebWallpaperPointerMonitoring {
     private static let mask: NSEvent.EventTypeMask = [
         .mouseMoved, .scrollWheel,
         .leftMouseDown, .leftMouseUp, .leftMouseDragged,

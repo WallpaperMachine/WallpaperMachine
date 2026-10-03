@@ -132,7 +132,25 @@ final class PixivDownloadQueueTests: XCTestCase {
         XCTAssertTrue(queue.downloads.isEmpty)
     }
 
-    func testShutdownCancelsEveryDownloadAndLeavesNoStaging() async throws {
+    func testPersistenceFailureDoesNotStartATransferAndCanBeRetried() async throws {
+        let queueFile = root.appendingPathComponent("Downloads/Pixiv/queue.json")
+        try FileManager.default.createDirectory(at: queueFile, withIntermediateDirectories: true)
+        let transport = PixivFixtureTransport { url in
+            url.host == "www.pixiv.net" ? PixivFixtures.pages(workID: 24, count: 1) : PixivFixtures.imageBytes("jpg")
+        }
+        let queue = queue(transport)
+        let job = queue.enqueue(work(24), page: 0)
+        XCTAssertFalse(job.isPending)
+        XCTAssertNotNil(job.errorMessage)
+        XCTAssertNotNil(queue.persistenceError)
+        XCTAssertTrue(transport.requests.isEmpty)
+        try FileManager.default.removeItem(at: queueFile)
+        XCTAssertTrue(queue.retry(job.id))
+        try await waitUntil { queue.download(for: job.id)?.status == .finished }
+        XCTAssertNil(queue.persistenceError)
+    }
+
+    func testShutdownPausesEveryDownloadAndRestoresQueueOrder() async throws {
         let gate = PixivGate()
         let queue = queue(PixivGatedTransport(gate: gate))
         let jobs = [21, 22, 23].map { queue.enqueue(work($0), page: 0) }
@@ -140,8 +158,20 @@ final class PixivDownloadQueueTests: XCTestCase {
 
         await queue.shutdown()
 
-        XCTAssertEqual(jobs.map(\.status), [.cancelled, .cancelled, .cancelled])
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+        XCTAssertEqual(jobs.map(\.status), [.paused, .paused, .paused])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.path))
+        let restored = self.queue(PixivFixtureTransport { _ in PixivFixtures.imageBytes("jpg") })
+        XCTAssertEqual(restored.downloads.map(\.id), jobs.map(\.id))
+        XCTAssertEqual(restored.downloads.map(\.status), [.paused, .paused, .paused])
+        XCTAssertFalse(restored.isRunning)
+        restored.clearFinished()
+        XCTAssertEqual(restored.downloads.count, 3, "clearing history keeps paused work")
+        XCTAssertTrue(restored.resume(jobs[0].id))
+        try await waitUntil { restored.downloads[0].status == .finished }
+        XCTAssertEqual(restored.downloads[1].status, .paused)
+        restored.cancel(jobs[1].id)
+        let afterCancel = self.queue(PixivFixtureTransport { _ in PixivFixtures.imageBytes("jpg") })
+        XCTAssertEqual(afterCancel.downloads.map(\.id), [jobs[2].id])
     }
 }
 

@@ -20,6 +20,7 @@ pub struct ShaderCacheInputs {
     cache_root: PathBuf,
     project_json_path: PathBuf,
     scene_pkg_path: PathBuf,
+    unpacked_source: Option<(PathBuf, PathBuf)>,
     property_override_json: Option<String>,
     force_refresh: bool,
 }
@@ -39,6 +40,7 @@ impl ShaderCacheInputs {
             cache_root: cache_root.into(),
             project_json_path: None,
             scene_pkg_path: None,
+            unpacked_source: None,
             property_override_json: None,
             force_refresh: false,
         }
@@ -58,6 +60,7 @@ pub struct ShaderCacheInputsBuilder {
     cache_root: PathBuf,
     project_json_path: Option<PathBuf>,
     scene_pkg_path: Option<PathBuf>,
+    unpacked_source: Option<(PathBuf, PathBuf)>,
     property_override_json: Option<String>,
     force_refresh: bool,
 }
@@ -74,6 +77,13 @@ impl ShaderCacheInputsBuilder {
     #[must_use]
     pub fn scene_pkg_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.scene_pkg_path = Some(path.into());
+        self
+    }
+
+    /// Sets the physical entry and resource root used when the package is absent.
+    #[must_use]
+    pub fn unpacked_source(mut self, entry: impl Into<PathBuf>, root: impl Into<PathBuf>) -> Self {
+        self.unpacked_source = Some((entry.into(), root.into()));
         self
     }
 
@@ -147,6 +157,7 @@ impl ShaderCacheInputsBuilder {
             cache_root: self.cache_root,
             project_json_path,
             scene_pkg_path,
+            unpacked_source: self.unpacked_source,
             property_override_json: self.property_override_json,
             force_refresh: self.force_refresh,
         })
@@ -174,7 +185,7 @@ impl ShaderCacheDecision {
         let inputs = inputs.as_ref();
         let next_manifest = json!({
             "project_mtime": modified_timestamp(&inputs.project_json_path, "project.json")?,
-            "pkg_mtime": modified_timestamp(&inputs.scene_pkg_path, "scene.pkg")?,
+            "source": source_manifest(inputs)?,
             "property_override_json": inputs.property_override_json,
         });
         let scene_cache_path = inputs.cache_root.join(&inputs.scene_id);
@@ -223,6 +234,51 @@ impl ShaderCacheDecision {
     pub fn purged_cache(&self) -> bool {
         self.purged_cache
     }
+}
+
+fn source_manifest(inputs: &ShaderCacheInputs) -> Result<Value, crate::EngineError> {
+    match fs::metadata(&inputs.scene_pkg_path) {
+        Ok(metadata) => Ok(json!({
+            "kind": "package",
+            "mtime": modified_timestamp(&inputs.scene_pkg_path, "scene package")?,
+            "size": metadata.len(),
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let Some((entry, root)) = &inputs.unpacked_source else {
+                return Err(crate::EngineError::Render(format!("failed to stat scene package: {error}")));
+            };
+            let entry_mtime = modified_timestamp(entry, "unpacked scene entry")?;
+            fs::create_dir_all(&inputs.cache_root).map_err(cache_source_error)?;
+            let cache = fs::canonicalize(&inputs.cache_root).map_err(cache_source_error)?;
+            let root = fs::canonicalize(root).map_err(cache_source_error)?;
+            let mut files = Vec::new();
+            let mut directories = vec![root.clone()];
+            while let Some(directory) = directories.pop() {
+                for item in fs::read_dir(&directory).map_err(cache_source_error)? {
+                    let item = item.map_err(cache_source_error)?;
+                    let path = item.path();
+                    if path.starts_with(&cache) { continue; }
+                    let kind = item.file_type().map_err(cache_source_error)?;
+                    if kind.is_dir() {
+                        directories.push(path);
+                    } else if kind.is_file() || kind.is_symlink() {
+                        let metadata = fs::metadata(&path).map_err(cache_source_error)?;
+                        if metadata.is_file() {
+                            files.push((path.strip_prefix(&root).unwrap().to_string_lossy().into_owned(),
+                                modified_timestamp(&path, "unpacked scene resource")?, metadata.len()));
+                        }
+                    }
+                }
+            }
+            files.sort();
+            Ok(json!({"kind": "unpacked", "entry": entry, "entry_mtime": entry_mtime, "files": files}))
+        }
+        Err(error) => Err(cache_source_error(error)),
+    }
+}
+
+fn cache_source_error(error: std::io::Error) -> crate::EngineError {
+    crate::EngineError::Render(format!("failed to inspect scene cache source: {error}"))
 }
 
 fn modified_timestamp(path: &Path, label: &str) -> Result<String, crate::EngineError> {

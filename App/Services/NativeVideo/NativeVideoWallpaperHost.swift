@@ -62,6 +62,8 @@ final class NativeVideoWallpaperHost {
 
     var onError: (@MainActor (String) -> Void)?
     var onSurfacesChanged: (@MainActor () -> Void)?
+    var onStateChanged: (@MainActor (HostWallpaperState) -> Void)?
+    private var states: [UInt32: HostWallpaperState] = [:]
 
     init(
         fetch: @escaping @MainActor () async throws -> [BridgeNativeVideoWallpaper],
@@ -115,7 +117,7 @@ final class NativeVideoWallpaperHost {
     func start() {
         guard posterObserver == nil else { return }
         posterObserver = frameCenter.addObserver(
-            forName: Notification.Name("WallpaperMachine.requestDesktopPoster"),
+            forName: DesktopPosterNotification.request,
             object: nil, queue: .main
         ) { [weak self] notification in
             MainActor.assumeIsolated { self?.answerPosterRequest(notification) }
@@ -159,6 +161,11 @@ final class NativeVideoWallpaperHost {
         for wallpaper in wallpapers where screenFrames[wallpaper.displayId] != nil {
             wanted[wallpaper.displayId] = wallpaper
         }
+        for (displayID, var state) in states where wanted[displayID] == nil {
+            state.phase = .closed
+            onStateChanged?(state)
+            states.removeValue(forKey: displayID)
+        }
 
         // Close first. A wallpaper that moved to another backend, or to another
         // display, must stop playing here before anything else starts, so the
@@ -191,6 +198,7 @@ final class NativeVideoWallpaperHost {
             // silently ignoring an offer is how a display ends up with no
             // backend at all.
             if let surface = surfaces[displayID] {
+                if let frame = screenFrames[displayID] { surface.setScreenFrame(frame) }
                 update(surface: surface, with: wallpaper, displayID: displayID)
                 continue
             }
@@ -203,6 +211,7 @@ final class NativeVideoWallpaperHost {
     private func open(
         wallpaper: BridgeNativeVideoWallpaper, displayID: UInt32, frame: NSRect
     ) async {
+        recordState(wallpaper, phase: .loading)
         let url = URL(fileURLWithPath: wallpaper.mediaPath)
         let load = AppLog.beginLoad("native video", project: wallpaper.mediaPath, detail: """
             wallpaper \(wallpaper.wallpaperId) “\(wallpaper.title)” media \(url.lastPathComponent), \
@@ -213,6 +222,8 @@ final class NativeVideoWallpaperHost {
         // Decided before a window exists, so a refusal never shows a black
         // rectangle on the desktop.
         if let refusal = await admission(for: url, wallpaper: wallpaper, load: load) {
+            guard !stopped else { return }
+            recordState(wallpaper, phase: .failed, message: refusal.reason)
             await handOff(wallpaper: wallpaper, refusal: refusal, load: load)
             return
         }
@@ -231,6 +242,11 @@ final class NativeVideoWallpaperHost {
             guard let surface else { return }
             self?.handlePreparationFailure(
                 displayID: displayID, surface: surface, detail: detail)
+        }
+        surface.onReadyForDisplay = { [weak self, weak surface] in
+            guard let self, let surface, self.surfaces[displayID] === surface,
+                  let current = self.descriptors[displayID] else { return }
+            self.recordState(current, phase: .ready)
         }
         // Installing the callback can deliver a failure the player was already
         // holding, and that runs the hand-off synchronously — closing this
@@ -263,6 +279,7 @@ final class NativeVideoWallpaperHost {
         // Stop before handing over, so the clip is never being decoded by both
         // backends at once.
         close(displayID: displayID, surface: surface)
+        recordState(wallpaper, phase: .failed, message: refusal.reason)
         admissionCache[wallpaper.admissionKey] = refusal
         Task { @MainActor [weak self] in
             await self?.handOff(wallpaper: wallpaper, refusal: refusal, load: load)
@@ -348,9 +365,26 @@ final class NativeVideoWallpaperHost {
         // and this display's suspension, as the activation rules combined them.
         surface.setUserPaused(wallpaper.paused)
         surface.setPresentationSuspended(suspended || suspendedDisplays.contains(displayID))
+        if surface.isReadyForDisplay { recordState(wallpaper, phase: .ready) }
+        else if let prior = states[displayID], prior.startupRevision != wallpaper.startupRevision {
+            recordState(wallpaper, phase: prior.phase, message: prior.message)
+        }
+    }
+
+    private func recordState(
+        _ wallpaper: BridgeNativeVideoWallpaper, phase: HostWallpaperState.Phase, message: String? = nil
+    ) {
+        let state = HostWallpaperState(kind: .nativeVideo, displayID: wallpaper.displayId,
+            wallpaperID: wallpaper.wallpaperId, startupRevision: wallpaper.startupRevision,
+            nativeAdmissionKey: wallpaper.admissionKey, phase: phase, message: message)
+        guard states[wallpaper.displayId] != state else { return }
+        states[wallpaper.displayId] = state
+        onStateChanged?(state)
     }
 
     private func close(displayID: UInt32, surface: NativeVideoSurface) {
+        if let wallpaper = descriptors[displayID] { recordState(wallpaper, phase: .closed) }
+        states.removeValue(forKey: displayID)
         surface.stop()
         surfaces.removeValue(forKey: displayID)
         descriptors.removeValue(forKey: displayID)
@@ -394,8 +428,8 @@ final class NativeVideoWallpaperHost {
     /// Answers a desktop poster request from the player that is already
     /// running. A second player would decode the same clip twice.
     private func answerPosterRequest(_ notification: Notification) {
-        guard let displayID = notification.userInfo?["displayID"] as? UInt32,
-            let surface = surfaces[displayID]
+        guard let layer = notification.object as? CALayer,
+            let (displayID, surface) = surfaces.first(where: { $0.value.posterLayer === layer })
         else { return }
         Task { @MainActor [weak self] in
             let image = await surface.posterImage()
@@ -403,10 +437,9 @@ final class NativeVideoWallpaperHost {
             // The surface that answered must still be this display's surface.
             // A poster produced by a wallpaper that has since been replaced is
             // a frame of the wrong clip, and publishing it would show it.
-            guard self.surfaces[displayID] === surface else { return }
-            self.frameCenter.post(
-                name: Notification.Name("WallpaperMachine.desktopPoster"), object: nil,
-                userInfo: ["displayID": displayID, "image": image])
+            guard self.surfaces[displayID] === surface, surface.posterLayer === layer,
+                  let frame = DesktopPosterFrame.rgba(image) else { return }
+            frame.publish(for: layer, to: self.frameCenter)
         }
     }
 

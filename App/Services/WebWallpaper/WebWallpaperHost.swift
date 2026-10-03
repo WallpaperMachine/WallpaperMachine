@@ -8,11 +8,13 @@ import WebKit
 @MainActor
 protocol WebWallpaperAssetSource: AnyObject {
     var onDirectoryChanged: ((String, [UserAssetImport], [UserAssetImport]) -> Void)? { get set }
-    func importFile(at url: URL, propertyId: String, filter: UserAssetFilter) throws -> UserAssetImport
-    func importDirectory(at url: URL, propertyId: String, filter: UserAssetFilter, limit: Int) throws -> [UserAssetImport]
+    func importFile(at url: URL, propertyId: String, filter: UserAssetFilter) async throws -> UserAssetImport
+    func importDirectory(at url: URL, propertyId: String, filter: UserAssetFilter, limit: Int) async throws -> [UserAssetImport]
     func randomFile(propertyId: String) -> UserAssetImport?
     func isTruncated(propertyId: String) -> Bool
-    func clear(propertyId: String)
+    func clear(propertyId: String) async throws
+    func cancelImport(propertyId: String)
+    func cancelImports()
 }
 
 extension UserAssetStore: WebWallpaperAssetSource {}
@@ -27,10 +29,11 @@ final class WebWallpaperHost {
     private let screens: @MainActor () -> [(id: UInt32, frame: NSRect)]
     private let frameCenter: NotificationCenter
     private let imagePlacement: StillImagePlacementStore
-    private var windows: [UInt32: WebWallpaperWindow] = [:]
-    private lazy var mouse = WebWallpaperMouseForwarder { [weak self] in
-        guard let self else { return [] }
-        return Array(self.windows.values)
+    private var windows: [UInt32: any WebWallpaperSurface] = [:]
+    private let makeSurface: @MainActor (NSRect, WebWallpaperPage) -> any WebWallpaperSurface
+    private let pointerMonitorOverride: (any WebWallpaperPointerMonitoring)?
+    private lazy var mouse: any WebWallpaperPointerMonitoring = pointerMonitorOverride ?? WebWallpaperMouseForwarder { [weak self] in
+        self?.windows.values.compactMap { $0 as? WebWallpaperWindow } ?? []
     }
     private var descriptors: [UInt32: BridgeWebWallpaper] = [:]
     private var posterObserver: NSObjectProtocol?
@@ -38,6 +41,7 @@ final class WebWallpaperHost {
     private var placementDirtyDisplays = Set<UInt32>()
     private var reconcileInFlight = false
     private var reconcileRequested = false
+    private var applyGeneration: UInt64 = 0
     private var suspended = false
     /// Displays suspended on their own, kept apart from the global flag so one
     /// occluded screen cannot suspend a page on a visible screen.
@@ -52,6 +56,8 @@ final class WebWallpaperHost {
     /// Fired after windows open, close, or finish loading their page, so the
     /// presentation policy and the desktop poster sync re-read the desktop.
     var onSurfacesChanged: (@MainActor () -> Void)?
+    var onStateChanged: (@MainActor (HostWallpaperState) -> Void)?
+    private var states: [UInt32: HostWallpaperState] = [:]
     private var surfaceChangePending = false
     /// One pump for every display: the audio analysis is process-global.
     private let audioPump: WebWallpaperAudioPump
@@ -60,6 +66,18 @@ final class WebWallpaperHost {
     /// rapid transitions cannot land out of order and leave the tap open.
     private var audioSubscriptionTask: Task<Void, Never>?
     private var audioSubscriptions: [UInt32: Bool] = [:]
+    private var audioSubscriptionTokens: [UInt32: UUID] = [:]
+    private var confirmedAudioDisplays = Set<UInt32>()
+    private var failedAudioDisplays = Set<UInt32>()
+    private var audioDeliveredAt: [UInt32: TimeInterval] = [:]
+    private var audioExpiryTask: Task<Void, Never>?
+    private let audioClock: @MainActor () -> TimeInterval
+    private let contentRevision: @MainActor () -> UInt64
+    private let projectRevisions = WallpaperProjectRevision()
+    private var loadedProjectRevisions: [UInt32: String] = [:]
+    var onAssetsChanged: (@MainActor () -> Void)?
+    var onDeliveryStateChanged: (@MainActor () -> Void)?
+    static let audioDeliveryLifetime: TimeInterval = 2
     private let mediaRelay: WebWallpaperMediaRelay
     /// Held, not derived from a temporary. `ObjectIdentifier` is an address,
     /// and an address freed the moment it was taken can be handed to the next
@@ -76,6 +94,9 @@ final class WebWallpaperHost {
     /// survives the project being deleted and downloaded again.
     private let makeAssetStore: (@MainActor (URL, String) -> any WebWallpaperAssetSource)?
     private var assetStores: [String: any WebWallpaperAssetSource] = [:]
+    private var assetOwners: [String: String] = [:]
+    private var assetRequests: [String: [String: UUID]] = [:]
+    private var invalidatedAssets: [String: Set<String>] = [:]
     /// What each `file`/`directory` property was last staged from, so a
     /// reconcile that changed nothing does not re-link a whole directory.
     private var stagedAssets: [String: [String: StagedAsset]] = [:]
@@ -99,9 +120,19 @@ final class WebWallpaperHost {
         mediaRelay: WebWallpaperMediaRelay? = nil,
         mediaProvider: (any SystemMediaProvider)? = nil,
         assetStore: (@MainActor (URL, String) -> any WebWallpaperAssetSource)? = nil,
-        imagePlacement: StillImagePlacementStore? = nil
+        imagePlacement: StillImagePlacementStore? = nil,
+        pointerMonitor: (any WebWallpaperPointerMonitoring)? = nil,
+        audioClock: @escaping @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        contentRevision: @escaping @MainActor () -> UInt64 = { 0 },
+        makeSurface: @escaping @MainActor (NSRect, WebWallpaperPage) -> any WebWallpaperSurface = {
+            WebWallpaperWindow(frame: $0, page: $1)
+        }
     ) {
         self.fetch = fetch
+        self.makeSurface = makeSurface
+        self.pointerMonitorOverride = pointerMonitor
+        self.audioClock = audioClock
+        self.contentRevision = contentRevision
         self.screens = screens ?? { Self.systemScreens() }
         self.frameCenter = frameCenter
         self.counters = counters ?? .shared
@@ -118,7 +149,8 @@ final class WebWallpaperHost {
         }
     }
 
-    convenience init(bridge: WallpaperBridge, mediaRelay: WebWallpaperMediaRelay? = nil) {
+    convenience init(bridge: WallpaperBridge, mediaRelay: WebWallpaperMediaRelay? = nil,
+                     contentRevision: @escaping @MainActor () -> UInt64 = { 0 }) {
         self.init(
             fetch: { try await bridge.webWallpapers() },
             audioPump: WebWallpaperAudioPump(read: { try bridge.webAudioSpectrum() }),
@@ -128,7 +160,7 @@ final class WebWallpaperHost {
             },
             mediaRelay: mediaRelay,
             mediaProvider: mediaRelay == nil ? AdapterSystemMediaProvider() : nil,
-            assetStore: { UserAssetStore(projectURL: $0, wallpaperId: $1) })
+            assetStore: { UserAssetStore(projectURL: $0, wallpaperId: $1) }, contentRevision: contentRevision)
     }
 
     static func systemScreens() -> [(id: UInt32, frame: NSRect)] {
@@ -149,7 +181,7 @@ final class WebWallpaperHost {
     /// `wallpaperRegisterAudioListener` reacts to nothing however the setting
     /// is left, and the control panel has to be able to say which it is.
     var audioSubscribedDisplayIDs: Set<UInt32> {
-        Set(audioSubscriptions.filter(\.value).map(\.key))
+        confirmedAudioDisplays
     }
 
     /// Whether a system media provider can supply anything at all, and why not
@@ -163,14 +195,40 @@ final class WebWallpaperHost {
     /// however the toggle is set.
     struct DeliveryStatus: Equatable, Sendable {
         var audioSubscribedDisplayIDs: Set<UInt32> = []
+        var audioStates: [String: AudioDeliveryState] = [:]
         var audioOutputControls: [String: WebWallpaperAudioOutput.Capabilities] = [:]
         /// Nil when a provider can supply media; otherwise why it cannot.
         var mediaUnavailableReason: String?
     }
 
+    enum AudioDeliveryState: String, Sendable {
+        case idle, failed, connecting, subscribed, delivering
+        var priority: Int {
+            switch self { case .idle: 0; case .failed: 1; case .connecting: 2; case .subscribed: 3; case .delivering: 4 }
+        }
+    }
+
+    private var audioStates: [String: AudioDeliveryState] {
+        var result: [String: AudioDeliveryState] = [:]
+        for (displayID, wallpaper) in descriptors {
+            let state: AudioDeliveryState
+            if let delivered = audioDeliveredAt[displayID], audioClock() - delivered < Self.audioDeliveryLifetime {
+                state = .delivering
+            } else if confirmedAudioDisplays.contains(displayID) { state = .subscribed }
+            else if failedAudioDisplays.contains(displayID) { state = .failed }
+            else if audioSubscriptions[displayID] == true { state = .connecting }
+            else { state = .idle }
+            if result[wallpaper.wallpaperId].map({ $0.priority < state.priority }) ?? true {
+                result[wallpaper.wallpaperId] = state
+            }
+        }
+        return result
+    }
+
     var deliveryStatus: DeliveryStatus {
         DeliveryStatus(
             audioSubscribedDisplayIDs: audioSubscribedDisplayIDs,
+            audioStates: audioStates,
             audioOutputControls: audioOutputControls,
             mediaUnavailableReason: {
                 switch systemMediaAvailability {
@@ -198,7 +256,7 @@ final class WebWallpaperHost {
     func start() {
         guard posterObserver == nil else { return }
         posterObserver = frameCenter.addObserver(
-            forName: Notification.Name("WallpaperMachine.requestDesktopPoster"), object: nil, queue: .main
+            forName: DesktopPosterNotification.request, object: nil, queue: .main
         ) { [weak self] notification in
             MainActor.assumeIsolated { self?.answerPosterRequest(notification) }
         }
@@ -248,7 +306,7 @@ final class WebWallpaperHost {
                 }
                 guard !self.reconcileRequested else { return }
                 guard !self.stopped else { return }
-                self.apply(wallpapers)
+                await self.apply(wallpapers)
             } catch {
                 AppLog.error("web wallpapers could not be read: \(error.localizedDescription)")
                 self.onError?(error.localizedDescription)
@@ -256,11 +314,18 @@ final class WebWallpaperHost {
         }
     }
 
-    func apply(_ wallpapers: [BridgeWebWallpaper]) {
+    func apply(_ wallpapers: [BridgeWebWallpaper]) async {
+        applyGeneration &+= 1
+        let generation = applyGeneration
         let screens = Dictionary(screens().map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
         var next: [UInt32: BridgeWebWallpaper] = [:]
         for wallpaper in wallpapers where screens[wallpaper.displayId] != nil {
             next[wallpaper.displayId] = wallpaper
+        }
+        for (displayID, var state) in states where next[displayID] == nil {
+            state.phase = .closed
+            onStateChanged?(state)
+            states.removeValue(forKey: displayID)
         }
         var changed = false
         for (displayID, window) in windows where next[displayID] == nil {
@@ -288,14 +353,28 @@ final class WebWallpaperHost {
                     descriptors[displayID] = nil
                     changed = true
                 }
+                recordState(wallpaper, phase: .failed,
+                    message: String(localized: "The wallpaper entry file is outside its project folder."))
                 continue
             }
-            if let window = windows[displayID], window.page.canonicalEntryURL == canonicalEntry {
+            let projectRevision: String
+            do {
+                projectRevision = try await projectRevisions.fingerprint(projectURL, revision: contentRevision())
+            } catch {
+                guard !stopped, generation == applyGeneration else { return }
+                recordState(wallpaper, phase: .failed, message: error.localizedDescription)
+                onError?(error.localizedDescription)
+                continue
+            }
+            guard !stopped, generation == applyGeneration else { return }
+            if let window = windows[displayID], window.page.canonicalEntryURL == canonicalEntry,
+               loadedProjectRevisions[displayID] == projectRevision {
                 if window.frame != frame {
-                    window.setFrame(frame, display: true)
+                    window.setScreenFrame(frame)
                     changed = true
                 }
-                push(wallpaper, into: window.page, previous: descriptors[displayID])
+                await push(wallpaper, into: window.page, previous: descriptors[displayID])
+                guard !stopped, generation == applyGeneration else { return }
             } else {
                 if let window = windows[displayID] { close(window) }
                 surfaceGeneration += 1
@@ -310,15 +389,26 @@ final class WebWallpaperHost {
                     """)
                 page.logLoad = load
                 counters.record(.webPageCreated, for: surface)
-                page.onFailure = { [weak self] message in
-                    AppLog.error("web wallpaper \(wallpaper.wallpaperId) on display \(displayID): \(message)", load: load)
-                    self?.onError?(String(localized: "Web wallpaper “\(wallpaper.title)” could not load: \(message)"))
+                page.onLoading = { [weak self, weak page] in
+                    guard let self, let page, self.windows[displayID]?.page === page,
+                          let current = self.descriptors[displayID] else { return }
+                    self.recordState(current, phase: .loading)
                 }
-                page.onLoaded = { [weak self] in
-                    self?.replayDirectories(displayID: displayID)
-                    self?.scheduleSurfaceChange()
-                    self?.refreshAudioOutputs()
-                    self?.refreshPointerMonitor()
+                page.onFailure = { [weak self, weak page] message in
+                    guard let self, let page, self.windows[displayID]?.page === page,
+                          let current = self.descriptors[displayID] else { return }
+                    AppLog.error("web wallpaper \(wallpaper.wallpaperId) on display \(displayID): \(message)", load: load)
+                    self.recordState(current, phase: .failed, message: message)
+                    self.onError?(String(localized: "Web wallpaper “\(wallpaper.title)” could not load: \(message)"))
+                }
+                page.onLoaded = { [weak self, weak page] in
+                    guard let self, let page, self.windows[displayID]?.page === page,
+                          let current = self.descriptors[displayID] else { return }
+                    self.recordState(current, phase: .ready)
+                    self.replayDirectories(displayID: displayID)
+                    self.scheduleSurfaceChange()
+                    self.refreshAudioOutputs()
+                    self.refreshPointerMonitor()
                 }
                 page.onAudioDemandChanged = { [weak self, weak page] subscribed in
                     guard let self, let page else { return }
@@ -332,12 +422,15 @@ final class WebWallpaperHost {
                     guard let self, let page else { return }
                     self.answerRandomFile(requestId: requestId, propertyId: propertyId, page: page)
                 }
-                let window = WebWallpaperWindow(frame: frame, page: page)
+                let window = makeSurface(frame, page)
                 windows[displayID] = window
-                push(wallpaper, into: page, previous: nil)
+                loadedProjectRevisions[displayID] = projectRevision
+                recordState(wallpaper, phase: .loading)
+                await push(wallpaper, into: page, previous: nil)
+                guard !stopped, generation == applyGeneration, windows[displayID]?.page === page else { return }
                 page.applyAudioOutput(volume: wallpaper.volume, muted: true)
                 page.load()
-                window.orderFrontRegardless()
+                window.present()
                 AppLog.info("web wallpaper \(wallpaper.wallpaperId) opened on display \(displayID)", load: load)
                 changed = true
             }
@@ -364,12 +457,14 @@ final class WebWallpaperHost {
         }
     }
 
-    private func push(_ wallpaper: BridgeWebWallpaper, into page: WebWallpaperPage, previous: BridgeWebWallpaper?) {
+    private func push(_ wallpaper: BridgeWebWallpaper, into page: WebWallpaperPage, previous: BridgeWebWallpaper?) async {
         // Recorded before anything is pushed: the page reports its own demand
         // back synchronously, and answering it from a stale descriptor would
         // tell the page the previous wallpaper's settings.
         descriptors[wallpaper.displayId] = wallpaper
-        let staged = stageAssets(for: wallpaper)
+        let staged = await stageAssets(for: wallpaper)
+        guard !stopped, windows[wallpaper.displayId]?.page === page,
+              descriptors[wallpaper.displayId] == wallpaper else { return }
         page.setAudioResponseEnabled(wallpaper.audioResponseEnabled)
         page.setMediaIntegrationEnabled(wallpaper.mediaIntegrationEnabled)
         if previous?.propertiesJson != wallpaper.propertiesJson || staged.restaged
@@ -392,6 +487,28 @@ final class WebWallpaperHost {
             page.setPaused(wallpaper.paused)
         }
         page.setPresentationSuspended(isSuspended(displayID: wallpaper.displayId))
+        if page.isLoaded { recordState(wallpaper, phase: .ready) }
+        else if let prior = states[wallpaper.displayId], prior.startupRevision != wallpaper.startupRevision {
+            recordState(wallpaper, phase: prior.phase, message: prior.message)
+        }
+    }
+
+    private func recordState(
+        _ wallpaper: BridgeWebWallpaper, phase: HostWallpaperState.Phase, message: String? = nil
+    ) {
+        let state = HostWallpaperState(kind: .web, displayID: wallpaper.displayId,
+            wallpaperID: wallpaper.wallpaperId, startupRevision: wallpaper.startupRevision,
+            nativeAdmissionKey: nil, phase: phase, message: message)
+        guard states[wallpaper.displayId] != state else { return }
+        states[wallpaper.displayId] = state
+        onStateChanged?(state)
+    }
+
+    func retry(wallpaperID: String, displayID: UInt32) {
+        guard !stopped, let wallpaper = descriptors[displayID], wallpaper.wallpaperId == wallpaperID,
+              let page = windows[displayID]?.page, states[displayID]?.phase == .failed else { return }
+        recordState(wallpaper, phase: .loading)
+        page.load()
     }
 
     private func refreshImagePlacement(wallpaperID: String, displayKey: String?, reloadUpgradedPage: Bool) {
@@ -399,8 +516,12 @@ final class WebWallpaperHost {
         where wallpaper.wallpaperId == wallpaperID && (displayKey == nil || wallpaper.displayKey == displayKey) {
             guard let page = windows[displayID]?.page else { continue }
             placementDirtyDisplays.insert(displayID)
-            push(wallpaper, into: page, previous: wallpaper)
-            if reloadUpgradedPage { page.load() }
+            Task { @MainActor [weak self, weak page] in
+                guard let self, let page else { return }
+                await self.push(wallpaper, into: page, previous: wallpaper)
+                guard self.windows[displayID]?.page === page else { return }
+                if reloadUpgradedPage { page.load() }
+            }
         }
         refreshAudioOutputs()
         scheduleSurfaceChange()
@@ -459,6 +580,8 @@ final class WebWallpaperHost {
 
     func shutdown() {
         stopped = true
+        applyGeneration &+= 1
+        for store in assetStores.values { store.cancelImports() }
         if let posterObserver {
             frameCenter.removeObserver(posterObserver)
             self.posterObserver = nil
@@ -481,7 +604,14 @@ final class WebWallpaperHost {
             flushAudioSubscription(wallpaperId: wallpaperId, displayID: displayID, subscribed: false)
         }
         audioSubscriptions.removeAll()
+        audioSubscriptionTokens.removeAll()
+        confirmedAudioDisplays.removeAll()
+        failedAudioDisplays.removeAll()
+        audioDeliveredAt.removeAll()
+        audioExpiryTask?.cancel()
+        audioExpiryTask = nil
         descriptors.removeAll()
+        loadedProjectRevisions.removeAll()
         pruneAssetState()
     }
 
@@ -492,17 +622,26 @@ final class WebWallpaperHost {
     private func pruneAssetState() {
         let live = Set(windows.values.map { Self.projectKey($0.page.projectURL.path) })
         for project in Array(assetStores.keys) where !live.contains(project) {
+            assetStores[project]?.cancelImports()
             assetStores[project] = nil
+            assetOwners[project] = nil
+            assetRequests[project] = nil
+            invalidatedAssets[project] = nil
             stagedAssets[project] = nil
             directoryFiles[project] = nil
             fetchAllProperties[project] = nil
         }
     }
 
-    private func close(_ window: WebWallpaperWindow) {
+    private func close(_ window: any WebWallpaperSurface) {
+        if let (displayID, _) = windows.first(where: { $0.value === window }),
+           let wallpaper = descriptors[displayID] {
+            recordState(wallpaper, phase: .closed)
+            states.removeValue(forKey: displayID)
+            loadedProjectRevisions.removeValue(forKey: displayID)
+        }
         window.page.stop()
-        window.orderOut(nil)
-        window.close()
+        window.retire()
     }
 
     // MARK: - audio
@@ -511,25 +650,47 @@ final class WebWallpaperHost {
     /// polling happens at all; the bridge call opens and closes the capture tap
     /// so an idle desktop is not recording the user's output.
     private func setAudioDemand(_ subscribed: Bool, page: WebWallpaperPage, displayID: UInt32) {
-        audioPump.setSubscribed(subscribed, for: ObjectIdentifier(page))
+        guard windows[displayID]?.page === page else { return }
+        if !subscribed { audioPump.setSubscribed(false, for: ObjectIdentifier(page)) }
         // A display nobody ever subscribed is already unsubscribed: a page that
         // stops without ever having asked must not send the bridge a close for
         // a tap that was never opened.
         guard (audioSubscriptions[displayID] ?? false) != subscribed,
               let wallpaperId = descriptors[displayID]?.wallpaperId else { return }
         audioSubscriptions[displayID] = subscribed
-        flushAudioSubscription(wallpaperId: wallpaperId, displayID: displayID, subscribed: subscribed)
+        let token = UUID()
+        audioSubscriptionTokens[displayID] = token
+        confirmedAudioDisplays.remove(displayID)
+        failedAudioDisplays.remove(displayID)
+        audioDeliveredAt.removeValue(forKey: displayID)
+        onDeliveryStateChanged?()
+        flushAudioSubscription(wallpaperId: wallpaperId, displayID: displayID, subscribed: subscribed,
+            page: page, token: token)
     }
 
     /// Chained rather than fired independently: an unsubscribe overtaking the
     /// subscribe that preceded it would leave the tap open with nobody reading.
-    private func flushAudioSubscription(wallpaperId: String, displayID: UInt32, subscribed: Bool) {
+    private func flushAudioSubscription(wallpaperId: String, displayID: UInt32, subscribed: Bool,
+                                        page: WebWallpaperPage? = nil, token: UUID? = nil) {
         let previous = audioSubscriptionTask
-        audioSubscriptionTask = Task { @MainActor [setAudioSubscribed] in
+        audioSubscriptionTask = Task { @MainActor [weak self, weak page, setAudioSubscribed] in
             await previous?.value
             do {
                 try await setAudioSubscribed(wallpaperId, displayID, subscribed)
+                guard let self, let page, !self.stopped, self.windows[displayID]?.page === page,
+                      self.audioSubscriptionTokens[displayID] == token else { return }
+                if subscribed {
+                    self.confirmedAudioDisplays.insert(displayID)
+                    self.audioPump.setSubscribed(true, for: ObjectIdentifier(page))
+                }
+                self.onDeliveryStateChanged?()
             } catch {
+                if let self, self.audioSubscriptionTokens[displayID] == token {
+                    self.failedAudioDisplays.insert(displayID)
+                    self.confirmedAudioDisplays.remove(displayID)
+                    self.audioDeliveredAt.removeValue(forKey: displayID)
+                    self.onDeliveryStateChanged?()
+                }
                 AppLog.warn("""
                     web wallpaper audio on display \(displayID): subscription could not be \
                     \(subscribed ? "opened" : "closed"): \(error.localizedDescription)
@@ -539,8 +700,39 @@ final class WebWallpaperHost {
     }
 
     private func broadcast(_ spectrum: BridgeAudioSpectrum) {
-        for window in windows.values {
-            window.page.deliverAudio(spectrum.bins)
+        guard spectrum.bins.count == 128, spectrum.bins.allSatisfy(\.isFinite) else { return }
+        for (displayID, window) in windows where confirmedAudioDisplays.contains(displayID) {
+            let page = window.page
+            let token = audioSubscriptionTokens[displayID]
+            page.deliverAudio(spectrum.bins) { [weak self, weak page] delivered in
+                guard let self, let page, delivered, !self.stopped,
+                      self.windows[displayID]?.page === page,
+                      self.audioSubscriptionTokens[displayID] == token,
+                      self.confirmedAudioDisplays.contains(displayID) else { return }
+                let wasDelivering = self.audioDeliveredAt[displayID]
+                    .map { self.audioClock() - $0 < Self.audioDeliveryLifetime } ?? false
+                self.audioDeliveredAt[displayID] = self.audioClock()
+                if !wasDelivering { self.onDeliveryStateChanged?() }
+                self.scheduleAudioExpiry()
+            }
+        }
+    }
+
+    func expireAudioDeliveries() {
+        let expired = audioDeliveredAt.filter { audioClock() - $0.value >= Self.audioDeliveryLifetime }.map(\.key)
+        for id in expired { audioDeliveredAt.removeValue(forKey: id) }
+        if !expired.isEmpty { onDeliveryStateChanged?() }
+    }
+
+    private func scheduleAudioExpiry() {
+        guard audioExpiryTask == nil else { return }
+        audioExpiryTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self, !self.stopped else { return }
+                self.expireAudioDeliveries()
+                if self.audioDeliveredAt.isEmpty { self.audioExpiryTask = nil; return }
+            }
         }
     }
 
@@ -580,10 +772,11 @@ final class WebWallpaperHost {
     /// can tell "no directory set" from "one is set", and neither mode loads it
     /// directly — `ondemand` asks for a random file and `fetchall` is told the
     /// contents through the listener.
-    func stageAssets(for wallpaper: BridgeWebWallpaper) -> (json: String, restaged: Bool) {
+    func stageAssets(for wallpaper: BridgeWebWallpaper) async -> (json: String, restaged: Bool) {
         let properties = Self.pathProperties(in: wallpaper.propertiesJson)
         guard !properties.isEmpty else { return (wallpaper.propertiesJson, false) }
         let project = Self.projectKey(wallpaper.projectPath)
+        assetOwners[project] = wallpaper.wallpaperId
         var restaged = false
         for property in properties {
             // Registered before staging: the import itself announces the files
@@ -596,8 +789,9 @@ final class WebWallpaperHost {
                     fetchAllProperties[project]?.remove(property.id)
                 }
             }
-            if stagedAssets[project]?[property.id]?.source != property.source {
-                restage(
+            if stagedAssets[project]?[property.id]?.source != property.source
+                || invalidatedAssets[project]?.contains(property.id) == true {
+                await restage(
                     property, project: project, wallpaperId: wallpaper.wallpaperId,
                     title: wallpaper.title)
                 restaged = true
@@ -641,7 +835,7 @@ final class WebWallpaperHost {
 
     private func restage(
         _ property: PathProperty, project: String, wallpaperId: String, title: String
-    ) {
+    ) async {
         guard let store = assetStore(forProject: project, wallpaperId: wallpaperId) else {
             // Nothing can stage the file, so the page is told the property is
             // unset rather than handed a path it is not allowed to read.
@@ -650,45 +844,55 @@ final class WebWallpaperHost {
         }
         // Only a genuinely cleared property is cleared in the store. Re-importing the
         // same selection must not discard the app's managed copy and fetch it again.
-        if property.source.isEmpty { store.clear(propertyId: property.id) }
         let previousFiles = directoryFiles[project]?[property.id] ?? []
-        directoryFiles[project]?[property.id] = nil
-        guard !property.source.isEmpty else {
-            stagedAssets[project, default: [:]][property.id] = StagedAsset(source: "", pageValue: "")
-            if !previousFiles.isEmpty {
-                deliverDirectory(project: project, propertyId: property.id, added: [], removed: previousFiles)
-            }
-            return
-        }
+        let request = UUID()
+        assetRequests[project, default: [:]][property.id] = request
         let source = URL(fileURLWithPath: property.source)
         do {
+            if property.source.isEmpty {
+                try await store.clear(propertyId: property.id)
+                guard !stopped, assetRequests[project]?[property.id] == request else { return }
+                directoryFiles[project]?[property.id] = nil
+                stagedAssets[project, default: [:]][property.id] = StagedAsset(source: "", pageValue: "")
+                invalidatedAssets[project]?.remove(property.id)
+                onAssetsChanged?()
+                if !previousFiles.isEmpty {
+                    deliverDirectory(project: project, propertyId: property.id, added: [], removed: previousFiles)
+                }
+                return
+            }
             switch property.kind {
             case .file:
-                let staged = try store.importFile(
+                let staged = try await store.importFile(
                     at: source, propertyId: property.id, filter: property.filter)
+                guard !stopped, assetRequests[project]?[property.id] == request else { return }
                 stagedAssets[project, default: [:]][property.id] =
                     StagedAsset(source: property.source, pageValue: staged.pageValue)
+                invalidatedAssets[project]?.remove(property.id)
+                onAssetsChanged?()
             case .directory:
-                let staged = try store.importDirectory(
+                let staged = try await store.importDirectory(
                     at: source, propertyId: property.id, filter: property.filter,
                     limit: UserAssetStore.defaultDirectoryFileLimit)
+                guard !stopped, assetRequests[project]?[property.id] == request else { return }
                 let files = staged.map(\.pageValue)
                 directoryFiles[project, default: [:]][property.id] = files
                 stagedAssets[project, default: [:]][property.id] =
                     StagedAsset(source: property.source, pageValue: property.source)
+                invalidatedAssets[project]?.remove(property.id)
+                onAssetsChanged?()
                 if store.isTruncated(propertyId: property.id) {
                     let limit = UserAssetStore.defaultDirectoryFileLimit
                     onError?(String(localized: "Web wallpaper “\(title)” uses only the first \(limit) files in the folder you chose."))
                 }
                 deliverDirectory(project: project, propertyId: property.id, added: files, removed: previousFiles)
             }
+        } catch is CancellationError {
+            return
         } catch {
-            // Never silent: the property stays unset and the reason is surfaced
-            // the same way a renderer failure is.
-            stagedAssets[project]?[property.id] = nil
-            if !previousFiles.isEmpty {
-                deliverDirectory(project: project, propertyId: property.id, added: [], removed: previousFiles)
-            }
+            guard !stopped, assetRequests[project]?[property.id] == request else { return }
+            // A failed replacement leaves the last published value and directory
+            // contents usable, just as the managed transaction preserves their bytes.
             AppLog.error("web wallpaper \(project): \(property.id) could not be staged: \(error.localizedDescription)")
             onError?(String(localized: "Web wallpaper “\(title)” could not use the file you chose: \(error.localizedDescription)"))
         }
@@ -711,7 +915,16 @@ final class WebWallpaperHost {
         return store
     }
 
+    func invalidateAsset(wallpaperID: String, propertyID: String) {
+        for (project, owner) in assetOwners where owner == wallpaperID {
+            assetStores[project]?.cancelImport(propertyId: propertyID)
+            assetRequests[project, default: [:]][propertyID] = UUID()
+            invalidatedAssets[project, default: []].insert(propertyID)
+        }
+    }
+
     private func directoryChanged(project: String, propertyId: String, added: [String], removed: [String]) {
+        onAssetsChanged?()
         var files = directoryFiles[project]?[propertyId] ?? []
         files.removeAll { removed.contains($0) }
         files.append(contentsOf: added.filter { !files.contains($0) })
@@ -784,7 +997,7 @@ final class WebWallpaperHost {
     /// contract the renderer uses, so Space posters match the live page.
     private func answerPosterRequest(_ notification: Notification) {
         guard let layer = notification.object as? CALayer,
-              let window = windows.values.first(where: { $0.contentView?.layer === layer }) else { return }
+              let window = windows.values.first(where: { $0.posterLayer === layer }) else { return }
         let webView = window.page.webView
         let center = frameCenter
         webView.takeSnapshot(with: nil) { image, error in
@@ -794,26 +1007,15 @@ final class WebWallpaperHost {
                     return
                 }
                 guard let frame = Self.rgbaPixels(of: image) else { return }
-                center.post(name: Notification.Name("WallpaperMachine.desktopPosterReady"), object: layer,
-                            userInfo: ["pixels": frame.pixels, "width": frame.width, "height": frame.height, "bgra": false])
+                DesktopPosterFrame(pixels: frame.pixels, width: frame.width, height: frame.height, bgra: false)
+                    .publish(for: layer, to: center)
             }
         }
     }
 
     static func rgbaPixels(of image: NSImage) -> (pixels: Data, width: Int, height: Int)? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let width = cgImage.width, height = cgImage.height
-        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        var pixels = Data(count: width * height * 4)
-        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(
-                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                bytesPerRow: width * 4, space: space,
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue
-            ) else { return false }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        return drawn ? (pixels, width, height) : nil
+        guard let frame = DesktopPosterFrame.rgba(cgImage) else { return nil }
+        return (frame.pixels, frame.width, frame.height)
     }
 }

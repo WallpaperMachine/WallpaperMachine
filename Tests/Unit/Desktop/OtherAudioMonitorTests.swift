@@ -8,7 +8,7 @@ private final class FakeProcessAudioSource: ProcessAudioSource {
 
     func sample() -> [ProcessAudioSample] { samples }
     func start() { running = true }
-    func stop() { running = false }
+    func stop() { running = false; onChange = nil }
     @MainActor func emit() { onChange?() }
 }
 
@@ -103,5 +103,32 @@ final class OtherAudioMonitorTests: XCTestCase {
         source.emit()
         XCTAssertFalse(source.running)
         XCTAssertFalse(monitor.isActive)
+    }
+
+    func testChangingPolicyReinstallsAudioChangeCallback() {
+        let suite = "WallpaperMachine.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preferences = PlaybackPreferences(defaults: defaults)
+        let source = FakeProcessAudioSource()
+        let monitor = makeMonitor(source, preferences: preferences, activate: .zero, deactivate: .zero)
+        monitor.start()
+        defer { monitor.stop() }
+        for action in [OtherAudioAction.mute, .pause] {
+            preferences.otherAudioAction = action
+            source.samples = [ProcessAudioSample(pid: otherPID, isRunningOutput: true)]
+            source.emit()
+            XCTAssertTrue(monitor.isActive)
+            preferences.otherAudioAction = .keepRunning
+            XCTAssertFalse(monitor.isActive)
+            source.samples = []
+            preferences.otherAudioAction = action
+            source.samples = [ProcessAudioSample(pid: otherPID, isRunningOutput: true)]
+            source.emit()
+            XCTAssertTrue(monitor.isActive, "A restarted source must continue reporting changes")
+            source.samples = []
+            source.emit()
+            XCTAssertFalse(monitor.isActive)
+        }
     }
 }

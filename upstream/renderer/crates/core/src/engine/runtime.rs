@@ -617,6 +617,7 @@ impl SceneRuntime {
             return Err(error);
         }
         let mut old_renderer = std::mem::replace(&mut self.renderer, renderer);
+        self.renderer.inherit_runtime_registration(&mut old_renderer, desc.display.display_id);
         self.last_media = None;
         self.generation = self.generation.saturating_add(1);
         let old_relay = std::mem::replace(&mut self.pointer_relay, pointer_relay);
@@ -671,6 +672,7 @@ impl SceneRuntime {
             EngineError::Platform("scene runtime has no window during display update".to_string())
         })?;
         window.update_display(display.clone())?;
+        self.renderer.update_runtime_display(display.display_id);
         self.desc.display = display;
         Ok(())
     }
@@ -724,6 +726,7 @@ impl SceneRuntime {
         }
 
         // 6. Commit the new descriptor.
+        self.renderer.update_runtime_display(display.display_id);
         self.desc.display = display;
         log::debug!(
             "[wallpaper-core engine] display reconfigure completed in {:?}",
@@ -778,7 +781,9 @@ impl SceneRuntime {
         }
         let artwork = crate::media::MediaThumbnailRgba::new(width, height, rgba)
             .map_err(|error| EngineError::InvalidInput(error.to_string()))?;
-        self.renderer.apply_system_media_artwork(&artwork)
+        self.renderer.apply_system_media_artwork(&artwork)?;
+        self.last_media.get_or_insert_with(Default::default).artwork = Some(artwork);
+        Ok(())
     }
 
     pub fn set_audio_volume(&mut self, volume: AudioVolume) -> Result<(), EngineError> {

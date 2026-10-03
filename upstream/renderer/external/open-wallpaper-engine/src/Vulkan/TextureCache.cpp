@@ -1340,7 +1340,7 @@ double TextureCache::GetVideoDuration(std::string_view key) const {
 
 bool TextureCache::CanReuseVideoFrameImport(const video::VideoTextureFrame& frame) const {
     const bool is_nv12 = frame.pixel_format == 0x34323076u || frame.pixel_format == 0x34323066u;
-    return !is_nv12 && frame.io_surface != nullptr && frame.plane_count <= 1;
+    return !is_nv12 && !frame.needsDisplayTransform() && frame.io_surface != nullptr && frame.plane_count <= 1;
 }
 
 std::shared_ptr<TextureCache::ImportedVideoFrame>
@@ -1351,8 +1351,8 @@ TextureCache::FindImportedVideoFrame(VideoTex& video_tex, const video::VideoText
         if (imported_frame == nullptr) continue;
         if (imported_frame->surface_identity != surface_identity) continue;
         if (imported_frame->pixel_format != frame.pixel_format) continue;
-        if (imported_frame->image.extent.width != frame.width ||
-            imported_frame->image.extent.height != frame.height) {
+        if (imported_frame->image.extent.width != frame.displayWidth() ||
+            imported_frame->image.extent.height != frame.displayHeight()) {
             continue;
         }
         if (! can_reuse_surface_import && imported_frame->generation != frame.generation) {
@@ -1661,7 +1661,7 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
         if (!EnsureVideoFrameCacheRoom(video_tex, error)) return false;
         void* metal_device = GetMetalDeviceHandle(error);
         if (metal_device == nullptr) return false;
-        const bool converted = frame.pixel_format == 0x34323076u || frame.pixel_format == 0x34323066u;
+        const bool converted = frame.pixel_format == 0x34323076u || frame.pixel_format == 0x34323066u || frame.needsDisplayTransform();
         if (converted && !m_video_recycling_disabled && !m_video_destination_pool) {
             m_video_destination_pool = std::make_shared<video::AppleVideoMetalTexturePool>(metal_device);
         }
@@ -1685,20 +1685,20 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
             // A shape nothing requests any more is not worth its bytes. The
             // decoded frame's size is the only size that matters here; the
             // surface this ends up on never enters the key.
-            m_video_destination_pool->RetainOnly(frame.width, frame.height);
+            m_video_destination_pool->RetainOnly(frame.displayWidth(), frame.displayHeight());
         }
         // Nothing may fail between borrowing or reserving a destination and
         // handing it to the import without unwinding the ledger: an abandoned
         // loan is a leaked slot, and an abandoned reservation is bytes the
         // budget believes are about to exist and never will.
         void* borrowed = converted && m_video_destination_pool
-            ? m_video_destination_pool->Take(frame.width, frame.height)
+            ? m_video_destination_pool->Take(frame.displayWidth(), frame.displayHeight())
             : nullptr;
         // No reuse available: the import is about to allocate, so say so
         // before it does rather than discovering the bytes on the way back.
         video::AppleVideoConversionReservation reservation {};
         if (converted && m_video_destination_pool && borrowed == nullptr) {
-            reservation = m_video_destination_pool->ReserveFresh(frame.width, frame.height);
+            reservation = m_video_destination_pool->ReserveFresh(frame.displayWidth(), frame.displayHeight());
             if (! reservation.granted) {
                 // The budget did not book this allocation, so there is no
                 // allocation to make. Allocating anyway would hand back a
@@ -1721,8 +1721,8 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
                              "importing this frame would allocate one nothing could account "
                              "for, so the previous frame stays on screen",
                              std::string(key).c_str(),
-                             frame.width,
-                             frame.height);
+                             frame.displayWidth(),
+                             frame.displayHeight());
                 }
                 return SetError(error,
                                 std::string("video conversion destination was not booked: ") +
@@ -1758,7 +1758,7 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
             if (m_video_destination_pool) {
                 m_video_destination_pool->CancelFresh(reservation);
                 if (destination_allocation_failed) {
-                    m_video_destination_pool->ReportAllocationFailure(frame.width, frame.height);
+                    m_video_destination_pool->ReportAllocationFailure(frame.displayWidth(), frame.displayHeight());
                 }
             }
             return false;
@@ -1794,8 +1794,8 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
             m_video_destination_pool->MarkGpuPending(borrowed != nullptr ? borrowed : created);
         }
         TextureKey sampler_key {
-            .width = static_cast<i32>(frame.width),
-            .height = static_cast<i32>(frame.height),
+            .width = static_cast<i32>(frame.displayWidth()),
+            .height = static_cast<i32>(frame.displayHeight()),
             .usage = TexUsage::COLOR,
             .format = TextureFormat::RGBA8,
             .sample = video_tex.sample,
@@ -1804,7 +1804,7 @@ bool TextureCache::UpdateVideoFrame(std::string_view                 key,
         const VkSampler sampler = GetOrCreateSampler(sampler_key, error);
         if (sampler == VK_NULL_HANDLE) return false;
         auto vulkan_image =
-            importedImageFor(metal_texture, frame.width, frame.height, converted, error);
+            importedImageFor(metal_texture, frame.displayWidth(), frame.displayHeight(), converted, error);
         if (!vulkan_image) return false;
         candidate->image = ImageParameters(vulkan_image->image);
         candidate->image.sampler = sampler;

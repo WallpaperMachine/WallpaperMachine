@@ -27,10 +27,25 @@ struct SpriteFrame {
 class SpriteAnimation {
 public:
     const auto& GetAnimateFrame(double newtime) {
-        if ((m_remainTime -= newtime) < 0.0f) {
-            SwitchToNext();
-            const auto& frame = m_frames.at((usize)m_curFrame);
-            m_remainTime      = frame.frametime;
+        if (std::isfinite(newtime) && newtime > 0.0) {
+            m_remainTime -= newtime;
+            if (m_remainTime < 0.0) {
+                double cycle = 0.0;
+                for (const auto& frame : m_frames) cycle += FrameDuration(frame);
+                if (cycle > 0.0) {
+                    // Whole cycles leave the frame unchanged. Bound work even
+                    // after a long suspend, then retain every fractional second.
+                    if (m_remainTime < -cycle) m_remainTime = std::fmod(m_remainTime, cycle);
+                    for (usize step = 0; m_remainTime < 0.0 && step < m_frames.size(); ++step) {
+                        SwitchToNext();
+                        m_remainTime += FrameDuration(m_frames.at((usize)m_curFrame));
+                    }
+                } else {
+                    // Sheets without timed frames still make bounded progress.
+                    SwitchToNext();
+                    m_remainTime = 0.0;
+                }
+            }
         }
         const auto& frame = m_frames.at((usize)m_curFrame);
         return frame;
@@ -38,7 +53,7 @@ public:
     const auto& SetFrame(double frame) {
         const auto last = static_cast<double>(m_frames.size() - 1);
         m_curFrame = static_cast<idx>(std::clamp(std::floor(frame), 0.0, last));
-        m_remainTime = m_frames.at((usize)m_curFrame).frametime;
+        m_remainTime = FrameDuration(m_frames.at((usize)m_curFrame));
         return m_frames.at((usize)m_curFrame);
     }
     const auto& GetCurFrame() const { return m_frames.at((usize)m_curFrame); }
@@ -56,6 +71,9 @@ public:
     usize numFrames() const { return m_frames.size(); }
 
 private:
+    static double FrameDuration(const SpriteFrame& frame) {
+        return std::isfinite(frame.frametime) && frame.frametime > 0.0f ? frame.frametime : 0.0;
+    }
     void SwitchToNext() {
         if (m_curFrame >= std::ssize(m_frames) - 1)
             m_curFrame = 0;

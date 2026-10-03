@@ -81,7 +81,7 @@ final class WallpaperBackupTests: XCTestCase {
         return preferences
     }
 
-    func testBackupExportsOnlyPersistentPreferencesAndKeepExistingIgnoresInheritedValues() throws {
+    func testBackupExportsOnlyPersistentPreferencesAndKeepExistingIgnoresInheritedValues() async throws {
         let original = try defaults()
         let target = try defaults()
         let languageKey = "AppleLanguages"
@@ -119,7 +119,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(persistent?[actionKey] as? String, "pause")
     }
 
-    func testFailedRestoreDoesNotPersistInheritedLanguage() throws {
+    func testFailedRestoreDoesNotPersistInheritedLanguage() async throws {
         let original = try fixture()
         original.set(["ja"], forKey: "AppleLanguages")
         let target = try defaults()
@@ -140,7 +140,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertTrue(service.pendingRestore)
     }
 
-    func testBackupAcceptsMaximumSizePresetArchive() throws {
+    func testBackupAcceptsMaximumSizePresetArchive() async throws {
         var archive = try JSONEncoder().encode(PresetArchive(items: []))
         archive.append(Data(repeating: 32, count: WallpaperPresetStore.maximumDocumentBytes - archive.count))
         try WallpaperPresetStore.validateArchiveData(archive)
@@ -157,7 +157,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(try WallpaperBackupPreferences.decode(bytes) as? Data, archive)
     }
 
-    func testManifestLimitFailsBeforeOpeningPayloadAndPreservesExistingPackage() throws {
+    func testManifestLimitFailsBeforeOpeningPayloadAndPreservesExistingPackage() async throws {
         try put("payload", "UserAssets/asset.bin", in: source)
         let asset = source.appendingPathComponent("UserAssets/asset.bin")
         XCTAssertEqual(chmod(asset.path, 0), 0)
@@ -174,7 +174,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: root.path).contains { $0.hasPrefix(".wmbackup-export-") })
     }
 
-    func testExportPreviewPendingAndIsolatedStartupRoundtripRemapsRetainedPaths() throws {
+    func testExportPreviewPendingAndIsolatedStartupRoundtripRemapsRetainedPaths() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         let exporter = WallpaperBackupService(supportRoot: source)
@@ -210,7 +210,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
     }
 
-    func testKeepExistingPreservesCollidingWallpaperAndImportsIndependentCollectionsAndPresetBytes() throws {
+    func testKeepExistingPreservesCollidingWallpaperAndImportsIndependentCollectionsAndPresetBytes() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         try put("old config", "config.toml", in: destination)
@@ -242,7 +242,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: destination.appendingPathComponent("UserAssets/PresetAssets/\(existingPresetID)/photo/old.png"), encoding: .utf8), "old preset")
     }
 
-    func testReplaceChangesConflictingStateButKeepsUnrelatedWallpaper() throws {
+    func testReplaceChangesConflictingStateButKeepsUnrelatedWallpaper() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         try put("old config", "config.toml", in: destination)
@@ -260,7 +260,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("Library/101").path))
     }
 
-    func testFailureAfterPublicationRollsBackAllFilesAndPreferencesAndRetainsPending() throws {
+    func testFailureAfterPublicationRollsBackAllFilesAndPreferencesAndRetainsPending() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         try put("old config", "config.toml", in: destination)
@@ -281,7 +281,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(targetDefaults.string(forKey: "WallpaperMachine.otherAudioAction"), "mute")
     }
 
-    func testInterruptedUncommittedJournalRestoresOriginalBeforeStoresReadPreferences() throws {
+    func testInterruptedUncommittedJournalRestoresOriginalBeforeStoresReadPreferences() async throws {
         let targetDefaults = try defaults()
         let transaction = destination.appendingPathComponent(WallpaperBackupService.transactionDirectoryName)
         try put("original", "old/config.toml", in: transaction)
@@ -298,7 +298,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: transaction.path))
     }
 
-    func testChangedPackageCannotStageOverAnExistingPendingRestore() throws {
+    func testChangedPackageCannotStageOverAnExistingPendingRestore() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: .init(defaults: original, domainName: domainName(for: original)))
@@ -312,7 +312,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(try json("Library/101/scene.json", in: destination)["layers"] as? [String], [])
     }
 
-    func testTraversalLinksSpecialFilesAndDisallowedPreferencesAreRejected() throws {
+    func testTraversalLinksSpecialFilesAndDisallowedPreferencesAreRejected() async throws {
         let original = try fixture()
         let importer = WallpaperBackupService(supportRoot: destination)
         let emptyDefaults = try defaults()
@@ -372,7 +372,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
     }
 
-    func testStartupRestoredPreferencesHydrateRealPresetCollectionPlanAndPlacementStores() throws {
+    func testStartupRestoredPreferencesHydrateRealPresetCollectionPlanAndPlacementStores() async throws {
         struct Archive: Codable { var version = 1; var items: [WallpaperPropertyPreset] }
         let original = try fixture()
         let targetDefaults = try defaults()
@@ -417,7 +417,7 @@ final class WallpaperBackupTests: XCTestCase {
             .placement(wallpaperID: "image-test", displayID: "display-one"), placement)
     }
 
-    func testCommittedRecoveryCleansPendingWithoutRollingBackOrReapplying() throws {
+    func testCommittedRecoveryCleansPendingWithoutRollingBackOrReapplying() async throws {
         let targetDefaults = try defaults()
         let transaction = destination.appendingPathComponent(WallpaperBackupService.transactionDirectoryName)
         try put("old", "old/config.toml", in: transaction)
@@ -436,7 +436,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertNil(try WallpaperBackupService.applyPendingRestore(supportRoot: destination, defaults: targetDefaults, domainName: domainName(for: targetDefaults)))
     }
 
-    func testNonFinitePreferencesUnknownVersionsAndCaseAliasedPathsCannotBeRestored() throws {
+    func testNonFinitePreferencesUnknownVersionsAndCaseAliasedPathsCannotBeRestored() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         let exporter = WallpaperBackupService(supportRoot: source)
@@ -492,7 +492,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertNil(service.lastStartupError)
     }
 
-    func testManagedPathsFromSymlinkedSupportOverrideRemainPortableAfterOriginalDisappears() throws {
+    func testManagedPathsFromSymlinkedSupportOverrideRemainPortableAfterOriginalDisappears() async throws {
         let original = try fixture()
         let targetDefaults = try defaults()
         let alias = root.appendingPathComponent("source-alias")
@@ -520,7 +520,7 @@ final class WallpaperBackupTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: manifest).write(to: package.appendingPathComponent("manifest.json"))
     }
 
-    func testStructuredPreferenceRejectionPreservesPendingAndLiveArchive() throws {
+    func testStructuredPreferenceRejectionPreservesPendingAndLiveArchive() async throws {
         let original = try fixture()
         let live = try defaults()
         let archive = try XCTUnwrap(original.data(forKey: "WallpaperMachine.wallpaperPresets"))
@@ -553,7 +553,7 @@ final class WallpaperBackupTests: XCTestCase {
         }
     }
 
-    func testProductionRendererParserRejectsMalformedAndFutureConfigurationsBeforePublication() throws {
+    func testProductionRendererParserRejectsMalformedAndFutureConfigurationsBeforePublication() async throws {
         let original = try fixture()
         let live = try defaults()
         try put("live config must survive", "config.toml", in: destination)
@@ -569,7 +569,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertThrowsError(try WallpaperBackupService(supportRoot: destination).preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live))))
     }
 
-    func testExistingExternalFileCannotAuthorizeIncomingOverridesDefaultsOrPresets() throws {
+    func testExistingExternalFileCannotAuthorizeIncomingOverridesDefaultsOrPresets() async throws {
         let original = try fixture()
         let live = try defaults()
         let privatePath = root.appendingPathComponent("private-photo.png").path
@@ -597,7 +597,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertFalse(service.pendingRestore)
     }
 
-    func testAlreadySelectedExternalReferenceIsScopedToSameWallpaperAndProperty() throws {
+    func testAlreadySelectedExternalReferenceIsScopedToSameWallpaperAndProperty() async throws {
         let original = try fixture()
         let live = try defaults()
         let external = root.appendingPathComponent("chosen.png").path
@@ -615,13 +615,13 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual((try json("wallpapers/101.json", in: destination)["property_overrides"] as? [String: String])?["photo"], external)
     }
 
-    func testManagedMetadataCannotAuthorizeExternalReadAndCopiedBytesStillRecover() throws {
+    func testManagedMetadataCannotAuthorizeExternalReadAndCopiedBytesStillRecover() async throws {
         let original = try fixture()
         let live = try defaults()
         let external = root.appendingPathComponent("unselected-private.png").path
         try put("private original", "unselected-private.png", in: root)
         let managed = ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets"))
-        var manifest = managed.manifest(wallpaperId: "101")
+        var manifest = try managed.manifest(wallpaperId: "101")
         manifest.properties["photo"]?.sourcePath = external
         manifest.properties["photo"]?.assets[0].sourcePath = external
         try managed.write(manifest)
@@ -635,11 +635,11 @@ final class WallpaperBackupTests: XCTestCase {
         try service.stageRestore(package: package, preview: preview, policy: .replace)
         _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
         let restored = ManagedUserAssetStore(root: destination.appendingPathComponent("UserAssets"))
-        let safePath = try XCTUnwrap(restored.manifest(wallpaperId: "101").properties["photo"]?.sourcePath)
+        let safePath = try XCTUnwrap(try restored.manifest(wallpaperId: "101").properties["photo"]?.sourcePath)
         XCTAssertEqual(safePath, external)
-        XCTAssertEqual(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
+        XCTAssertEqual(try restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
         let store = UserAssetStore(projectURL: destination.appendingPathComponent("Library/101"), wallpaperId: "101", managed: restored)
-        let asset = try store.importFile(at: URL(fileURLWithPath: safePath), propertyId: "photo", filter: .image)
+        let asset = try await store.importFile(at: URL(fileURLWithPath: safePath), propertyId: "photo", filter: .image)
         XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: asset.stagedPath), encoding: .utf8), "retained image bytes")
         XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: external), encoding: .utf8), "private original")
         let secondPackage = root.appendingPathComponent("second.wmbackup")
@@ -647,17 +647,17 @@ final class WallpaperBackupTests: XCTestCase {
         let secondPreview = try service.preview(package: secondPackage, preferences: .init(defaults: live, domainName: domainName(for: live)))
         try service.stageRestore(package: secondPackage, preview: secondPreview, policy: .replace)
         _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
-        XCTAssertEqual(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
+        XCTAssertEqual(try restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized, true)
         let secondStore = UserAssetStore(projectURL: destination.appendingPathComponent("Library/101"), wallpaperId: "101", managed: restored)
-        let again = try secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
+        let again = try await secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: again.stagedPath)), Data("retained image bytes".utf8))
         try restored.authorizeSelection(wallpaperId: "101", propertyId: "photo", selectedSourcePath: external)
-        let reselected = try secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
+        let reselected = try await secondStore.importFile(at: URL(fileURLWithPath: external), propertyId: "photo", filter: .image)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: reselected.stagedPath)), Data("private original".utf8))
-        XCTAssertNil(restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized)
+        XCTAssertNil(try restored.manifest(wallpaperId: "101").properties["photo"]?.originalSourceUnauthorized)
     }
 
-    func testSceneTextureOverridesAndDefaultsReadRetainedImagesNotExistingOriginals() throws {
+    func testSceneTextureOverridesAndDefaultsReadRetainedImagesNotExistingOriginals() async throws {
         let original = try fixture()
         let live = try defaults()
         original.removeObject(forKey: WallpaperPresetStore.preferenceKey)
@@ -696,7 +696,7 @@ final class WallpaperBackupTests: XCTestCase {
         let paths = ["photo": try XCTUnwrap(overrides["photo"]),
                      "defaultPhoto": try XCTUnwrap(properties["defaultPhoto"]?["value"] as? String)]
         for (property, path) in paths {
-            let record = try XCTUnwrap(restored.manifest(wallpaperId: "101").properties[property])
+            let record = try XCTUnwrap(try restored.manifest(wallpaperId: "101").properties[property])
             let stored = try restored.storedURL(wallpaperId: "101", propertyId: property, asset: XCTUnwrap(record.assets.first))
             XCTAssertEqual(URL(fileURLWithPath: path).resolvingSymlinksInPath(), stored.resolvingSymlinksInPath())
             // Scene textures open the committed absolute path directly, without UserAssetStore.
@@ -708,14 +708,14 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: originalURL), privateBytes)
     }
 
-    func testSceneRetainedReferenceCannotUseMissingBytesFromKeepExistingAssetTree() throws {
+    func testSceneRetainedReferenceCannotUseMissingBytesFromKeepExistingAssetTree() async throws {
         let original = try fixture()
         let live = try defaults()
         original.removeObject(forKey: WallpaperPresetStore.preferenceKey)
         let external = root.appendingPathComponent("private.png").path
         try put("private", "private.png", in: root)
         let managed = ManagedUserAssetStore(root: source.appendingPathComponent("UserAssets"))
-        var manifest = managed.manifest(wallpaperId: "101")
+        var manifest = try managed.manifest(wallpaperId: "101")
         manifest.properties["photo"]?.sourcePath = external
         manifest.properties["photo"]?.assets[0].sourcePath = external
         try managed.write(manifest)
@@ -748,7 +748,7 @@ final class WallpaperBackupTests: XCTestCase {
         return bytes as Data
     }
 
-    func testKeepExistingPreservesAtomicPlaybackOrderPlanAndAbsentDeadline() throws {
+    func testKeepExistingPreservesAtomicPlaybackOrderPlanAndAbsentDeadline() async throws {
         let original = try fixture()
         let live = try defaults()
         let current = PlaylistStore(defaults: live)
@@ -783,7 +783,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(Set(try JSONDecoder().decode([String].self, from: XCTUnwrap(live.data(forKey: "WallpaperMachine.favoriteWallpaperIDs")))), ["300", "100"])
     }
 
-    func testPlainTextAndNamesKeepSourceRootWhileOnlyResourcePathsMove() throws {
+    func testPlainTextAndNamesKeepSourceRootWhileOnlyResourcePathsMove() async throws {
         let original = try fixture()
         let live = try defaults()
         let text = source.path + "/UserAssets/101/photo/asset/画 像.png"
@@ -819,7 +819,7 @@ final class WallpaperBackupTests: XCTestCase {
         XCTAssertEqual(restoredPreset, preset)
     }
 
-    func testKeepExistingCannotReinterpretPreservedTextAsNewExternalFileSelection() throws {
+    func testKeepExistingCannotReinterpretPreservedTextAsNewExternalFileSelection() async throws {
         let original = try fixture()
         let live = try defaults()
         let privatePath = root.appendingPathComponent("private.png").path

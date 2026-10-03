@@ -31,11 +31,13 @@ public:
     // void setClearValue(vk::ClearValue);
 
     void prepare(Scene&, const Device&, RenderingResources&) override;
+    bool updateFrame(const Device&, RenderingResources&) override;
     VkResult execute(const Device&, RenderingResources&) override;
     void destory(const Device&, RenderingResources&) override;
 
 private:
     Desc m_desc;
+    const Scene* m_scene { nullptr };
 };
 
 } // namespace vulkan

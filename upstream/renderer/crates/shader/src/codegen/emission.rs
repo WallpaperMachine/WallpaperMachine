@@ -29,26 +29,19 @@ impl SourceEmitter<'_, '_> {
         self.fixups
             .insert_main_prelude(self.module, &self.declarations)?;
         let mut output = String::with_capacity(self.module.source().as_str().len() + 256);
-        let leading_defines = LeadingObjectDefines {
-            items: self
-                .module
-                .items()
-                .iter()
-                .map_while(|item| {
-                    let SyntaxItem::Directive(directive) = item else {
-                        return None;
-                    };
-                    Some(directive.define_parts().ok().flatten())
-                })
-                .flatten()
-                .filter_map(|parts| {
-                    Some(LeadingObjectDefine {
-                        name: parts.object_like_name_text()?,
-                        value: parts.simple_replacement_text()?,
-                    })
-                })
-                .collect(),
-        };
+        let mut leading_defines = LeadingObjectDefines { items: Vec::new() };
+        for item in self.module.items() {
+            let SyntaxItem::Directive(directive) = item else { break; };
+            if directive.name_text() == "undef" {
+                leading_defines.items.retain(|item| item.name != directive.body_text());
+            } else if let Some(parts) = directive.define_parts().ok().flatten() {
+                leading_defines.items.retain(|item| item.name != parts.name_text());
+                if let (Some(name), Some(value)) =
+                    (parts.object_like_name_text(), parts.simple_replacement_text()) {
+                    leading_defines.items.push(LeadingObjectDefine { name, value });
+                }
+            }
+        }
         writeln!(output, "#version 450").map_err(Self::write_error)?;
         writeln!(output, "precision highp float;").map_err(Self::write_error)?;
         writeln!(output).map_err(Self::write_error)?;

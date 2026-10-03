@@ -173,10 +173,16 @@ final class SceneMediaSink {
         guard consuming else { return }
         let epoch = deliveryEpoch
         var cover: (width: UInt32, height: UInt32, rgba: Data)?
-        if case let .thumbnail(thumbnail) = event, thumbnail.width > 0, thumbnail.height > 0,
-            thumbnail.rgba.count == thumbnail.width * thumbnail.height * 4
-        {
-            cover = (UInt32(thumbnail.width), UInt32(thumbnail.height), Data(thumbnail.rgba))
+        if case let .thumbnail(thumbnail) = event {
+            if thumbnail.isEmpty {
+                cover = (0, 0, Data())
+            } else if let width = UInt32(exactly: thumbnail.width), width > 0,
+                let height = UInt32(exactly: thumbnail.height), height > 0,
+                UInt64(thumbnail.rgba.count) / 4 == UInt64(width) * UInt64(height),
+                thumbnail.rgba.count.isMultiple(of: 4)
+            {
+                cover = (width, height, Data(thumbnail.rgba))
+            }
         }
         // Chained, not parallel. A slow cover must not be overtaken by the one
         // that replaced it and then land on top of it: the engine applies

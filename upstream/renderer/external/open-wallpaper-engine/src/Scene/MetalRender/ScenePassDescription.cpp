@@ -158,6 +158,7 @@ bool BuildScenePassDescriptions(Scene& scene, const rg::RenderGraph& graph,
             if (pre->desc().transparent) {
                 desc.clear_color = { 0.0f, 0.0f, 0.0f, 0.0f };
             } else {
+                desc.uses_scene_clear_color = true;
                 desc.clear_color = { scene.clearColor[0], scene.clearColor[1], scene.clearColor[2],
                                      1.0f };
             }
@@ -223,6 +224,7 @@ bool BuildScenePassDescriptions(Scene& scene, const rg::RenderGraph& graph,
             // background; every other target clears to nothing, so a layer
             // composited onto it is not composited onto a colour.
             if (desc.target_key == scene.ResolveRenderTargetName(SpecTex_Default)) {
+                desc.uses_scene_clear_color = true;
                 desc.clear_color = { scene.clearColor[0], scene.clearColor[1], scene.clearColor[2],
                                      1.0f };
             } else {

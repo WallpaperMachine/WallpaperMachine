@@ -6,7 +6,7 @@ import Observation
 @Observable
 final class PixivDownload: Identifiable {
     enum Status: Equatable {
-        case waiting, downloading, installing, finished, cancelled
+        case waiting, downloading, installing, paused, finished, cancelled
         case failed(String)
     }
 
@@ -18,6 +18,7 @@ final class PixivDownload: Identifiable {
     fileprivate(set) var bytesReceived: Int64 = 0
     fileprivate(set) var bytesExpected: Int64?
     @ObservationIgnored fileprivate var task: Task<Void, Never>?
+    @ObservationIgnored fileprivate var pauseRequested = false
     @ObservationIgnored fileprivate var lastReport: ContinuousClock.Instant?
     /// Pages the store already fetched for this work, so the job need not ask pixiv again.
     @ObservationIgnored fileprivate var knownPages: [PixivPage]?
@@ -32,7 +33,7 @@ final class PixivDownload: Identifiable {
     var isPending: Bool {
         switch status {
         case .waiting, .downloading, .installing: true
-        case .finished, .cancelled, .failed: false
+        case .paused, .finished, .cancelled, .failed: false
         }
     }
 
@@ -64,17 +65,61 @@ final class PixivDownload: Identifiable {
 final class PixivDownloadQueue {
     static let concurrentDownloads = 2
     private(set) var downloads: [PixivDownload] = []
+    private(set) var persistenceError: String?
     @ObservationIgnored private let service: PixivService
     @ObservationIgnored private let packager: PixivWallpaperPackager
+    @ObservationIgnored private let directory: URL
+    @ObservationIgnored private var isShuttingDown = false
+
+    private struct SavedDownload: Codable {
+        let work: PixivWork
+        let page: Int
+        let knownPages: [PixivPage]?
+    }
     /// Makes an installed wallpaper appear in the renderer's library; failing it fails the job,
     /// and a retry finds the files already in place.
     @ObservationIgnored var onInstalled: (@MainActor (String) async throws -> Void)?
     /// The signed-in session a job asks for its work's pages with; the images need none.
     @ObservationIgnored var session: String?
 
-    init(service: PixivService, packager: PixivWallpaperPackager = PixivWallpaperPackager()) {
+    init(service: PixivService, packager: PixivWallpaperPackager = PixivWallpaperPackager(),
+         persistenceDirectory: URL? = nil) {
         self.service = service
         self.packager = packager
+        directory = persistenceDirectory ?? packager.library.deletingLastPathComponent().appendingPathComponent("Downloads/Pixiv")
+        if let data = try? Data(contentsOf: directory.appendingPathComponent("queue.json")),
+           let saved = try? JSONDecoder().decode([SavedDownload].self, from: data) {
+            var seen = Set<String>()
+            for record in saved where PixivWork.isValidID(record.work.id) && record.page >= 0 && record.page < record.work.pageCount {
+                let job = PixivDownload(work: record.work, pageIndex: record.page, knownPages: record.knownPages)
+                guard seen.insert(job.id).inserted else { continue }
+                job.status = .paused
+                downloads.append(job)
+            }
+        }
+    }
+
+    @discardableResult
+    private func persist() -> Bool {
+        let saved = downloads.filter { $0.status != .finished && $0.status != .cancelled }.map {
+            SavedDownload(work: $0.work, page: $0.pageIndex, knownPages: $0.knownPages)
+        }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try JSONEncoder().encode(saved).write(to: directory.appendingPathComponent("queue.json"), options: .atomic)
+            persistenceError = nil
+            return true
+        } catch {
+            persistenceError = String(localized: "Could not save the download queue: \(error.localizedDescription)")
+            AppLog.warn("Could not save the pixiv download queue: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func checkpoint(for job: PixivDownload) -> URL { directory.appendingPathComponent(job.id) }
+
+    private func discardCheckpoint(for job: PixivDownload) {
+        try? FileManager.default.removeItem(at: checkpoint(for: job))
     }
 
     var isRunning: Bool { downloads.contains { $0.isPending } }
@@ -93,17 +138,42 @@ final class PixivDownloadQueue {
         } else {
             downloads.append(job)
         }
+        guard persist() else {
+            job.status = .failed(persistenceError ?? String(localized: "Download could not finish"))
+            return job
+        }
         pump()
         return job
     }
 
     func cancel(_ id: String) {
-        guard let job = download(for: id), job.isPending else { return }
+        guard let job = download(for: id), job.isPending || job.status == .paused else { return }
+        job.pauseRequested = false
         if let task = job.task {
             task.cancel()
         } else {
             job.status = .cancelled
+            discardCheckpoint(for: job)
         }
+        persist()
+    }
+
+    func pause(_ id: String) {
+        guard let job = download(for: id), job.isPending else { return }
+        job.pauseRequested = true
+        if let task = job.task { task.cancel() }
+        else { job.status = .paused }
+        persist()
+    }
+
+    @discardableResult
+    func resume(_ id: String) -> Bool {
+        guard let job = download(for: id), job.status == .paused, job.task == nil else { return false }
+        job.pauseRequested = false
+        job.status = .waiting
+        guard persist() else { job.status = .paused; return false }
+        pump()
+        return true
     }
 
     /// Starts a failed or cancelled job again; returns false when there is nothing to retry.
@@ -116,17 +186,22 @@ final class PixivDownloadQueue {
 
     /// Forgets every job that is no longer running.
     func clearFinished() {
-        downloads.removeAll { !$0.isPending }
+        for job in downloads where !job.isPending && job.status != .paused { discardCheckpoint(for: job) }
+        downloads.removeAll { !$0.isPending && $0.status != .paused }
+        persist()
     }
 
-    /// Cancels every job and waits until each has removed its staging folder.
+    /// Pauses every job and waits until each has removed its staging folder.
     func shutdown() async {
+        isShuttingDown = true
         let running = downloads.compactMap(\.task)
-        for job in downloads where job.isPending { cancel(job.id) }
+        for job in downloads where job.isPending { pause(job.id) }
         for task in running { await task.value }
+        persist()
     }
 
     private func pump() {
+        guard !isShuttingDown else { return }
         var running = downloads.filter { $0.task != nil }.count
         for job in downloads where job.status == .waiting && job.task == nil {
             guard running < Self.concurrentDownloads else { return }
@@ -135,6 +210,7 @@ final class PixivDownloadQueue {
             job.task = Task { [weak self] in
                 await self?.run(job)
                 job.task = nil
+                self?.persist()
                 self?.pump()
             }
         }
@@ -152,7 +228,8 @@ final class PixivDownloadQueue {
                 throw PixivFailure(code: .unreadable)
             }
             job.knownPages = pages
-            let image = try await service.original(of: page) { received, expected in
+            persist()
+            let image = try await service.original(of: page, checkpoint: checkpoint(for: job)) { received, expected in
                 Task { @MainActor in
                     guard job.status == .downloading else { return }
                     job.report(received: received, expected: expected)
@@ -167,9 +244,11 @@ final class PixivDownloadQueue {
             // meanwhile, so the wallpaper never sits on disk unlisted.
             try await onInstalled?(id)
             job.status = .finished
+            discardCheckpoint(for: job)
             AppLog.info("pixiv \(job.work.id) page \(job.pageIndex) saved as \(id)")
         } catch is CancellationError {
-            job.status = .cancelled
+            job.status = job.pauseRequested ? .paused : .cancelled
+            if !job.pauseRequested { discardCheckpoint(for: job) }
         } catch {
             job.status = .failed(error.localizedDescription)
             AppLog.warn("pixiv \(job.work.id) page \(job.pageIndex) failed: \(error.localizedDescription)")

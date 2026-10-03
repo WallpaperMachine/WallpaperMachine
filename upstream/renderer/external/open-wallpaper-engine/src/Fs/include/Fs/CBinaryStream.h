@@ -27,7 +27,7 @@ protected:
 
 public:
     virtual usize Read(void* buffer, usize sizeInBytes) override {
-        return sizeInBytes * std::fread(buffer, sizeInBytes, 1, m_file);
+        return std::fread(buffer, 1, sizeInBytes, m_file);
     }
     virtual char* Gets(char* buffer, usize sizeStr) override {
         assert(sizeStr < std::numeric_limits<int>::max());

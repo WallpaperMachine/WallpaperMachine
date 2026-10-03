@@ -21,11 +21,17 @@ struct WallpaperEnergyContext: Equatable, Sendable {
   /// not count; a display with no wallpaper does not either.
   static func resolve(
     assignments: [(display: String, wallpaper: String)], suspendedDisplays: Set<UInt32>,
-    frameRateCap: UInt32?, renderScale: Float
+    frameRateCap: UInt32?, renderScale: Float,
+    resolveDisplay: (String) -> UInt32? = { UInt32($0) }
   ) -> WallpaperEnergyContext? {
-    let presenting = assignments.filter { assignment in
-      !assignment.wallpaper.isEmpty
-        && !(UInt32(assignment.display).map(suspendedDisplays.contains) ?? false)
+    var presenting: [(display: UInt32, wallpaper: String)] = []
+    for assignment in assignments where !assignment.wallpaper.isEmpty {
+      // Unknown topology means unknown attribution: dropping the row would charge
+      // another wallpaper's work to the one display we happened to resolve.
+      guard let display = resolveDisplay(assignment.display) else { return nil }
+      if !suspendedDisplays.contains(display) {
+        presenting.append((display, assignment.wallpaper))
+      }
     }
     let ids = Set(presenting.map(\.wallpaper))
     guard ids.count == 1, let id = ids.first else { return nil }
@@ -65,6 +71,7 @@ final class WallpaperEnergyRatings {
   static let saveInterval: TimeInterval = 600
 
   private(set) var entries: [String: WallpaperEnergyRating]
+  private(set) var revision: UInt64 = 0
   private let file: URL
   private var lastSave: Date?
   private var dirty = false
@@ -103,6 +110,7 @@ final class WallpaperEnergyRatings {
       entry.seconds = existing.seconds + seconds
     }
     entries[id] = entry
+    revision &+= 1
     dirty = true
     let due = lastSave.map { now.timeIntervalSince($0) >= Self.saveInterval } ?? true
     if due || rating(for: id)?.level != shownLevel { save(now: now) }

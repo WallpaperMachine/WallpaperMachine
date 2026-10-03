@@ -49,6 +49,14 @@ struct SystemMediaThumbnail: Equatable, Sendable {
     var rgba: [UInt8] = []
     var width: Int = 0
     var height: Int = 0
+
+    /// An explicit withdrawal is cached and replayed just like an image.
+    static let empty = SystemMediaThumbnail(
+        pngBase64DataURL: "", primaryColor: "rgb(0, 0, 0)",
+        secondaryColor: "rgb(0, 0, 0)", tertiaryColor: "rgb(0, 0, 0)",
+        textColor: "rgb(255, 255, 255)", highContrastColor: "rgb(255, 255, 255)")
+
+    var isEmpty: Bool { pngBase64DataURL.isEmpty && rgba.isEmpty }
 }
 
 /// The payload of a `wallpaperRegisterMediaTimelineListener` event, in seconds.

@@ -9,11 +9,39 @@ final class WallpaperMachineUITests: XCTestCase {
   override func setUpWithError() throws {
     continueAfterFailure = false
     app = XCUIApplication(bundleIdentifier: "app.wallpapermachine")
-    app.launchEnvironment["WALLPAPER_MACHINE_HOME"] =
-      NSTemporaryDirectory() + "WallpaperMachine-ui-" + UUID().uuidString
+    let identifier = UUID().uuidString
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("WallpaperMachine-ui-\(identifier)")
+    let suite = "app.wallpapermachine.tests.ui.\(identifier)"
+    let application = app!
+    // Register before any throwing setup, and terminate before removing data so
+    // a late preferences flush cannot recreate the test domain after cleanup.
+    addTeardownBlock { [weak self] in
+      if application.state != .notRunning {
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = self?.name ?? "UI test"
+        screenshot.lifetime = .keepAlways
+        self?.add(screenshot)
+        application.terminate()
+      }
+      let defaults = UserDefaults(suiteName: suite)
+      defaults?.removePersistentDomain(forName: suite)
+      defaults?.synchronize()
+      if FileManager.default.fileExists(atPath: root.path) {
+        try FileManager.default.removeItem(at: root)
+      }
+    }
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defaults.setPersistentDomain([
+      "WallpaperMachine.appLanguage": "en", "AppleLanguages": ["en"],
+      "WallpaperMachine.welcomeSeen": true, "WallpaperMachine.whatsNew.suppressed": true,
+    ], forName: suite)
+    defaults.synchronize()
+    app.launchEnvironment["WALLPAPER_MACHINE_HOME"] = root.path
+    app.launchEnvironment["WALLPAPER_MACHINE_DEFAULTS_SUITE"] = suite
+    // Foundation resolves native strings before the app's stores are created.
+    // Process arguments affect this launch only, never the host's global domain.
+    app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
     if name.contains("testInvalidVideo") {
-      let root = URL(
-        fileURLWithPath: try XCTUnwrap(app.launchEnvironment["WALLPAPER_MACHINE_HOME"]))
       let folder = root.appendingPathComponent("Library/broken-video")
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       try Data("not valid media".utf8).write(to: folder.appendingPathComponent("broken.mp4"))
@@ -26,14 +54,6 @@ final class WallpaperMachineUITests: XCTestCase {
     XCTAssertTrue(
       app.windows.firstMatch.waitForExistence(timeout: 30), "The client must open a real window")
     XCTAssertTrue(panel.waitForExistence(timeout: 30), "The window must expose its WebKit panel")
-  }
-
-  override func tearDownWithError() throws {
-    let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    screenshot.name = name
-    screenshot.lifetime = .keepAlways
-    add(screenshot)
-    app.terminate()
   }
 
   private func button(_ label: String) -> XCUIElement {
@@ -56,6 +76,16 @@ final class WallpaperMachineUITests: XCTestCase {
 
   private func pageText(_ prefix: String) -> XCUIElement {
     panel.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+  }
+
+  private func expectPage(_ number: Int, timeout: TimeInterval = 40) {
+    let field = panel.descendants(matching: .any)
+      .matching(NSPredicate(format: "label == %@", "Page number")).firstMatch
+    let loaded = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true AND value == %@", String(number)),
+      object: field)
+    XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: timeout), .completed,
+      "The enabled page-number control must show page \(number)")
   }
 
   private func navigate(_ label: String) {
@@ -149,7 +179,7 @@ final class WallpaperMachineUITests: XCTestCase {
     search.typeText("no-local-wallpaper-with-this-title")
     XCTAssertTrue(pageText("No matching wallpapers").waitForExistence(timeout: 10))
     XCTAssertFalse(wallpaper("Aurora Drift").exists)
-    button("Clear search and filters").click()
+    button("Clear search").click()
     XCTAssertTrue(wallpaper("Aurora Drift").waitForExistence(timeout: 10))
     XCTAssertEqual(app.alerts.count, 0)
   }
@@ -207,17 +237,17 @@ final class WallpaperMachineUITests: XCTestCase {
     search.click()
     search.typeText("forest")
     button("Search").click()
-    XCTAssertTrue(pageText("Page 1 of").waitForExistence(timeout: 40))
+    expectPage(1)
     let next = button("Next page")
     XCTAssertTrue(next.waitForExistence(timeout: 40))
     XCTAssertTrue(
       next.isEnabled, "The Workshop query needs more than one page to exercise pagination")
     next.click()
-    XCTAssertTrue(pageText("Page 2 of").waitForExistence(timeout: 40))
+    expectPage(2)
     navigate("Installed")
     navigate("Discover")
     XCTAssertEqual(searchField("Search Steam Workshop").value as? String, "forest")
-    XCTAssertTrue(pageText("Page 2 of").exists)
+    expectPage(2)
     XCTAssertEqual(app.alerts.count, 0)
   }
 

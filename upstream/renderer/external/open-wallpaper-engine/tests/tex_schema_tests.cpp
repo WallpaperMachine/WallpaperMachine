@@ -215,7 +215,7 @@ std::vector<uint8_t> Bmp1x1() {
         0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
         0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00,
         0x00, 0x00, 0x13, 0x0b, 0x00, 0x00, 0x13, 0x0b, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00,
     };
 }
 
@@ -560,6 +560,7 @@ TEST(TexSchema, UnknownImageTypeUsesMagicByteFallbackForDecodableContainers) {
     for (const auto& [label, payload, expected] : {
              std::tuple { "png", Png1x1(), ImageType::PNG },
              std::tuple { "gif", Gif1x1(), ImageType::GIF },
+             std::tuple { "bmp", Bmp1x1(), ImageType::BMP },
          }) {
         SCOPED_TRACE(label);
         fs::VFS vfs;
@@ -763,6 +764,22 @@ TEST(TexSchema, PackagedLooseImageStillLoadsFromTheMount) {
         EXPECT_EQ(image->slots[0].width, 1);
         EXPECT_EQ(image->slots[0].height, 1);
     }
+}
+
+TEST(TexSchema, PackagedLooseBmpDecodesItsPixels) {
+    fs::VFS vfs;
+    auto parser = MakeParserWithLooseImage(vfs, "/materials/backdrop.bmp", Bmp1x1());
+    const auto image = parser.Parse("backdrop.bmp");
+    ASSERT_NE(image, nullptr);
+    ASSERT_EQ(image->slots.size(), 1u);
+    ASSERT_EQ(image->slots[0].mipmaps.size(), 1u);
+    const auto& pixels = image->slots[0].mipmaps[0];
+    ASSERT_EQ(pixels.size, 4);
+    ASSERT_NE(pixels.data, nullptr);
+    EXPECT_EQ(pixels.data.get()[0], 0u);
+    EXPECT_EQ(pixels.data.get()[1], 0u);
+    EXPECT_EQ(pixels.data.get()[2], 255u);
+    EXPECT_EQ(pixels.data.get()[3], 255u);
 }
 
 // The property stores the path, not a copy of the file. A directory, a path

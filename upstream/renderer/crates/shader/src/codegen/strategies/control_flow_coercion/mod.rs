@@ -67,6 +67,7 @@ impl Emitable for ControlFlowCoercionStrategy {
         let cursor = tokens;
         let token_facts = module.token_facts().clone();
         let facts = SymbolFacts::new(module);
+        let modulo_helper = std::cell::Cell::new(false);
 
         for fact in token_facts.statements() {
             let statement = StatementFixupInput { fact };
@@ -74,6 +75,7 @@ impl Emitable for ControlFlowCoercionStrategy {
                 statement,
                 facts: &facts,
                 token_facts: &token_facts,
+                helper_requested: &modulo_helper,
             })
             .lowering_fixups(cursor)
             {
@@ -125,6 +127,10 @@ impl Emitable for ControlFlowCoercionStrategy {
             {
                 context.context().fixups.push(fixup);
             }
+        }
+
+        if modulo_helper.get() {
+            context.context().declarations.compatibility_functions.require_float_remainder();
         }
 
         for statement in token_facts.for_loops() {

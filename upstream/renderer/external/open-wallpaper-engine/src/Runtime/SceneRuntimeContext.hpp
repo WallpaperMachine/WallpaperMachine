@@ -425,6 +425,19 @@ private:
         std::unique_ptr<SceneScriptProgram> script;
         bool                                cursor_inside { false };
     };
+    template<typename Callback>
+    void ForEachEventScript(Callback&& callback) {
+        const auto value_count = m_scripted_values.size();
+        const auto script_count = m_scene_scripts.size();
+        for (std::size_t index = 0; index < value_count; ++index) {
+            auto* value = m_scripted_values[index];
+            if (value != nullptr) callback(value);
+        }
+        for (std::size_t index = 0; index < script_count; ++index) {
+            auto* script = m_scene_scripts[index].script.get();
+            if (script != nullptr) callback(script);
+        }
+    }
     struct LayerTemplateBinding {
         std::string                canonical_path;
         std::shared_ptr<SceneNode> node;

@@ -78,6 +78,7 @@ final class LayoutSnapshotBridge: WallpaperBridge {
   @MainActor var batteryModeCalls: [BridgeBatteryMode] = []
   @MainActor var renderScaleCalls: [Float] = []
   @MainActor var frameRateCapCalls: [UInt32?] = []
+  @MainActor var hostStartupCalls: [(display: UInt32, wallpaper: String, revision: UInt64, admission: UInt64?, ready: Bool)] = []
   @MainActor var bundleProvider: (@MainActor () -> BridgeSnapshotBundle)?
 
   override func setBatteryMode(mode: BridgeBatteryMode) async throws -> BridgeSnapshotBundle {
@@ -90,6 +91,13 @@ final class LayoutSnapshotBridge: WallpaperBridge {
 
   override func setFrameRateCap(cap: UInt32?) async throws -> BridgeSnapshotBundle {
     try await reply { $0.frameRateCapCalls.append(cap) }
+  }
+
+  override func reportHostWallpaperStartup(displayId: UInt32, wallpaperId: String,
+    startupRevision: UInt64, nativeAdmissionKey: UInt64?, ready: Bool) async throws -> BridgeSnapshotBundle {
+    try await reply {
+      $0.hostStartupCalls.append((displayId, wallpaperId, startupRevision, nativeAdmissionKey, ready))
+    }
   }
 
   @MainActor private func reply(_ record: @MainActor (LayoutSnapshotBridge) -> Void) throws -> BridgeSnapshotBundle {
@@ -180,8 +188,14 @@ final class PanelUpdateClient: AppUpdateClient, @unchecked Sendable {
 final class PanelUpdateInstaller: AppUpdateInstalling, @unchecked Sendable {
   var canInstallInPlace = true
   var installCalls = 0
-  func prepareInstallation(archive: URL) throws -> URL { archive }
-  func install(extractedApp: URL, replacing destination: URL) throws { installCalls += 1 }
+  func prepareInstallation(archive: URL) async throws -> URL { archive }
+  func install(extractedApp: URL, replacing destination: URL) throws -> any AppUpdateInstallationTask {
+    installCalls += 1
+    return Installation()
+  }
+  private struct Installation: AppUpdateInstallationTask {
+    func cancel() async -> Bool { true }
+  }
 }
 
 struct UnavailableRuntime: SteamCMDRuntimeProviding {
@@ -229,7 +243,8 @@ final class PanelFixture {
   /// `ClientPaths.libraryURL` while this fixture's home is in effect.
   let library: URL
 
-  init(store: BridgeStore, bridge: LayoutSnapshotBridge, displayTitles: DisplayTitleResolver) throws {
+  init(store: BridgeStore, bridge: LayoutSnapshotBridge, displayTitles: DisplayTitleResolver,
+    pixivTransport: (any PixivTransport)? = nil) throws {
     self.store = store
     self.bridge = bridge
     library = root.appendingPathComponent("Library", isDirectory: true)
@@ -285,7 +300,7 @@ final class PanelFixture {
       ])
     })
     pixiv = PixivStore(
-      service: PixivService(transport: transport, minimumInterval: .zero),
+      service: PixivService(transport: pixivTransport ?? transport, minimumInterval: .zero),
       packager: PixivWallpaperPackager(library: library),
       sessions: pixivSessions)
     let visibility = self.visibility
@@ -347,17 +362,21 @@ final class PanelFixture {
 
   func installRecorder() async throws {
     _ = try await js("""
-      window.powerProbe = {received:[], active:0, maxActive:0, pending:[], hold:false};
+      window.powerProbe = {received:[], active:0, maxActive:0, pending:[], hold:false, measureWire:false, wire:[]};
       const receive = window.wallpaperUI.receive;
       window.wallpaperUI.receive = state => {
         const probe = window.powerProbe;
         probe.active++;
         probe.maxActive = Math.max(probe.maxActive, probe.active);
         probe.received.push(state);
-        const finish = () => { receive(state); probe.active--; };
-        if (probe.hold) return new Promise(resolve => probe.pending.push(() => { finish(); resolve(null); }));
-        finish();
-        return null;
+        if (probe.measureWire) probe.wire.push({
+          bytes:new TextEncoder().encode(JSON.stringify(state)).byteLength,
+          hasLibrary:Array.isArray(state.wallpapers), revision:state.libraryRevision,
+          count:state.wallpapers?.length ?? null
+        });
+        const finish = () => { const result = receive(state); probe.active--; return result; };
+        if (probe.hold) return new Promise(resolve => probe.pending.push(() => resolve(finish())));
+        return finish();
       };
       """)
   }
@@ -510,4 +529,3 @@ final class PanelPickers {
   /// The package Choose backup… opens; nil is the open panel's Cancel.
   var restoreBackup: () async -> URL? = { nil }
 }
-

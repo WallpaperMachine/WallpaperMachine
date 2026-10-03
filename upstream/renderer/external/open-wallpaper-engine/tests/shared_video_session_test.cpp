@@ -21,12 +21,15 @@
 
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
+#include <barrier>
 #include <chrono>
 #include <filesystem>
 #include <memory>
 #include <thread>
 #include <string>
+#include <vector>
 
 namespace wallpaper::video
 {
@@ -107,6 +110,48 @@ TEST_F(SharedVideoSessionTest, EquivalentConsumersShareOneDecoder) {
     // A roll-up that de-duplicates on it therefore counts one decode, not two.
     EXPECT_NE(first->sourceStats().instance_id, 0u);
     EXPECT_EQ(first->sourceStats().instance_id, second->sourceStats().instance_id);
+}
+
+TEST_F(SharedVideoSessionTest, ConcurrentConsumersReceiveTheSameInitializedFrame) {
+    auto image = MakeFileImage("concurrent.mp4", "concurrent-prime");
+    ASSERT_NE(image, nullptr);
+    constexpr size_t count = 4;
+    std::array<std::shared_ptr<VideoTextureSource>, count> sources;
+    std::array<std::string, count> errors;
+    std::array<bool, count> ready {};
+    for (size_t i = 0; i < count; ++i) {
+        sources[i] = AcquireVideoTextureSource(*image, &errors[i]);
+        ASSERT_NE(sources[i], nullptr) << errors[i];
+    }
+    std::barrier start(static_cast<ptrdiff_t>(count));
+    std::vector<std::thread> workers;
+    for (size_t i = 0; i < count; ++i) {
+        workers.emplace_back([&, i] {
+            start.arrive_and_wait();
+            ready[i] = sources[i]->prime(&errors[i]);
+        });
+    }
+    for (auto& worker : workers) worker.join();
+    for (size_t i = 0; i < count; ++i) {
+        ASSERT_TRUE(ready[i]) << errors[i];
+        ASSERT_TRUE(sources[i]->syncPlayback(VideoPlaybackState {false, 1.0f, 0.0}, &errors[i])) << errors[i];
+        ASSERT_TRUE(sources[i]->refreshFrame(&errors[i])) << errors[i];
+        EXPECT_TRUE(sources[i]->currentFrame().valid());
+        EXPECT_EQ(sources[i]->sourceStats().instance_id, sources[0]->sourceStats().instance_id);
+    }
+    EXPECT_EQ(SharedVideoDecodeSessionCount(), 1u);
+}
+
+TEST_F(SharedVideoSessionTest, FailedInitializationIsReportedConsistentlyToEveryCaller) {
+    auto source = std::make_shared<FfmpegVideoTextureSource>((dir / "not-present.mp4").string());
+    std::array<std::string, 2> errors;
+    std::thread first([&] { EXPECT_FALSE(source->prime(&errors[0])); });
+    std::thread second([&] { EXPECT_FALSE(source->prime(&errors[1])); });
+    first.join();
+    second.join();
+    EXPECT_FALSE(errors[0].empty());
+    EXPECT_EQ(errors[0], errors[1]);
+    EXPECT_FALSE(source->currentFrame().valid());
 }
 
 TEST_F(SharedVideoSessionTest, SameFileNameInDifferentProjectsIsNotShared) {

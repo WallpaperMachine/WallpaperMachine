@@ -75,8 +75,9 @@ def xcodebuild_command(scheme, target, result, only=None, parallel=True):
 
 
 def prune_result_bundles(keep=KEPT_RESULT_BUNDLES, directory=TEST_ARTIFACTS):
-    """Delete all but the `keep` newest result bundles (and their logs), newest by name."""
-    bundles = sorted((entry for entry in directory.glob("*.xcresult") if entry.is_dir()), reverse=True)
+    """Keep the newest timestamped bundles and logs across native and UI runs."""
+    bundles = sorted((entry for entry in directory.glob("*.xcresult") if entry.is_dir()),
+                     key=lambda entry: (entry.stem.partition("-")[2], entry.name), reverse=True)
     for stale in bundles[keep:]:
         shutil.rmtree(stale, ignore_errors=True)
         stale.with_suffix(".log").unlink(missing_ok=True)

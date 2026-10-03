@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <string_view>
@@ -47,6 +48,7 @@ public:
         bool         muted { false };
         bool         startsilent { false };
         PlaybackMode mode { PlaybackMode::OneShot };
+        std::optional<uint32_t> random_seed;
     };
 
     WPSoundStream(const std::vector<std::string>& paths, fs::VFS& vfs, Config config);
@@ -69,10 +71,12 @@ public:
 private:
     void        Switch();
     std::size_t LoopIndex();
+    uint64_t    DelayFrames();
 
     Config                              m_config;
     Desc                                m_desc {};
     std::size_t                         m_cur_index { 0 };
+    uint64_t                            m_delay_frames { 0 };
     std::vector<StreamFactory>          m_stream_factories;
     std::shared_ptr<audio::SoundStream> m_cur_active;
     std::mt19937                        m_random { std::random_device {}() };

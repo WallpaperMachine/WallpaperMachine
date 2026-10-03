@@ -70,6 +70,12 @@ final class AdapterSystemMediaProviderTests: XCTestCase {
         let png = try makeSyntheticPNG(width: 2, height: 2) { _, _ in (255, 0, 0) }
         try stream.send(["title": "First", "playing": true, "artworkData": png.base64EncodedString()])
         XCTAssertTrue(covers.last?.hasPrefix("data:image/png;base64,") == true)
+        try stream.send(["title": "First", "playing": true, "artworkData": ""])
+        XCTAssertEqual(covers.last, "", "An explicit withdrawal clears artwork even before the title changes")
+        provider.replayCurrentState()
+        XCTAssertEqual(covers.last, "")
+        try stream.send(["title": "First", "playing": true, "artworkData": png.base64EncodedString()])
+        XCTAssertTrue(covers.last?.hasPrefix("data:image/png;base64,") == true)
         try stream.send(["title": "Second", "playing": true])
         XCTAssertEqual(covers.last, "")
         try stream.send([:])

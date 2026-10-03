@@ -40,6 +40,35 @@ struct DesktopPosterFrame: Sendable {
     var width: Int
     var height: Int
     var bgra: Bool
+
+    static func rgba(_ image: CGImage) -> DesktopPosterFrame? {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0, width <= 16_384, height <= 16_384,
+              width * height <= 32 * 1024 * 1024,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var pixels = Data(count: width * height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: space,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drawn ? DesktopPosterFrame(pixels: pixels, width: width, height: height, bgra: false) : nil
+    }
+
+    @MainActor
+    func publish(for layer: CALayer, to center: NotificationCenter) {
+        center.post(name: DesktopPosterNotification.ready, object: layer,
+                    userInfo: ["pixels": pixels, "width": width, "height": height, "bgra": bgra])
+    }
+}
+
+enum DesktopPosterNotification {
+    static let request = Notification.Name("WallpaperMachine.requestDesktopPoster")
+    static let ready = Notification.Name("WallpaperMachine.desktopPosterReady")
 }
 
 /// `layer` identifies the surface: the renderer's `CAMetalLayer`, or a web
@@ -101,7 +130,7 @@ final class DesktopWallpaperSync {
     func start() {
         guard frameObserver == nil, !stopped else { return }
         frameObserver = frameCenter.addObserver(
-            forName: Notification.Name("WallpaperMachine.desktopPosterReady"), object: nil, queue: .main
+            forName: DesktopPosterNotification.ready, object: nil, queue: .main
         ) { [weak self] notification in
             MainActor.assumeIsolated { self?.receive(notification) }
         }
@@ -158,7 +187,7 @@ final class DesktopWallpaperSync {
         // snapshot, or an activeSpaceDidChange notification to request pixels.
         if capture {
             for surface in surfaces() {
-                frameCenter.post(name: Notification.Name("WallpaperMachine.requestDesktopPoster"), object: surface.layer)
+                frameCenter.post(name: DesktopPosterNotification.request, object: surface.layer)
             }
         }
         synchronizeAllSpaces()

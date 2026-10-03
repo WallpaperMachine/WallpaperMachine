@@ -108,7 +108,13 @@ final class ImageImportTests: XCTestCase {
         try imports.start([try picture("One.png", width: 8, height: 8)], duplicates: .skip)
         XCTAssertTrue(imports.isBusy)
         XCTAssertThrowsError(try imports.start([try picture("Two.png", width: 8, height: 8)], duplicates: .skip))
-        while imports.isBusy { try await Task.sleep(for: .milliseconds(10)) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while imports.isBusy && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        guard !imports.isBusy else {
+            await imports.shutdown()
+            XCTFail("The import did not finish before the deadline")
+            return
+        }
         XCTAssertEqual(imports.report?.importedIDs, ["image-One.png"])
         XCTAssertNil(imports.failure)
         XCTAssertEqual(rescans, 1)

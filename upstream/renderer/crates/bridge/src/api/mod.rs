@@ -298,6 +298,7 @@ impl<E: EngineFacade> BridgeBuilder<E> {
             mouse_poller,
             power_watcher,
             system_media: SystemMediaStore::default(),
+            system_media_submission: tokio::sync::Mutex::new(()),
             engine,
             _config_store: self.config_store,
             user_shortcuts: tokio::sync::Mutex::new(shortcut_receiver),
@@ -575,6 +576,8 @@ pub struct WallpaperBridge {
     /// after the fact. Process-wide, like the system player it describes, so
     /// it is deliberately not actor state.
     system_media: SystemMediaStore,
+    /// Orders acceptance and live publication as one submission operation.
+    system_media_submission: tokio::sync::Mutex<()>,
     /// The engine the actor drives, kept here so the process-wide audio
     /// analysis can be read without an actor round trip on every poll.
     engine: ArcEngineFacade,
@@ -966,6 +969,25 @@ impl WallpaperBridge {
     /// cannot be resolved.
     pub async fn web_wallpapers(&self) -> Result<Vec<BridgeWebWallpaper>, BridgeError> {
         self.actor.ask(GetWebWallpapers).await
+    }
+
+    /// Completes the first host-rendered frame wait, or reports terminal load failure.
+    /// Echo the descriptor's revision and, for native video, its admission key.
+    /// Stale assignments are ignored and a user's explicit pause/resume wins.
+    ///
+    /// # Errors
+    /// Returns an error if current assignments cannot be read or power policy fails.
+    pub async fn report_host_wallpaper_startup(
+        &self,
+        display_id: u32,
+        wallpaper_id: String,
+        startup_revision: u64,
+        native_admission_key: Option<u64>,
+        ready: bool,
+    ) -> Result<BridgeSnapshotBundle, BridgeError> {
+        self.actor.ask(crate::actor::messages::ReportHostWallpaperStartup {
+            display_id, wallpaper_id, startup_revision, native_admission_key, ready,
+        }).await
     }
 
     /// # Errors
@@ -1813,7 +1835,10 @@ impl WallpaperBridge {
     /// Returns an error when `json` is not an object or its `type` is not a
     /// media event tag.
     pub async fn submit_system_media_event(&self, json: String) -> Result<(), BridgeError> {
-        let _ = self.system_media.submit(&json)?;
+        let _submission = self.system_media_submission.lock().await;
+        if self.system_media.submit(&json)? == crate::media::MediaSubmission::Stale {
+            return Ok(());
+        }
         self.actor
             .ask(crate::actor::messages::FanOutSystemMediaEvent { json })
             .await

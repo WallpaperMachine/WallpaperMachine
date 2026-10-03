@@ -112,6 +112,7 @@ void FinPass::setPresentFormat(VkFormat format) { m_desc.present_format = format
 void FinPass::setPresentQueueIndex(uint32_t i) { m_desc.present_queue_index = i; }
 
 void FinPass::prepare(Scene& scene, const Device& device, RenderingResources& rr) {
+    m_scene = &scene;
     setPrepared(false);
     {
         auto tex_name = scene.ResolveRenderTargetName(std::string(m_desc.result));
@@ -335,9 +336,17 @@ VkResult FinPass::recordComposition(RenderingResources& rr, VkRenderPass render_
     cmd.EndRenderPass();
     return VK_SUCCESS;
 }
+bool FinPass::updateFrame(const Device&, RenderingResources&) {
+    if (m_scene != nullptr) {
+        const auto& color = m_scene->clearColor;
+        m_desc.clear_value = VkClearValue { color[0], color[1], color[2], 1.0f };
+    }
+    return true;
+}
+
 void FinPass::resetPreparedState(RenderingResources& rr) {
     setPrepared(false);
-    clearReleaseTexs();
+    m_scene = nullptr;
     m_framebuffers.clear();
     m_copy_source_pass = {};
     ResetPipelineParameters(m_desc.pipeline);

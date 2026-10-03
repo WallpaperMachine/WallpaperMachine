@@ -32,7 +32,8 @@ impl BridgeMediaSnapshot {
             MediaThumbnailRgba::new(self.artwork_width, self.artwork_height, self.artwork_rgba)
                 .map_err(super::BridgeError::invalid_input)?
         } else {
-            MediaThumbnailRgba::new(1, 1, vec![0, 0, 0, 0]).expect("transparent pixel")
+            MediaThumbnailRgba::new(self.artwork_width, self.artwork_height, self.artwork_rgba)
+                .map_err(super::BridgeError::invalid_input)?
         };
         let mut events = vec![Event::StatusChanged { enabled: true },
             Event::PropertiesChanged(MediaProperties { title: Some(self.title), artist: Some(self.artist), album_title: Some(self.album) }),
@@ -96,6 +97,8 @@ pub struct BridgeLockScreenScene {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct BridgeWebWallpaper {
     pub display_id: u32,
+    /// Reconcile revision to echo when this host finishes its initial load.
+    pub startup_revision: u64,
     pub display_key: String,
     /// Source display of this assignment; independent instances of one project remain separate.
     pub audio_source_display_id: u32,
@@ -633,6 +636,8 @@ pub struct BridgeRendererCountersReport {
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct BridgeNativeVideoWallpaper {
     pub display_id: u32,
+    /// Reconcile revision to echo when this host finishes its initial load.
+    pub startup_revision: u64,
     pub wallpaper_id: String,
     pub title: String,
     /// Absolute path to the media file, already containment-checked against the

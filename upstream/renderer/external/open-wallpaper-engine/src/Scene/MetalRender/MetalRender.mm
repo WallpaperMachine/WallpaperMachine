@@ -1240,6 +1240,8 @@ struct MetalRender::Impl
         id<MTLSamplerState>             chroma_sampler { nil };
         std::string                     range_uniform;
         std::string                     matrix_uniform;
+        std::string                     uv_transform_uniform;
+        std::string                     uv_offset_uniform;
         /// One uniform buffer per in-flight frame, sized to this variant's own
         /// block.
         ///
@@ -2907,9 +2909,13 @@ bool MetalRender::Impl::installVideoPlaneDraw(Scene& scene, std::size_t index, P
     // planes and convert them with zeroes.
     draw.range_uniform  = VideoRangeUniformName(slot);
     draw.matrix_uniform = VideoMatrixUniformName(slot);
+    draw.uv_transform_uniform = "_we_VideoUvTransform" + std::to_string(slot);
+    draw.uv_offset_uniform = "_we_VideoUvOffset" + std::to_string(slot);
     if (! draw.reflection.hasMember(draw.range_uniform) ||
-        ! draw.reflection.hasMember(draw.matrix_uniform)) {
-        return refuse("the variant carries no colour constants for the plane it samples");
+        ! draw.reflection.hasMember(draw.matrix_uniform) ||
+        ! draw.reflection.hasMember(draw.uv_transform_uniform) ||
+        ! draw.reflection.hasMember(draw.uv_offset_uniform)) {
+        return refuse("the variant carries incomplete colour or display constants for the plane it samples");
     }
 
     const auto texture = scene.textures.find(desc.texture_keys[slot]);
@@ -3312,6 +3318,10 @@ void MetalRender::Impl::writeUniforms(Scene& scene, const ScenePassDescription& 
                   ShaderValue(std::span<const float>(range.data(), range.size())));
             write(pass.video_planes.matrix_uniform,
                   ShaderValue(std::span<const float>(matrix.data(), matrix.size())));
+            const auto& uv_transform = planes.display_transform.matrix;
+            const auto& uv_offset = planes.display_transform.offset;
+            write(pass.video_planes.uv_transform_uniform, ShaderValue(std::span<const float>(uv_transform)));
+            write(pass.video_planes.uv_offset_uniform, ShaderValue(std::span<const float>(uv_offset)));
         }
     }
 
@@ -3739,8 +3749,10 @@ vulkan::StaticPassSample MetalRender::Impl::frameSample(Scene& scene, std::size_
     vulkan::StaticPassSample sample;
     const auto&              desc = descriptions[index];
     if (desc.kind != MetalPassKind::CustomShader) {
-        // A clear or a copy carries no varying state of its own: it is skipped
-        // exactly when the target it writes is.
+        if (desc.uses_scene_clear_color) {
+            sample.hash = vulkan::StaticHashBytes(0xcbf29ce484222325ULL,
+                desc.clear_color.data(), sizeof(float) * desc.clear_color.size());
+        }
         return sample;
     }
     sample.visible = desc.visibility_node == nullptr ||
@@ -3749,6 +3761,9 @@ vulkan::StaticPassSample MetalRender::Impl::frameSample(Scene& scene, std::size_
                      desc.target_key != wallpaper::SpecTex_Default);
 
     uint64_t hash = 0xcbf29ce484222325ULL;
+    if (desc.uses_scene_clear_color) {
+        hash = vulkan::StaticHashBytes(hash, desc.clear_color.data(), sizeof(float) * desc.clear_color.size());
+    }
     if (desc.node != nullptr) {
         // Idempotent, and the transform has to be current before it is
         // compared: a parent moved by a script updates lazily.
@@ -4328,6 +4343,11 @@ bool MetalRender::drawFrame(Scene& scene, bool* presented)
         // describe the previous frame. Nothing above is conditional on the
         // plan, so a reused target still costs its scripts, its sprite step and
         // its uniform write -- only the drawing is removed.
+        for (auto& desc : impl.descriptions) {
+            if (desc.uses_scene_clear_color) {
+                desc.clear_color = { scene.clearColor[0], scene.clearColor[1], scene.clearColor[2], 1.0f };
+            }
+        }
         impl.planStaticSkips(scene);
         // A frame that fails after the plan has already recorded this frame's
         // signatures must not leave those signatures behind: the next frame

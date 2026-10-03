@@ -222,13 +222,12 @@ final class AdapterSystemMediaProvider: SystemMediaProvider {
         if let cover, cover != thumbnail {
             thumbnail = cover
             onThumbnailChanged?(cover)
-        } else if cover == nil && (changed || payload.isEmpty) {
+        } else if cover == nil && thumbnail != .empty
+                    && (changed || payload.isEmpty || payload["artworkData"] != nil) {
             // An explicit empty image clears the previous track in both web and scene consumers.
-            let empty = SystemMediaThumbnail(pngBase64DataURL: "", primaryColor: "rgb(0, 0, 0)",
-                secondaryColor: "rgb(0, 0, 0)", tertiaryColor: "rgb(0, 0, 0)",
-                textColor: "rgb(255, 255, 255)", highContrastColor: "rgb(255, 255, 255)")
-            thumbnail = empty
-            onThumbnailChanged?(empty)
+            resolvedArtwork = nil
+            thumbnail = .empty
+            onThumbnailChanged?(.empty)
         }
         let nextPlayback: SystemMediaPlaybackState = payload.isEmpty ? .stopped :
             (payload["playing"] as? Bool == true ? .playing : .paused)

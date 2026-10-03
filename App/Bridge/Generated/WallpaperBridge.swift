@@ -836,6 +836,16 @@ public protocol WallpaperBridgeProtocol : AnyObject {
     func rendererCounters() async throws  -> BridgeRendererCountersReport
     
     /**
+     * Completes the first host-rendered frame wait, or reports terminal load failure.
+     * Echo the descriptor's revision and, for native video, its admission key.
+     * Stale assignments are ignored and a user's explicit pause/resume wins.
+     *
+     * # Errors
+     * Returns an error if current assignments cannot be read or power policy fails.
+     */
+    func reportHostWallpaperStartup(displayId: UInt32, wallpaperId: String, startupRevision: UInt64, nativeAdmissionKey: UInt64?, ready: Bool) async throws  -> BridgeSnapshotBundle
+    
+    /**
      * # Errors
      *
      * Returns an error when the wallpaper or property id is unknown.
@@ -2052,6 +2062,31 @@ open func rendererCounters()async throws  -> BridgeRendererCountersReport {
             completeFunc: ffi_wallpaper_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_wallpaper_bridge_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeBridgeRendererCountersReport.lift,
+            errorHandler: FfiConverterTypeBridgeError.lift
+        )
+}
+    
+    /**
+     * Completes the first host-rendered frame wait, or reports terminal load failure.
+     * Echo the descriptor's revision and, for native video, its admission key.
+     * Stale assignments are ignored and a user's explicit pause/resume wins.
+     *
+     * # Errors
+     * Returns an error if current assignments cannot be read or power policy fails.
+     */
+open func reportHostWallpaperStartup(displayId: UInt32, wallpaperId: String, startupRevision: UInt64, nativeAdmissionKey: UInt64?, ready: Bool)async throws  -> BridgeSnapshotBundle {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_wallpaper_bridge_fn_method_wallpaperbridge_report_host_wallpaper_startup(
+                    self.uniffiClonePointer(),
+                    FfiConverterUInt32.lower(displayId),FfiConverterString.lower(wallpaperId),FfiConverterUInt64.lower(startupRevision),FfiConverterOptionUInt64.lower(nativeAdmissionKey),FfiConverterBool.lower(ready)
+                )
+            },
+            pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_wallpaper_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_wallpaper_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBridgeSnapshotBundle.lift,
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
@@ -4683,6 +4718,10 @@ public func FfiConverterTypeBridgeMonitorInformationSnapshot_lower(_ value: Brid
  */
 public struct BridgeNativeVideoWallpaper {
     public var displayId: UInt32
+    /**
+     * Reconcile revision to echo when this host finishes its initial load.
+     */
+    public var startupRevision: UInt64
     public var wallpaperId: String
     public var title: String
     /**
@@ -4727,7 +4766,10 @@ public struct BridgeNativeVideoWallpaper {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(displayId: UInt32, wallpaperId: String, title: String, 
+    public init(displayId: UInt32, 
+        /**
+         * Reconcile revision to echo when this host finishes its initial load.
+         */startupRevision: UInt64, wallpaperId: String, title: String, 
         /**
          * Absolute path to the media file, already containment-checked against the
          * project directory.
@@ -4759,6 +4801,7 @@ public struct BridgeNativeVideoWallpaper {
          * this display by the activation rules.
          */paused: Bool, volume: Float, muted: Bool, scalingMode: BridgeScalingMode, scalingFactor: Double) {
         self.displayId = displayId
+        self.startupRevision = startupRevision
         self.wallpaperId = wallpaperId
         self.title = title
         self.mediaPath = mediaPath
@@ -4778,6 +4821,9 @@ public struct BridgeNativeVideoWallpaper {
 extension BridgeNativeVideoWallpaper: Equatable, Hashable {
     public static func ==(lhs: BridgeNativeVideoWallpaper, rhs: BridgeNativeVideoWallpaper) -> Bool {
         if lhs.displayId != rhs.displayId {
+            return false
+        }
+        if lhs.startupRevision != rhs.startupRevision {
             return false
         }
         if lhs.wallpaperId != rhs.wallpaperId {
@@ -4818,6 +4864,7 @@ extension BridgeNativeVideoWallpaper: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(displayId)
+        hasher.combine(startupRevision)
         hasher.combine(wallpaperId)
         hasher.combine(title)
         hasher.combine(mediaPath)
@@ -4841,6 +4888,7 @@ public struct FfiConverterTypeBridgeNativeVideoWallpaper: FfiConverterRustBuffer
         return
             try BridgeNativeVideoWallpaper(
                 displayId: FfiConverterUInt32.read(from: &buf), 
+                startupRevision: FfiConverterUInt64.read(from: &buf), 
                 wallpaperId: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
                 mediaPath: FfiConverterString.read(from: &buf), 
@@ -4857,6 +4905,7 @@ public struct FfiConverterTypeBridgeNativeVideoWallpaper: FfiConverterRustBuffer
 
     public static func write(_ value: BridgeNativeVideoWallpaper, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.displayId, into: &buf)
+        FfiConverterUInt64.write(value.startupRevision, into: &buf)
         FfiConverterString.write(value.wallpaperId, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.mediaPath, into: &buf)
@@ -7083,6 +7132,10 @@ public func FfiConverterTypeBridgeWallpaperOptionsSnapshot_lower(_ value: Bridge
  */
 public struct BridgeWebWallpaper {
     public var displayId: UInt32
+    /**
+     * Reconcile revision to echo when this host finishes its initial load.
+     */
+    public var startupRevision: UInt64
     public var displayKey: String
     /**
      * Source display of this assignment; independent instances of one project remain separate.
@@ -7120,7 +7173,10 @@ public struct BridgeWebWallpaper {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(displayId: UInt32, displayKey: String, 
+    public init(displayId: UInt32, 
+        /**
+         * Reconcile revision to echo when this host finishes its initial load.
+         */startupRevision: UInt64, displayKey: String, 
         /**
          * Source display of this assignment; independent instances of one project remain separate.
          */audioSourceDisplayId: UInt32, wallpaperId: String, title: String, 
@@ -7143,6 +7199,7 @@ public struct BridgeWebWallpaper {
          * directory properties.
          */propertiesJson: String) {
         self.displayId = displayId
+        self.startupRevision = startupRevision
         self.displayKey = displayKey
         self.audioSourceDisplayId = audioSourceDisplayId
         self.wallpaperId = wallpaperId
@@ -7164,6 +7221,9 @@ public struct BridgeWebWallpaper {
 extension BridgeWebWallpaper: Equatable, Hashable {
     public static func ==(lhs: BridgeWebWallpaper, rhs: BridgeWebWallpaper) -> Bool {
         if lhs.displayId != rhs.displayId {
+            return false
+        }
+        if lhs.startupRevision != rhs.startupRevision {
             return false
         }
         if lhs.displayKey != rhs.displayKey {
@@ -7210,6 +7270,7 @@ extension BridgeWebWallpaper: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(displayId)
+        hasher.combine(startupRevision)
         hasher.combine(displayKey)
         hasher.combine(audioSourceDisplayId)
         hasher.combine(wallpaperId)
@@ -7235,6 +7296,7 @@ public struct FfiConverterTypeBridgeWebWallpaper: FfiConverterRustBuffer {
         return
             try BridgeWebWallpaper(
                 displayId: FfiConverterUInt32.read(from: &buf), 
+                startupRevision: FfiConverterUInt64.read(from: &buf), 
                 displayKey: FfiConverterString.read(from: &buf), 
                 audioSourceDisplayId: FfiConverterUInt32.read(from: &buf), 
                 wallpaperId: FfiConverterString.read(from: &buf), 
@@ -7253,6 +7315,7 @@ public struct FfiConverterTypeBridgeWebWallpaper: FfiConverterRustBuffer {
 
     public static func write(_ value: BridgeWebWallpaper, into buf: inout [UInt8]) {
         FfiConverterUInt32.write(value.displayId, into: &buf)
+        FfiConverterUInt64.write(value.startupRevision, into: &buf)
         FfiConverterString.write(value.displayKey, into: &buf)
         FfiConverterUInt32.write(value.audioSourceDisplayId, into: &buf)
         FfiConverterString.write(value.wallpaperId, into: &buf)
@@ -9082,6 +9145,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_renderer_counters() != 60387) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_report_host_wallpaper_startup() != 52458) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_restore_property_default() != 28754) {

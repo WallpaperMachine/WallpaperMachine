@@ -2,6 +2,17 @@
    and data-i18n in WebUI/; see docs/localization.md for how a catalog is maintained. */
 
 export default {
+  'pixiv downloads run two at a time; paused downloads stay in the queue.': 'pixiv 下载每次同时运行两个；已暂停的下载会保留在队列中。',
+  'On. Waiting for an audio frame.': '已开启，正在等待音频数据。',
+  'On. Connecting to audio…': '已开启，正在连接音频…',
+  'Audio could not be connected. Turn Audio response off and on to retry.': '音频连接失败。关闭再开启“音频响应”以重试。',
+  'Download paused': '下载已暂停',
+  'Pause download': '暂停下载',
+  'Resume download': '继续下载',
+  'Wallpaper could not load': '壁纸无法加载',
+  'Wallpaper content is ready': '壁纸内容已就绪',
+  'Loading wallpaper content…': '正在加载壁纸内容…',
+  'Retry wallpaper': '重试壁纸',
   'Wallpaper Engine ownership confirmed. You can download its Workshop wallpapers.': '已确认拥有 Wallpaper Engine。你可以下载其创意工坊壁纸。',
   'This Steam account does not own Wallpaper Engine. Please purchase it on Steam to download Wallpaper Engine wallpapers. You can still download from Pixiv, browse the Workshop, and view Wallpaper Engine wallpapers you already have.': '此 Steam 账户未拥有 Wallpaper Engine。请在 Steam 上购买后再下载 Wallpaper Engine 壁纸。你仍可从 Pixiv 下载、浏览创意工坊，以及查看已有的 Wallpaper Engine 壁纸。',
   'Wallpaper Engine ownership has not been confirmed. Check again to verify this account can download its Workshop wallpapers. You can still download from Pixiv, browse the Workshop, and view wallpapers you already have.': '尚未确认是否拥有 Wallpaper Engine。请重新检查此账户能否下载其创意工坊壁纸。你仍可从 Pixiv 下载、浏览创意工坊，以及查看已有的壁纸。',

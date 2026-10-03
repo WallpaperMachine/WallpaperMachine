@@ -96,51 +96,38 @@ CustomShaderPass* FindDirectPresentationPass(Scene& scene, std::span<VulkanPass*
     return pass;
 }
 
-bool HasUsableReflection(const ShaderReflected& ref) {
-    return ! ref.binding_map.empty() || ! ref.blocks.empty() || ! ref.input_location_map.empty();
-}
-
 bool ReflectCustomShader(const SceneShader& shader, std::vector<Uni_ShaderSpv>& spvs,
                          ShaderReflected& ref) {
-    const auto reflect_spirv = [&]() {
-        ref = {};
-        return GenReflect(shader.codes, spvs, ref);
-    };
-
-    if (shader.rust_reflection_json.has_value()) {
-        wallpaper::shader::RustShaderOutput rust_shader_output;
-        try {
-            wallpaper::shader::ApplyRustShaderReflectionJson(*shader.rust_reflection_json,
-                                                              rust_shader_output);
-            if (! HasUsableReflection(rust_shader_output.reflection)) {
-                LOG_ERROR("Rust shader reflection for '%s' is empty; falling back to SPIR-V "
-                          "reflection",
-                          shader.name.c_str());
-            } else {
-                ref = std::move(rust_shader_output.reflection);
-                spvs.clear();
-                spvs.reserve(shader.codes.size());
-                for (size_t index = 0; index < shader.codes.size(); ++index) {
-                    Uni_ShaderSpv spv = std::make_unique<ShaderSpv>();
-                    spv->stage        = index == 0 ? ShaderType::VERTEX : ShaderType::FRAGMENT;
-                    spv->spirv        = shader.codes[index];
-                    spvs.emplace_back(std::move(spv));
-                }
-                return true;
-            }
-        } catch (const std::exception& error) {
-            LOG_ERROR("parse Rust shader reflection failed for '%s': %s; falling back to SPIR-V "
-                      "reflection",
-                      shader.name.c_str(),
-                      error.what());
-        }
-    }
-
-    if (! reflect_spirv()) {
-        LOG_ERROR("gen spv reflect failed, %s", shader.name.c_str());
+    ref = {};
+    spvs.clear();
+    if (! shader.rust_reflection_json.has_value()) {
+        LOG_ERROR("shader '%s' has no Rust reflection metadata", shader.name.c_str());
         return false;
     }
-    return true;
+    try {
+        const auto metadata = nlohmann::json::parse(*shader.rust_reflection_json);
+        for (const char* key : {"descriptor_bindings", "uniform_blocks", "vertex_inputs"}) {
+            if (! metadata.is_object() || ! metadata.contains(key) || ! metadata.at(key).is_array()) {
+                throw std::runtime_error("incomplete Rust reflection metadata");
+            }
+        }
+        wallpaper::shader::RustShaderOutput output;
+        wallpaper::shader::ApplyRustShaderReflectionJson(*shader.rust_reflection_json, output);
+        ref = std::move(output.reflection);
+        spvs.reserve(shader.codes.size());
+        for (size_t index = 0; index < shader.codes.size(); ++index) {
+            auto spv = std::make_unique<ShaderSpv>();
+            spv->stage = index == 0 ? ShaderType::VERTEX : ShaderType::FRAGMENT;
+            spv->spirv = shader.codes[index];
+            spvs.emplace_back(std::move(spv));
+        }
+        return true;
+    } catch (const std::exception& error) {
+        ref = {};
+        spvs.clear();
+        LOG_ERROR("invalid Rust shader reflection for '%s': %s", shader.name.c_str(), error.what());
+        return false;
+    }
 }
 
 } // namespace wallpaper::vulkan
@@ -408,6 +395,7 @@ struct UniformMemo {
 } // namespace
 
 void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingResources& rr) {
+    m_scene = &scene;
     setPrepared(false);
     m_desc.vk_textures.resize(m_desc.textures.size());
     m_desc.vk_texture_image_keys.resize(m_desc.textures.size());
@@ -1009,6 +997,10 @@ CustomPassRenderInfo CustomShaderPass::renderInfo() const {
 }
 
 bool CustomShaderPass::updateFrame(const Device&, RenderingResources&) {
+    if (m_scene != nullptr) {
+        m_desc.clear_value = ResolveAttachmentClearValue(m_desc.output == SpecTex_Default,
+                                                         m_scene->clearColor);
+    }
     m_frame_visible = m_desc.visibility_node == nullptr ||
                       m_desc.visibility_node->EffectiveVisible() ||
                       (m_desc.visibility_node->MustProduce() && ! m_desc.output.empty() &&
@@ -1099,6 +1091,9 @@ StaticPassSample CustomShaderPass::frameSample(const Scene& scene) const {
                      m_desc.output != SpecTex_Default);
 
     uint64_t hash = 0xcbf29ce484222325ULL;
+    if (m_desc.output == SpecTex_Default) {
+        hash = StaticHashBytes(hash, scene.clearColor.data(), sizeof(float) * 3);
+    }
     auto* node = m_desc.node;
     if (node != nullptr) {
         // Idempotent, and the transform has to be current before it can be
@@ -1493,13 +1488,13 @@ VkResult CustomShaderPass::recordPresentation(const Device& device, RenderingRes
 }
 
 void CustomShaderPass::destory(const Device&, RenderingResources& rr) {
+    m_scene = nullptr;
     setPrepared(false);
     m_frame_visible = false;
     m_frame_clear_only = false;
     m_presentation_framebuffers.clear();
     m_presentation_copy_source_pass = {};
     ResetPipelineParameters(m_presentation_pipeline);
-    clearReleaseTexs();
     m_desc.update_op = {};
     {
         auto& buf = m_desc.dyn_vertex ? rr.dyn_buf : rr.vertex_buf;

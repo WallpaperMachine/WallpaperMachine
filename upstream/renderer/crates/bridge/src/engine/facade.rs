@@ -1317,6 +1317,10 @@ impl FakeEngineFacade {
         self.reconcile_failure.store(Arc::new(Some(message.into())));
     }
 
+    pub fn clear_reconcile_failure(&self) {
+        self.reconcile_failure.store(Arc::new(None));
+    }
+
     pub fn fail_audio_capture_with(&self, message: Option<String>) {
         self.audio_capture_failure.store(Arc::new(message));
     }

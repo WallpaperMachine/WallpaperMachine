@@ -58,7 +58,7 @@ final class AppThemeStore: ObservableObject {
   @Published private(set) var preferences: AppThemePreferences
   private let defaults: UserDefaults
 
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = ClientPreferences.defaults) {
     self.defaults = defaults
     let saved = defaults.dictionary(forKey: Self.defaultsKey) ?? [:]
     var preferences = AppThemePreferences()

@@ -34,6 +34,9 @@ actor WallpaperImportService {
     /// Library ids of imported pictures start with this, so the panel can tell a still image
     /// it packaged from a web wallpaper someone wrote.
     static let imageIDPrefix = "image-"
+    nonisolated static let stagingPrefix = ".WallpaperMachine-import-"
+    nonisolated static let stagingOwnerName = ".owner"
+    nonisolated private static let stagingOwnerMarker = Data("WallpaperMachine local import v1\n".utf8)
 
     private let downscale: @Sendable (Data, Int) throws -> Data
 
@@ -56,9 +59,11 @@ actor WallpaperImportService {
         let managedRoot = library.resolvingSymlinksInPath().standardizedFileURL
         // A sibling staging directory is on the same volume but invisible to the library scanner.
         let staging = managedRoot.deletingLastPathComponent()
-            .appendingPathComponent(".WallpaperMachine-import-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(Self.stagingPrefix + UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: staging) }
+        let claim = try Self.claimStaging(staging)
+        defer { close(claim) }
         var report = Report()
         var seen = Set<String>()
 
@@ -146,6 +151,75 @@ actor WallpaperImportService {
             }
         }
         return report
+    }
+
+    nonisolated static func stagingRoot(forLibrary library: URL) -> URL {
+        library.resolvingSymlinksInPath().standardizedFileURL.deletingLastPathComponent()
+    }
+
+    /// Held across every await and copy. A second instance's startup sweep must not
+    /// infer ownership from an idle-looking directory while an import is running.
+    nonisolated static func claimStaging(_ staging: URL) throws -> Int32 {
+        let owner = staging.appendingPathComponent(stagingOwnerName)
+        let descriptor = open(owner.path, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(descriptor)
+            throw error
+        }
+        let written = stagingOwnerMarker.withUnsafeBytes { bytes in
+            Darwin.write(descriptor, bytes.baseAddress, bytes.count)
+        }
+        guard written == stagingOwnerMarker.count else {
+            close(descriptor)
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return descriptor
+    }
+
+    /// Claimed directories are removable only after their lock is released. Older
+    /// versions wrote no claim, so those need a fully inspectable, day-old tree.
+    nonisolated static func removeAbandonedStaging(in root: URL, legacyQuietFor quiet: TimeInterval = 86_400) {
+        let files = FileManager.default
+        guard let candidates = try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return }
+        let deadline = Date().addingTimeInterval(-max(0, quiet)).timeIntervalSince1970
+        for staging in candidates where staging.lastPathComponent.hasPrefix(stagingPrefix) {
+            let suffix = String(staging.lastPathComponent.dropFirst(stagingPrefix.count))
+            var metadata = stat()
+            guard UUID(uuidString: suffix) != nil, lstat(staging.path, &metadata) == 0,
+                  metadata.st_mode & S_IFMT == S_IFDIR else { continue }
+            let descriptor = open(staging.appendingPathComponent(stagingOwnerName).path, O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+            if descriptor >= 0 {
+                defer { close(descriptor) }
+                var ownerInfo = stat()
+                guard fstat(descriptor, &ownerInfo) == 0, ownerInfo.st_mode & S_IFMT == S_IFREG,
+                      ownerInfo.st_size == stagingOwnerMarker.count else { continue }
+                guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { continue }
+                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: false)
+                guard let marker = try? handle.read(upToCount: stagingOwnerMarker.count + 1),
+                      marker == stagingOwnerMarker else { continue }
+                try? files.removeItem(at: staging)
+            } else if errno == ENOENT, legacyStagingIsQuiet(staging, before: deadline) {
+                try? files.removeItem(at: staging)
+            }
+        }
+    }
+
+    nonisolated private static func legacyStagingIsQuiet(_ root: URL, before deadline: TimeInterval) -> Bool {
+        var rootInfo = stat()
+        guard lstat(root.path, &rootInfo) == 0, Double(rootInfo.st_mtimespec.tv_sec) < deadline else { return false }
+        var readable = true
+        guard let entries = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil,
+            errorHandler: { _, _ in readable = false; return false }) else { return false }
+        var visited = 0
+        for case let file as URL in entries {
+            visited += 1
+            var info = stat()
+            guard visited <= 200_000, lstat(file.path, &info) == 0,
+                  Double(info.st_mtimespec.tv_sec) < deadline else { return false }
+        }
+        return readable
     }
 
     /// Packages one picture as a `StillImageWallpaper` in `staged`. The original keeps its bytes

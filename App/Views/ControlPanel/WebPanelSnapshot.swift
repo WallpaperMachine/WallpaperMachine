@@ -2,6 +2,22 @@ import Foundation
 
 @MainActor
 extension WebPanelController {
+  func hostStatesSnapshot() -> [[String: Any]] {
+    let titles = displayTitles.resolved()
+    return store.hostWallpaperStates.values.sorted { $0.key < $1.key }.map { state in
+      let display = store.monitorInformationSnapshot.rows.first {
+        ResolvedDisplayTitles.liveDisplayID($0.displayId, title: $0.title) == state.displayID
+      }
+      return [
+        "wallpaperID": state.wallpaperID, "displayID": String(state.displayID),
+        "displayTitle": display.map { titles.title($0.title, displayId: $0.displayId) } ?? String(state.displayID),
+        "kind": state.kind.rawValue, "phase": state.phase.rawValue,
+        "message": state.message as Any? ?? NSNull(),
+        "canRetry": state.kind == .web && state.phase == .failed && store.retryHostWallpaper != nil,
+      ]
+    }
+  }
+
   /// Register native dependencies without materializing a page payload while hidden.
   func trackSnapshotDependencies() {
     _ = store.appSnapshot
@@ -19,6 +35,8 @@ extension WebPanelController {
     _ = store.commands.waiting
     _ = store.latestBridgeErrorMessage
     _ = store.latestBridgeErrorRevision
+    _ = store.hostWallpaperStates
+    _ = store.webWallpaperDeliveryRevision
     _ = imports.isBusy
     _ = imports.status
     _ = imports.report
@@ -48,6 +66,7 @@ extension WebPanelController {
     _ = workshop.sceneAssetsReady
     _ = workshop.sceneAssetsFailure
     _ = workshop.downloadRequests
+    _ = workshop.downloadPersistenceError
     _ = workshop.username
     _ = workshop.suggestedAccount
     let updates = workshop.updates
@@ -80,6 +99,7 @@ extension WebPanelController {
       _ = job.bytesPerSecond
       _ = job.isPending
       _ = job.isQueued
+      _ = job.isPaused
       _ = job.isCancelled
       let worker = job.worker
       _ = worker.steamGuardChallenge
@@ -109,6 +129,7 @@ extension WebPanelController {
     _ = pixiv.isSigningIn
     _ = pixiv.account
     _ = pixiv.accountMessage
+    _ = pixiv.downloads.persistenceError
     for job in pixiv.downloads.downloads {
       _ = job.status
       _ = job.bytesReceived
@@ -123,7 +144,7 @@ extension WebPanelController {
   }
 
   var downloadError: String? {
-    let message = workshop.downloader.errorMessage
+    let message = workshop.downloader.errorMessage ?? workshop.downloadPersistenceError ?? pixiv.downloads.persistenceError
     return message == dismissedDownloadError ? nil : message
   }
 
@@ -209,10 +230,28 @@ extension WebPanelController {
     return asset
   }
 
-  func snapshot() -> [String: Any] {
-    let settings = store.settingsSnapshot
-    let setup = workshop.steamCMDSetup
-    let lock = store.lockScreenWallpaper
+  struct LibrarySectionKey: Equatable {
+    var content: UInt64
+    var refresh: UInt64
+    var metrics: UInt64
+    var updates: UInt64
+    var energy: UInt64
+    var target: String
+    var language: String
+  }
+
+  struct LibrarySection {
+    var key: LibrarySectionKey
+    var revision: String
+    var wallpapers: [[String: Any]]
+  }
+
+  private func librarySection() -> LibrarySection {
+    let key = LibrarySectionKey(content: store.libraryPresentationRevision,
+      refresh: store.libraryRefreshRevision, metrics: libraryMetrics.contentRevision,
+      updates: workshop.updates.availableRevision, energy: store.wallpaperEnergyRatings?.revision ?? 0,
+      target: navigation.targetDisplayID, language: appLanguage.effective.tag)
+    if let cached = librarySectionCache, cached.key == key { return cached }
     let null = NSNull()
     var previews: [String: URL] = [:]
     let metrics = libraryMetrics.metrics(
@@ -246,6 +285,18 @@ extension WebPanelController {
       ]
     }
     assets.previews = previews
+    let result = LibrarySection(key: key, revision: UUID().uuidString, wallpapers: wallpapers)
+    librarySectionCache = result
+    return result
+  }
+
+  func snapshot() -> [String: Any] {
+    let settings = store.settingsSnapshot
+    let setup = workshop.steamCMDSetup
+    let lock = store.lockScreenWallpaper
+    let null = NSNull()
+    let library = librarySection()
+    let wallpapers = library.wallpapers
     var thumbnails: [String: URL] = [:]
     for item in workshop.items + workshop.downloader.downloads.compactMap(\.item) + workshop.downloadRequests.compactMap(\.item)
     where item.previewURL?.scheme == "https" {
@@ -327,7 +378,7 @@ extension WebPanelController {
         "preview": job.item?.previewURL?.absoluteString as Any? ?? null,
         "thumbnail": job.item.flatMap(Self.thumbnailAddress) as Any? ?? null, "account": job.account,
         "phase": job.phase?.rawValue as Any? ?? null,
-        "progress": job.progress as Any? ?? null, "pending": job.isPending, "queued": job.isQueued,
+        "progress": job.progress as Any? ?? null, "pending": job.isPending, "queued": job.isQueued, "paused": job.isPaused, "signInOnly": job.isSignIn,
         "bytesReceived": job.bytesReceived as Any? ?? null,
         "bytesExpected": job.bytesExpected as Any? ?? null,
         "bytesPerSecond": job.bytesPerSecond as Any? ?? null,
@@ -348,7 +399,7 @@ extension WebPanelController {
         "preview": request.item?.previewURL?.absoluteString as Any? ?? null,
         "thumbnail": request.item.flatMap(Self.thumbnailAddress) as Any? ?? null,
         "account": request.account, "rememberSession": request.rememberSession,
-        "stage": workshop.stage(for: request).rawValue,
+        "stage": workshop.stage(for: request).rawValue, "paused": request.isPaused,
       ]
     }
     let loading: Bool
@@ -547,6 +598,8 @@ extension WebPanelController {
       "queuedApplyIDs": store.waitingActivationIDs,
       "error": error as Any? ?? null,
       "libraryLoading": loading, "favorites": favoriteIDs.sorted(), "wallpapers": wallpapers,
+      "hostStates": hostStatesSnapshot(),
+      "libraryRevision": library.revision,
       "filtersCollapsed": filtersCollapsed,
       "welcomeSeen": welcomeSeen,
       "supportPromptPending": store.supportPrompt?.isPending == true && presentationAllowsUpdates(),
@@ -621,6 +674,9 @@ extension WebPanelController {
     case .ready(_, let version):
       status = "ready"
       statusText = String(localized: "Version \(version) is ready. Restart the app to install it.")
+    case .preparing:
+      status = "preparing"
+      statusText = String(localized: "Preparing update…")
     case .error(_, _, let code, _):
       status = "error"
       statusText = updateErrorText(code, rateLimitedUntil: rateLimitedUntil)
@@ -640,6 +696,10 @@ extension WebPanelController {
     case .ready:
       action = "installUpdate"
       actionLabel = String(localized: "Restart and Install")
+      showsAction = true
+    case .preparing:
+      action = "cancelUpdate"
+      actionLabel = String(localized: "Cancel")
       showsAction = true
     case .error(_, .install, _, let version) where version != nil:
       action = "installUpdate"
@@ -767,7 +827,12 @@ extension WebPanelController {
     // null instead would make "available" and "cannot tell" the same value.
     var delivered: [String: Any] = [:]
     if let delivery {
-        delivered["audioDelivering"] = !delivery.audioSubscribedDisplayIDs.isEmpty
+        if let state = delivery.audioStates[value.wallpaperId] {
+            delivered["audioDelivering"] = state == .delivering
+            delivered["audioDeliveryState"] = state.rawValue
+        } else {
+            delivered["audioDeliveryState"] = "inactive"
+        }
         delivered["mediaAvailable"] = delivery.mediaUnavailableReason == nil
         if let reason = delivery.mediaUnavailableReason {
             delivered["mediaUnavailableReason"] = reason

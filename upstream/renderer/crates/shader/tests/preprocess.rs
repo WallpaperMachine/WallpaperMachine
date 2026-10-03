@@ -55,6 +55,33 @@ fn macro_tables_with_same_values_compare_equal_across_insertion_order() {
 }
 
 #[test]
+fn undef_updates_conditionals_across_includes_and_ignores_inactive_branches() {
+    let provider = InMemoryShaderSourceProvider::new().with_source(
+        include("feature.glsl"),
+        "#undef FEATURE\n#ifdef FEATURE\nfloat removed = 1.0;\n#else\nfloat removed = 0.0;\n#endif\n",
+    );
+    let request = request_with_fragment(
+        concat!(
+            "#define FEATURE 1\n#include \"feature.glsl\"\n",
+            "#ifdef FEATURE\nfloat after_include = 1.0;\n#else\nfloat after_include = 0.0;\n#endif\n",
+            "#define FEATURE 2\n#if 0\n#undef FEATURE\n#endif\n",
+            "#if FEATURE == 2\nfloat redefined = 2.0;\n#else\nfloat redefined = 0.0;\n#endif\n",
+            "void main() {}\n",
+        ),
+        &[],
+    );
+    let program = PreprocessContext::new(&request, &provider)
+        .preprocess()
+        .expect("macro lifetime preprocesses");
+    let source = program.stage(ShaderStageKind::Fragment).unwrap().source();
+    assert!(source.contains("float removed = 0.0;"));
+    assert!(source.contains("float after_include = 0.0;"));
+    assert!(source.contains("float redefined = 2.0;"));
+    assert!(!source.contains("float removed = 1.0;"));
+    assert!(!source.contains("float after_include = 1.0;"));
+}
+
+#[test]
 fn expands_recursive_includes_through_source_provider() {
     let provider = InMemoryShaderSourceProvider::new()
         .with_source(

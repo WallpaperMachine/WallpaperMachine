@@ -15,7 +15,10 @@ extern "C" {
 }
 
 #include <cstdint>
+#include <array>
+#include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -114,7 +117,8 @@ const EncodedGop& SharedGop() {
 /// `salt` goes into a container metadata tag so two files with the same frame
 /// count still differ byte for byte, which keeps one test's extraction cache
 /// entry out of another's way.
-bool WriteSyntheticVideo(const std::filesystem::path& path, int repeats, const std::string& salt) {
+bool WriteSyntheticVideo(const std::filesystem::path& path, int repeats, const std::string& salt,
+                         std::optional<std::array<int32_t, 9>> display_matrix = std::nullopt) {
     const EncodedGop& gop = SharedGop();
     if (gop.packets.empty()) return false;
 
@@ -124,6 +128,12 @@ bool WriteSyntheticVideo(const std::filesystem::path& path, int repeats, const s
     }
     AVStream* stream = avformat_new_stream(output, nullptr);
     avcodec_parameters_copy(stream->codecpar, gop.parameters);
+    if (display_matrix) {
+        auto* side = av_packet_side_data_new(&stream->codecpar->coded_side_data,
+            &stream->codecpar->nb_coded_side_data, AV_PKT_DATA_DISPLAYMATRIX, sizeof(*display_matrix), 0);
+        if (side == nullptr) { avformat_free_context(output); return false; }
+        std::memcpy(side->data, display_matrix->data(), sizeof(*display_matrix));
+    }
     stream->time_base = gop.time_base;
     av_dict_set(&output->metadata, "comment", salt.c_str(), 0);
     if (avio_open(&output->pb, path.string().c_str(), AVIO_FLAG_WRITE) < 0) {

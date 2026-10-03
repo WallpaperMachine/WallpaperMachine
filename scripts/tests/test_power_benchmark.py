@@ -10,6 +10,7 @@ from pathlib import Path
 import plistlib
 import subprocess
 import sys
+import tempfile
 import time
 from types import SimpleNamespace
 import unittest
@@ -98,6 +99,71 @@ class ManifestTests(unittest.TestCase):
 
     def test_the_manifest_is_json_serializable(self):
         json.loads(json.dumps(self.manifest()))
+
+
+class ProcessBuildIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.contents = self.root / "Old.app/Contents"
+        (self.contents / "MacOS").mkdir(parents=True)
+        self.executable = self.contents / "MacOS/WallpaperMachine"
+        self.executable.write_bytes(b"old running binary")
+        (self.contents / "Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleIdentifier": "app.wallpapermachine", "CFBundleShortVersionString": "1.0.0",
+            "CFBundleVersion": "7",
+        }))
+        self.stamp = {"executable": str(self.executable), "launched_at": "fixture launch",
+                      "started_epoch": time.time() + 60}
+
+    def identity(self):
+        with mock.patch.object(power_benchmark, "process_stamp", return_value=self.stamp), \
+                mock.patch.object(power_benchmark, "command_output", return_value="arm64"):
+            return power_benchmark.process_build_identity(42)
+
+    def test_old_process_is_not_labelled_with_the_current_worktree_commit_or_version(self):
+        (self.root / "project.yml").write_text('MARKETING_VERSION: "2.0.0"\n')
+        with mock.patch.object(power_benchmark, "ROOT", self.root), \
+                mock.patch.object(power_benchmark, "command_output", side_effect=lambda command: "new-head" if command[-1] == "HEAD" else ""):
+            workspace = power_benchmark.workspace_identity("Release")
+        identity = self.identity()
+        self.assertEqual(workspace["commit"], "new-head")
+        self.assertEqual(workspace["marketing_version"], "2.0.0")
+        self.assertEqual(identity["status"], "identified")
+        self.assertEqual(identity["marketing_version"], "1.0.0")
+        self.assertEqual(identity["binary_architectures"], ["arm64"])
+        self.assertEqual(identity["executable_sha256"], power_benchmark.hashlib.sha256(b"old running binary").hexdigest())
+        self.assertIsNone(identity["source_revision"])
+        self.assertIsNone(identity["configuration"])
+        self.assertIsNone(identity["loaded_renderer_libraries"])
+
+    def test_missing_process_and_a_rebuilt_bundle_are_unknown(self):
+        with mock.patch.object(power_benchmark, "process_stamp", return_value=None):
+            self.assertEqual(power_benchmark.process_build_identity(42)["status"], "unknown")
+        self.stamp["started_epoch"] = 0
+        identity = self.identity()
+        self.assertEqual(identity["status"], "unknown")
+        self.assertNotIn("marketing_version", identity)
+        self.assertNotIn("executable_sha256", identity)
+
+    def test_replacing_the_executable_during_the_window_invalidates_attribution(self):
+        identity = self.identity()
+        self.executable.write_bytes(b"replacement binary")
+        with mock.patch.object(power_benchmark, "process_stamp", return_value=self.stamp):
+            verified = power_benchmark.verify_process_build(identity)
+        self.assertEqual(verified["status"], "unknown")
+        self.assertNotIn("executable_sha256", verified)
+
+    def test_attachment_keeps_process_identity_separate_from_the_workspace(self):
+        identity = self.identity()
+        document = {"workspace": {"commit": "new-head"}, "conditions": [{"id": "T1", "measured": False}]}
+        sample = {"process_builds": {"app": [identity], "extension": []}, "tools": ["fixture"],
+                  "elapsed_seconds": 1, "processes": {}, "coalitions": {}, "system_power": {}, "package_power": {}}
+        power_benchmark.attach_measurement(document, "T1", 1, sample)
+        self.assertEqual(document["workspace"]["commit"], "new-head")
+        self.assertEqual(document["build"]["processes"]["app"][0]["marketing_version"], "1.0.0")
+        self.assertTrue(document["conditions"][0]["measured"])
 
 
 GPU_CLIENTS = """\
@@ -304,6 +370,7 @@ class MeasureWindowTests(unittest.TestCase):
         with mock.patch.object(power_benchmark, "time",
                                SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep)), \
                 mock.patch.object(power_benchmark, "role_pids", lambda: {"app": [7]}), \
+                mock.patch.object(power_benchmark, "process_build_identity", lambda pid: {"pid": pid, "status": "unknown"}), \
                 mock.patch.object(power_benchmark, "cpu_seconds", lambda pids: next(cpu)), \
                 mock.patch.object(power_benchmark, "gpu_times", lambda: None), \
                 mock.patch.object(power_benchmark, "coalition_snapshot", lambda reader, roles: None), \

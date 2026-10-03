@@ -51,7 +51,7 @@ final class AppLanguageStore: ObservableObject {
   private let systemLanguages: [String]
 
   init(
-    defaults: UserDefaults = .standard,
+    defaults: UserDefaults = ClientPreferences.defaults,
     systemLanguages: [String] = AppLanguageStore.systemPreferredLanguages()
   ) {
     self.defaults = defaults

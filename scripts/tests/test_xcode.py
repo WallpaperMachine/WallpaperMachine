@@ -83,6 +83,27 @@ class FilterLines(unittest.TestCase):
 
 
 class RunQuiet(unittest.TestCase):
+    def test_echo_limit_still_drains_the_child_and_preserves_its_exit_and_side_effect(self):
+        script = """import pathlib, sys
+for index in range(1000):
+    print(f'/a/B.swift:{index}:1: error: problem {index}', flush=True)
+pathlib.Path(sys.argv[1]).write_text('finished')
+print('final marker', flush=True)
+sys.exit(7)
+"""
+        echoed = []
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            completed, log = xcode.run_quiet(
+                [sys.executable, "-c", script, str(root / "done")], root / "run.log", echo=echoed.append)
+            self.assertEqual(completed.returncode, 7)
+            self.assertEqual((root / "done").read_text(), "finished")
+            output = log.read_text()
+        self.assertIn("problem 999", output)
+        self.assertIn("final marker\n", output)
+        self.assertEqual(len(echoed), xcode.MAX_ECHOED_LINES + 1)
+        self.assertEqual(sum(line.startswith("...") for line in echoed), 1)
+
     def test_logs_everything_and_echoes_only_failures(self):
         script = "import sys; print('noise'); print('/a/B.swift:1:2: error: boom'); print('x warning: y'); sys.exit(3)"
         echoed = []

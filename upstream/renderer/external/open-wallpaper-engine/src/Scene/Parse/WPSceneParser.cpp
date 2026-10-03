@@ -1635,6 +1635,11 @@ TextLayerState ResolveTextLayerState(const wpscene::WPTextObject& obj, fs::VFS& 
         .horizontal_align = obj.horizontalalign.empty() ? obj.alignment : obj.horizontalalign,
         .vertical_align   = obj.verticalalign,
         .anchor           = std::move(anchor),
+        .max_width        = obj.maxwidth,
+        .max_rows         = obj.maxrows,
+        .limit_width      = obj.limitwidth,
+        .limit_rows       = obj.limitrows,
+        .use_ellipsis     = obj.limituseellipsis,
     };
 
     constexpr std::string_view system_prefix = "systemfont_";

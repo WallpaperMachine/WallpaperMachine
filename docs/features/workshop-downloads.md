@@ -71,7 +71,10 @@ item, which downloads the preview **once, exactly as Steam published it**, and
 keeps both halves under `Cache/WorkshopThumbnails` in the app-support folder:
 one still frame decoded with ImageIO and stored as a 512px JPEG (`<key>.jpg`),
 and, when the preview is animated, the original bytes beside it (`<key>.anim`).
-A single-frame preview gets an empty `<key>.still` marker instead.
+A single-frame preview gets an empty `<key>.still` marker instead. Streaming stops
+at 24 MiB, including responses without a declared length. Original animations
+are relayed only up to 300 frames, 4,194,304 pixels per frame and 33,554,432 total
+frame pixels; larger animations keep their bounded static JPEG instead.
 
 The original is fetched on purpose. Steam's CDN serves it from its edge in
 0.15–0.3 s, whereas a scaled variant (`?imw=512…`) makes the CDN re-encode the
@@ -197,6 +200,11 @@ panel's error state, without losing the account or request. Closing/reopening
 starts a new local error session, so an earlier asynchronous rejection cannot
 appear in it; closing does not dismiss the panel's global error.
 
+The app-owned `WorkshopStore` observes setup, account and resource readiness even
+when no control panel exists. Completing a prerequisite continues a retained
+request without reopening the panel. After relaunch, retained requests appear
+paused and require **Resume download** before starting another session.
+
 ### Download state on the tile
 
 A Discover tile wears its download state as a ring over its thumbnail, the
@@ -208,6 +216,7 @@ way Wallpaper Engine's own library does:
 | Spinning arc | Signing in, requesting the item, or transferring before any bytes can be measured | Cancel |
 | Dimmed download arrow | Waiting for the download ahead of it to finish | Remove from the queue |
 | Pulsing shield | Steam or setup needs you | Open the dialog |
+| Play mark | Paused, including work restored after relaunch | Resume download |
 | Retry mark | Failed or cancelled | Try again |
 | Small check in the corner | Already in your library | — |
 
@@ -356,13 +365,25 @@ owns Wallpaper Engine.
   shared resources download first), offers **Done** and **Show downloads**, and
   closes by itself six seconds later. The transfer is already running on the
   tile and in the activity bar throughout.
-- Closing the popover or the sign-in dialog does not cancel work. Removing a
-  waiting request prevents it from starting. Cancelling a running transfer
-  lets the next queued job start after session cleanup. Quitting stops active
-  and queued work.
+- Closing the panel, popover or sign-in dialog does not stop work. **Pause download**
+  releases the transfer's slot and retains its downloaded content. **Resume download**
+  starts a fresh private SteamCMD runtime and lets Steam validate and reuse its
+  partial content and manifests. Cancelling discards this job's partial data;
+  removing a waiting request prevents it from starting.
+- Pending, paused and failed jobs keep their order in `Downloads/Workshop/queue.json`
+  under the app support directory; prerequisite requests use `Downloads/workshop-requests.json`.
+  Quitting pauses active and queued downloads after stopping their child processes.
+  Relaunch restores them as paused, without starting a login or transfer automatically.
+  Checkpoints contain only `steamapps` and `wallpaper-engine` download content;
+  passwords, terminal state and private SteamCMD runtime files are never included.
+  The separately managed saved sign-in remains subject to **Keep me signed in**.
+  An interrupted process can lose bytes still in transient staging; the persisted
+  job can still be resumed and Steam will redownload any missing content.
 - Failed and cancelled jobs stay visible with a primary **Try again** action;
   when SteamCMD is not ready it stays disabled beside the setup explanation.
-  Completed jobs collapse behind **Show completed** and can be cleared.
+  Completed jobs collapse behind **Show completed** and can be cleared. Clearing
+  history keeps paused jobs. The same popover also lists pixiv downloads and their
+  pause, resume, retry and cancel actions.
 
 ## Shared scene resources
 

@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import XCTest
 
 @testable import WallpaperMachine
@@ -23,6 +24,7 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
     ) -> BridgeNativeVideoWallpaper {
         BridgeNativeVideoWallpaper(
             displayId: displayID,
+            startupRevision: 0,
             wallpaperId: id,
             title: "Clip",
             mediaPath: "/tmp/does-not-need-to-exist/clip.mp4",
@@ -55,8 +57,13 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         private var userPaused: Bool
         private var suspended = false
         private(set) var isStopped = false
+        var isReadyForDisplay = false
+        var onReadyForDisplay: (@MainActor () -> Void)?
         var volume: Float = 1
         var muted = false
+        var posterLayer: CALayer? = CALayer()
+        private(set) var frame = NSRect.zero
+        func setScreenFrame(_ frame: NSRect) { self.frame = frame }
         /// Poster answer, and how long it takes. The delay is what lets a test
         /// replace the surface while a request is still in flight.
         var poster: CGImage?
@@ -106,14 +113,18 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
     }
 
     private static func makeImage() -> CGImage {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let context = CGContext(
             data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(colorSpace: space, components: [1, 0, 0, 1])!)
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
         return context.makeImage()!
     }
 
     private var surfacesMade: [UInt32: FakeSurface] = [:]
+    private var screenFrames: [(id: UInt32, frame: NSRect)] = []
     /// Makes every surface this factory builds fail as its callback is installed.
     private var surfaceFailureOnInstall: String?
 
@@ -136,12 +147,7 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
             reject: { id, key, reason in
                 recorder.rejected.append((id: id, key: key, reason: reason))
             },
-            screens: {
-                [
-                    (id: UInt32(7), frame: NSRect(x: 0, y: 0, width: 200, height: 100)),
-                    (id: UInt32(9), frame: NSRect(x: 200, y: 0, width: 200, height: 100)),
-                ]
-            },
+            screens: { [weak self] in self?.screenFrames ?? [] },
             refusal: { _, fps in
                 // The injected decision stands in for the asset probe; the key
                 // is reconstructed from the target rate the host passed, which
@@ -152,9 +158,10 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
                 }
                 return refusalByKey[UInt64(fps)] ?? refusal
             },
-            makeSurface: { [weak self] _, _, key, paused in
+            makeSurface: { [weak self] _, frame, key, paused in
                 let surface = FakeSurface(
                     recorder: recorder, paused: paused, generation: key.generation)
+                surface.setScreenFrame(frame)
                 surface.failureOnInstall = self?.surfaceFailureOnInstall
                 self?.surfacesMade[key.displayID] = surface
                 return surface
@@ -163,9 +170,60 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
             counters: RuntimeCounters())
     }
 
+    func testStartupWaitsForSurfaceReadinessAndAcknowledgesNewRevisions() async throws {
+        screenFrames = [(7, NSRect(x: 0, y: 0, width: 80, height: 60))]
+        var descriptor = wallpaper()
+        descriptor.startupRevision = 4
+        let host = makeHost(wallpapers: [], recorder: Recorder())
+        var states: [HostWallpaperState] = []
+        host.onStateChanged = { states.append($0) }
+        defer { host.shutdown() }
+        await host.apply([descriptor])
+        XCTAssertEqual(states.map(\.phase), [.loading])
+        let surface = try XCTUnwrap(surfacesMade[7])
+        surface.isReadyForDisplay = true
+        surface.onReadyForDisplay?()
+        XCTAssertEqual(states.last?.phase, .ready)
+        XCTAssertEqual(states.last?.startupRevision, 4)
+        descriptor.startupRevision = 5
+        await host.apply([descriptor])
+        XCTAssertTrue(surfacesMade[7] === surface)
+        XCTAssertEqual(states.last?.startupRevision, 5)
+        XCTAssertEqual(states.last?.phase, .ready)
+        let count = states.count
+        await host.apply([descriptor])
+        XCTAssertEqual(states.count, count)
+        var replacement = wallpaper(id: "replacement", admissionKey: 2)
+        replacement.startupRevision = 6
+        await host.apply([replacement])
+        let afterReplacement = states.count
+        surface.onReadyForDisplay?()
+        surface.failPreparation("late failure")
+        XCTAssertEqual(states.count, afterReplacement)
+        XCTAssertEqual(states.last?.wallpaperID, "replacement")
+        XCTAssertEqual(states.last?.phase, .loading)
+    }
+
+    func testPreparationFailureEndsStartupWithoutReportingReady() async throws {
+        screenFrames = [(7, NSRect(x: 0, y: 0, width: 80, height: 60))]
+        let host = makeHost(wallpapers: [], recorder: Recorder())
+        var states: [HostWallpaperState] = []
+        host.onStateChanged = { states.append($0) }
+        defer { host.shutdown() }
+        await host.apply([wallpaper()])
+        try XCTUnwrap(surfacesMade[7]).failPreparation("synthetic unavailable media")
+        XCTAssertEqual(states.last?.phase, .failed)
+        XCTAssertNotNil(states.last?.message)
+        XCTAssertFalse(states.contains { $0.phase == .ready })
+    }
+
     override func setUp() {
         super.setUp()
         surfacesMade = [:]
+        screenFrames = [
+            (id: 7, frame: NSRect(x: 0, y: 0, width: 200, height: 100)),
+            (id: 9, frame: NSRect(x: 200, y: 0, width: 200, height: 100)),
+        ]
         surfaceFailureOnInstall = nil
     }
 
@@ -638,18 +696,17 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         surfacesMade[7]?.poster = Self.makeImage()
         surfacesMade[7]?.posterDelay = .milliseconds(60)
 
-        var published: [UInt32] = []
+        var published: [CALayer] = []
         let observer = center.addObserver(
-            forName: Notification.Name("WallpaperMachine.desktopPoster"), object: nil,
+            forName: DesktopPosterNotification.ready, object: nil,
             queue: .main
         ) { note in
-            if let id = note.userInfo?["displayID"] as? UInt32 { published.append(id) }
+            if let layer = note.object as? CALayer { published.append(layer) }
         }
         defer { center.removeObserver(observer) }
 
         center.post(
-            name: Notification.Name("WallpaperMachine.requestDesktopPoster"), object: nil,
-            userInfo: ["displayID": UInt32(7)])
+            name: DesktopPosterNotification.request, object: surfacesMade[7]?.posterLayer)
         // Replace the wallpaper while the request is still in flight.
         await host.apply([wallpaper(id: "301", admissionKey: 2)])
         try? await Task.sleep(for: .milliseconds(200))
@@ -660,7 +717,7 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         host.shutdown()
     }
 
-    func testAPosterFromTheCurrentSurfaceIsPublished() async {
+    func testAPosterFromTheCurrentSurfaceReachesTheDesktopCoordinator() async throws {
         let recorder = Recorder()
         let center = NotificationCenter()
         let host = makeHost(wallpapers: [wallpaper()], recorder: recorder, frameCenter: center)
@@ -668,21 +725,87 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         await host.apply([wallpaper()])
         surfacesMade[7]?.poster = Self.makeImage()
 
-        var published: [UInt32] = []
-        let observer = center.addObserver(
-            forName: Notification.Name("WallpaperMachine.desktopPoster"), object: nil,
-            queue: .main
-        ) { note in
-            if let id = note.userInfo?["displayID"] as? UInt32 { published.append(id) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-poster-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = DesktopPictureTarget(display: "7", space: "test-space")
+        let workspace = PosterWorkspace(target: target, original: root.appendingPathComponent("original.png"))
+        let layer = try XCTUnwrap(surfacesMade[7]?.posterLayer)
+        let updated = expectation(description: "native pixels published through the real desktop coordinator")
+        let sync = try DesktopWallpaperSync(folder: root.appendingPathComponent("posters"), workspace: workspace,
+            surfaces: { [DesktopPosterSurface(layer: layer, display: "7")] }, frameCenter: center)
+        workspace.didWrite = { updated.fulfill() }
+        sync.start()
+        sync.refresh()
+        await fulfillment(of: [updated], timeout: 2)
+
+        let picture = try XCTUnwrap(workspace.picture)
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(picture.url as CFURL, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(image.width, 2)
+        XCTAssertEqual(image.height, 2)
+        let frame = try XCTUnwrap(DesktopPosterFrame.rgba(image))
+        // ImageIO's ICC round trip can move an 8-bit channel by a few levels.
+        for (actual, expected) in zip(frame.pixels.prefix(3), [255, 0, 0]) {
+            XCTAssertEqual(Double(actual), Double(expected), accuracy: 4)
         }
-        defer { center.removeObserver(observer) }
-
-        center.post(
-            name: Notification.Name("WallpaperMachine.requestDesktopPoster"), object: nil,
-            userInfo: ["displayID": UInt32(7)])
-        try? await Task.sleep(for: .milliseconds(200))
-
-        XCTAssertEqual(published, [7])
+        workspace.didWrite = nil
+        try sync.stopAndRestore()
         host.shutdown()
+    }
+
+    func testScreenGeometryUpdatesWithoutRecreatingThePlayingSurface() async throws {
+        let recorder = Recorder()
+        let host = makeHost(wallpapers: [wallpaper()], recorder: recorder)
+        await host.apply([wallpaper()])
+        let surface = try XCTUnwrap(surfacesMade[7])
+        let movedAndResized = NSRect(x: -400, y: 80, width: 400, height: 300)
+        screenFrames[0].frame = movedAndResized
+        await host.apply([wallpaper()])
+        XCTAssertTrue(surfacesMade[7] === surface)
+        XCTAssertEqual(surface.frame, movedAndResized)
+        XCTAssertTrue(surface.isPlaying)
+        XCTAssertEqual(recorder.stopped, 0)
+        host.shutdown()
+    }
+
+    func testPosterUsesTheSameFillCropOrStretchAsTheVideoSurface() throws {
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try XCTUnwrap(CGContext(data: nil, width: 8, height: 4, bitsPerComponent: 8,
+            bytesPerRow: 32, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let colors = [[CGFloat](arrayLiteral: 1, 0, 0, 1), [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]]
+            .map { CGColor(colorSpace: space, components: $0)! }
+        for (index, color) in colors.enumerated() {
+            context.setFillColor(color)
+            context.fill(CGRect(x: index * 2, y: 0, width: 2, height: 4))
+        }
+        let source = try XCTUnwrap(context.makeImage())
+        let fill = try XCTUnwrap(NativeVideoWallpaperWindow.fittedPoster(source, pixelSize: CGSize(width: 4, height: 4), stretching: false))
+        let stretch = try XCTUnwrap(NativeVideoWallpaperWindow.fittedPoster(source, pixelSize: CGSize(width: 4, height: 4), stretching: true))
+        let filled = try XCTUnwrap(DesktopPosterFrame.rgba(fill))
+        let stretched = try XCTUnwrap(DesktopPosterFrame.rgba(stretch))
+        XCTAssertEqual(Array(filled.pixels.prefix(3)), [0, 255, 0])
+        for (actual, expected) in zip(stretched.pixels.prefix(3), [255, 0, 0]) {
+            XCTAssertEqual(Double(actual), Double(expected), accuracy: 4)
+        }
+        XCTAssertEqual(fill.width, 4)
+        XCTAssertEqual(fill.height, 4)
+    }
+
+    private final class PosterWorkspace: DesktopPictureWorkspace {
+        let target: DesktopPictureTarget
+        var picture: DesktopPicture?
+        var didWrite: (() -> Void)?
+        init(target: DesktopPictureTarget, original: URL) {
+            self.target = target
+            picture = DesktopPicture(url: original, scaling: 0, allowClipping: false, fill: [0, 0, 0, 1])
+        }
+        func targets() -> [DesktopPictureTarget] { [target] }
+        func currentPicture(target: DesktopPictureTarget) -> DesktopPicture? { picture }
+        func setPicture(_ picture: DesktopPicture, target: DesktopPictureTarget) {
+            self.picture = picture
+            didWrite?()
+        }
+        func referencedPictureURLs(targets: [DesktopPictureTarget]) -> Set<URL> { [] }
     }
 }

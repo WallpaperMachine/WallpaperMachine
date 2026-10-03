@@ -58,6 +58,11 @@ impl MacroTable {
         }
     }
 
+    /// Removes a macro definition, including one inherited from an include.
+    pub fn undefine(&mut self, name: &str) {
+        self.values.retain(|entry| !entry.has_name(name));
+    }
+
     /// Returns a macro value by name.
     #[must_use]
     pub fn value(&self, name: &str) -> Option<&str> {

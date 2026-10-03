@@ -108,9 +108,10 @@ export function createPixivPage({ $, send, run, escapeHTML, icon, button, morph,
   // while one transfers, a click to cancel, and a retry mark after a failure.
   function downloadRing(item) {
     const all = jobs(item.id);
-    const job = all.find(each => each.pending) || all.find(each => ['failed', 'cancelled'].includes(each.status) && !item.installed.includes(each.page));
+    const job = all.find(each => each.pending) || all.find(each => ['failed', 'cancelled', 'paused'].includes(each.status) && !item.installed.includes(each.page));
     if (!job) return '';
     const title = untitled(item);
+    if (job.status === 'paused') return tileRing({ kind: 'queued', glyph: 'play', action: 'pixivResume', id: job.id, label: t('Resume download') });
     if (job.status === 'waiting') return tileRing({ kind: 'queued', glyph: 'download', hoverGlyph: 'close', action: 'pixivCancel', id: job.id, label: t('{title} is waiting to download. Click to remove it from the queue', { title }) });
     if (job.status === 'installing') return tileRing({ kind: 'busy', text: t('Finishing'), word: true, action: 'pixivCancel', id: job.id, hoverGlyph: 'close', label: t('{progress}: {title}. Click to cancel', { progress: t('Saving to your library…'), title }) });
     if (job.pending) {
@@ -159,7 +160,7 @@ export function createPixivPage({ $, send, run, escapeHTML, icon, button, morph,
   function jobStatus(job) {
     const percent = percentOf(job);
     const amount = job.received > 0 && job.expected > 0 ? t('{received} of {expected}', { received: bytes(job.received), expected: bytes(job.expected) }) : '';
-    const status = job.status === 'waiting' ? t('Waiting to download') : job.status === 'installing' ? t('Saving to your library…') : percent === null ? t('Downloading') : t('Downloading {percent}%', { percent });
+    const status = job.status === 'paused' ? t('Download paused') : job.status === 'waiting' ? t('Waiting to download') : job.status === 'installing' ? t('Saving to your library…') : percent === null ? t('Downloading') : t('Downloading {percent}%', { percent });
     return [status, job.status === 'downloading' ? amount : ''].filter(Boolean).join(' · ');
   }
 
@@ -176,7 +177,8 @@ export function createPixivPage({ $, send, run, escapeHTML, icon, button, morph,
     const activateLabel = target?.wallpaperID === item.libraryID ? t('Reapply wallpaper') : t('Apply wallpaper');
     const activation = installed ? button('', 'activate', { id: item.libraryID }, { icon: 'play', title: activateLabel, className: 'primary inspector-play', disabled: !canActivate }) : '';
     const download = installed ? '' : job?.pending
-      ? button(t('Cancel'), 'pixivCancel', { id: job.id }, { icon: 'close', className: 'quiet' })
+      ? `${button(t('Pause download'), 'pixivPause', { id: job.id }, { className: 'quiet' })}${button(t('Cancel'), 'pixivCancel', { id: job.id }, { icon: 'close', className: 'quiet' })}`
+      : job?.status === 'paused' ? `${button(t('Resume download'), 'pixivResume', { id: job.id }, { icon: 'play', className: 'primary' })}${button(t('Cancel'), 'pixivCancel', { id: job.id }, { className: 'quiet' })}`
       : button(job?.error ? t('Download again') : count > 1 ? t('Download page {page}', { page: index + 1 }) : t('Download'), 'pixivDownload', { id: item.id, pixivPageIndex: index }, { icon: 'download', className: 'primary' });
     const link = safeLink(item.url);
     const secondary = `${link ? button(t('View on pixiv'), 'openExternal', { url: link }, { icon: 'external', className: 'wide', title: t('View on pixiv') }) : ''}`;
@@ -222,7 +224,7 @@ export function createPixivPage({ $, send, run, escapeHTML, icon, button, morph,
         return;
       }
       case 'pixivSelectPage': case 'pixivDownload': return send(action, { id: data.id, page: Number(data.pixivPageIndex) || 0 });
-      case 'pixivSelect': case 'pixivCancel': case 'pixivRetryDownload': return send(action, { id: data.id });
+      case 'pixivSelect': case 'pixivCancel': case 'pixivPause': case 'pixivResume': case 'pixivRetryDownload': return send(action, { id: data.id });
       default: return send(action);
     }
   }

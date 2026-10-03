@@ -124,6 +124,14 @@ a separate web view with its own handler.
 - Committed host state (properties, fps, pause) is replayed in full on every new
   document, so a reload after a crash restores the page even though nothing in
   the descriptor changed.
+- The inspector reports each display's loading, ready or failed host state.
+  A failed Web page offers **Retry wallpaper**. Late callbacks from a replaced
+  surface are ignored. The host echoes the bridge's startup revision only after
+  loading finishes (or fails); accepting an assignment does not imply ready content.
+- A library refresh checks active project file identities on a background actor.
+  Replacing HTML or resources at the same path reloads the page even when an
+  intermediate empty assignment was coalesced away. An unchanged revision keeps
+  the existing document. Managed-asset changes also invalidate native publication.
 - Mouse input (`WebWallpaperMouseForwarder`): the windows stay mouse-transparent
   and nothing is consumed, so no Accessibility or Input Monitoring grant is
   needed. The global `NSEvent` monitor is installed only while at least one page
@@ -153,11 +161,12 @@ Per wallpaper, off unless the user turns it on in the inspector's *General
 configuration*. The switch is consent to capture, not a promise of delivery: the
 page receives nothing until it calls `wallpaperRegisterAudioListener`, and a
 wallpaper that never asks stays silent however the switch is left. The panel
-reports the live state from the running host, so three cases stay distinct: the
-switch is on and the page has registered a listener; the switch is on and the
-page has not, which is the wallpaper's choice rather than a fault; and no
-desktop wallpaper is running, in which case the panel says it cannot tell rather
-than reporting an absence it never observed.
+reports this wallpaper's state from the running host: requesting a connection,
+confirmed subscription, or successful delivery of a valid frame to its JavaScript
+listener. A frame older than two seconds no longer counts as current delivery.
+A failed subscription tells the user to toggle and retry; another wallpaper's
+subscription never changes this one's status. With no running surface, delivery
+remains unknown. A page that has not registered a listener is reported separately.
 
 The listener receives the documented 128-float array: indices 0–63 the left
 channel, 64–127 the right, low index first within a channel. Delivery is capped
@@ -215,6 +224,9 @@ the design.
   import survive a Workshop update or a delete-and-re-download. Importing clones the
   user's file with `clonefile` where the filesystem supports it, and copies otherwise;
   the user's original is never moved, renamed or written to.
+  New records retain the full modification time in optional `modifiedReferenceTime`
+  alongside the legacy ISO-8601 `modified` field, so an unchanged selection can skip
+  hashing after relaunch. Older manifests remain readable without a version migration.
 - `App/Services/UserAssets/UserAssetStore.swift` keeps a **derived** bridge at
   `<project>/.mwe-user-assets/<propertyId>/`, as a hard link onto the store's copy when
   the project shares its volume and a byte copy when it does not. The bridge exists only
@@ -247,6 +259,9 @@ the design.
   debounced into a single added/removed diff, which re-stages added or rewritten
   files, drops the links for removed ones, and reaches the page as
   `userDirectoryFilesAddedOrChanged` / `userDirectoryFilesRemoved`.
+  An unavailable directory or unreadable matching file preserves the last committed
+  list and bytes until a successful scan. A failed manifest write also preserves them;
+  pruning and removing bridge entries happen only after the new manifest is durable.
 - Lifetime: the store outlives the project, the bridge outlives the process, the
   in-memory index does not. `WebWallpaperHost` re-imports on next use — which is what
   rebuilds a missing bridge — and discards the store handle for a project nothing
@@ -257,11 +272,32 @@ the design.
   load. `python3 scripts/clean.py --managed-user-assets` is the destructive one: it
   deletes the app's own copies, which nothing regenerates. Neither the default pass nor
   `--all` nor `--derived` reaches either of them.
+- `UserAssetWorker` performs enumeration, hashing, copying and bridge publication
+  outside the main actor. A newer selection cancels the previous preparation.
+  A shared asynchronous turn per managed root and wallpaper serializes preparation,
+  publication, permission changes and purge across store instances. Copies publish
+  from operation-owned temporary files, and cleanup reads the latest manifest.
+  The manifest commit compares the property's original version and merges unrelated
+  property edits; stale preparations cannot overwrite a newer selection. Selecting
+  the same path explicitly invalidates the host's staging cache, while ordinary
+  unchanged reconciles keep using it. Watcher callbacks are scoped to their selection.
+  All store instances share an asynchronous turn queue for each canonical managed
+  root and wallpaper ID. A turn covers preparation through bridge publication;
+  permission grant/rollback and cache purge use the same queue. Different wallpapers
+  can prepare independently, and waiting never blocks the main actor. Content copies
+  use private temporary files before atomic publication, so cancellation cannot delete
+  another import's copy. Cleanup re-reads current manifest references and removes
+  retired trees outside the short metadata lock. Permission transactions release their
+  turn before awaiting an engine mutation, then merge rollback with current records.
 - The control panel's Storage row shows the managed directory, reveals it in Finder, and
   offers a purge that reclaims only stored bytes no manifest still lists — an orphaned
   `assetId` folder, a property the manifest no longer mentions, a wallpaper folder with
   no manifest. A referenced asset is never a purge candidate, which matters most for the
   property whose original has gone and whose stored copy is now the only one.
+  A missing manifest is distinct from an unreadable, damaged, foreign or unsupported
+  manifest. The latter causes an explicit error before that wallpaper's files can be
+  purged or replaced. Clearing a property likewise commits its removal before deleting
+  its retained bytes.
 - The lock-screen extension is sandboxed
   (`Extension/WallpaperExtension.entitlements`) and cannot read either the store or the
   bridge. For a committed **video or scene** wallpaper, the assets that wallpaper

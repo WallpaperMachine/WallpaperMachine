@@ -15,7 +15,7 @@ final class WhatsNewStore {
     private let defaults: UserDefaults
     private let currentVersion: SemanticVersion?
 
-    init(defaults: UserDefaults = .standard,
+    init(defaults: UserDefaults = ClientPreferences.defaults,
          currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") {
         self.defaults = defaults
         self.currentVersion = SemanticVersion(currentVersion)

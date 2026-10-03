@@ -174,7 +174,7 @@ final class SteamCMDSetupStore {
     private var managedURL: URL { supportDirectory.appendingPathComponent("SteamCMD", isDirectory: true) }
 
     init(downloader: any SteamCMDDownloadActivity, supportDirectory: URL = ClientPaths.supportURL,
-         defaults: UserDefaults = .standard, sessionConfiguration: URLSessionConfiguration = .ephemeral,
+         defaults: UserDefaults = ClientPreferences.defaults, sessionConfiguration: URLSessionConfiguration = .ephemeral,
          runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
          processRunner: any SteamCMDProcessRunning = SteamCMDProcessRunner()) {
         self.downloader = downloader

@@ -175,12 +175,15 @@ mod tests {
 
         assert!(source.contains("float _we_user_mod(float x, float y)"));
         assert!(source.contains("float user_wrapped = _we_user_mod(x, y);"));
-        assert!(source.contains("float builtin_wrapped = fmod(x, y);"));
+        assert!(source.contains("float builtin_wrapped = _we_Fmod(x, y);"));
         assert!(source.contains("vec2 color = mix(vec2(0.0), vec2(1.0), 1.0);"));
         assert!(source.contains("_we_FragColor = vec4(color, user_wrapped + builtin_wrapped, 1);"));
         assert!(!source.contains("float mod(float x, float y)"));
         assert!(!source.contains("float user_wrapped = mod(x, y);"));
         assert!(!source.contains("float builtin_wrapped = x % y;"));
+        use crate::{ShaderCompiler, ShaderTarget, compile::NagaCompiler};
+        let _artifact = NagaCompiler.compile_stage(ShaderTarget::VulkanSpirv, ShaderStageKind::Fragment, &legalized)
+            .expect("overlapping rewrites must also reach the backend");
     }
 
     #[test]

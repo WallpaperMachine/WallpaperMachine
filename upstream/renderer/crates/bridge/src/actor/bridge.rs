@@ -644,13 +644,14 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
 
         for monitor in self.state.app_config.monitors.iter().filter(|monitor| {
             monitor.enabled
-                && (monitor.wallpaper.as_deref() == Some(wallpaper_id)
-                    || include_mirrors
-                        && monitor.mode.eq_ignore_ascii_case(MIRROR_DISPLAY_MODE)
-                        && monitor
+                && (if monitor.mode.eq_ignore_ascii_case(MIRROR_DISPLAY_MODE) {
+                    include_mirrors && monitor
                             .mirror_target
                             .as_ref()
-                            .is_some_and(|target| self.target_has_wallpaper(target, wallpaper_id)))
+                            .is_some_and(|target| self.target_has_wallpaper(target, wallpaper_id))
+                } else {
+                    monitor.wallpaper.as_deref() == Some(wallpaper_id)
+                })
         }) {
             let Some(snapshot) = monitor.selector.to_selector().resolve_display(&displays) else {
                 continue;
@@ -672,6 +673,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
     fn target_has_wallpaper(&self, selector: &SerializedSelector, wallpaper_id: &str) -> bool {
         self.state.app_config.monitors.iter().any(|monitor| {
             monitor.enabled
+                && !monitor.mode.eq_ignore_ascii_case(MIRROR_DISPLAY_MODE)
                 && monitor.wallpaper.as_deref() == Some(wallpaper_id)
                 && monitor.selector == *selector
         })
@@ -874,6 +876,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             .iter()
             .find(|monitor| {
                 monitor.enabled
+                    && !monitor.mode.eq_ignore_ascii_case(MIRROR_DISPLAY_MODE)
                     && monitor.wallpaper.as_deref() == Some(wallpaper_id)
                     && &monitor.selector == selector
             })
@@ -1042,7 +1045,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             project_models: &self.state.project_models,
             native_video_enabled: self.state.app_config.video_backend == VideoBackendModeCfg::NativePreferred,
             native_video_rejected: &self.state.native_video_rejected,
-            frame_rate_cap: self.state.app_config.quality.frame_rate_cap,
+            frame_rate_cap: self.active_target_fps_cap(),
             audio_suppressed: self.state.audio_suppressed,
         }
     }
@@ -1127,6 +1130,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     })?;
                 Ok(BridgeNativeVideoWallpaper {
                     display_id: desc.display.display_id,
+                    startup_revision: self.latest_reconcile_generation,
                     wallpaper_id: desc.wallpaper_id,
                     title,
                     media_path,
@@ -1200,6 +1204,7 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                     .is_some_and(|config| config.media_integration_enabled);
                 Ok(BridgeWebWallpaper {
                     display_id: desc.display.display_id,
+                    startup_revision: self.latest_reconcile_generation,
                     display_key: desc.display_key,
                     audio_source_display_id: desc.audio_source_display_id,
                     wallpaper_id: desc.wallpaper_id,
@@ -2029,7 +2034,7 @@ async fn reconcile_with<E: EngineFacade>(
             project_models: &project_models,
             native_video_enabled: app_config.video_backend == VideoBackendModeCfg::NativePreferred,
             native_video_rejected: &native_video_rejected,
-            frame_rate_cap: app_config.quality.frame_rate_cap,
+            frame_rate_cap: quality.target_fps_cap,
             audio_suppressed,
         }
         .build()?
@@ -2149,6 +2154,13 @@ impl<E: EngineFacade + Clone> Message<Bootstrap> for BridgeActor<E> {
         }
         if let Err(error) = self.reconcile_configured().await {
             self.state.errors.push(error.message().to_string());
+            self.state.pending_battery_pause_after_initial_frame = false;
+        }
+        if self.state.configured_ids().is_empty() {
+            self.state.pending_battery_pause_after_initial_frame = false;
+        }
+        if !self.state.pending_battery_pause_after_initial_frame {
+            self.apply_power_policy().await?;
         }
 
         self.bump_generation();
@@ -3231,7 +3243,7 @@ impl<E: EngineFacade + Clone> Message<SetVideoBackend> for BridgeActor<E> {
     async fn handle(
         &mut self,
         msg: SetVideoBackend,
-        _ctx: &mut Context<Self, Self::Reply>,
+        ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         if self.state.app_config.video_backend == msg.mode {
             return Ok(self.all_snapshots());
@@ -3242,18 +3254,29 @@ impl<E: EngineFacade + Clone> Message<SetVideoBackend> for BridgeActor<E> {
         // refusals recorded against the previous setting no longer describe
         // anything: keeping them would permanently exclude a wallpaper that was
         // only ever refused by a configuration the user has since changed.
-        self.state.native_video_rejected.clear();
+        let previous_rejections = std::mem::take(&mut self.state.native_video_rejected);
+        let generation = self.reserve_reconcile();
         // A wallpaper that changes backend must stop being rendered by the old
         // one in the same transition, so the scene list is rebuilt before the
         // new setting is committed: a failure leaves the previous backend
         // running rather than nothing at all.
         let wallpaper_configs = self.state.wallpaper_configs.clone();
-        let scenes = self.reconcile_engine(app_config.clone(), wallpaper_configs).await?;
-        if let Some(store) = &self.config_store {
-            store.save_app_config(&app_config)?;
-        }
+        let result = self.reconcile_engine(app_config.clone(), wallpaper_configs).await
+            .and_then(|scenes| {
+                if let Some(store) = &self.config_store { store.save_app_config(&app_config)?; }
+                Ok(scenes)
+            });
+        let scenes = match result {
+            Ok(scenes) => scenes,
+            Err(error) => {
+                self.state.native_video_rejected = previous_rejections;
+                self.reconcile_failure(generation, BridgeError::engine(error.message().to_owned()), ctx.actor_ref().clone());
+                return Err(error);
+            }
+        };
         self.state.app_config = app_config;
         self.state.set_active_ids_from_scenes(&scenes);
+        self.finish_reconcile(generation, ctx.actor_ref().clone());
         Ok(self.all_snapshots())
     }
 }
@@ -3733,9 +3756,11 @@ impl<E: EngineFacade + Clone> Message<FanOutSystemMediaArtwork> for BridgeActor<
         msg: FanOutSystemMediaArtwork,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        let artwork = wallpaper_core::media::MediaThumbnailRgba::new(msg.width, msg.height, msg.rgba)
+            .map_err(BridgeError::invalid_input)?;
         for handle in self.media_scene_handles() {
             self.engine
-                .apply_system_media_artwork(handle, msg.width, msg.height, msg.rgba.clone())
+                .apply_system_media_artwork(handle, artwork.width, artwork.height, artwork.rgba.clone())
                 .await
                 .map_err(|error| BridgeError::engine(error.to_string()))?;
         }
@@ -4032,6 +4057,37 @@ impl<E: EngineFacade + Clone> Message<InitialFrameReady> for BridgeActor<E> {
     }
 }
 
+impl<E: EngineFacade + Clone> Message<messages::ReportHostWallpaperStartup> for BridgeActor<E> {
+    type Reply = messages::InitialFrameReadyReply;
+
+    async fn handle(
+        &mut self,
+        msg: messages::ReportHostWallpaperStartup,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        if msg.startup_revision != self.latest_reconcile_generation {
+            return Ok(self.all_snapshots());
+        }
+        let current = if let Some(key) = msg.native_admission_key {
+            self.native_video_wallpapers()?.iter().any(|wallpaper| {
+                wallpaper.display_id == msg.display_id && wallpaper.wallpaper_id == msg.wallpaper_id
+                    && wallpaper.admission_key == key
+            })
+        } else {
+            self.web_wallpapers()?.iter().any(|wallpaper| {
+                wallpaper.display_id == msg.display_id && wallpaper.wallpaper_id == msg.wallpaper_id
+            })
+        };
+        if !current { return Ok(self.all_snapshots()); }
+        self.state.initial_frame_ready |= msg.ready;
+        if self.state.pending_battery_pause_after_initial_frame {
+            self.state.pending_battery_pause_after_initial_frame = false;
+            self.apply_power_policy().await?;
+        }
+        Ok(self.all_snapshots())
+    }
+}
+
 impl<E: EngineFacade + Clone> Message<EjectWallpaperFromDisplay> for BridgeActor<E> {
     type Reply = DelegatedReply<messages::EjectWallpaperFromDisplayReply>;
 
@@ -4229,9 +4285,6 @@ impl<E: EngineFacade + Clone> Message<SetAudioResponseEnabled> for BridgeActor<E
         }
         self.bump_generation();
         let handles = self.wallpaper_handles(&msg.wallpaper_id, true);
-        if handles.is_empty() {
-            return ctx.reply(self.wallpaper_bundle(msg.wallpaper_id));
-        }
         self.pending_audio_changes.insert(msg.wallpaper_id.clone());
         let actor = ctx.actor_ref().clone();
         let engine = self.engine.clone();
@@ -4273,12 +4326,28 @@ impl<E: EngineFacade + Clone> Message<CompleteAudioResponse> for BridgeActor<E> 
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.pending_audio_changes.remove(&msg.wallpaper_id);
-        if let Err(error) = msg.result {
+        let demand_result = if msg.result.is_ok() {
+            self.engine.set_audio_capture_demand(self.audio_capture_demand(self.playback_paused()))
+                .await.map_err(|error| BridgeError::engine(error.to_string()))
+        } else { Ok(()) };
+        let demand_failed = demand_result.is_err();
+        if let Err(error) = msg.result.and(demand_result) {
             let config = self
                 .state
                 .wallpaper_draft_mut(&msg.wallpaper_id)?
                 .set_audio_response_enabled_immediate(msg.previous_enabled);
-            self.save_wallpaper(msg.wallpaper_id, config)?;
+            self.save_wallpaper(msg.wallpaper_id.clone(), config)?;
+            if demand_failed {
+                for handle in self.wallpaper_handles(&msg.wallpaper_id, true) {
+                    if let Err(rollback) = register_audio_capture(&self.engine, handle, msg.previous_enabled).await {
+                        log::warn!("could not restore audio registration: {rollback}");
+                    }
+                }
+            }
+            if let Err(rollback) = self.engine
+                .set_audio_capture_demand(self.audio_capture_demand(self.playback_paused())).await {
+                log::warn!("could not restore audio demand: {rollback}");
+            }
             self.bump_generation();
             return Err(error);
         }
@@ -4532,7 +4601,7 @@ impl<E: EngineFacade + Clone> Message<ApplyWallpaperOptions> for BridgeActor<E> 
                         project_models: &self.state.project_models,
                         native_video_enabled: app_config.video_backend == VideoBackendModeCfg::NativePreferred,
                         native_video_rejected: &self.state.native_video_rejected,
-                        frame_rate_cap: app_config.quality.frame_rate_cap,
+                        frame_rate_cap: self.active_target_fps_cap(),
                         audio_suppressed: self.state.audio_suppressed,
                     }
                     .build()
@@ -4684,6 +4753,10 @@ impl<E: EngineFacade + Clone> Message<CompleteRestoreAfterReconcile> for BridgeA
             Err(error) => {
                 self.refresh_mouse_polling_policy();
                 self.state.errors.push(error.message().to_string());
+                self.active_restore_generation = None;
+                if std::mem::take(&mut self.restore_requested_after_active) {
+                    self.spawn_restore(ctx.actor_ref().clone());
+                }
                 Err(error)
             }
         }
@@ -4711,6 +4784,29 @@ impl<E: EngineFacade + Clone> Message<CancelWallpaperOptions> for BridgeActor<E>
         msg: CancelWallpaperOptions,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        let draft = self.state.wallpaper_draft_mut(&msg.wallpaper_id)?.clone();
+        let preview = draft.current().monitors.clone();
+        let mut restored = draft;
+        restored.cancel();
+        let updates: Vec<_> = preview.iter().filter_map(|render| {
+            let committed = restored.current().monitors.iter()
+                .find(|value| value.selector == render.selector)
+                .map_or_else(|| crate::config::MonitorRender::default().scaling_factor,
+                    |value| value.scaling_factor);
+            if render.scaling_factor == committed { return None; }
+            self.display_handle(&msg.wallpaper_id, &render.selector)
+                .map(|handle| (handle, render.scaling_factor, committed))
+        }).collect();
+        for (index, &(handle, _, committed)) in updates.iter().enumerate() {
+            if let Err(error) = self.engine.set_scaling_factor(handle, committed).await {
+                for &(handle, previous, _) in &updates[..=index] {
+                    if let Err(rollback) = self.engine.set_scaling_factor(handle, previous).await {
+                        log::warn!("could not restore scaling preview after failed cancel: {rollback}");
+                    }
+                }
+                return Err(BridgeError::engine(error.to_string()));
+            }
+        }
         self.state.wallpaper_draft_mut(&msg.wallpaper_id)?.cancel();
         self.bump_generation();
         self.wallpaper_bundle(msg.wallpaper_id)

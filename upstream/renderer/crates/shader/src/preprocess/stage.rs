@@ -40,6 +40,12 @@ impl PreprocessedStage {
                 break;
             }
             let directive = PreprocessorDirective::from_token_text(trimmed, SourceSpan::default());
+            if directive.name_text() == "undef" {
+                if let Ok(name) = MacroName::parse(directive.body_text()) {
+                    macros.undefine(name.as_str());
+                }
+                continue;
+            }
             if !directive.is_define() {
                 break;
             }
@@ -197,7 +203,8 @@ where
         let context = location.context;
         let line_number = location.line_number;
         let preserve_directive = self.conditional_mode == ConditionalMode::Preserve
-            && !(directive.is_include() || directive.is_define() || directive.is_require());
+            && !(directive.is_include() || directive.is_define() || directive.is_require()
+                || directive.name_text() == "undef");
 
         if directive.is_include() {
             if conditionals.is_active() {
@@ -223,6 +230,18 @@ where
                 })?;
                 self.macros.define(name.as_str(), parts.value().as_str());
                 writeln!(output, "#{}", directive.raw_text()).map_err(|error| {
+                    self.parse_error(format!("failed to write preprocessed source: {error}"))
+                })?;
+            }
+        } else if directive.name_text() == "undef" {
+            if conditionals.is_active() {
+                let name = MacroName::parse(directive.body_text()).map_err(|_error| {
+                    self.parse_error_at(context, line_number, "#undef expects a single macro name")
+                })?;
+                self.macros.undefine(name.as_str());
+            }
+            if conditionals.is_active() || self.conditional_mode == ConditionalMode::Preserve {
+                writeln!(output, "#{raw}", raw = directive.raw_text()).map_err(|error| {
                     self.parse_error(format!("failed to write preprocessed source: {error}"))
                 })?;
             }

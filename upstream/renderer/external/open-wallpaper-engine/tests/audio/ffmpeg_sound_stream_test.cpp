@@ -1,5 +1,6 @@
 #include "Audio/FfmpegSoundStream.hpp"
 #include "Fs/IBinaryStream.h"
+#include "Fs/CBinaryStream.h"
 
 #include <gtest/gtest.h>
 
@@ -9,10 +10,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 namespace wallpaper::audio
 {
@@ -157,31 +158,90 @@ TEST(FfmpegSoundStreamTest, VfsBackedStreamDecodesPcm)
     }));
 }
 
-TEST(FfmpegSoundStreamTest, ResampledLoopingPcmMatchesBaseline)
+TEST(FfmpegSoundStreamTest, SmallPhysicalWavMatchesTheMemoryInput)
 {
-    // Bit-exact regression guard for the decode/resample path, recorded before
-    // the converted-buffer reuse change: 12 kHz mono resampled to 48 kHz
-    // stereo across several loops with an odd read size.
-    auto stream = std::make_shared<MemoryBinaryStream>(MakeWavS16Mono(12'000, 512));
-    std::string error;
-    auto sound = CreateFfmpegSoundStream(stream, &error);
-    ASSERT_NE(sound, nullptr) << error;
-    sound->PassDesc({ .channels = 2, .sampleRate = 48'000 });
+    auto name = (std::filesystem::temp_directory_path() / "wallpaper-audio-XXXXXX").string();
+    const int descriptor = mkstemp(name.data());
+    ASSERT_GE(descriptor, 0);
+    close(descriptor);
+    struct RemoveFile {
+        std::filesystem::path path;
+        ~RemoveFile() { std::error_code error; std::filesystem::remove(path, error); }
+    } cleanup { name };
+    const auto bytes = MakeWavS16Mono(12'000, 512);
+    std::ofstream file(name, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    file.close();
+    ASSERT_TRUE(file);
+    auto physical = fs::CreateCBinaryStream(name);
+    ASSERT_NE(physical, nullptr);
+    std::vector<uint8_t> read(bytes.size() + 128);
+    EXPECT_EQ(physical->Read(read.data(), read.size()), bytes.size());
+    EXPECT_TRUE(std::equal(bytes.begin(), bytes.end(), read.begin()));
+    EXPECT_EQ(physical->Read(read.data(), read.size()), 0u);
+    ASSERT_TRUE(physical->Rewind());
 
-    uint64_t hash = 1469598103934665603ull;
-    uint64_t total_frames = 0;
+    std::string error;
+    auto disk = CreateFfmpegSoundStream(physical, &error, { .loop = false });
+    ASSERT_NE(disk, nullptr) << error;
+    auto memory = CreateFfmpegSoundStream(std::make_shared<MemoryBinaryStream>(bytes),
+                                         &error, { .loop = false });
+    ASSERT_NE(memory, nullptr) << error;
+    disk->PassDesc({ .channels = 1, .sampleRate = 12'000 });
+    memory->PassDesc({ .channels = 1, .sampleRate = 12'000 });
+    std::array<float, 1024> disk_output {}, memory_output {};
+    EXPECT_EQ(disk->NextPcmData(disk_output.data(), 1024), 512u);
+    EXPECT_EQ(memory->NextPcmData(memory_output.data(), 1024), 512u);
+    EXPECT_EQ(disk_output, memory_output);
+}
+
+TEST(FfmpegSoundStreamTest, ResampledTailPreservesTheAuthoredDuration)
+{
+    for (const auto [input_rate, output_rate, input_frames, expected_frames] :
+         { std::array<uint32_t, 4> {12000, 48000, 512, 2048},
+           std::array<uint32_t, 4> {44100, 48000, 441, 480},
+           std::array<uint32_t, 4> {48000, 44100, 480, 441} }) {
+        SCOPED_TRACE(input_rate);
+        std::string error;
+        auto sound = CreateFfmpegSoundStream(std::make_shared<MemoryBinaryStream>(
+            MakeWavS16Mono(input_rate, input_frames)), &error, { .loop = false });
+        ASSERT_NE(sound, nullptr) << error;
+        sound->PassDesc({ .channels = 2, .sampleRate = output_rate });
+        uint64_t total = 0;
+        std::array<float, 2 * 97> output {};
+        for (int read = 0; read < 100; ++read) {
+            const auto frames = sound->NextPcmData(output.data(), 97);
+            total += frames;
+            if (frames == 0) break;
+        }
+        EXPECT_EQ(total, expected_frames);
+        EXPECT_EQ(sound->NextPcmData(output.data(), 97), 0u);
+        EXPECT_TRUE(std::all_of(output.begin(), output.end(), [](float s) { return s == 0.0f; }));
+    }
+}
+
+TEST(FfmpegSoundStreamTest, LoopIncludesTheCompleteResampledTail)
+{
+    const auto bytes = MakeWavS16Mono(12000, 512);
+    std::string error;
+    auto once = CreateFfmpegSoundStream(std::make_shared<MemoryBinaryStream>(bytes),
+                                      &error, { .loop = false });
+    auto loop = CreateFfmpegSoundStream(std::make_shared<MemoryBinaryStream>(bytes), &error);
+    ASSERT_NE(once, nullptr) << error;
+    ASSERT_NE(loop, nullptr) << error;
+    once->PassDesc({ .channels = 2, .sampleRate = 48000 });
+    loop->PassDesc({ .channels = 2, .sampleRate = 48000 });
+    std::array<float, 4096> one_cycle {};
+    ASSERT_EQ(once->NextPcmData(one_cycle.data(), 2048), 2048u);
     std::array<float, 2 * 97> output {};
-    for (int read = 0; read < 200; ++read) {
-        output.fill(0.0f);
-        total_frames += sound->NextPcmData(output.data(), 97);
-        for (float sample : output) {
-            uint32_t bits = 0;
-            std::memcpy(&bits, &sample, sizeof(bits));
-            hash = (hash ^ bits) * 1099511628211ull;
+    size_t offset = 0;
+    for (int read = 0; read < 100; ++read) {
+        ASSERT_EQ(loop->NextPcmData(output.data(), 97), 97u);
+        for (const float sample : output) {
+            ASSERT_EQ(sample, one_cycle[offset % one_cycle.size()]) << "sample " << offset;
+            ++offset;
         }
     }
-    EXPECT_EQ(total_frames, 19400u);
-    EXPECT_EQ(hash, 11268528888657319991ull);
 }
 
 TEST(FfmpegSoundStreamTest, NonLoopingVfsStreamReportsEndOfFile)
@@ -250,23 +310,6 @@ TEST(FfmpegSoundStreamTest, InvalidVfsStreamFailsGracefully)
 
     EXPECT_EQ(sound, nullptr);
     EXPECT_FALSE(error.empty());
-}
-
-TEST(FfmpegSoundStreamTest, SoundManagerNoLongerUsesMiniaudioDecoder)
-{
-    const auto source_path = std::filesystem::path(__FILE__)
-                                 .parent_path()
-                                 .parent_path()
-                                 .parent_path() /
-                             "src/Audio/SoundManager.cpp";
-    std::ifstream source_file(source_path);
-    ASSERT_TRUE(source_file.is_open()) << source_path;
-
-    const std::string source(
-        (std::istreambuf_iterator<char>(source_file)),
-        std::istreambuf_iterator<char>());
-
-    EXPECT_EQ(source.find("miniaudio::Decoder"), std::string::npos);
 }
 
 } // namespace

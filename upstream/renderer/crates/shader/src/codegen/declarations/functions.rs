@@ -13,9 +13,16 @@ pub(crate) struct CompatibilityFunctionRequests {
     clip: bool,
     /// Whether generated `PerformLighting_V1` overloads are needed.
     perform_lighting: bool,
+    /// Whether remainder expressions need a single-evaluation float helper.
+    float_remainder: bool,
 }
 
 impl CompatibilityFunctionRequests {
+    /// Requests truncating remainder overloads for generated float `%` calls.
+    pub(crate) fn require_float_remainder(&mut self) {
+        self.float_remainder = true;
+    }
+
     /// Requests generated `clip` overloads.
     pub(crate) fn require_clip(&mut self) {
         self.clip = true;
@@ -53,7 +60,22 @@ impl CompatibilityFunctionRequests {
             .map_err(SourceEmitter::write_error)?;
         }
 
-        if self.perform_lighting || self.clip {
+        if self.float_remainder {
+            // Arguments are evaluated once, unlike expanding x - y * trunc(x/y)
+            // at the call site when x or y contains a function call or increment.
+            for ty in ["float", "vec2", "vec3", "vec4"] {
+                writeln!(output, "{ty} _we_Fmod({ty} x, {ty} y) {{ return x - y * trunc(x / y); }}")
+                    .map_err(SourceEmitter::write_error)?;
+                if ty != "float" {
+                    writeln!(output, "{ty} _we_Fmod({ty} x, float y) {{ return x - y * trunc(x / y); }}")
+                        .map_err(SourceEmitter::write_error)?;
+                    writeln!(output, "{ty} _we_Fmod(float x, {ty} y) {{ return x - y * trunc(x / y); }}")
+                        .map_err(SourceEmitter::write_error)?;
+                }
+            }
+        }
+
+        if self.perform_lighting || self.clip || self.float_remainder {
             writeln!(output).map_err(SourceEmitter::write_error)?;
         }
         Ok(())
@@ -112,22 +134,30 @@ impl VideoSamplingFunctionRequests {
             let helper = VideoPlaneResource::helper_name(plane.slot);
             let range = VideoPlaneResource::range_uniform_name(plane.slot);
             let matrix = VideoPlaneResource::matrix_uniform_name(plane.slot);
+            let uv_transform = VideoPlaneResource::uv_transform_uniform_name(plane.slot);
+            let uv_offset = VideoPlaneResource::uv_offset_uniform_name(plane.slot);
             let luma = plane.base_name.as_str();
             let luma_sampler = format!("{}{luma}", TextureDeclaration::SAMPLER_PREFIX);
             let chroma = plane.chroma_name.as_str();
             let chroma_sampler = format!("{}{chroma}", TextureDeclaration::SAMPLER_PREFIX);
             writeln!(
                 output,
-                "vec4 {helper}(vec2 _we_video_coord) {{\n    float _we_video_y = \
+                "vec4 {helper}(vec2 _we_video_coord) {{\n    \
+                 _we_video_coord = vec2(dot(_we_video_coord, {uv_transform}.xy), \
+                 dot(_we_video_coord, {uv_transform}.zw)) + {uv_offset};\n    float _we_video_y = \
                  texture(sampler2D({luma}, {luma_sampler}), _we_video_coord).r;\n    vec2 \
                  _we_video_cbcr = texture(sampler2D({chroma}, {chroma_sampler}), \
                  _we_video_coord).rg;\n    float _we_video_luma = clamp((_we_video_y - \
                  {range}.x) * {range}.y, 0.0, 1.0);\n    vec2 _we_video_chroma = \
-                 (_we_video_cbcr - {range}.z) * {range}.w;\n    return vec4(\n        \
+                 (_we_video_cbcr - {range}.z) * {range}.w;\n    float _we_video_coverage = 1.0;\n    \
+                 if (abs({uv_transform}.x * {uv_transform}.y) > 0.000001 || \
+                 abs({uv_transform}.z * {uv_transform}.w) > 0.000001) {{\n        \
+                 _we_video_coverage = float(all(greaterThanEqual(_we_video_coord, vec2(0.0))) && \
+                 all(lessThanEqual(_we_video_coord, vec2(1.0))));\n    }}\n    return vec4(\n        \
                  clamp(_we_video_luma + {matrix}.x * _we_video_chroma.y, 0.0, 1.0),\n        \
                  clamp(_we_video_luma + {matrix}.y * _we_video_chroma.x + {matrix}.z * \
                  _we_video_chroma.y, 0.0, 1.0),\n        clamp(_we_video_luma + {matrix}.w * \
-                 _we_video_chroma.x, 0.0, 1.0),\n        1.0);\n}}"
+                 _we_video_chroma.x, 0.0, 1.0),\n        1.0) * _we_video_coverage;\n}}"
             )
             .map_err(SourceEmitter::write_error)?;
             emitted = true;

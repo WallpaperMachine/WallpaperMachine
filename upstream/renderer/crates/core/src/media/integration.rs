@@ -31,6 +31,7 @@ pub struct MediaProperties {
 }
 
 /// RGBA artwork texture payload for the renderer-owned `$mediaThumbnail`.
+/// A zero-by-zero image with no bytes explicitly clears both cover slots.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MediaThumbnailRgba {
     pub width: u32,
@@ -75,18 +76,54 @@ mod snapshot_tests {
         assert_eq!(second.changed_events(Some(&first)).count(), 1);
         assert_eq!(second.changed_events(Some(&second)).count(), 0);
     }
+
+    #[test]
+    fn empty_artwork_is_an_explicit_clear_and_partial_images_are_rejected() {
+        let clear = MediaThumbnailRgba::new(0, 0, Vec::new()).unwrap();
+        assert_eq!((clear.width, clear.height, clear.rgba.len()), (0, 0, 0));
+        assert!(MediaThumbnailRgba::new(0, 1, Vec::new()).is_err());
+        assert!(MediaThumbnailRgba::new(1, 0, Vec::new()).is_err());
+        assert!(MediaThumbnailRgba::new(0, 0, vec![0; 4]).is_err());
+        assert!(MediaThumbnailRgba::new(1, 1, Vec::new()).is_err());
+        assert!(MediaThumbnailRgba::new(1, 1, vec![0; 4]).is_ok());
+    }
+
+    #[test]
+    fn clear_replaces_cached_cover_and_is_replayed_only_when_it_changes() {
+        let covered = MediaPollResult {
+            events: vec![MediaIntegrationEvent::ThumbnailChanged {
+                has_thumbnail: true, primary_color: [0.0; 3], text_color: [1.0; 3],
+            }],
+            artwork: Some(MediaThumbnailRgba::new(1, 1, vec![20, 40, 60, 255]).unwrap()),
+        };
+        let clear = MediaPollResult {
+            events: vec![MediaIntegrationEvent::ThumbnailChanged {
+                has_thumbnail: false, primary_color: [0.0; 3], text_color: [1.0; 3],
+            }],
+            artwork: Some(MediaThumbnailRgba::new(0, 0, Vec::new()).unwrap()),
+        };
+        assert_eq!(clear.changed_events(Some(&covered)).count(), 1);
+        assert_eq!(clear.changed_events(Some(&clear)).count(), 0);
+        assert_eq!(clear.changed_events(None).count(), 1);
+        assert_eq!(covered.changed_events(Some(&clear)).count(), 1);
+    }
 }
 
 impl MediaThumbnailRgba {
     /// # Errors
     ///
-    /// Returns an error if dimensions are zero or the RGBA payload length does
-    /// not equal `width * height * 4`.
+    /// Returns an error for a partial clear or a nonempty image whose RGBA
+    /// payload length does not equal `width * height * 4`.
     pub fn new(width: u32, height: u32, rgba: Vec<u8>) -> Result<Self, &'static str> {
+        if width == 0 && height == 0 && rgba.is_empty() {
+            return Ok(Self { width, height, rgba });
+        }
         if width == 0 || height == 0 {
             return Err("media thumbnail dimensions must be non-zero");
         }
-        let expected = width as usize * height as usize * 4;
+        let expected = (width as usize).checked_mul(height as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+            .ok_or("media thumbnail dimensions exceed the supported payload size")?;
         if rgba.len() != expected {
             return Err("media thumbnail RGBA payload length must equal width * height * 4");
         }

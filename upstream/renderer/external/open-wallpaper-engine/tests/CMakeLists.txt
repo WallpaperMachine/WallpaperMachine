@@ -88,6 +88,12 @@ gtest_discover_tests(
     DISCOVERY_TIMEOUT 60
 )
 
+add_executable(sprite_animation_test sprite_animation_test.cpp)
+target_link_libraries(sprite_animation_test PRIVATE wpScene GTest::gtest_main)
+target_include_directories(sprite_animation_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(sprite_animation_test PRIVATE cxx_std_20)
+gtest_discover_tests(sprite_animation_test PROPERTIES TIMEOUT 30 DISCOVERY_TIMEOUT 60)
+
 # CLI for fixture authoring: dumps a single workshop to a JSON file.
 add_executable(wpdump wpdump_main.cpp)
 target_link_libraries(wpdump PRIVATE wpdump_lib)
@@ -108,12 +114,13 @@ add_executable(
     audio_tests
     audio/audio_response_mono_test.cpp
     audio/ffmpeg_sound_stream_test.cpp
+    audio/audio_decode_pump_test.cpp
     fs/limited_binary_stream_test.cpp
     audio/sample_math_test.cpp
     audio/sound_layer_control_test.cpp
     audio/sound_output_lifecycle_test.cpp)
 target_link_libraries(audio_tests PRIVATE ${PROJECT_NAME} wpAudio wpFs GTest::gtest_main)
-target_include_directories(audio_tests PRIVATE .)
+target_include_directories(audio_tests PRIVATE . ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(audio_tests PRIVATE cxx_std_20)
 gtest_discover_tests(
     audio_tests
@@ -121,6 +128,18 @@ gtest_discover_tests(
     DISCOVERY_TIMEOUT 60
 )
 if(APPLE)
+    add_executable(stb_image_regression_test stb_image_regression_test.mm)
+    add_library(stb_scalar_test_decoder OBJECT stb_jpeg_variant.cpp)
+    target_compile_definitions(stb_scalar_test_decoder PRIVATE STB_TEST_DECODE_NAME=stb_test_decode_scalar)
+    add_library(stb_neon_test_decoder OBJECT stb_jpeg_variant.cpp)
+    target_compile_definitions(stb_neon_test_decoder PRIVATE STB_TEST_DECODE_NAME=stb_test_decode_neon STB_TEST_USE_NEON=1)
+    target_sources(stb_image_regression_test PRIVATE
+        $<TARGET_OBJECTS:stb_scalar_test_decoder> $<TARGET_OBJECTS:stb_neon_test_decoder>)
+    target_link_libraries(stb_image_regression_test PRIVATE GTest::gtest_main
+        "-framework CoreGraphics" "-framework CoreFoundation" "-framework ImageIO")
+    target_compile_features(stb_image_regression_test PRIVATE cxx_std_20)
+    set_target_properties(stb_image_regression_test PROPERTIES OBJCXX_STANDARD 20 OBJCXX_STANDARD_REQUIRED YES)
+    gtest_discover_tests(stb_image_regression_test PROPERTIES TIMEOUT 30 DISCOVERY_TIMEOUT 60)
     add_executable(playback_gpu_test playback_gpu_test.mm)
     target_link_libraries(playback_gpu_test PRIVATE
         ${PROJECT_NAME} wpScene wpVulkan wpVulkanRender wpRGraph
@@ -341,7 +360,7 @@ target_include_directories(vulkan_sample_count_smoke PRIVATE
 target_compile_features(vulkan_sample_count_smoke PRIVATE cxx_std_20)
 add_test(NAME vulkan_sample_count_smoke COMMAND vulkan_sample_count_smoke)
 add_executable(rendergraph_smoke rendergraph_smoke.cpp)
-target_link_libraries(rendergraph_smoke PRIVATE ${PROJECT_NAME} wpVulkanRender wpVulkan wpRGraph wpScene wpAudio wpFs)
+target_link_libraries(rendergraph_smoke PRIVATE ${PROJECT_NAME} wpVulkanRender wpVulkan wpRGraph wpScene wpAudio wpFs GTest::gtest_main)
 target_include_directories(rendergraph_smoke PRIVATE . ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/Scene/VulkanRender)
 target_compile_features(rendergraph_smoke PRIVATE cxx_std_20)
 add_test(NAME rendergraph_smoke COMMAND rendergraph_smoke)
@@ -599,4 +618,17 @@ if(APPLE)
         DISCOVERY_TIMEOUT 60
     )
   endforeach()
+endif()
+
+# Standalone miniaudio implementation with controlled CoreAudio/backend failures.
+# This target never opens a real audio context or links the renderer's audio unit.
+if(APPLE)
+  add_executable(miniaudio_failure_paths_test miniaudio_failure_paths_test.cpp)
+  target_include_directories(miniaudio_failure_paths_test PRIVATE ${CMAKE_SOURCE_DIR}/third_party)
+  target_link_libraries(miniaudio_failure_paths_test PRIVATE GTest::gtest_main)
+  target_compile_features(miniaudio_failure_paths_test PRIVATE cxx_std_20)
+  gtest_discover_tests(miniaudio_failure_paths_test
+      TEST_PREFIX miniaudio_failure_paths_test.
+      PROPERTIES TIMEOUT 30
+      DISCOVERY_TIMEOUT 30)
 endif()

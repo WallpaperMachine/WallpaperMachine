@@ -3,9 +3,8 @@ import AppKit
 @MainActor
 final class WallpaperController {
   static let shared = WallpaperController()
-  private var surfaces: [UUID: WallpaperSurface] = [:]
+  private let surfaces = LockScreenSurfaceRegistry<WallpaperSurface>()
   private(set) var configuration: LockScreenConfiguration?
-  private var revisions: [UUID: UInt64] = [:]
   private var observers: [NSObjectProtocol] = []
   private(set) var displaysAsleep = false
   private var started = false
@@ -86,12 +85,18 @@ final class WallpaperController {
 
   func acknowledge(surface: WallpaperSurface, error: Error? = nil) {
     guard !surface.preview, let configuration,
-      configuration.scenes.contains(surface.scene)
+      configuration.scenes.contains(surface.scene),
+      surfaces.values.contains(where: { $0 === surface })
     else { return }
-    surface.whenReady { readyError in
+    let scene = surface.scene
+    surface.whenReady { [weak self, weak surface] readyError in
+      guard let self, let surface, self.configuration == configuration,
+        surface.scene == scene, self.surfaces.values.contains(where: { $0 === surface }),
+        !(readyError is CancellationError) || error != nil
+      else { return }
       Self.record(
         LockScreenReadiness(
-          revision: configuration.revision, displayID: surface.scene.displayID,
+          revision: configuration.revision, displayID: scene.displayID,
           error: (error ?? readyError)?.localizedDescription))
     }
   }
@@ -141,61 +146,52 @@ final class WallpaperController {
         )
       }
       if !preview { acquiring = scene }
-      if let existing = surfaces[id], existing.displayID == displayID, existing.preview == preview {
-        if let mode = WallpaperRuntime.field("presentationMode", in: request) {
-          existing.presentation = WallpaperRuntime.enumCase(mode)
-        }
-        if let activity = WallpaperRuntime.field("activityState", in: request) {
-          existing.activity = WallpaperRuntime.enumCase(activity)
-        }
-        let ready: (Error?) -> Void = { error in
-          do {
-            if let error { throw error }
-            reply(try WallpaperRuntime.contextReply(existing.context.contextId), nil)
-          } catch { reply(nil, error) }
-        }
-        if existing.scene == scene, existing.size == size, existing.scale == scale {
-          existing.applyPolicy()
-          existing.whenReady(ready)
-        } else {
-          // The host is still showing this context until the acquire reply.
-          // Reframe its backing locally instead of invalidating it during wake.
-          existing.replace(scene: scene, size: size, scale: scale, completion: ready)
-        }
-        return
+      let acquisition = try surfaces.acquire(
+        id: id, matches: { $0.displayID == displayID && $0.preview == preview }
+      ) { generation in
+        try WallpaperSurface(
+          scene: scene, displayID: displayID, size: size, scale: scale, preview: preview,
+          generation: generation)
       }
-      remove(id)
-      let revision = (revisions[id] ?? 0) &+ 1
-      revisions[id] = revision
-      let surface = try WallpaperSurface(
-        scene: scene, displayID: displayID, size: size, scale: scale, preview: preview,
-        generation: revision)
+      let surface = acquisition.surface
+      let generation = acquisition.generation
       if let mode = WallpaperRuntime.field("presentationMode", in: request) {
         surface.presentation = WallpaperRuntime.enumCase(mode)
       }
       if let activity = WallpaperRuntime.field("activityState", in: request) {
         surface.activity = WallpaperRuntime.enumCase(activity)
       }
-      surfaces[id] = surface
-      surface.start { [weak self, weak surface] error in
+      let ready: (Error?) -> Void = { [weak self, weak surface] error in
+        guard let self, let surface,
+          self.surfaces.isCurrent(id: id, surface: surface, generation: generation)
+        else {
+          reply(nil, CancellationError())
+          return
+        }
         do {
           if let error { throw error }
-          guard let self, let surface, self.revisions[id] == revision, self.surfaces[id] === surface
-          else { throw CancellationError() }
-          reply(try WallpaperRuntime.contextReply(surface.context.contextId), nil)
+          let contextReply = try WallpaperRuntime.contextReply(surface.context.contextId)
           self.acknowledge(surface: surface)
+          reply(contextReply, nil)
           WallpaperRuntime.log("Acquired id=\(id) display=\(scene.displayID) preview=\(preview)")
         } catch {
+          if !(error is CancellationError) {
+            WallpaperRuntime.log(
+              "Acquire failed display=\(scene.displayID): \(error.localizedDescription)")
+            self.acknowledge(surface: surface, error: error)
+          }
+          self.surfaces.retireAfterFailure(id, surface: surface, error: error)
           reply(nil, error)
-          // A superseded surface is not a failure: a newer acquire owns the
-          // outcome. Anything else ends this display's activation.
-          guard !(error is CancellationError), let self, let surface,
-            self.revisions[id] == revision, self.surfaces[id] === surface
-          else { return }
-          WallpaperRuntime.log(
-            "Acquire failed display=\(scene.displayID): \(error.localizedDescription)")
-          self.acknowledge(surface: surface, error: error)
         }
+      }
+      if acquisition.isNew {
+        surface.start(completion: ready)
+      } else if surface.hasContent, surface.scene == scene, surface.size == size, surface.scale == scale {
+        surface.applyPolicy()
+        surface.whenReady(ready)
+      } else {
+        // Keep the hosted context while replacing its child renderer.
+        surface.replace(scene: scene, size: size, scale: scale, completion: ready)
       }
     } catch {
       reply(nil, error)
@@ -232,7 +228,6 @@ final class WallpaperController {
   }
 
   private func remove(_ id: UUID) {
-    revisions[id] = (revisions[id] ?? 0) &+ 1
-    surfaces.removeValue(forKey: id)?.stop()
+    surfaces.remove(id)
   }
 }

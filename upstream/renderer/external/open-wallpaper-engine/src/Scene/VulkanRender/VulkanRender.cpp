@@ -634,6 +634,7 @@ bool VulkanRender::Impl::releasePresentation() {
                 if (result != VK_SUCCESS) return failFrame(result);
             }
         }
+        releaseStaticCache();
         for (auto* pass : m_passes) {
             if (pass != nullptr) pass->destory(*m_device, m_rendering_resources);
         }
@@ -718,6 +719,7 @@ void VulkanRender::Impl::destroy() {
                 // The cache destructor checks its remaining slots against device idle.
             }
         }
+        releaseStaticCache();
         for (auto* pass : m_passes) {
             if (pass != nullptr) pass->destory(*m_device, m_rendering_resources);
         }
@@ -1248,6 +1250,7 @@ bool VulkanRender::Impl::clearLastRenderGraph() {
             if (result != VK_SUCCESS) return failFrame(result);
         }
     }
+    releaseStaticCache();
     for (auto* pass : m_passes) {
         if (pass != nullptr) pass->destory(*m_device, m_rendering_resources);
     }
@@ -1298,10 +1301,10 @@ bool VulkanRender::Impl::compileRenderGraph(Scene& scene, rg::RenderGraph& rg) {
                        assert(pass != nullptr);
                        VulkanPass* vpass = static_cast<VulkanPass*>(pass);
                        // LOG_INFO("----release tex");
-                       for (auto& tex : texs) {
-                           vpass->addReleaseTexs(spanone<const std::string_view> { tex->key() });
-                           //    LOG_INFO("%s", tex->key().data());
-                       }
+                       std::vector<std::string_view> release_keys;
+                       release_keys.reserve(texs.size());
+                       for (auto* tex : texs) release_keys.push_back(tex->key());
+                       vpass->setReleaseTexs(release_keys);
                        return vpass;
                    });
 
@@ -1588,11 +1591,21 @@ void VulkanRender::Impl::planStaticSkips(Scene& scene) {
         // rest execute whatever their sample would say. A clear or a copy
         // contributes no varying state of its own either: it is skipped exactly
         // when the target it writes is.
-        if (custom == nullptr || ! m_static_cache.PassSampled(i)) {
+        if (! m_static_cache.PassSampled(i)) {
             m_static_samples[i] = StaticPassSample { .hash = 0, .visible = true };
             continue;
         }
-        m_static_samples[i] = custom->frameSample(scene);
+        if (custom != nullptr) {
+            m_static_samples[i] = custom->frameSample(scene);
+        } else if (const auto* clear = dynamic_cast<PrePass*>(m_passes[i]);
+                   clear != nullptr && ! clear->desc().transparent) {
+            m_static_samples[i] = StaticPassSample {
+                .hash = StaticHashBytes(0xcbf29ce484222325ULL, scene.clearColor.data(), sizeof(float) * 3),
+                .visible = true,
+            };
+        } else {
+            m_static_samples[i] = StaticPassSample {};
+        }
     }
 
     // Into the member the frame already owns. A fresh vector here was a heap

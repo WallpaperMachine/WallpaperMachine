@@ -18,6 +18,7 @@
 #include "Scene/Scene.h"
 #include "Video/VideoColorConversion.hpp"
 #include "Video/VideoTextureSource.hpp"
+#include "video_orientation_cases.hpp"
 
 namespace
 {
@@ -115,6 +116,17 @@ public:
     }
 
     bool prime(std::string*) override { return true; }
+
+    void produceQuadrants() {
+        produce(128, 128, 128);
+        ASSERT_TRUE(video::testing_media::FillVideoQuadrants(m_buffer));
+    }
+
+    void setDisplayMatrix(const std::array<int32_t, 9>& matrix) {
+        const auto transform = video::ResolveVideoDisplayTransform(matrix, m_frame.width, m_frame.height);
+        ASSERT_TRUE(transform.has_value());
+        m_frame.display_transform = *transform;
+    }
 
     bool syncPlayback(const video::VideoPlaybackState& state, std::string*) override
     {
@@ -290,6 +302,58 @@ TEST_F(MetalVideoTexture, ConvertedNv12MatchesTheCpuColorReference)
             EXPECT_NEAR(pixel[0], expected[2], 2) << "blue";
             EXPECT_EQ(pixel[3], 255) << "video frames are opaque";
         }
+    }
+}
+
+TEST_F(MetalVideoTexture, BgraAndNv12ApplyEveryDisplayOrientationToTheirPixels)
+{
+    for (const auto format : {kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange}) {
+        for (const auto& orientation : video::testing_media::kOrientations) {
+            SCOPED_TRACE(orientation.name);
+            auto source = std::make_shared<FakeVideoSource>(16, 8, format);
+            source->produceQuadrants();
+            source->setDisplayMatrix(orientation.matrix());
+            metal::MetalVideoTextures converter;
+            converter.configure(device);
+            std::string error;
+            ASSERT_TRUE(converter.prepareForTests("video", source, &error)) << error;
+            auto command = [queue commandBuffer];
+            ASSERT_TRUE(converter.beginFrame(scene, command, &error)) << error;
+            [command commit]; [command waitUntilCompleted];
+            const auto texture = converter.texture("video");
+            ASSERT_NE(texture, nil);
+            EXPECT_EQ(texture.width, orientation.swaps_axes ? 8u : 16u);
+            EXPECT_EQ(texture.height, orientation.swaps_axes ? 16u : 8u);
+            for (size_t corner = 0; corner < 4; ++corner) {
+                const auto pixel = ReadPixel(texture, corner % 2 ? texture.width - 2 : 1,
+                                             corner / 2 ? texture.height - 2 : 1);
+                const auto expected = video::testing_media::kQuadrantLuma[orientation.source_quadrants[corner]];
+                for (size_t channel = 0; channel < 3; ++channel) EXPECT_NEAR(pixel[channel], expected, 2);
+                EXPECT_EQ(pixel[3], 255);
+            }
+        }
+    }
+}
+
+TEST_F(MetalVideoTexture, AffineShearLeavesUncoveredCornersTransparent)
+{
+    for (const auto format : {kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange}) {
+        auto source = std::make_shared<FakeVideoSource>(16, 8, format);
+        source->produceQuadrants();
+        source->setDisplayMatrix({65536, 0, 0, 32768, 65536, 0, 0, 0, 1 << 30});
+        metal::MetalVideoTextures converter;
+        converter.configure(device);
+        std::string error;
+        ASSERT_TRUE(converter.prepareForTests("video", source, &error)) << error;
+        auto command = [queue commandBuffer];
+        ASSERT_TRUE(converter.beginFrame(scene, command, &error)) << error;
+        [command commit]; [command waitUntilCompleted];
+        const auto texture = converter.texture("video");
+        ASSERT_NE(texture, nil);
+        EXPECT_EQ(texture.width, 20u); EXPECT_EQ(texture.height, 8u);
+        EXPECT_EQ(ReadPixel(texture, 19, 0), (std::array<uint8_t, 4> {}));
+        EXPECT_EQ(ReadPixel(texture, 0, 7), (std::array<uint8_t, 4> {}));
+        EXPECT_EQ(ReadPixel(texture, 10, 4)[3], 255u);
     }
 }
 

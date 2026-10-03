@@ -100,7 +100,9 @@ app delegate and reachable from the panel as `BridgeStore.wallpaperEnergyRatings
   unless playback is playing, presentation is running (not display sleep, lock,
   app rule or other-audio pause), no download is running SteamCMD, the panel
   window is not on screen, and exactly one wallpaper is assigned across the
-  displays that are not suspended by occlusion. Energy is charged to the whole
+  displays that are not suspended by occlusion. Stable `primary` and `identity:`
+  selectors are resolved to connected physical display IDs first; an unknown
+  mapping prevents attribution for that interval. Energy is charged to the whole
   app, so two different wallpapers cannot be told apart. An interval is
   credited only when both ends saw the same context and the GPU was not
   contended; any engine snapshot or presentation change in between invalidates

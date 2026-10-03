@@ -55,7 +55,7 @@ final class HotKeyPreferences {
     /// launch may succeed.
     private(set) var failures: [HotKeyAction: String] = [:]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ClientPreferences.defaults) {
         self.defaults = defaults
         let stored = defaults.data(forKey: Self.key)
             .flatMap { try? JSONDecoder().decode([String: HotKey].self, from: $0) } ?? [:]

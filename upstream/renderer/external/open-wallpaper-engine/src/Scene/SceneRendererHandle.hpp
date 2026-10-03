@@ -84,6 +84,7 @@ public:
             return false;
         }
         m_metal = std::move(candidate);
+        if (! m_pipeline_cache_path.empty()) m_metal->SetPipelineArchivePath(m_pipeline_cache_path);
         return true;
     }
 

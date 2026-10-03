@@ -31,7 +31,9 @@ public:
     virtual VkResult execute(const Device&, RenderingResources&)     = 0;
     virtual void destory(const Device&, RenderingResources&)         = 0;
 
-    void addReleaseTexs(std::span<const std::string_view> texs) {
+    // Graph ownership survives GPU re-preparation. Only compiling a new graph
+    // replaces the list; destroying a framebuffer must not lose its last uses.
+    void setReleaseTexs(std::span<const std::string_view> texs) {
         m_release_texs.clear();
         std::transform(texs.begin(), texs.end(), std::back_inserter(m_release_texs), [](auto& sv) {
             return std::string(sv);
@@ -39,7 +41,6 @@ public:
     }
     bool                         prepared() const { return m_prepared; }
     std::span<const std::string> releaseTexs() const { return m_release_texs; }
-    void                         clearReleaseTexs() { m_release_texs.clear(); }
 
 protected:
     void setPrepared(bool v = true) { m_prepared = v; }
