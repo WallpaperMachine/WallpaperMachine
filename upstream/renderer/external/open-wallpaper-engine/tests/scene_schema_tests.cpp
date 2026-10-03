@@ -24,6 +24,7 @@
 #include "Runtime/DynamicValue.hpp"
 #include "Runtime/SceneRuntimeContext.hpp"
 #include "Runtime/SceneSettingResolver.hpp"
+#include "Runtime/RuntimeImageSource.hpp"
 #include "Runtime/ScriptedDynamicValue.hpp"
 
 #include <cmath>
@@ -5366,6 +5367,48 @@ TEST(SceneSchema, MediaStateSurvivesTheSceneItArrivedBefore) {
         << "a scene attached after the event never learned what was playing";
     EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
 }
+
+#if defined(__APPLE__)
+TEST(SceneSchema, MediaArtworkClearCrossesTheNativeBoundaryAndReplacesPendingPixels) {
+    struct NativeOwner {
+        owe_scene_wallpaper* value {nullptr};
+        ~NativeOwner() { if (value != nullptr) owe_scene_wallpaper_delete(value); }
+    } native;
+    ASSERT_EQ(owe_scene_wallpaper_new(&native.value), 0);
+    auto& wallpaper = wallpaper::SceneWallpaperInputTestAccess::FromNative(*native.value);
+    ASSERT_TRUE(wallpaper.init());
+    wallpaper.setPropertyBool(wallpaper::PROPERTY_MEDIA_INTEGRATION_ENABLED, true);
+    const std::array<uint8_t, 4> cover {20, 80, 140, 255}, empty {};
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 1, 1, cover.data(), cover.size()), 0);
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 0, 0, nullptr, 0), 0);
+    std::shared_ptr<wallpaper::SceneNode> probe;
+    auto scene = MakeMediaProbeScene(probe);
+    scene->imageParser = std::make_unique<wallpaper::RuntimeImageSource>(nullptr);
+    auto* images = static_cast<wallpaper::RuntimeImageSource*>(scene->imageParser.get());
+    wallpaper::SceneWallpaperInputTestAccess::PostScene(wallpaper, scene);
+    WaitForPostedWork(wallpaper);
+    EXPECT_TRUE(images->MatchesRgba("$mediaThumbnail", 1, 1, empty.data(), empty.size()));
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 1, 1, cover.data(), cover.size()), 0);
+    WaitForPostedWork(wallpaper);
+    EXPECT_TRUE(images->MatchesRgba("$mediaThumbnail", 1, 1, cover.data(), cover.size()));
+    const auto covered_version = images->Version("$mediaThumbnail");
+    EXPECT_NE(owe_scene_wallpaper_apply_system_media_artwork(native.value, 0, 1, nullptr, 0), 0);
+    EXPECT_NE(owe_scene_wallpaper_apply_system_media_artwork(native.value, 2, 2, cover.data(), cover.size()), 0);
+    EXPECT_EQ(images->Version("$mediaThumbnail"), covered_version);
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 0, 0, nullptr, 0), 0);
+    WaitForPostedWork(wallpaper);
+    EXPECT_TRUE(images->MatchesRgba("$mediaThumbnail", 1, 1, empty.data(), empty.size()));
+    EXPECT_TRUE(images->MatchesRgba("$mediaPreviousThumbnail", 1, 1, empty.data(), empty.size()));
+    const auto cleared_version = images->Version("$mediaThumbnail");
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 0, 0, nullptr, 0), 0);
+    WaitForPostedWork(wallpaper);
+    EXPECT_EQ(images->Version("$mediaThumbnail"), cleared_version);
+    ASSERT_EQ(owe_scene_wallpaper_apply_system_media_artwork(native.value, 1, 1, cover.data(), cover.size()), 0);
+    WaitForPostedWork(wallpaper);
+    EXPECT_TRUE(images->MatchesRgba("$mediaThumbnail", 1, 1, cover.data(), cover.size()));
+    wallpaper.shutdown();
+}
+#endif
 
 TEST(SceneSchema, WithdrawingConsentDropsWhatWasRetained) {
     // Turning the setting back on must not resurrect what was playing when it

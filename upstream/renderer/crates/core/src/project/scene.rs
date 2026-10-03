@@ -443,6 +443,7 @@ impl SceneDesc {
         let inputs = ShaderCacheInputs::builder(&scene_source.scene_id, cache_root)
             .project_json_path(scene_path)
             .scene_pkg_path(&scene_source.pkg_path)
+            .unpacked_source(scene_source.pkg_dir.join(&scene_source.pkg_entry), &scene_source.pkg_dir)
             .property_override_json(self.property_override_json.clone())
             .force_refresh(self.force_shader_refresh)
             .build()?;

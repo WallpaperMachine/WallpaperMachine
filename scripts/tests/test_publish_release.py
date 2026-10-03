@@ -102,6 +102,44 @@ class PublishTests(unittest.TestCase):
 
 
 class LatestTests(unittest.TestCase):
+    def test_a_newer_release_published_during_upload_is_observed_before_promotion(self):
+        class InterleavedGitHub(FakeGitHub):
+            def __call__(self, command, check=True):
+                result = super().__call__(command, check)
+                if command[2] == "upload":
+                    self.published.append("v0.7.0")
+                return result
+
+        github = InterleavedGitHub(published=["v0.5.0"])
+        _, latest = publish_release.publish("v0.6.0", "notes.md", ASSETS, run=github)
+        self.assertFalse(latest)
+        self.assertIn("--latest=false", github.mutations[-1])
+
+    def test_newer_finishing_after_an_older_upload_still_becomes_latest(self):
+        class InterleavedGitHub(FakeGitHub):
+            def __call__(self, command, check=True):
+                result = super().__call__(command, check)
+                if command[2] == "upload":
+                    self.published.append("v0.6.0")
+                return result
+
+        github = InterleavedGitHub(published=["v0.5.0"])
+        _, latest = publish_release.publish("v0.7.0", "notes.md", ASSETS, run=github)
+        self.assertTrue(latest)
+        self.assertIn("--latest", github.mutations[-1])
+
+    def test_failed_final_version_lookup_never_publishes_the_uploaded_draft(self):
+        class UnavailableGitHub(FakeGitHub):
+            def __call__(self, command, check=True):
+                if command[2] == "list":
+                    raise publish_release.PublishError("list failed")
+                return super().__call__(command, check)
+
+        github = UnavailableGitHub()
+        with self.assertRaises(publish_release.PublishError):
+            publish_release.publish("v0.7.0", "notes.md", ASSETS, run=github)
+        self.assertFalse(any("--draft=false" in command for command in github.mutations))
+
     def test_the_first_release_claims_latest(self):
         self.assertTrue(publish_release.promotes_to_latest("v0.6.0", []))
 

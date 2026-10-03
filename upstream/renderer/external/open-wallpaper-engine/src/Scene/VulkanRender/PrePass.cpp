@@ -9,6 +9,7 @@ PrePass::PrePass(const Desc& desc): m_desc(desc) {}
 PrePass::~PrePass() {}
 
 void PrePass::prepare(Scene& scene, const Device& device, RenderingResources&) {
+    m_scene = &scene;
     {
         auto tex_name = scene.ResolveRenderTargetName(std::string(m_desc.result));
         if (!scene.HasRenderTarget(tex_name)) return;
@@ -26,6 +27,14 @@ void PrePass::prepare(Scene& scene, const Device& device, RenderingResources&) {
     }
     for (auto& tex : releaseTexs()) device.tex_cache().MarkShareReady(tex);
     setPrepared();
+}
+
+bool PrePass::updateFrame(const Device&, RenderingResources&) {
+    if (m_scene != nullptr && ! m_desc.transparent) {
+        const auto& color = m_scene->clearColor;
+        m_desc.clear_value = VkClearValue { color[0], color[1], color[2], 1.0f };
+    }
+    return true;
 }
 
 VkResult PrePass::execute(const Device&, RenderingResources& rr) {
@@ -85,5 +94,5 @@ VkResult PrePass::execute(const Device&, RenderingResources& rr) {
 }
 void PrePass::destory(const Device&, RenderingResources&) {
     setPrepared(false);
-    clearReleaseTexs();
+    m_scene = nullptr;
 }

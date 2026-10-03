@@ -184,7 +184,14 @@ impl<'module> ResourceGlobal<'module> {
     /// Returns a public descriptor binding when this global has one.
     fn descriptor_binding(&self) -> Option<ShaderResult<ShaderDescriptorBinding>> {
         let binding = self.global.binding?;
-        let kind = self.kind()?;
+        let Some(kind) = self.kind() else {
+            return Some(Err(ShaderError::Reflection {
+                message: format!(
+                    "used resource `{}` at set {} binding {} has an unsupported descriptor kind",
+                    self.name(), binding.group, binding.binding,
+                ),
+            }));
+        };
         Some(
             BindingSet::new(binding.group)
                 .and_then(|set| {

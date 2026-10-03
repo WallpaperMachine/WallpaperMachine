@@ -175,6 +175,10 @@ sandbox container, so macOS does not ask the app for access to another app's
 data. Files earlier releases left in that container are removed by the extension.
 Startup and first-frame failures stop the surface and invalidate its context;
 they do not leave the last backing frame hosted as a successful replacement.
+The controller removes failed acquisitions from its reusable surfaces. A retry
+with the same wallpaper identity creates a new generation, while a healthy
+same-identity update keeps its context. Completion and readiness callbacks from
+an older generation cannot remove or acknowledge its replacement.
 
 Every copy of the app on disk registers the same extension identifier, and
 macOS may launch any of them — including the Debug build `scripts/test.py`
@@ -215,6 +219,12 @@ the failed lock-screen attempt. Disabling the screen saver in that state stops
 the monitor until either mode is explicitly reactivated. A pending display-identity
 lookup does not clear an error and does not by itself start the monitor. With no
 error, the same timer retries an unchanged scene set when the identity resolves.
+
+A library refresh, explicit wallpaper reload or managed-asset change invalidates
+the content check even when project paths and options stayed identical. The
+publisher recalculates its asset fingerprints; changed bytes produce a new
+immutable publication, while identical scene records keep the current revision
+and do not reload the extension. No intermediate empty assignment is required.
 
 Recovery entries represent the last successful journal commit. Repeated checks
   do not rewrite an unchanged journal, but still read the actual system store to

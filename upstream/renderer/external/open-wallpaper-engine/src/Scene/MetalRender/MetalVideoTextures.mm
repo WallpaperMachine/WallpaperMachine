@@ -12,6 +12,7 @@
 #include "Scene/Scene.h"
 #include "Video/SharedVideoSession.hpp"
 #include "Video/VideoColorConversion.hpp"
+#include "Video/VideoConversionMetal.hpp"
 #include "Video/VideoFramePacing.hpp"
 // For `ResolveEffectiveVideoPlaybackState`: the global/per-layer combination is
 // part of what playback means, and a second copy of it here would be a second
@@ -43,51 +44,6 @@ constexpr std::size_t kDestinationSlots = 3;
 /// every frame would drop the cache's own reuse, which is the only reason the
 /// per-frame import is cheap; never flushing keeps dead surfaces mapped.
 constexpr std::uint64_t kTextureCacheFlushInterval = 64;
-
-/// Mirrors the kernel `FfmpegVideoInterop.mm` uses field for field, including
-/// the `YuvColorParams` layout, so the compatibility backend and this one
-/// cannot disagree about range, matrix or alpha for the same frame.
-constexpr const char* kNv12ConversionShaderSource = R"(
-#include <metal_stdlib>
-using namespace metal;
-
-struct YuvColorParams {
-    float y_offset;
-    float y_scale;
-    float chroma_offset;
-    float chroma_scale;
-    float r_cr;
-    float g_cb;
-    float g_cr;
-    float b_cb;
-};
-
-kernel void owe_scene_nv12_to_bgra(texture2d<float, access::sample> y_texture [[texture(0)]],
-                                   texture2d<float, access::sample> uv_texture [[texture(1)]],
-                                   texture2d<half, access::write> output_texture [[texture(2)]],
-                                   constant YuvColorParams& params [[buffer(0)]],
-                                   uint2 gid [[thread_position_in_grid]])
-{
-    if (gid.x >= output_texture.get_width() || gid.y >= output_texture.get_height()) {
-        return;
-    }
-
-    constexpr sampler sample_state(coord::normalized, address::clamp_to_edge, filter::linear);
-    const float2 uv = (float2(gid) + 0.5f) /
-        float2(output_texture.get_width(), output_texture.get_height());
-    const float  y = y_texture.sample(sample_state, uv).r;
-    // Limited-range chroma spans 224 code values around the midpoint, so the
-    // offset and the scale are both part of the contract.
-    const float2 cbcr = (uv_texture.sample(sample_state, uv).rg - params.chroma_offset) *
-        params.chroma_scale;
-    const float  luma = clamp((y - params.y_offset) * params.y_scale, 0.0f, 1.0f);
-
-    const float r = saturate(luma + params.r_cr * cbcr.y);
-    const float g = saturate(luma + params.g_cb * cbcr.x + params.g_cr * cbcr.y);
-    const float b = saturate(luma + params.b_cb * cbcr.x);
-    output_texture.write(half4(half(r), half(g), half(b), half(1.0f)), gid);
-}
-)";
 
 bool SetError(std::string* error, std::string message)
 {
@@ -222,6 +178,7 @@ struct MetalVideoTextures::State {
     id<MTLDevice>               device { nil };
     CVMetalTextureCacheRef      texture_cache { nullptr };
     id<MTLComputePipelineState> nv12_pipeline { nil };
+    id<MTLComputePipelineState> bgra_pipeline { nil };
     /// Why the conversion pipeline is missing, kept from `configure` so the
     /// first frame that needs it can say something better than "no pipeline".
     std::string                 pipeline_error;
@@ -250,6 +207,7 @@ struct MetalVideoTextures::State {
             texture_cache = nullptr;
         }
         nv12_pipeline = nil;
+        bgra_pipeline = nil;
         device        = nil;
     }
 
@@ -268,7 +226,7 @@ struct MetalVideoTextures::State {
         }
 
         NSError*  library_error = nil;
-        NSString* source        = [NSString stringWithUTF8String:kNv12ConversionShaderSource];
+        NSString* source        = [NSString stringWithUTF8String:video::kVideoConversionMetalSource];
         id<MTLLibrary> library =
             [device newLibraryWithSource:source options:nil error:&library_error];
         if (library == nil) {
@@ -277,18 +235,20 @@ struct MetalVideoTextures::State {
                                  : "failed to compile the NV12 video conversion library";
             return;
         }
-        id<MTLFunction> function = [library newFunctionWithName:@"owe_scene_nv12_to_bgra"];
-        if (function == nil) {
-            pipeline_error = "failed to load the NV12 video conversion function";
-            return;
-        }
-        NSError* creation_error = nil;
-        nv12_pipeline = [device newComputePipelineStateWithFunction:function error:&creation_error];
-        if (nv12_pipeline == nil) {
-            pipeline_error = creation_error != nil
-                                 ? std::string([[creation_error localizedDescription] UTF8String])
-                                 : "failed to create the NV12 video conversion pipeline";
-        }
+        const auto pipeline = [&](NSString* name) -> id<MTLComputePipelineState> {
+            id<MTLFunction> function = [library newFunctionWithName:name];
+            if (function == nil) {
+                pipeline_error = "failed to load a video conversion function";
+                return nil;
+            }
+            NSError* error = nil;
+            auto result = [device newComputePipelineStateWithFunction:function error:&error];
+            if (result == nil) pipeline_error = error != nil
+                ? std::string([[error localizedDescription] UTF8String]) : "failed to create a video conversion pipeline";
+            return result;
+        };
+        nv12_pipeline = pipeline(@"nv12_to_bgra");
+        bgra_pipeline = pipeline(@"bgra_transform");
     }
 
     void reportSourceWork(VideoSourceEntry& entry, std::uint64_t generation)
@@ -459,6 +419,13 @@ bool MetalVideoTextures::prepare(Scene&                          scene,
                                 : state.pipeline_error);
         }
 
+        if (! is_nv12 && frame.needsDisplayTransform() && state.bgra_pipeline == nil) {
+            return SetError(error,
+                            state.pipeline_error.empty()
+                                ? std::string("no BGRA display-transform pipeline for video textures")
+                                : state.pipeline_error);
+        }
+
         VideoSourceEntry entry;
         entry.source = std::move(source);
         state.sources.emplace(key, std::move(entry));
@@ -572,6 +539,7 @@ VideoFramePlanes MetalVideoTextures::planes(const std::string& key) const
         .params = bundle.color,
         .width  = iterator->second.frame_width,
         .height = iterator->second.frame_height,
+        .display_transform = bundle.frame.display_transform,
     };
 }
 
@@ -617,6 +585,46 @@ bool MetalVideoTextures::beginFrame(Scene& scene, id<MTLCommandBuffer> command, 
 
     auto pending = std::make_shared<PendingFrames>();
     id<MTLComputeCommandEncoder> encoder = nil;
+    const auto convert = [&](VideoSourceEntry& entry, const std::shared_ptr<FrameBundle>& bundle,
+                              const video::VideoTextureFrame& frame, bool nv12) -> int {
+        auto pipeline = nv12 ? state.nv12_pipeline : state.bgra_pipeline;
+        if (pipeline == nil) {
+            SetError(error, state.pipeline_error.empty() ? "video conversion pipeline is unavailable" : state.pipeline_error);
+            return -1;
+        }
+        DestinationSlot* slot = nullptr;
+        auto destination = state.acquireDestination(entry, frame.displayWidth(), frame.displayHeight(), &slot);
+        if (destination == nil) return 0;
+        auto source = nv12 ? bundle->luma : bundle->sampled;
+        bundle->destination = destination;
+        bundle->sampled = destination;
+        bundle->slot_busy = slot->busy;
+        if (encoder == nil) {
+            encoder = [command computeCommandEncoder];
+            if (encoder == nil) {
+                SetError(error, "failed to create a video conversion command encoder");
+                return -1;
+            }
+            encoder.label = @"owe video texture conversion";
+        }
+        [encoder setComputePipelineState:pipeline];
+        [encoder setTexture:source atIndex:0];
+        [encoder setTexture:bundle->chroma atIndex:1];
+        [encoder setTexture:destination atIndex:2];
+        if (nv12) {
+            const auto color = bundle->color;
+            [encoder setBytes:&color length:sizeof(color) atIndex:0];
+        }
+        const auto transform = video::VideoTransformConstants(frame.display_transform);
+        [encoder setBytes:&transform length:sizeof(transform) atIndex:1];
+        const NSUInteger x = std::min<NSUInteger>(16u, pipeline.threadExecutionWidth);
+        const NSUInteger y = std::min<NSUInteger>(16u, std::max<NSUInteger>(1u, pipeline.maxTotalThreadsPerThreadgroup / x));
+        [encoder dispatchThreads:MTLSizeMake(frame.displayWidth(), frame.displayHeight(), 1u)
+            threadsPerThreadgroup:MTLSizeMake(x, y, 1u)];
+        ++state.conversions_encoded;
+        if (state.counters != nullptr) state.counters->Set(OWE_RC_VIDEO_CONVERSIONS, state.conversions_encoded);
+        return 1;
+    };
 
     const bool ok = [&]() -> bool {
         for (auto& [key, entry] : state.sources) {
@@ -722,6 +730,14 @@ bool MetalVideoTextures::beginFrame(Scene& scene, id<MTLCommandBuffer> command, 
                                         "\"");
                 }
                 path = VideoFramePath::Bgra;
+                if (frame.needsDisplayTransform()) {
+                    const int converted = convert(entry, bundle, frame, false);
+                    if (converted < 0) return false;
+                    if (converted == 0) {
+                        if (entry.current) pending->bundles.push_back(entry.current);
+                        continue;
+                    }
+                }
             } else {
                 // Both planes, whichever path the consumers take: the direct
                 // one samples them and the conversion reads them.
@@ -765,53 +781,11 @@ bool MetalVideoTextures::beginFrame(Scene& scene, id<MTLCommandBuffer> command, 
                     // acquired, none is allocated and no conversion is encoded.
                     path = VideoFramePath::Nv12Direct;
                 } else {
-                    if (state.nv12_pipeline == nil) {
-                        return SetError(error,
-                                        state.pipeline_error.empty()
-                                            ? std::string("no NV12 conversion pipeline for video "
-                                                          "textures")
-                                            : state.pipeline_error);
-                    }
-                    DestinationSlot* slot = nullptr;
-                    id<MTLTexture>   destination =
-                        state.acquireDestination(entry, frame.width, frame.height, &slot);
-                    if (destination == nil) {
-                        // Either every destination is still being read, or Metal
-                        // refused one. Neither is a reason to fail the scene: the
-                        // frame already on screen stays there, planes and all.
+                    const int converted = convert(entry, bundle, frame, true);
+                    if (converted < 0) return false;
+                    if (converted == 0) {
                         if (entry.current) pending->bundles.push_back(entry.current);
                         continue;
-                    }
-                    bundle->destination = destination;
-                    bundle->sampled     = destination;
-                    bundle->slot_busy   = slot->busy;
-
-                    if (encoder == nil) {
-                        encoder = [command computeCommandEncoder];
-                        if (encoder == nil) {
-                            return SetError(error,
-                                            "failed to create a compute encoder for video texture "
-                                            "conversion");
-                        }
-                        encoder.label = @"owe video texture conversion";
-                    }
-                    const video::YuvColorParams params = bundle->color;
-                    [encoder setComputePipelineState:state.nv12_pipeline];
-                    [encoder setTexture:bundle->luma atIndex:0];
-                    [encoder setTexture:bundle->chroma atIndex:1];
-                    [encoder setTexture:destination atIndex:2];
-                    [encoder setBytes:&params length:sizeof(params) atIndex:0];
-                    const NSUInteger thread_width =
-                        std::min<NSUInteger>(16u, state.nv12_pipeline.threadExecutionWidth);
-                    const NSUInteger thread_height = std::max<NSUInteger>(
-                        1u, state.nv12_pipeline.maxTotalThreadsPerThreadgroup / thread_width);
-                    const MTLSize threads_per_group =
-                        MTLSizeMake(thread_width, std::min<NSUInteger>(16u, thread_height), 1u);
-                    [encoder dispatchThreads:MTLSizeMake(frame.width, frame.height, 1u)
-                        threadsPerThreadgroup:threads_per_group];
-                    ++state.conversions_encoded;
-                    if (state.counters != nullptr) {
-                        state.counters->Set(OWE_RC_VIDEO_CONVERSIONS, state.conversions_encoded);
                     }
                     // One conversion serves every consumer that needs an image,
                     // however many passes that is.
@@ -827,8 +801,8 @@ bool MetalVideoTextures::beginFrame(Scene& scene, id<MTLCommandBuffer> command, 
             entry.texture             = bundle->sampled;
             entry.imported_generation = frame.generation;
             entry.has_import          = true;
-            entry.frame_width         = frame.width;
-            entry.frame_height        = frame.height;
+            entry.frame_width         = frame.displayWidth();
+            entry.frame_height        = frame.displayHeight();
             entry.path                = path;
             entry.satisfied           = demand;
             // The previous bundle is dropped here, which frees its slot unless

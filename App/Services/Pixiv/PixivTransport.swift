@@ -13,10 +13,28 @@ protocol PixivTransport: Sendable {
     func image(
         from url: URL, limit: Int, progress: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws -> Data
+
+    func image(
+        from url: URL, limit: Int, checkpoint: URL,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws -> Data
+}
+
+extension PixivTransport {
+    /// Custom transports may restart a transfer; the production transport supports HTTP ranges.
+    func image(
+        from url: URL, limit: Int, checkpoint: URL,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
+    ) async throws -> Data {
+        try await image(from: url, limit: limit, progress: progress)
+    }
 }
 
 struct URLSessionPixivTransport: PixivTransport {
     static let referer = "https://www.pixiv.net/"
+    let transportSession: URLSession
+
+    init(session: URLSession? = nil) { transportSession = session ?? Self.session }
 
     // Ephemeral and cookie-free: nothing pixiv sets is kept, and the one cookie that is sent, the
     // account's session, is added by hand to the requests that may carry it and taken off any
@@ -67,7 +85,7 @@ struct URLSessionPixivTransport: PixivTransport {
 
     func data(from url: URL, session: String?) async throws -> Data {
         let (data, response) = try await Self.perform {
-            try await Self.session.data(for: Self.request(url, accept: "application/json", session: session))
+            try await transportSession.data(for: Self.request(url, accept: "application/json", session: session))
         }
         try Self.check(response)
         return data
@@ -77,7 +95,8 @@ struct URLSessionPixivTransport: PixivTransport {
         from url: URL, limit: Int, progress: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws -> Data {
         let request = Self.request(url, accept: "image/avif,image/webp,image/png,image/jpeg,image/gif,*/*;q=0.5")
-        let (bytes, response) = try await Self.perform { try await Self.session.bytes(for: request) }
+        let (bytes, response) = try await Self.perform { try await transportSession.bytes(for: request) }
+        defer { bytes.task.cancel() }
         try Self.check(response)
         let expected = response.expectedContentLength > 0 ? response.expectedContentLength : nil
         let megabytes = limit / (1024 * 1024)
@@ -87,6 +106,7 @@ struct URLSessionPixivTransport: PixivTransport {
         progress(0, expected)
         try await Self.perform {
             for try await byte in bytes {
+                guard data.count < limit else { throw PixivFailure(code: .tooLarge(megabytes: megabytes)) }
                 data.append(byte)
                 guard data.count.isMultiple(of: 65_536) else { continue }
                 try Task.checkCancellation()

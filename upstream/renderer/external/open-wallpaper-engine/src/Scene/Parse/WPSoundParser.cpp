@@ -8,6 +8,8 @@
 #include "wpscene/WPSoundObject.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <random>
 #include <string>
 #include <string_view>
@@ -45,55 +47,71 @@ WPSoundStream::WPSoundStream(std::vector<StreamFactory> factories, Config config
       m_muted(config.muted),
       m_playing(! config.startsilent) {
     m_config.volume = m_volume.load(std::memory_order_relaxed);
+    if (m_config.random_seed) m_random.seed(*m_config.random_seed);
 }
 
 WPSoundStream::~WPSoundStream() = default;
 
 uint64_t WPSoundStream::NextPcmData(void* data, uint32_t frame_count) {
-    if (m_desc.channels == 0 || m_stream_factories.empty()) return 0;
-
+    if (data == nullptr || m_desc.channels == 0 || m_stream_factories.empty()) return 0;
     const auto sample_count = static_cast<std::size_t>(frame_count) * m_desc.channels;
     audio::ClearInterleavedF32(data, sample_count);
-
     if (m_rewind_requested.exchange(false, std::memory_order_relaxed)) {
         m_cur_active.reset();
         m_cur_index = 0;
+        m_delay_frames = 0;
         m_finished.store(false, std::memory_order_relaxed);
     }
+    if (! m_playing.load(std::memory_order_relaxed)) return frame_count;
 
-    if (! m_cur_active) {
-        Switch();
-    }
-    if (! m_cur_active) return 0;
-
-    if (! m_playing.load(std::memory_order_relaxed)) {
-        return frame_count;
-    }
-
-    uint64_t frames_read = m_cur_active->NextPcmData(data, frame_count);
-    if (frames_read == 0) {
+    uint32_t written = 0;
+    std::size_t empty_sources = 0;
+    while (written < frame_count) {
+        if (m_delay_frames != 0) {
+            const auto silence = std::min<uint64_t>(m_delay_frames, frame_count - written);
+            m_delay_frames -= silence;
+            written += static_cast<uint32_t>(silence);
+            continue;
+        }
+        if (! m_cur_active) Switch();
+        if (! m_cur_active) break;
+        const auto count = std::min<uint64_t>(frame_count - written,
+            m_cur_active->NextPcmData(static_cast<float*>(data) + static_cast<size_t>(written) * m_desc.channels,
+                                     frame_count - written));
+        if (count != 0) {
+            written += static_cast<uint32_t>(count);
+            empty_sources = 0;
+            continue;
+        }
         if (m_config.mode == PlaybackMode::OneShot) {
             m_playing.store(false, std::memory_order_relaxed);
             m_finished.store(true, std::memory_order_relaxed);
-            return frame_count;
+            break;
         }
-        Switch();
-        if (! m_cur_active) return frame_count;
-        frames_read = m_cur_active->NextPcmData(data, frame_count);
-        if (frames_read == 0) return frame_count;
+        m_cur_active.reset();
+        if (m_config.mode == PlaybackMode::Random) m_delay_frames = DelayFrames();
+        // Empty or unreadable inputs must not spin on the audio worker.
+        if (++empty_sources > m_stream_factories.size()) break;
     }
+    if (m_muted.load(std::memory_order_relaxed)) audio::ClearInterleavedF32(data, sample_count);
+    else audio::ApplyVolumeF32(data, sample_count, m_volume.load(std::memory_order_relaxed));
+    return frame_count;
+}
 
-    const auto samples_read =
-        static_cast<std::size_t>(std::min<uint64_t>(frames_read, frame_count) * m_desc.channels);
-    if (m_muted.load(std::memory_order_relaxed)) {
-        audio::ClearInterleavedF32(data, samples_read);
-    } else {
-        audio::ApplyVolumeF32(data, samples_read, m_volume.load(std::memory_order_relaxed));
-    }
-    return frames_read;
+uint64_t WPSoundStream::DelayFrames() {
+    const double minimum = std::isfinite(m_config.mintime) ? std::max(0.0f, m_config.mintime) : 0.0;
+    const double maximum = std::isfinite(m_config.maxtime) ? std::max(minimum, double(m_config.maxtime)) : minimum;
+    const double seconds = std::uniform_real_distribution<double>(minimum, maximum)(m_random);
+    return static_cast<uint64_t>(std::min(std::ceil(seconds * m_desc.sampleRate),
+                                         double(std::numeric_limits<int64_t>::max())));
 }
 
 void WPSoundStream::PassDesc(const Desc& desc) {
+    if (m_desc.sampleRate != 0 && m_desc.sampleRate != desc.sampleRate) {
+        m_delay_frames = static_cast<uint64_t>(std::min(
+            std::ceil(double(m_delay_frames) * desc.sampleRate / m_desc.sampleRate),
+            double(std::numeric_limits<int64_t>::max())));
+    }
     m_desc = desc;
     if (m_cur_active != nullptr) m_cur_active->PassDesc(desc);
 }

@@ -2,7 +2,7 @@ import Foundation
 
 /// A pixiv work's age rating, in the vocabulary Discover's Age rating boxes and a wallpaper
 /// manifest's `contentrating` already use, plus pixiv's R-18G, which is never shown.
-enum PixivRating: String, CaseIterable, Sendable {
+enum PixivRating: String, CaseIterable, Codable, Sendable {
     case everyone = "Everyone", questionable = "Questionable", mature = "Mature", grotesque = "Grotesque"
 
     /// pixiv marks restricted works with `xRestrict` (1 is R-18, 2 is R-18G). The rest carry a
@@ -24,7 +24,7 @@ enum PixivRating: String, CaseIterable, Sendable {
 
 /// One pixiv illustration as a listing presents it: enough to draw its tile and to ask for its
 /// pages. Rankings and search results describe the first page only.
-struct PixivWork: Identifiable, Equatable, Sendable {
+struct PixivWork: Identifiable, Codable, Equatable, Sendable {
     /// pixiv's illustration id, decimal digits only.
     let id: String
     let title: String
@@ -58,7 +58,7 @@ struct PixivWork: Identifiable, Equatable, Sendable {
 }
 
 /// One image of a work, as `/ajax/illust/<id>/pages` lists it.
-struct PixivPage: Equatable, Sendable {
+struct PixivPage: Codable, Equatable, Sendable {
     let index: Int
     let width: Int
     let height: Int

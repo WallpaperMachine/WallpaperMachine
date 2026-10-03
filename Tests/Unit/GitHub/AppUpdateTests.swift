@@ -172,13 +172,13 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertThrowsError(try AppUpdateInstaller.validate(app))
     }
 
-    func testInstallerCopiesTheAppOutOfTheDiskImageAndDetachesIt() throws {
+    func testInstallerCopiesTheAppOutOfTheDiskImageAndDetachesIt() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mwe-update-dmg-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let image = try Self.makeDiskImage(in: root, bundleIdentifier: "app.wallpapermachine")
         defer { Self.forceDetach(image) }
 
-        let app = try AppUpdateInstaller().prepareInstallation(archive: image)
+        let app = try await AppUpdateInstaller().prepareInstallation(archive: image)
         let work = app.deletingLastPathComponent()
         defer { try? FileManager.default.removeItem(at: work) }
         XCTAssertEqual(app.lastPathComponent, "WallpaperMachine.app")
@@ -188,13 +188,16 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(try Self.attachedDevices(of: image), [])
     }
 
-    func testInstallerRejectsAForeignAppInTheDiskImageAndDetachesIt() throws {
+    func testInstallerRejectsAForeignAppInTheDiskImageAndDetachesIt() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("mwe-update-dmg-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let image = try Self.makeDiskImage(in: root, bundleIdentifier: "com.example.other")
         defer { Self.forceDetach(image) }
 
-        XCTAssertThrowsError(try AppUpdateInstaller().prepareInstallation(archive: image)) { error in
+        do {
+            _ = try await AppUpdateInstaller().prepareInstallation(archive: image)
+            XCTFail("Foreign applications must not be accepted")
+        } catch {
             XCTAssertEqual((error as? AppUpdateIssue)?.code, .verification)
         }
         XCTAssertEqual(try Self.attachedDevices(of: image), [])
@@ -340,7 +343,7 @@ final class AppUpdateTests: XCTestCase {
         client.fetchError = AppUpdateIssue(code: .rateLimited, detail: "", retryAfter: reset)
         let store = AppUpdateStore(currentVersion: "1.0.0", client: client, now: { clock })
         _ = await store.checkForUpdates()
-        _ = await store.checkAndDownloadInBackground()
+        _ = await store.checkInBackground()
         await expect(store.checkForUpdates(), equals: .error(currentVersion: "1.0.0", operation: .check, code: .rateLimited, availableVersion: nil))
         XCTAssertEqual(client.fetchCalls, 1)
 
@@ -441,26 +444,29 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(inPlace.revealed, [inPlace.destination])
     }
 
-    func testBackgroundUpdateDownloadsOnlyWhatItCanInstallInPlace() async {
+    func testBackgroundUpdateWaitsForExplicitDownloadConfirmation() async {
         let inPlace = Fixture()
         inPlace.client.release = inPlace.release(version: "1.1.0")
-        await expect(inPlace.store.checkAndDownloadInBackground(), equals: .ready(currentVersion: "1.0.0", availableVersion: "1.1.0"))
-        XCTAssertEqual(inPlace.client.downloadCalls, 1)
-        // A later scheduled run keeps the downloaded update instead of fetching it again.
-        await expect(inPlace.store.checkAndDownloadInBackground(), equals: .ready(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        await expect(inPlace.store.checkInBackground(), equals: .available(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        XCTAssertEqual(inPlace.client.downloadCalls, 0)
+        // Dismissing the prompt and a later scheduled check still do not download.
+        await expect(inPlace.store.checkInBackground(), equals: .available(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        XCTAssertEqual(inPlace.client.downloadCalls, 0)
+        await expect(inPlace.store.downloadUpdate(), equals: .ready(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        await expect(inPlace.store.checkInBackground(), equals: .ready(currentVersion: "1.0.0", availableVersion: "1.1.0"))
         XCTAssertEqual(inPlace.client.downloadCalls, 1)
 
         // Outside Applications a download would pop the disk image open in Finder unasked.
         let elsewhere = Fixture()
         elsewhere.installer.canInstallInPlace = false
         elsewhere.client.release = elsewhere.release(version: "1.1.0")
-        await expect(elsewhere.store.checkAndDownloadInBackground(), equals: .available(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        await expect(elsewhere.store.checkInBackground(), equals: .available(currentVersion: "1.0.0", availableVersion: "1.1.0"))
         XCTAssertEqual(elsewhere.client.downloadCalls, 0)
         XCTAssertTrue(elsewhere.opened.isEmpty)
 
         let current = Fixture()
         current.client.release = current.release(version: "1.0.0")
-        await expect(current.store.checkAndDownloadInBackground(), equals: .upToDate(currentVersion: "1.0.0"))
+        await expect(current.store.checkInBackground(), equals: .upToDate(currentVersion: "1.0.0"))
         XCTAssertEqual(current.client.downloadCalls, 0)
     }
 
@@ -527,6 +533,74 @@ final class AppUpdateTests: XCTestCase {
         fixture.scheduled[0]()
         try? await Task.sleep(for: .milliseconds(80))
         XCTAssertEqual(fixture.store.state, .error(currentVersion: "1.0.0", operation: .install, code: .unknown, availableVersion: "1.1.0"))
+        XCTAssertEqual(fixture.installer.installation.cancelCalls, 1)
+    }
+
+    func testPreparationYieldsMainActorAndCancellationDiscardsItsResult() async {
+        let fixture = Fixture()
+        fixture.client.release = fixture.release(version: "1.1.0")
+        let gate = Gate()
+        fixture.installer.prepareGate = gate
+        await fixture.store.checkForUpdates()
+        await fixture.store.downloadUpdate()
+        let install = Task { await fixture.store.installUpdate() }
+        await gate.waitUntilEntered()
+        XCTAssertEqual(fixture.store.state, .preparing(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        XCTAssertTrue(fixture.store.state.isBusy)
+        // Reaching this main-actor continuation proves preparation did not block it.
+        await fixture.store.installUpdate()
+        XCTAssertEqual(fixture.installer.preparationCalls, 1)
+        fixture.store.cancel()
+        gate.open()
+        await install.value
+        XCTAssertEqual(fixture.installer.discarded, [fixture.destination])
+        XCTAssertTrue(fixture.scheduled.isEmpty)
+        XCTAssertEqual(fixture.installer.installCalls, 0)
+        XCTAssertEqual(fixture.store.state, .ready(currentVersion: "1.0.0", availableVersion: "1.1.0"))
+        await fixture.store.installUpdate()
+        XCTAssertEqual(fixture.scheduled.count, 1)
+    }
+
+    func testWatchdogCannotReleaseOwnershipUntilHelperCancellationFinishes() async {
+        let fixture = Fixture(installTimeout: .milliseconds(10))
+        fixture.client.release = fixture.release(version: "1.1.0")
+        fixture.installer.installation.finishesCancellation = false
+        await fixture.store.checkForUpdates()
+        await fixture.store.downloadUpdate()
+        await fixture.store.installUpdate()
+        fixture.scheduled[0]()
+        try? await Task.sleep(for: .milliseconds(60))
+        await fixture.store.installUpdate()
+        XCTAssertEqual(fixture.scheduled.count, 1)
+        XCTAssertEqual(fixture.installer.installCalls, 1)
+        fixture.installer.installation.finishesCancellation = true
+        await fixture.store.installUpdate()
+        XCTAssertEqual(fixture.scheduled.count, 2)
+        fixture.scheduled[1]()
+        XCTAssertEqual(fixture.installer.installCalls, 2)
+    }
+
+    func testReplacementExcludesASecondOwnerAndCancellationAllowsRetry() async throws {
+        let fixture = try ReplacementFixture()
+        defer { fixture.remove() }
+        try fixture.makeApp(at: fixture.destination, marker: "old")
+        try fixture.makeApp(at: fixture.source, marker: "new")
+        let cancellation = fixture.root.appendingPathComponent("cancel")
+        let helper = try AppUpdateInstaller.startReplacement(
+            after: ProcessInfo.processInfo.processIdentifier, source: fixture.source,
+            destination: fixture.destination, opener: fixture.opener.path, cancellation: cancellation)
+        let owner = AppUpdateProcessTask(process: helper, cancellation: cancellation)
+        XCTAssertThrowsError(try AppUpdateInstaller.startReplacement(
+            after: ProcessInfo.processInfo.processIdentifier, source: fixture.source,
+            destination: fixture.destination, opener: fixture.opener.path))
+        let ended = await owner.cancel()
+        XCTAssertTrue(ended)
+        XCTAssertEqual(try fixture.marker(), "old")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.log.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.source.path))
+        try fixture.run()
+        XCTAssertEqual(try fixture.marker(), "new")
+        XCTAssertEqual(try fixture.reopened(), [fixture.destination.path])
     }
 
     /// `installUpdate()` schedules the restart from a main-actor task. The quit that follows
@@ -594,7 +668,7 @@ private struct ReplacementFixture {
 
     func leftovers() throws -> [String] {
         try FileManager.default.contentsOfDirectory(atPath: destination.deletingLastPathComponent().path)
-            .filter { $0 != destination.lastPathComponent }
+            .filter { $0 != destination.lastPathComponent && $0 != ".\(destination.lastPathComponent).update.lock" }
     }
 
     func reopened() throws -> [String] {
@@ -693,13 +767,30 @@ private final class FakeInstaller: AppUpdateInstalling, @unchecked Sendable {
     var canInstallInPlace = true
     var installCalls = 0
     var installError: Error?
+    var prepareGate: Gate?
+    var discarded: [URL] = []
+    var preparationCalls = 0
+    var installation = FakeInstallationTask()
 
-    func prepareInstallation(archive: URL) throws -> URL { archive }
+    func prepareInstallation(archive: URL) async throws -> URL {
+        preparationCalls += 1
+        if let prepareGate { await prepareGate.wait() }
+        return archive
+    }
 
-    func install(extractedApp: URL, replacing destination: URL) throws {
+    func discardPreparation(_ extractedApp: URL) async { discarded.append(extractedApp) }
+
+    func install(extractedApp: URL, replacing destination: URL) throws -> any AppUpdateInstallationTask {
         if let installError { throw installError }
         installCalls += 1
+        return installation
     }
+}
+
+private final class FakeInstallationTask: AppUpdateInstallationTask, @unchecked Sendable {
+    var cancelCalls = 0
+    var finishesCancellation = true
+    func cancel() async -> Bool { cancelCalls += 1; return finishesCancellation }
 }
 
 private final class Gate: @unchecked Sendable {

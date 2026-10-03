@@ -160,6 +160,7 @@ impl FloatModulo<'_, '_> {
                     facts: self.facts,
                     token_facts: self.token_facts,
                     mode: ModuloLoweringMode::BuiltinFmod,
+                    helper_requested: self.helper_requested,
                 }
                 .lower(
                     tokens,
@@ -199,6 +200,7 @@ impl FloatModulo<'_, '_> {
                 facts: self.facts,
                 token_facts: self.token_facts,
                 mode: ModuloLoweringMode::NagaCompatible,
+                helper_requested: self.helper_requested,
             };
             let Ok(rewritten) = modulo_lowering.lower_initializer(tokens, initializer) else {
                 continue;
@@ -242,6 +244,7 @@ impl FloatModulo<'_, '_> {
                 facts: self.facts,
                 token_facts: self.token_facts,
                 mode,
+                helper_requested: self.helper_requested,
             }
             .lower_initializer(tokens, initializer)?;
 

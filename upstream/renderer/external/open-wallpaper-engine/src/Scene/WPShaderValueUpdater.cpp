@@ -33,14 +33,20 @@ constexpr std::string_view G_AUDIO_SPECTRUM64_RIGHT = "g_AudioSpectrum64Right";
 
 void WPShaderValueUpdater::FrameBegin() {
     for (auto& group : m_puppetAttachments) UpdatePuppetAttachments(group);
-    /*
-        using namespace std::chrono;
-        auto nowTime = system_clock::to_time_t(system_clock::now());
-        auto cTime   = std::localtime(&nowTime);
-        m_dayTime =
-            (((cTime->tm_hour * 60) + cTime->tm_min) * 60 + cTime->tm_sec) / (24.0f * 60.0f
-       * 60.0f);
-    */
+    const auto now = m_wall_clock();
+    const auto seconds = std::chrono::system_clock::to_time_t(now);
+    std::tm local {};
+#if defined(_WIN32)
+    const bool has_local_time = localtime_s(&local, &seconds) == 0;
+#else
+    const bool has_local_time = localtime_r(&seconds, &local) != nullptr;
+#endif
+    if (has_local_time) {
+        const double fraction = std::chrono::duration<double>(
+            now - std::chrono::system_clock::from_time_t(seconds)).count();
+        m_dayTime = std::fmod(local.tm_hour * 3600.0 + local.tm_min * 60.0 + local.tm_sec + fraction,
+                             86400.0) / 86400.0;
+    }
     // A zero delay (authored as `cameraparallaxdelay: 0`) means no smoothing:
     // the cursor is followed at once, the limit of the ramp below. Dividing by
     // it made `t` NaN, which latched into the smoothed cursor and, through
@@ -75,7 +81,7 @@ uint32_t WPShaderValueUpdater::FrameVaryingUniforms(SceneNode*          node,
     const auto& info  = it->second;
     uint32_t    flags = frame_varying_uniform::kNone;
     if (info.has_TIME) flags |= frame_varying_uniform::kTime;
-    if (info.has_DAYTIME) flags |= frame_varying_uniform::kDayTime;
+    if (info.has_DAYTIME || info.has_DAYTIME_ALIAS) flags |= frame_varying_uniform::kDayTime;
     if (info.has_POINTERPOSITION) flags |= frame_varying_uniform::kPointer;
     if (info.has_PARALLAXPOSITION) flags |= frame_varying_uniform::kParallax;
     if (info.has_BONES) flags |= frame_varying_uniform::kBones;
@@ -165,6 +171,7 @@ void WPShaderValueUpdater::InitUniforms(SceneNode* pNode, uint32_t material_slot
     info.has_BONES            = existsOp(G_BONES);
     info.has_TIME             = existsOp(G_TIME);
     info.has_DAYTIME          = existsOp(G_DAYTIME);
+    info.has_DAYTIME_ALIAS    = existsOp("g_Daytime");
     info.has_POINTERPOSITION  = existsOp(G_POINTERPOSITION);
     info.has_PARALLAXPOSITION = existsOp(G_PARALLAXPOSITION);
     info.has_TEXELSIZE        = existsOp(G_TEXELSIZE);
@@ -393,6 +400,7 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, uint32_t material_sl
     if (info.has_TIME) updateOp(G_TIME, (float)m_scene->elapsingTime);
 
     if (info.has_DAYTIME) updateOp(G_DAYTIME, (float)m_dayTime);
+    if (info.has_DAYTIME_ALIAS) updateOp("g_Daytime", (float)m_dayTime);
 
     if (info.has_AudioSpectrum16Left || info.has_AudioSpectrum16Right ||
         info.has_AudioSpectrum32Left || info.has_AudioSpectrum32Right ||

@@ -189,6 +189,9 @@ extern void adapter_stream() {
     }
 
     __block NSMutableDictionary *liveData = [NSMutableDictionary dictionary];
+    // Every notification supersedes older lookups. A framework reply can arrive
+    // after the player changed; it must not relabel old metadata as the new PID.
+    __block NSUInteger generation = 0;
     __block MetadataStats liveDataStats = createMetadataStats();
     __block const Debounce *const debounce =
         [[Debounce alloc] initWithDelay:(debounce_delay_millis / 1000.0)
@@ -256,8 +259,10 @@ extern void adapter_stream() {
     };
 
     void (^requestNowPlayingApplicationPID)() = ^{
+      NSUInteger requestedGeneration = generation;
       g_mediaRemote.getNowPlayingApplicationPID(
           g_serialdispatchQueue, ^(int pid) {
+            if (requestedGeneration != generation) return;
             if (pid == 0) {
                 liveData[kMRAProcessIdentifier] = nil;
                 handle();
@@ -265,6 +270,7 @@ extern void adapter_stream() {
             }
             liveData[kMRAProcessIdentifier] = @(pid);
             bool ok = appForPID(pid, ^(NSRunningApplication *process) {
+              if (requestedGeneration != generation) return;
               if (process.bundleIdentifier != nil) {
                   liveData[kMRABundleIdentifier] = process.bundleIdentifier;
               }
@@ -277,7 +283,9 @@ extern void adapter_stream() {
     };
 
     void (^requestNowPlayingParentApplicationBundleIdentifier)() = ^{
+      NSUInteger requestedGeneration = generation;
       g_mediaRemote.getNowPlayingClient(g_serialdispatchQueue, ^(id client) {
+        if (requestedGeneration != generation) return;
         NSString *parentAppBundleID = nil;
         if (client && [client respondsToSelector:@selector
                               (parentApplicationBundleIdentifier)]) {
@@ -297,16 +305,20 @@ extern void adapter_stream() {
     };
 
     void (^requestNowPlayingApplicationIsPlaying)() = ^{
+      NSUInteger requestedGeneration = generation;
       g_mediaRemote.getNowPlayingApplicationIsPlaying(
           g_serialdispatchQueue, ^(bool isPlaying) {
+            if (requestedGeneration != generation) return;
             liveData[kMRAPlaying] = @(isPlaying);
             handle();
           });
     };
 
     void (^requestNowPlayingInfo)() = ^{
+      NSUInteger requestedGeneration = generation;
       g_mediaRemote.getNowPlayingInfo(g_serialdispatchQueue, ^(
                                           NSDictionary *information) {
+        if (requestedGeneration != generation) return;
         NSString *serviceIdentifier =
             information[kMRMediaRemoteNowPlayingInfoServiceIdentifier];
         if (!isTestMode &&
@@ -360,6 +372,7 @@ extern void adapter_stream() {
     };
 
     void (^resetAll)() = ^{
+      generation++;
       [liveData removeAllObjects];
     };
 
@@ -385,20 +398,19 @@ extern void adapter_stream() {
                      queue:nil
                 usingBlock:^(NSNotification *notification) {
                   dispatch_async(g_serialdispatchQueue, ^() {
+                    id isPlayingValue = notification.userInfo
+                        [kMRMediaRemoteNowPlayingApplicationIsPlayingUserInfoKey];
+                    if (isPlayingValue == nil) return;
+                    NSUInteger notificationGeneration = ++generation;
                     appForNotification(notification, ^(
                                            NSRunningApplication *process) {
+                      if (notificationGeneration != generation) return;
                       if (process == nil) {
                           // The process for this notification could not be
                           // determined. Assume that there is no now playing
                           // application anymore.
                           resetAll();
                           handle();
-                          return;
-                      }
-                      id isPlayingValue =
-                          notification.userInfo
-                              [kMRMediaRemoteNowPlayingApplicationIsPlayingUserInfoKey];
-                      if (isPlayingValue == nil) {
                           return;
                       }
                       if (liveData[kMRABundleIdentifier] != nil &&
@@ -414,12 +426,15 @@ extern void adapter_stream() {
                           // This is a different process, reset all data.
                           resetAll();
                       }
+                      liveData[kMRAProcessIdentifier] = @(process.processIdentifier);
                       liveData[kMRABundleIdentifier] = process.bundleIdentifier;
-                      requestNowPlayingParentApplicationBundleIdentifier();
                       liveData[kMRAPlaying] = @([isPlayingValue boolValue]);
-                      if (liveData[kMRATitle] == nil) {
-                          requestNowPlayingInfo();
-                      } else {
+                      requestNowPlayingParentApplicationBundleIdentifier();
+                      // This generation also supersedes an in-flight info
+                      // request for the same player. Replace it even if an old
+                      // title is cached, or that track change would be lost.
+                      requestNowPlayingInfo();
+                      if (liveData[kMRATitle] != nil) {
                           handle();
                       }
                     });
@@ -431,43 +446,42 @@ extern void adapter_stream() {
                     object:nil
                      queue:nil
                 usingBlock:^(NSNotification *notification) {
-                  [debounce call:^{
-                    appForNotification(notification, ^(
-                                           NSRunningApplication *process) {
-                      if (process == nil) {
-                          // The process for this notification could not be
-                          // determined. Assume that there is no now playing
-                          // application anymore.
-                          resetAll();
-                          handle();
-                          return;
-                      }
-                      if (liveData[kMRABundleIdentifier] != nil &&
-                          process.bundleIdentifier != nil &&
-                          ![liveData[kMRABundleIdentifier]
-                              isEqual:process.bundleIdentifier]) {
-                          // This is a different process, reset all data.
-                          resetAll();
-                      }
-                      if (liveData[kMRAProcessIdentifier] != nil &&
-                          ![liveData[kMRAProcessIdentifier]
-                              isEqual:@(process.processIdentifier)]) {
-                          // This is a different process, reset all data.
-                          resetAll();
-                      }
-                      if (liveData[kMRAProcessIdentifier] == nil) {
-                          requestNowPlayingApplicationPID();
-                      }
-                      if (liveData[kMRAParentApplicationBundleIdentifier] ==
-                          nil) {
-                          requestNowPlayingParentApplicationBundleIdentifier();
-                      }
-                      if (liveData[kMRAPlaying] == nil) {
-                          requestNowPlayingApplicationIsPlaying();
-                      }
-                      requestNowPlayingInfo();
-                    });
-                  }];
+                  dispatch_async(g_serialdispatchQueue, ^{
+                    NSUInteger notificationGeneration = ++generation;
+                    [debounce call:^{
+                      if (notificationGeneration != generation) return;
+                      appForNotification(notification, ^(
+                                             NSRunningApplication *process) {
+                        if (notificationGeneration != generation) return;
+                        if (process == nil) {
+                            // The process for this notification could not be
+                            // determined. Assume that there is no now playing
+                            // application anymore.
+                            resetAll();
+                            handle();
+                            return;
+                        }
+                        if (liveData[kMRABundleIdentifier] != nil &&
+                            process.bundleIdentifier != nil &&
+                            ![liveData[kMRABundleIdentifier]
+                                isEqual:process.bundleIdentifier]) {
+                            // This is a different process, reset all data.
+                            resetAll();
+                        }
+                        if (liveData[kMRAProcessIdentifier] != nil &&
+                            ![liveData[kMRAProcessIdentifier]
+                                isEqual:@(process.processIdentifier)]) {
+                            // This is a different process, reset all data.
+                            resetAll();
+                        }
+                        liveData[kMRAProcessIdentifier] = @(process.processIdentifier);
+                        liveData[kMRABundleIdentifier] = process.bundleIdentifier;
+                        requestNowPlayingParentApplicationBundleIdentifier();
+                        requestNowPlayingApplicationIsPlaying();
+                        requestNowPlayingInfo();
+                      });
+                    }];
+                  });
                 }];
 
     // Register notifications for when applications are closed.

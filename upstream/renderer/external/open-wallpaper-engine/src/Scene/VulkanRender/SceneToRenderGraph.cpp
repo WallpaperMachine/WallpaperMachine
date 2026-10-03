@@ -352,20 +352,30 @@ static void ToGraphPass(
 
         for (usize i = 0; i < effs->EffectCount(); i++) {
             auto& eff     = effs->GetEffect(i);
-            auto  cmdItor = eff->commands.begin();
-            auto  cmdEnd  = eff->commands.end();
+            auto commands = eff->commands;
+            std::stable_sort(commands.begin(), commands.end(), [](const auto& a, const auto& b) {
+                return a.afterpos < b.afterpos;
+            });
+            auto  cmdItor = commands.begin();
+            auto  cmdEnd  = commands.end();
             int   nodePos = 0;
-            for (auto& n : eff->nodes) {
-                if (cmdItor != cmdEnd && nodePos == cmdItor->afterpos) {
-                    rg::addCopyPass(
-                        rgraph, rg::createTexDesc(cmdItor->src), rg::createTexDesc(cmdItor->dst));
-                    cmdItor++;
+            const auto copiesAt = [&](int position) {
+                while (cmdItor != cmdEnd && cmdItor->afterpos <= position) {
+                    if (cmdItor->afterpos == position) {
+                        rg::addCopyPass(rgraph, rg::createTexDesc(cmdItor->src),
+                                       rg::createTexDesc(cmdItor->dst));
+                    }
+                    ++cmdItor;
                 }
+            };
+            for (auto& n : eff->nodes) {
+                copiesAt(nodePos);
                 auto& name = n.output;
                 extra.ids_with_effect_graph.insert((usize)node->ID());
                 ToGraphPass(n.sceneNode.get(), name, node->ID(), extra, node);
                 nodePos++;
             }
+            copiesAt(nodePos);
         }
     };
 

@@ -109,6 +109,29 @@ fn plain_variant_is_unchanged_by_the_option_existing() {
 }
 
 #[test]
+fn plane_variant_without_authored_uniforms_has_reflected_color_constants() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        let request = ShaderProgramRequest::builder(ShaderName::new("video_generated_uniforms").unwrap())
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex,
+                "attribute vec2 a_Position; void main() { gl_Position = vec4(a_Position, 0.0, 1.0); }"))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment,
+                "uniform sampler2D g_Texture0; void main() { gl_FragColor = texture2D(g_Texture0, vec2(0.5)); }"))
+            .texture(texture(0, VideoPlaneLayout::Nv12Biplanar))
+            .build().unwrap();
+        let program = pipeline().compile(&request)
+            .expect("generated plane uniforms must have a block even without authored uniforms");
+        let members: Vec<_> = program.reflection().uniform_blocks().iter()
+            .flat_map(|block| block.members()).map(|member| member.name()).collect();
+        assert!(members.contains(&"_we_VideoRange0"));
+        assert!(members.contains(&"_we_VideoMatrix0"));
+        assert!(members.contains(&"_we_VideoUvTransform0"));
+        assert!(members.contains(&"_we_VideoUvOffset0"));
+        assert_eq!(program.stages().len(), 2);
+    }
+}
+
+#[test]
 fn plane_variant_translates_the_author_shader_rather_than_replacing_it() {
     let variant = compile("video_planes", FRAGMENT, VideoPlaneLayout::Nv12Biplanar)
         .expect("the plane variant compiles");

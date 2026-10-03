@@ -43,13 +43,15 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private var stopping = false
   @ObservationIgnored private(set) var ownsDesktopProvider = false
   @ObservationIgnored private var lastInputs: [LockScreenPublishInput]?
+  @ObservationIgnored private var lastContentRevision: UInt64?
+  @ObservationIgnored private let contentRevision: () -> UInt64
   @ObservationIgnored private var lastLockScreenRequested: Bool?
   @ObservationIgnored private var lastScreenSaverRequested = false
   @ObservationIgnored private var lastHasWebWallpapers = false
   @ObservationIgnored private var published: LockScreenConfiguration?
   @ObservationIgnored private var lockScreenActivationError: String?
 
-  convenience init(bridge: WallpaperBridge) {
+  convenience init(bridge: WallpaperBridge, contentRevision: @escaping () -> UInt64 = { 0 }) {
     self.init(
       notifyConfigurationChanged: {
         CFNotificationCenterPostNotification(
@@ -59,14 +61,14 @@ final class LockScreenWallpaperService {
       scenes: { try await bridge.lockScreenScenes() },
       selection: LockScreenWallpaperSelection(
         folder: ClientPaths.supportURL.appendingPathComponent("LockScreen")),
-      exchange: LockScreenConfiguration.exchangeDirectory)
+      exchange: LockScreenConfiguration.exchangeDirectory, contentRevision: contentRevision)
   }
 
   init(
     notifyConfigurationChanged: @escaping () -> Void,
     scenes: @escaping () async throws -> [BridgeLockScreenScene],
     selection: LockScreenWallpaperSelection, exchange: URL,
-    defaults: UserDefaults = .standard,
+    defaults: UserDefaults = ClientPreferences.defaults,
     scheduleMonitor: @escaping (@escaping @MainActor () -> Void) -> Timer =
       LockScreenWallpaperService.scheduleMonitorTimer,
     displayUUID: @escaping (UInt32) -> String? = LockScreenWallpaperService.onlineDisplayUUID,
@@ -76,7 +78,8 @@ final class LockScreenWallpaperService {
     expectedExtensionBundle: URL = Bundle.main.bundleURL.appendingPathComponent(
       "Contents/Extensions/WallpaperMachineExtension.appex"),
     runningExtensionBundles: @escaping () -> [URL] = LockScreenExtensionDiagnostics.runningExtensionBundles,
-    readinessTimeout: TimeInterval = 35
+    readinessTimeout: TimeInterval = 35,
+    contentRevision: @escaping () -> UInt64 = { 0 }
   ) {
     self.scenes = scenes
     self.selection = selection
@@ -89,6 +92,7 @@ final class LockScreenWallpaperService {
     self.expectedExtensionBundle = expectedExtensionBundle
     self.runningExtensionBundles = runningExtensionBundles
     self.readinessTimeout = readinessTimeout
+    self.contentRevision = contentRevision
   }
 
   nonisolated private static func onlineDisplayUUID(_ displayID: UInt32) -> String? {
@@ -284,7 +288,9 @@ final class LockScreenWallpaperService {
           propertiesJSON: record.propertiesJson, paused: record.paused))
       }
       inputs.sort { $0.displayID < $1.displayID }
+      let currentContentRevision = contentRevision()
       if inputs == lastInputs, let published,
+        lastContentRevision == currentContentRevision,
         lastLockScreenRequested == isRequested,
         lastScreenSaverRequested == screenSaverRequested
       {
@@ -319,6 +325,19 @@ final class LockScreenWallpaperService {
       configuration.lockScreenEnabled = isRequested && lockScreenActivationError == nil
         && configuration.scenes.contains { $0.webEntryFile == nil }
       configuration.screenSaverEnabled = screenSaverRequested && !configuration.scenes.isEmpty
+      if let published, published.scenes == configuration.scenes,
+         published.lockScreenEnabled == configuration.lockScreenEnabled,
+         published.screenSaverEnabled == configuration.screenSaverEnabled {
+        lastInputs = inputs
+        lastContentRevision = currentContentRevision
+        lastLockScreenRequested = isRequested
+        lastScreenSaverRequested = screenSaverRequested
+        lastHasWebWallpapers = prepared.hasWebWallpapers
+        try checkReadinessFailures(published)
+        try applySelection(published, inputs: inputs)
+        updateStatuses(published, hasWebWallpapers: prepared.hasWebWallpapers)
+        return
+      }
       if configuration.lockScreenEnabled, !ownsDesktopProvider {
         try beforeActivation?()
         ownsDesktopProvider = true
@@ -354,6 +373,7 @@ final class LockScreenWallpaperService {
       try Task.checkCancellation()
       guard generation == revision, anyRequested else { return }
       lastInputs = inputs
+      lastContentRevision = currentContentRevision
       lastLockScreenRequested = isRequested
       lastScreenSaverRequested = screenSaverRequested
       lastHasWebWallpapers = prepared.hasWebWallpapers
@@ -727,7 +747,7 @@ private enum LockScreenAssetPublisher {
       return input.propertiesJSON
     }
     let store = ManagedUserAssetStore(root: userAssets)
-    let manifest = store.manifest(wallpaperId: input.wallpaperID)
+    let manifest = try store.manifest(wallpaperId: input.wallpaperID)
     guard !manifest.properties.isEmpty,
       let data = json.data(using: .utf8),
       var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]

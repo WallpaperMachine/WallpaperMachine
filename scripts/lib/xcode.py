@@ -56,6 +56,12 @@ BLOCK_HEADERS = tuple(re.compile(pattern) for pattern in (
 ))
 
 MAX_ECHOED_LINES = 200
+SKIP_REASON = re.compile(r"\bskipping\s+|^\[\s*SKIP(?:PED)?\s*\]", re.IGNORECASE)
+
+
+def skipped_test_lines(lines):
+    """Keep explicit skip observations, including Rust's corpus early returns."""
+    return list(dict.fromkeys(line.strip() for line in lines if SKIP_REASON.search(line)))
 
 
 def interesting(line: str) -> bool:
@@ -71,6 +77,10 @@ def filter_lines(lines, limit=MAX_ECHOED_LINES):
     in_block = False
     emitted = 0
     for raw in lines:
+        # The caller writes the log while producing this iterator. Keep draining
+        # it after the display limit so a noisy child can finish normally.
+        if emitted > limit:
+            continue
         line = raw.rstrip("\n")
         stripped = line.strip()
         if in_block:
@@ -89,7 +99,7 @@ def filter_lines(lines, limit=MAX_ECHOED_LINES):
         emitted += 1
         if emitted > limit:
             yield f"... further lines omitted; see the log"
-            return
+            continue
         yield line
 
 

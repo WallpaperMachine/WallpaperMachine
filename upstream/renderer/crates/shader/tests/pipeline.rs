@@ -12,6 +12,56 @@ use shader::{
 
 const SPIRV_MAGIC: u32 = 0x0723_0203;
 
+#[test]
+fn redefined_array_bound_uses_the_current_macro_in_reflection_and_backend() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        let request = ShaderProgramRequest::builder(ShaderName::new("redefined_array_bound").unwrap())
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex,
+                "attribute vec2 a_Position; void main() { gl_Position = vec4(a_Position, 0.0, 1.0); }"))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, concat!(
+                "#define COUNT 2\n#undef COUNT\n#define COUNT 3\n",
+                "uniform vec4 values[COUNT];\n",
+                "void main() { gl_FragColor = values[2]; }\n",
+            )))
+            .build().unwrap();
+        let program = pipeline().compile(&request).expect("redefined uniform bounds compile");
+        let member = program.reflection().uniform_blocks().iter().flat_map(|block| block.members())
+            .find(|member| member.name() == "values").unwrap();
+        assert_eq!(member.array_count(), 3);
+    }
+}
+
+#[test]
+fn float_remainder_reaches_both_backends_without_repeating_operands() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        let request = ShaderProgramRequest::builder(ShaderName::new("float_remainder").unwrap())
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, concat!(
+                "attribute vec2 a_Position;\n",
+                "void main() { float offset = -5.5 % 2.0; gl_Position = vec4(a_Position + offset, 0.0, 1.0); }\n",
+            )))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, concat!(
+                "float counter = 0.0;\n",
+                "float next_value() { counter += 1.0; return -5.5; }\n",
+                "void main() {\n",
+                "float value = next_value() % 2.0;\n",
+                "float nested = (-5.5 % -2.0) % 1.0;\n",
+                "int integral = int(value % 2.0);\n",
+                "gl_FragColor = vec4(value + nested + float(integral) + counter);\n",
+                "}\n",
+            )))
+            .build().unwrap();
+        let program = pipeline().compile(&request)
+            .expect("float remainder is legal on SPIR-V and Metal backends");
+        let fragment = program.stages().iter()
+            .find(|stage| stage.kind() == ShaderStageKind::Fragment).unwrap()
+            .legalized_source().unwrap();
+        assert_eq!(fragment.matches("next_value()").count(), 2,
+            "one definition and one evaluation; modulo must not duplicate an operand");
+    }
+}
+
 /// Wallpaper Engine's installed `assets/shaders` directory. Honors the same
 /// `WALLPAPER_MACHINE_ASSETS_ROOT` override the bridge uses
 /// (`crates/bridge/src/paths.rs`), falling back to the standard Steam location

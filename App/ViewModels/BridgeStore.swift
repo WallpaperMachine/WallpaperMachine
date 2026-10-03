@@ -16,21 +16,31 @@ final class BridgeStore {
     let bridge: WallpaperBridge
     let supportPrompt: SupportPromptStore?
     var appSnapshot: BridgeAppSnapshot
-    var librarySnapshot: BridgeLibrarySnapshot
+    var librarySnapshot: BridgeLibrarySnapshot {
+        didSet { if librarySnapshot != oldValue { libraryPresentationRevision &+= 1 } }
+    }
     var wallpaperOptionsSnapshot: BridgeWallpaperOptionsSnapshot?
-    var monitorInformationSnapshot: BridgeMonitorInformationSnapshot
+    var monitorInformationSnapshot: BridgeMonitorInformationSnapshot {
+        didSet { if monitorInformationSnapshot != oldValue { libraryPresentationRevision &+= 1 } }
+    }
+    private(set) var libraryPresentationRevision: UInt64 = 0
     var settingsSnapshot: BridgeSettingsSnapshot
     var snapshotRevision: UInt64
     var latestBridgeErrorMessage: String?
     var latestBridgeErrorRevision: UInt64
     var lockScreenWallpaper: LockScreenWallpaperService?
     @ObservationIgnored var onSnapshotApplied: (() -> Void)?
+    private(set) var hostWallpaperStates: [String: HostWallpaperState] = [:]
+    @ObservationIgnored private var hostStartupTask: Task<Void, Never>?
+    @ObservationIgnored var retryHostWallpaper: (@MainActor (String, UInt32) -> Void)?
+    @ObservationIgnored var invalidateHostAsset: (@MainActor (String, String) -> Void)?
     /// Reads live web-wallpaper delivery state from whoever owns the web host.
     /// A closure rather than a reference because the host belongs to the app
     /// delegate and outlives no snapshot; nil while no host is running, which
     /// the panel reports as unknown rather than as "nothing is being
     /// delivered".
     @ObservationIgnored var webWallpaperDeliveryStatus: (@MainActor () -> WebWallpaperHost.DeliveryStatus)?
+    var webWallpaperDeliveryRevision: UInt64 = 0
     @ObservationIgnored var sceneMediaAvailability: (@MainActor () -> SystemMediaAvailability)?
     /// Per-wallpaper energy ratings, owned by the app delegate's background recorder.
     @ObservationIgnored var wallpaperEnergyRatings: WallpaperEnergyRatings?
@@ -49,6 +59,7 @@ final class BridgeStore {
     /// `snapshotRevision` it does not move with playback, so anything derived from the
     /// library's files (folder sizes, dates) can re-check only when a rescan happened.
     private(set) var libraryRefreshRevision: UInt64 = 0
+    var wallpaperContentRevision: UInt64 = 0
 
     convenience init() throws {
         self.init(bridge: try WallpaperBridge(), supportPrompt: SupportPromptStore())
@@ -101,6 +112,7 @@ final class BridgeStore {
             apply(bundle)
             libraryLoadState = .loaded
             libraryRefreshRevision &+= 1
+            wallpaperContentRevision &+= 1
         } catch {
             libraryLoadState = .failed(error.localizedDescription)
             throw error
@@ -146,6 +158,40 @@ final class BridgeStore {
         try await updatePlaybackEnvironment {
             let bundle = try await bridge.refreshDisplays()
             apply(bundle)
+        }
+    }
+
+    func receiveHostState(_ state: HostWallpaperState) {
+        let previousState = hostWallpaperStates[state.key]
+        if let previousState {
+            guard state.startupRevision >= previousState.startupRevision else { return }
+            if state.phase != .loading,
+               state.startupRevision == previousState.startupRevision,
+               (state.wallpaperID != previousState.wallpaperID || state.nativeAdmissionKey != previousState.nativeAdmissionKey) {
+                return
+            }
+        }
+        if state.phase == .closed {
+            guard let previousState, previousState.wallpaperID == state.wallpaperID,
+                  previousState.startupRevision == state.startupRevision,
+                  previousState.nativeAdmissionKey == state.nativeAdmissionKey else { return }
+            hostWallpaperStates.removeValue(forKey: state.key)
+        }
+        else { hostWallpaperStates[state.key] = state }
+        guard state.phase == .ready || state.phase == .failed else { return }
+        let previous = hostStartupTask
+        hostStartupTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, self.hostWallpaperStates[state.key] == state else { return }
+            do {
+                let bundle = try await self.bridge.reportHostWallpaperStartup(
+                    displayId: state.displayID, wallpaperId: state.wallpaperID,
+                    startupRevision: state.startupRevision, nativeAdmissionKey: state.nativeAdmissionKey,
+                    ready: state.phase == .ready)
+                self.apply(bundle)
+            } catch {
+                AppLog.error("Host wallpaper startup could not be reported: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -229,6 +275,7 @@ final class BridgeStore {
     /// them: applying it again alone would find nothing changed and keep what is loaded. Each
     /// display goes through its own command slot, so a switch the user asks for meanwhile wins.
     func reloadWallpaperAsync(id: String) async throws {
+        wallpaperContentRevision &+= 1
         let displays = monitorInformationSnapshot.rows
             .filter { $0.wallpaperId == id && $0.mirrorTargetDisplayId == nil }.map(\.displayId)
         for display in displays {
@@ -444,6 +491,7 @@ final class BridgeStore {
         beginWallpaperEdit(wallpaperId)
         defer { endWallpaperEdit(wallpaperId) }
         let bundle = try await bridge.setPropertyPath(wallpaperId: wallpaperId, propertyId: propertyId, path: path)
+        invalidateHostAsset?(wallpaperId, propertyId)
         apply(bundle)
     }
 

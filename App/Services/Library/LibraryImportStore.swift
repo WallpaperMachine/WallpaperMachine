@@ -45,6 +45,12 @@ final class LibraryImportStore {
         status = String(localized: "Cancelling…")
     }
 
+    func shutdown() async {
+        guard let running = task else { return }
+        running.cancel()
+        await running.value
+    }
+
     func dismissFailure() { failure = nil }
 
     private func run(_ sources: [URL], duplicates: WallpaperImportService.DuplicatePolicy) async {

@@ -5,7 +5,7 @@ import Foundation
 extension WebPanelController {
   func pixivSnapshot() -> [String: Any] {
     let null = NSNull()
-    let installed = Self.installedPixivPages(in: store.librarySnapshot.wallpapers.map(\.id))
+    let installed = installedPixivPages()
     let query = pixiv.query
     var selected: Any = null
     if let work = pixiv.selectedWork {
@@ -94,6 +94,10 @@ extension WebPanelController {
       pixiv.requestDownload(work, page: page)
     case "pixivCancel":
       pixiv.downloads.cancel(try request.string("id"))
+    case "pixivPause":
+      pixiv.downloads.pause(try request.string("id"))
+    case "pixivResume":
+      guard pixiv.downloads.resume(try request.string("id")) else { throw WebPanelRequest.invalid }
     case "pixivRetryDownload":
       guard pixiv.downloads.retry(try request.string("id")) else { throw WebPanelRequest.invalid }
     case "pixivClearDownloads":
@@ -119,6 +123,14 @@ extension WebPanelController {
 
   /// Pages of pixiv works that are in the library, by work id, read off the wallpaper ids the
   /// packager gives them (`pixiv-<work>-p<page>`).
+  private func installedPixivPages() -> [String: [Int]] {
+    let revision = store.libraryPresentationRevision
+    if let cached = pixivInstalledIndex, cached.revision == revision { return cached.pages }
+    let pages = Self.installedPixivPages(in: store.librarySnapshot.wallpapers.map(\.id))
+    pixivInstalledIndex = (revision, pages)
+    return pages
+  }
+
   static func installedPixivPages(in ids: [String]) -> [String: [Int]] {
     var pages: [String: [Int]] = [:]
     for id in ids where id.hasPrefix("pixiv-") {
@@ -150,12 +162,14 @@ extension WebPanelController {
     case .waiting: status = "waiting"
     case .downloading: status = "downloading"
     case .installing: status = "installing"
+    case .paused: status = "paused"
     case .finished: status = "finished"
     case .cancelled: status = "cancelled"
     case .failed: status = "failed"
     }
     return [
       "id": job.id, "workID": job.work.id, "page": job.pageIndex, "title": job.work.title,
+      "thumbnail": Self.pixivAddress(job.work.id) as Any? ?? null,
       "status": status, "pending": job.isPending, "progress": job.progress as Any? ?? null,
       "received": job.bytesReceived, "expected": job.bytesExpected as Any? ?? null,
       "error": job.errorMessage as Any? ?? null,

@@ -1,4 +1,5 @@
 #include "Audio/FfmpegSoundStream.hpp"
+#include "AudioDecodePump.hpp"
 
 #include "Fs/IBinaryStream.h"
 #include "Video/FfmpegAbi.hpp"
@@ -223,7 +224,7 @@ bool ProbeHasAudioStream(FfmpegInputSource& input_source, std::string* error, bo
     return true;
 }
 
-class FfmpegSoundStream final : public SoundStream {
+class FfmpegSoundStream final : public SoundStream, private detail::AudioDecodeSource {
 public:
     explicit FfmpegSoundStream(std::filesystem::path media_path, Options options = {})
         : FfmpegSoundStream(std::make_unique<PathFfmpegInputSource>(std::move(media_path)),
@@ -395,6 +396,7 @@ private:
 
     void closeDecoder()
     {
+        m_pump.reset();
         if (m_packet != nullptr) av_packet_free(&m_packet);
         if (m_frame != nullptr) av_frame_free(&m_frame);
         if (m_swr != nullptr) swr_free(&m_swr);
@@ -408,6 +410,8 @@ private:
         m_pending_samples.clear();
         m_pending_offset_samples = 0;
         m_open = false;
+        m_loop_produced_samples = false;
+        m_finished = false;
     }
 
     bool seekToStart()
@@ -426,9 +430,14 @@ private:
         }
 
         avcodec_flush_buffers(m_codec_context);
-        if (m_swr != nullptr) swr_close(m_swr), swr_init(m_swr);
+        if (m_swr != nullptr) {
+            swr_close(m_swr);
+            if (swr_init(m_swr) < 0) return false;
+        }
+        m_pump.reset();
         av_packet_unref(m_packet);
         av_frame_unref(m_frame);
+        m_loop_produced_samples = false;
         return true;
     }
 
@@ -439,96 +448,89 @@ private:
         return pending_samples / m_desc.channels;
     }
 
+    static detail::DecodeResult result(int code, std::string* error)
+    {
+        if (code >= 0) return detail::DecodeResult::Ok;
+        if (code == AVERROR(EAGAIN)) return detail::DecodeResult::Again;
+        if (code == AVERROR_EOF) return detail::DecodeResult::End;
+        if (error != nullptr) *error = AvErrorString(code);
+        return detail::DecodeResult::Error;
+    }
+
+    detail::DecodeResult receive(std::string* error) override {
+        return result(avcodec_receive_frame(m_codec_context, m_frame), error);
+    }
+    detail::DecodeResult read(std::string* error) override {
+        while (true) {
+            const int code = av_read_frame(m_format_context, m_packet);
+            if (code < 0) return result(code, error);
+            if (m_packet->stream_index == m_audio_stream_index) return detail::DecodeResult::Ok;
+            av_packet_unref(m_packet);
+        }
+    }
+    detail::DecodeResult send(std::string* error) override {
+        return result(avcodec_send_packet(m_codec_context, m_packet), error);
+    }
+    detail::DecodeResult drain(std::string* error) override {
+        return result(avcodec_send_packet(m_codec_context, nullptr), error);
+    }
+    void releasePacket() override {
+        if (m_packet != nullptr) av_packet_unref(m_packet);
+    }
+
+    int convertFrame(bool draining)
+    {
+        const int input_samples = draining ? 0 : m_frame->nb_samples;
+        const int capacity = swr_get_out_samples(m_swr, input_samples);
+        if (capacity < 0) return capacity;
+        m_converted.resize(static_cast<size_t>(std::max(capacity, 1)) * m_desc.channels);
+        uint8_t* output[] = { reinterpret_cast<uint8_t*>(m_converted.data()) };
+        const int samples = swr_convert(m_swr, output, std::max(capacity, 1),
+            draining ? nullptr : const_cast<const uint8_t**>(m_frame->extended_data), input_samples);
+        if (! draining) av_frame_unref(m_frame);
+        if (samples <= 0) return samples;
+        m_converted.resize(static_cast<size_t>(samples) * m_desc.channels);
+        std::swap(m_pending_samples, m_converted);
+        m_pending_offset_samples = 0;
+        m_loop_produced_samples = true;
+        return samples;
+    }
+
     bool decodeMoreAudio()
     {
+        if (m_finished) return false;
         while (true) {
-            const int read_result = av_read_frame(m_format_context, m_packet);
-            if (read_result == AVERROR_EOF) {
-                if (!m_options.loop) return false;
-                if (!seekToStart()) return false;
-                continue;
-            }
-            if (read_result < 0) {
-                LOG_ERROR("failed to read FFmpeg audio packet for \"%s\": %s",
-                          m_input_source->Description().c_str(),
-                          AvErrorString(read_result).c_str());
+            std::string error;
+            const auto decoded = m_pump.next(&error);
+            if (decoded == detail::DecodeResult::Error) {
+                LOG_ERROR("failed to decode FFmpeg audio for \"%s\": %s",
+                          m_input_source->Description().c_str(), error.c_str());
+                m_finished = true;
                 return false;
             }
-
-            if (m_packet->stream_index != m_audio_stream_index) {
-                av_packet_unref(m_packet);
-                continue;
-            }
-
-            const int send_result = avcodec_send_packet(m_codec_context, m_packet);
-            av_packet_unref(m_packet);
-            if (send_result < 0 && send_result != AVERROR(EAGAIN)) {
-                LOG_ERROR("failed to submit FFmpeg audio packet for \"%s\": %s",
-                          m_input_source->Description().c_str(),
-                          AvErrorString(send_result).c_str());
+            const bool draining = decoded == detail::DecodeResult::End;
+            const int samples = convertFrame(draining);
+            if (samples < 0) {
+                LOG_ERROR("failed to resample FFmpeg audio for \"%s\": %s",
+                          m_input_source->Description().c_str(), AvErrorString(samples).c_str());
+                m_finished = true;
                 return false;
             }
-
-            while (true) {
-                const int receive_result = avcodec_receive_frame(m_codec_context, m_frame);
-                if (receive_result == AVERROR(EAGAIN)) break;
-                if (receive_result == AVERROR_EOF) {
-                    if (!m_options.loop) return false;
-                    if (!seekToStart()) return false;
-                    break;
-                }
-                if (receive_result < 0) {
-                    LOG_ERROR("failed to receive an FFmpeg audio frame for \"%s\": %s",
-                              m_input_source->Description().c_str(),
-                              AvErrorString(receive_result).c_str());
+            if (samples > 0) return true;
+            if (draining) {
+                // An empty stream must terminate even when looping is enabled.
+                if (! m_options.loop || ! m_loop_produced_samples || ! seekToStart()) {
+                    m_finished = true;
                     return false;
                 }
-
-                const int max_output_samples = swr_get_out_samples(m_swr, m_frame->nb_samples);
-                if (max_output_samples <= 0) {
-                    av_frame_unref(m_frame);
-                    continue;
-                }
-
-                // Reused across frames; swr_convert writes the prefix that is
-                // kept below, so no zero-fill is needed.
-                m_converted.resize(static_cast<size_t>(max_output_samples) * m_desc.channels);
-                uint8_t* output_data[] = {
-                    reinterpret_cast<uint8_t*>(m_converted.data()),
-                };
-                const int converted_samples = swr_convert(
-                    m_swr,
-                    output_data,
-                    max_output_samples,
-                    const_cast<const uint8_t**>(m_frame->extended_data),
-                    m_frame->nb_samples);
-                av_frame_unref(m_frame);
-                if (converted_samples < 0) {
-                    LOG_ERROR("failed to resample an FFmpeg audio frame for \"%s\": %s",
-                              m_input_source->Description().c_str(),
-                              AvErrorString(converted_samples).c_str());
-                    return false;
-                }
-                if (converted_samples == 0) continue;
-
-                m_converted.resize(static_cast<size_t>(converted_samples) * m_desc.channels);
-                if (m_pending_offset_samples == m_pending_samples.size()) {
-                    // Hand the samples over and keep the drained buffer's
-                    // capacity as the next conversion target.
-                    std::swap(m_pending_samples, m_converted);
-                    m_pending_offset_samples = 0;
-                } else {
-                    m_pending_samples.insert(
-                        m_pending_samples.end(),
-                        m_converted.begin(),
-                        m_converted.end());
-                }
-                return true;
             }
         }
     }
 
 private:
+    detail::AudioDecodePump m_pump { *this };
+    bool m_loop_produced_samples { false };
+    bool m_finished { false };
     std::unique_ptr<FfmpegInputSource> m_input_source;
     Options                            m_options {};
     Desc                               m_desc {};

@@ -34,19 +34,30 @@ final class WebPanelDeliveryStatusTests: XCTestCase {
     XCTAssertNil(row["mediaUnavailableReason"])
   }
 
-  func testAPageThatRegisteredAListenerIsReportedAsDelivering() {
+  func testOnlyAConfirmedAudioFrameIsReportedAsDelivering() {
     let row = payload(delivery: WebWallpaperHost.DeliveryStatus(
-      audioSubscribedDisplayIDs: [1], mediaUnavailableReason: nil))
+      audioSubscribedDisplayIDs: [1], audioStates: ["wallpaper": .delivering], mediaUnavailableReason: nil))
     XCTAssertEqual(row["audioDelivering"] as? Bool, true)
   }
 
   func testAnEnabledSettingWithNoSubscriberIsReportedAsNotDelivering() {
     let row = payload(delivery: WebWallpaperHost.DeliveryStatus(
-      audioSubscribedDisplayIDs: [], mediaUnavailableReason: nil))
+      audioSubscribedDisplayIDs: [], audioStates: ["wallpaper": .idle], mediaUnavailableReason: nil))
     XCTAssertEqual(
       row["audioDelivering"] as? Bool, false,
       "the user's setting is on, but nothing asked for data, and those are different claims")
     XCTAssertEqual(row["audioResponseEnabled"] as? Bool, true)
+  }
+
+  func testAnotherWallpaperAndAnUnconfirmedSubscriptionNeverClaimDelivery() {
+    let other = payload(delivery: .init(audioSubscribedDisplayIDs: [1], audioStates: ["other": .delivering]))
+    XCTAssertNil(other["audioDelivering"])
+    XCTAssertEqual(other["audioDeliveryState"] as? String, "inactive")
+    for state in [WebWallpaperHost.AudioDeliveryState.connecting, .subscribed, .failed] {
+      let row = payload(delivery: .init(audioStates: ["wallpaper": state]))
+      XCTAssertEqual(row["audioDelivering"] as? Bool, false)
+      XCTAssertEqual(row["audioDeliveryState"] as? String, state.rawValue)
+    }
   }
 
   func testAnAvailableMediaSourceIsDistinguishableFromAnUnknownOne() {

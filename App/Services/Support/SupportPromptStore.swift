@@ -16,7 +16,7 @@ final class SupportPromptStore {
     @ObservationIgnored private var state: State
     private(set) var isPending: Bool
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ClientPreferences.defaults) {
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.key) {
             do {

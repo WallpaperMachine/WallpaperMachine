@@ -108,7 +108,7 @@ struct WallpaperBackupPreferences: Sendable {
 
     /// Pass the suite name when injecting suite-based defaults.
     @MainActor
-    init(defaults: UserDefaults, domainName: String = Bundle.main.bundleIdentifier ?? "app.wallpapermachine") throws {
+    init(defaults: UserDefaults, domainName: String = ClientPreferences.domainName) throws {
         values = [:]
         let persistent = defaults.persistentDomain(forName: domainName) ?? [:]
         for key in Self.allowedKeys.sorted() {

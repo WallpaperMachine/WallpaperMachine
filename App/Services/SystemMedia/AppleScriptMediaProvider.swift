@@ -118,6 +118,7 @@ final class AppleScriptMediaProvider: SystemMediaProvider {
         availability = .unavailable(
             reason: MediaRemoteUnavailable(code: .notStarted).localizedDescription)
         properties = SystemMediaProperties()
+        reading = nil
         thumbnail = nil
         playback = .stopped
         timeline = nil
@@ -170,13 +171,32 @@ final class AppleScriptMediaProvider: SystemMediaProvider {
     private func report(unavailable reason: String) {
         guard consumers > 0 else { return }
         availability = .unavailable(reason: reason)
+        generation &+= 1
+        reading = nil
+        coveredTrack = nil
+        let hadProperties = properties != SystemMediaProperties()
+        let hadThumbnail = thumbnail != nil && thumbnail != .empty
+        let wasPlaying = playback != .stopped
+        let hadTimeline = timeline != nil
+        properties = SystemMediaProperties()
+        thumbnail = .empty
+        playback = .stopped
+        timeline = nil
+        if hadProperties { onPropertiesChanged?(properties) }
+        if hadThumbnail { onThumbnailChanged?(.empty) }
+        if wasPlaying { onPlaybackChanged?(.stopped) }
+        if hadTimeline { onTimelineChanged?(nil) }
     }
 
     /// Controls the player this provider is reading, not a fixed one: a
     /// command aimed at Music while Spotify is playing would change the wrong
     /// thing, or nothing.
     func send(_ command: SystemMediaCommand) async -> Bool {
-        guard let player = reading else { return false }
+        guard consumers > 0, case .available = availability, let player = reading else { return false }
+        guard runner.runningPlayers().contains(player) else {
+            report(unavailable: String(localized: "No music player this app can read is running."))
+            return false
+        }
         return await runner.control(player, command)
     }
 
@@ -209,7 +229,12 @@ final class AppleScriptMediaProvider: SystemMediaProvider {
     private func applyArtwork(
         for snapshot: AppleScriptNowPlaying, generation started: Int
     ) async {
-        guard !snapshot.trackIdentity.isEmpty, snapshot.trackIdentity != coveredTrack else { return }
+        guard snapshot.trackIdentity != coveredTrack else { return }
+        if snapshot.trackIdentity.isEmpty {
+            coveredTrack = snapshot.trackIdentity
+            publishArtwork(nil)
+            return
+        }
         let data: Data?
         if let url = snapshot.artworkURL {
             data = await runner.fetchArtwork(at: url)
@@ -218,10 +243,14 @@ final class AppleScriptMediaProvider: SystemMediaProvider {
         }
         guard consumers > 0, generation == started else { return }
         coveredTrack = snapshot.trackIdentity
-        guard let data, !data.isEmpty, let cover = artwork.thumbnail(for: data), cover != thumbnail
-        else { return }
-        thumbnail = cover
-        onThumbnailChanged?(cover)
+        publishArtwork(data.flatMap { $0.isEmpty ? nil : artwork.thumbnail(for: $0) })
+    }
+
+    private func publishArtwork(_ cover: SystemMediaThumbnail?) {
+        let next = cover ?? .empty
+        guard next != thumbnail else { return }
+        thumbnail = next
+        onThumbnailChanged?(next)
     }
 }
 

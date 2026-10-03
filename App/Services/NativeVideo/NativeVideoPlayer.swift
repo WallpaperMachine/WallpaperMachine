@@ -53,6 +53,10 @@ final class NativeVideoPlayer {
     /// load would otherwise be dropped on the floor — which is the one case
     /// where the display ends up black with no hand-off.
     private var pendingFailure: String?
+    var isReadyForDisplay: Bool { !stopped && layer.isReadyForDisplay }
+    var onReadyForDisplay: (@MainActor () -> Void)? {
+        didSet { if isReadyForDisplay { onReadyForDisplay?() } }
+    }
 
     /// Reported when the platform player cannot prepare or play the asset,
     /// with this surface's generation so a late failure cannot be attributed
@@ -116,6 +120,13 @@ final class NativeVideoPlayer {
     /// observation follows it.
     private func observeFailures(looper: AVPlayerLooper) {
         statusObservations = [
+            layer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
+                guard layer.isReadyForDisplay else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, !self.stopped else { return }
+                    self.onReadyForDisplay?()
+                }
+            },
             // `.initial` matters: the looper can already be `.failed` by the
             // time this runs, and a `.new`-only subscription would miss it.
             looper.observe(\.status, options: [.initial, .new]) { [weak self] looper, _ in
@@ -316,6 +327,7 @@ final class NativeVideoPlayer {
         observedItem = nil
         pendingFailure = nil
         onPreparationFailure = nil
+        onReadyForDisplay = nil
         player.pause()
         // The looper holds the queue; disabling it first stops it re-filling
         // the queue while the items are being removed.

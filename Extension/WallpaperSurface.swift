@@ -5,7 +5,7 @@ import Metal
 
 /// One WallpaperID is one compositor surface: never share a CAContext across Spaces.
 @MainActor
-final class WallpaperSurface {
+final class WallpaperSurface: LockScreenSurfaceLifecycle {
   let context: CAContext
   let root: CALayer
   private(set) var scene: LockScreenScene
@@ -27,6 +27,7 @@ final class WallpaperSurface {
   private var snapshotDeadline: Task<Void, Never>?
   private var latestSnapshot: IOSurface?
   private var stopped = false
+  var isReusable: Bool { !stopped && contentError == nil }
   var hasContent: Bool { renderer != nil || (web != nil && contentError == nil) }
   private var rendererPaused = false
   /// When this surface started presenting, set once its first frame arrived.

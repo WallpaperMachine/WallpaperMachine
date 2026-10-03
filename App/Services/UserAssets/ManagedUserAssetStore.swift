@@ -14,8 +14,15 @@ struct ManagedUserAsset: Codable, Equatable, Sendable {
     var sourcePath: String
     var size: Int64
     var modified: Date
+    /// Older manifests encode `modified` to whole seconds. Retain its exact value
+    /// separately so an unchanged source can use the metadata-only fast path.
+    var modifiedReferenceTime: Double? = nil
     /// SHA-256 of the file's bytes, lower-case hex.
     var digest: String
+
+    var sourceModificationDate: Date {
+        modifiedReferenceTime.map(Date.init(timeIntervalSinceReferenceDate:)) ?? modified
+    }
 }
 
 /// What one property imported, and where it came from.
@@ -77,13 +84,41 @@ struct UserAssetManifest: Codable, Equatable, Sendable {
 /// Importing copies the user's file in — cloned with `clonefile` where the
 /// filesystem supports it, so an APFS import costs no space until one side is
 /// written. The user's original is never moved, renamed or written to.
-final class ManagedUserAssetStore {
+final class ManagedUserAssetStore: @unchecked Sendable {
+    private static let manifestLock = NSRecursiveLock()
+    private static let preparationTurns = UserAssetPreparationTurns()
     let root: URL
     private let fileManager: FileManager
+    private let beforePublication: @Sendable () throws -> Void
+    private let beforePropertyCommit: @Sendable () throws -> Void
+    private let onPreparationQueued: @Sendable () -> Void
 
-    init(root: URL = ClientPaths.userAssetsURL, fileManager: FileManager = .default) {
+    init(root: URL = ClientPaths.userAssetsURL, fileManager: FileManager = .default,
+         beforePublication: @escaping @Sendable () throws -> Void = {},
+         beforePropertyCommit: @escaping @Sendable () throws -> Void = {},
+         onPreparationQueued: @escaping @Sendable () -> Void = {}) {
         self.root = root.standardizedFileURL
         self.fileManager = fileManager
+        self.beforePublication = beforePublication
+        self.beforePropertyCommit = beforePropertyCommit
+        self.onPreparationQueued = onPreparationQueued
+    }
+
+    /// One complete preparation/commit/bridge publication per wallpaper, across
+    /// store instances. Waiting suspends callers; hashing/copying never holds the
+    /// metadata lock or blocks the main actor. Purge uses this same turn boundary,
+    /// so adopted but not-yet-committed bytes cannot become cleanup candidates.
+    func withPreparation<T: Sendable>(wallpaperId: String,
+        operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        let key = try wallpaperRoot(wallpaperId).resolvingSymlinksInPath().standardizedFileURL.path
+        return try await Self.preparationTurns.perform(key: key, queued: onPreparationQueued, operation: operation)
+    }
+
+    /// Short read-modify-write phases only; never await or hash/copy file bytes here.
+    func withManifestTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+        Self.manifestLock.lock()
+        defer { Self.manifestLock.unlock() }
+        return try operation()
     }
 
     // MARK: - Locations
@@ -121,23 +156,39 @@ final class ManagedUserAssetStore {
 
     // MARK: - Manifest
 
-    func manifest(wallpaperId: String) -> UserAssetManifest {
-        // ISO-8601 both ways: the encoder writes it, and a decoder left on the default
-        // numeric strategy silently fails to read its own output, which reads back as
-        // "this wallpaper has no managed assets".
+    func manifest(wallpaperId: String) throws -> UserAssetManifest {
+        Self.manifestLock.lock()
+        defer { Self.manifestLock.unlock() }
+        let url = try wallpaperRoot(wallpaperId).appendingPathComponent(UserAssetManifest.fileName)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
+            return UserAssetManifest(wallpaperId: wallpaperId)
+        } catch {
+            throw Self.unreadableManifest()
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let url = try? wallpaperRoot(wallpaperId).appendingPathComponent(UserAssetManifest.fileName),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? decoder.decode(UserAssetManifest.self, from: data),
-              decoded.version == UserAssetManifest.currentVersion
-        else { return UserAssetManifest(wallpaperId: wallpaperId) }
+        guard let decoded = try? decoder.decode(UserAssetManifest.self, from: data),
+              decoded.version == UserAssetManifest.currentVersion,
+              decoded.wallpaperId == wallpaperId else {
+            throw Self.unreadableManifest()
+        }
         return decoded
+    }
+
+    private static func unreadableManifest() -> UserAssetError {
+        UserAssetError(code: .manifestUnreadable, reason: String(
+            localized: "The saved wallpaper file list could not be read. Your files have been kept."))
     }
 
     /// Written whole and atomically: a crash mid-write must not leave a manifest
     /// that lists half a property's files.
     func write(_ manifest: UserAssetManifest) throws {
+        Self.manifestLock.lock()
+        defer { Self.manifestLock.unlock() }
         let directory = try wallpaperRoot(manifest.wallpaperId)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
@@ -150,12 +201,28 @@ final class ManagedUserAssetStore {
     /// Called only after an explicit user selection, including selecting the same
     /// original again. Runtime reconstruction must never grant this authority.
     func authorizeSelection(wallpaperId: String, propertyId: String, selectedSourcePath: String) throws {
-        var value = manifest(wallpaperId: wallpaperId)
+        Self.manifestLock.lock()
+        defer { Self.manifestLock.unlock() }
+        var value = try manifest(wallpaperId: wallpaperId)
         guard var property = value.properties[propertyId] else { return }
         property.originalSourceUnauthorized = nil
         property.authorizedSourcePath = URL(fileURLWithPath: selectedSourcePath).standardizedFileURL.path
         value.properties[propertyId] = property
         try write(value)
+    }
+
+    /// A background preparation may only replace the property version it read.
+    /// Merge against the newest manifest so a concurrent edit of another property survives.
+    func updateProperty(wallpaperId: String, propertyId: String,
+                        expected: ManagedUserAssetProperty?, replacement: ManagedUserAssetProperty?) throws {
+        try beforePropertyCommit()
+        Self.manifestLock.lock()
+        defer { Self.manifestLock.unlock() }
+        try Task.checkCancellation()
+        var current = try manifest(wallpaperId: wallpaperId)
+        guard current.properties[propertyId] == expected else { throw CancellationError() }
+        current.properties[propertyId] = replacement
+        try write(current)
     }
     // MARK: - Import
 
@@ -178,51 +245,80 @@ final class ManagedUserAssetStore {
         let modified = values?.contentModificationDate ?? .distantPast
 
         if let known, known.fileName == fileName, known.size == size,
-           known.modified == modified, known.sourcePath == sourcePath,
+           known.sourceModificationDate == modified, known.sourcePath == sourcePath,
            fileManager.fileExists(atPath: (try? storedURL(
                wallpaperId: wallpaperId, propertyId: propertyId, asset: known))?.path ?? "") {
             // Same bytes by every cheap measure, already stored: no digest, no copy.
             return known
         }
 
-        let digest = try Self.digest(of: source)
-        let asset = ManagedUserAsset(
-            assetId: String(digest.prefix(32)), fileName: fileName, sourcePath: sourcePath,
-            size: size, modified: modified, digest: digest)
-        let destination = try storedURL(wallpaperId: wallpaperId, propertyId: propertyId, asset: asset)
-        if fileManager.fileExists(atPath: destination.path) {
-            // Content-addressed: the same digest under the same name is the same file,
-            // so re-picking a file the store already holds copies nothing.
-            return asset
-        }
-        try fileManager.createDirectory(
-            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Only this temporary path belongs to this operation. A failed/cancelled
+        // copy must never remove a winner another instance already published.
+        let directory = try propertyRoot(wallpaperId: wallpaperId, propertyId: propertyId)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let pending = directory.appendingPathComponent(".prepare-\(UUID().uuidString)")
+        defer { try? fileManager.removeItem(at: pending) }
         do {
-            try Self.copy(source, to: destination, fileManager: fileManager)
-        } catch {
-            try? fileManager.removeItem(at: destination)
+            try Task.checkCancellation()
+            try Self.copy(source, to: pending, fileManager: fileManager)
+            try Task.checkCancellation()
+        } catch is CancellationError { throw CancellationError() }
+        catch {
             throw UserAssetError(code: .stagingFailed, reason: String(
                 localized: "\(fileName) could not be copied into the app's asset folder."))
         }
-        return asset
+        let digest = try Self.digest(of: pending)
+        let retained = try pending.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let retainedModified = retained.contentModificationDate ?? .distantPast
+        let asset = ManagedUserAsset(
+            assetId: String(digest.prefix(32)), fileName: fileName, sourcePath: sourcePath,
+            size: Int64(retained.fileSize ?? 0), modified: retainedModified,
+            modifiedReferenceTime: retainedModified.timeIntervalSinceReferenceDate,
+            digest: digest)
+        let destination = try storedURL(wallpaperId: wallpaperId, propertyId: propertyId, asset: asset)
+        try beforePublication()
+        return try withManifestTransaction {
+            try Task.checkCancellation()
+            if !fileManager.fileExists(atPath: destination.path) {
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.moveItem(at: pending, to: destination)
+            }
+            return asset
+        }
     }
 
     /// Drops the stored directories a property no longer lists. Called after the
     /// manifest has been rewritten, so a failure here costs disk space and never
     /// a reference.
-    func pruneUnlisted(wallpaperId: String, propertyId: String, keeping assets: [ManagedUserAsset]) {
-        guard let directory = try? propertyRoot(wallpaperId: wallpaperId, propertyId: propertyId),
-              let entries = try? fileManager.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil) else { return }
-        let live = Set(assets.map(\.assetId))
-        for entry in entries where !live.contains(entry.lastPathComponent) {
-            try? fileManager.removeItem(at: entry)
+    func pruneUnlisted(wallpaperId: String, propertyId: String) {
+        let retired: [URL] = withManifestTransaction {
+            guard let current = try? manifest(wallpaperId: wallpaperId),
+                  let directory = try? propertyRoot(wallpaperId: wallpaperId, propertyId: propertyId),
+                  let entries = try? fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            else { return [] }
+            // The caller's list may have been superseded since its commit.
+            let live = Set((current.properties[propertyId]?.assets ?? []).map(\.assetId))
+            return entries.filter { !live.contains($0.lastPathComponent) }
+                .compactMap { retire($0, wallpaperId: wallpaperId) }
         }
+        // Removing large directory trees does not hold the metadata lock.
+        for entry in retired { try? fileManager.removeItem(at: entry) }
     }
 
     func removeProperty(wallpaperId: String, propertyId: String) {
-        guard let directory = try? propertyRoot(wallpaperId: wallpaperId, propertyId: propertyId) else { return }
-        try? fileManager.removeItem(at: directory)
+        let retired: URL? = withManifestTransaction {
+            guard let current = try? manifest(wallpaperId: wallpaperId), current.properties[propertyId] == nil,
+                  let directory = try? propertyRoot(wallpaperId: wallpaperId, propertyId: propertyId) else { return nil }
+            return retire(directory, wallpaperId: wallpaperId)
+        }
+        if let retired { try? fileManager.removeItem(at: retired) }
+    }
+
+    private func retire(_ url: URL, wallpaperId: String) -> URL? {
+        guard let root = try? wallpaperRoot(wallpaperId) else { return nil }
+        let retired = root.appendingPathComponent(".cleanup-\(UUID().uuidString)")
+        do { try fileManager.moveItem(at: url, to: retired); return retired }
+        catch { return nil }
     }
 
     // MARK: - Bytes
@@ -233,6 +329,7 @@ final class ManagedUserAssetStore {
         defer { try? handle.close() }
         var hash = SHA256()
         while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            try Task.checkCancellation()
             hash.update(data: chunk)
         }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
@@ -244,5 +341,25 @@ final class ManagedUserAssetStore {
     static func copy(_ source: URL, to destination: URL, fileManager: FileManager = .default) throws {
         if clonefile(source.path, destination.path, 0) == 0 { return }
         try fileManager.copyItem(at: source, to: destination)
+    }
+}
+
+private actor UserAssetPreparationTurns {
+    private struct Turn { let id: UUID; let completion: Task<Void, Never> }
+    private var tails: [String: Turn] = [:]
+
+    func perform<T: Sendable>(key: String, queued: @Sendable () -> Void,
+        operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        let previous = tails[key]?.completion
+        let id = UUID()
+        let task = Task {
+            await previous?.value
+            try Task.checkCancellation()
+            return try await operation()
+        }
+        tails[key] = Turn(id: id, completion: Task { _ = try? await task.value })
+        queued()
+        defer { if tails[key]?.id == id { tails.removeValue(forKey: key) } }
+        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
     }
 }

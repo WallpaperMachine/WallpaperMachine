@@ -226,7 +226,7 @@ TEST(SoundLayerControlTest, RandomPlaybackRestartsAfterEnd) {
                              ++factory_calls;
                              return MakeFakeStream({ 0.125f, -0.125f });
                          } },
-                         { .mode = PlaybackMode::Random });
+                         { .maxtime = 0.0f, .mintime = 0.0f, .mode = PlaybackMode::Random });
     stream.PassDesc({ .channels = 2, .sampleRate = 48'000 });
 
     std::array<float, 2> output { 0.0f, 0.0f };
@@ -241,6 +241,68 @@ TEST(SoundLayerControlTest, RandomPlaybackRestartsAfterEnd) {
     EXPECT_EQ(factory_calls, 2);
     EXPECT_FLOAT_EQ(output[0], 0.125f);
     EXPECT_FLOAT_EQ(output[1], -0.125f);
+}
+
+TEST(SoundLayerControlTest, RandomDelayIsSampleAccurateAcrossCallbackSizes) {
+    const auto render = [](const std::vector<uint32_t>& chunks) {
+        int next = 0;
+        WPSoundStream stream({ [&next](const auto&) {
+            return MakeFakeStream({static_cast<float>(++next)});
+        } }, { .maxtime = 0.375f, .mintime = 0.375f, .mode = PlaybackMode::Random, .random_seed = 7 });
+        stream.PassDesc({ .channels = 1, .sampleRate = 8 });
+        std::vector<float> result;
+        for (const auto size : chunks) {
+            std::vector<float> chunk(size);
+            EXPECT_EQ(stream.NextPcmData(chunk.data(), size), size);
+            result.insert(result.end(), chunk.begin(), chunk.end());
+        }
+        return result;
+    };
+    const std::vector<float> expected {1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0};
+    EXPECT_EQ(render({12}), expected);
+    EXPECT_EQ(render({1, 2, 4, 5}), expected);
+}
+
+TEST(SoundLayerControlTest, PausingPreservesRandomDelayAndStopResetsIt) {
+    int next = 0;
+    WPSoundStream stream({ [&next](const auto&) {
+        return MakeFakeStream({static_cast<float>(++next)});
+    } }, { .maxtime = 0.375f, .mintime = 0.375f, .mode = PlaybackMode::Random });
+    stream.PassDesc({ .channels = 1, .sampleRate = 8 });
+    std::array<float, 2> output {};
+    ASSERT_EQ(stream.NextPcmData(output.data(), 1), 1u);
+    EXPECT_EQ(output[0], 1.0f);
+    ASSERT_EQ(stream.NextPcmData(output.data(), 2), 2u);
+    EXPECT_EQ(output, (std::array<float, 2> {0, 0}));
+    stream.Pause();
+    ASSERT_EQ(stream.NextPcmData(output.data(), 2), 2u);
+    EXPECT_EQ(output, (std::array<float, 2> {0, 0}));
+    stream.Play();
+    ASSERT_EQ(stream.NextPcmData(output.data(), 2), 2u);
+    EXPECT_EQ(output, (std::array<float, 2> {0, 2}));
+    stream.Stop();
+    stream.Play();
+    ASSERT_EQ(stream.NextPcmData(output.data(), 1), 1u);
+    EXPECT_EQ(output[0], 3.0f);
+}
+
+TEST(SoundLayerControlTest, SeededRandomDelaysStayWithinTheAuthoredRange) {
+    WPSoundStream stream({ [](const auto&) { return MakeFakeStream({1.0f}); } },
+        { .maxtime = 0.625f, .mintime = 0.25f, .mode = PlaybackMode::Random, .random_seed = 17 });
+    stream.PassDesc({ .channels = 1, .sampleRate = 8 });
+    std::array<float, 256> samples {};
+    ASSERT_EQ(stream.NextPcmData(samples.data(), samples.size()), samples.size());
+    size_t previous = 0, events = 0;
+    for (size_t index = 0; index < samples.size(); ++index) {
+        if (samples[index] == 0.0f) continue;
+        if (events != 0) {
+            EXPECT_GE(index - previous - 1, 2u);
+            EXPECT_LE(index - previous - 1, 5u);
+        }
+        previous = index;
+        ++events;
+    }
+    EXPECT_GT(events, 30u);
 }
 
 TEST(SoundLayerControlTest, ParsesWallpaperEnginePlaybackModes) {

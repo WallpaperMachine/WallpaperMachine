@@ -29,16 +29,41 @@ pub(crate) fn interface_array_size(module: &ShaderModule<'_>, suffix: &str) -> S
         let SyntaxItem::Directive(directive) = item else {
             break;
         };
-        if let Some(parts) = directive
+        if directive.name_text() == "undef" && directive.body_text() == bound {
+            replacement = None;
+        } else if let Some(parts) = directive
             .define_parts()
             .map_err(ShaderError::invalid_request)?
         {
-            if parts.object_like_name_text() == Some(bound) {
-                replacement = parts.simple_replacement_text();
+            if parts.name_text() == bound {
+                replacement = parts.object_like_name_text()
+                    .and_then(|_| parts.simple_replacement_text());
             }
         }
     }
     replacement.and_then(positive_integer).ok_or_else(|| ShaderError::invalid_request(format!(
         "unsupported stage-interface array bound `{suffix}`: expected a positive integer or a leading macro with a positive integer value"
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ShaderStageKind;
+
+    #[test]
+    fn interface_bounds_follow_leading_macro_undefinitions_and_redefinitions() {
+        for (directives, expected) in [
+            ("#define COUNT 2\n", Some(2)),
+            ("#define COUNT 2\n#define COUNT 3\n", Some(3)),
+            ("#define COUNT 2\n#undef COUNT\n", None),
+            ("#define COUNT 2\n#undef COUNT\n#define COUNT 3\n", Some(3)),
+            ("#define COUNT 2\n#define COUNT(x) x\n", None),
+            ("#define COUNT 2\n#define COUNT\n", Some(1)), // bare defines have implicit value 1
+        ] {
+            let source = format!("{directives}varying vec2 taps[COUNT];\n");
+            let module = ShaderModule::parse(ShaderStageKind::Fragment, &source).unwrap();
+            assert_eq!(interface_array_size(&module, "[COUNT]").ok(), expected, "{directives}");
+        }
+    }
 }

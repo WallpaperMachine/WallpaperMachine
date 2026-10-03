@@ -75,6 +75,24 @@ final class WallpaperEnergyRatingsTests: XCTestCase {
     XCTAssertEqual(rating.level, .medium)
   }
 
+  func testStableSelectorsUseLiveDisplayMappingAndUnknownMappingDoesNotAttributeEnergy() {
+    let identity = "identity:{\"uuid\":\"example\"}"
+    let assignments = [(display: "primary", wallpaper: "a"), (display: identity, wallpaper: "b")]
+    var mapping: [String: UInt32] = ["primary": 7, identity: 8]
+    func resolve(_ suspended: Set<UInt32>) -> WallpaperEnergyContext? {
+      WallpaperEnergyContext.resolve(assignments: assignments, suspendedDisplays: suspended,
+        frameRateCap: nil, renderScale: 1, resolveDisplay: { mapping[$0] })
+    }
+    XCTAssertEqual(resolve([8]), context("a"))
+    mapping[identity] = 19
+    XCTAssertNil(resolve([8]), "The reconnected display has a new physical id")
+    XCTAssertEqual(resolve([19]), context("a"))
+    mapping.removeValue(forKey: identity)
+    XCTAssertNil(resolve([19]), "Unresolved content is not assumed to be visible or absent")
+    XCTAssertEqual(ResolvedDisplayTitles.liveDisplayID("primary", title: "Display (7 - Primary)"), 7)
+    XCTAssertEqual(ResolvedDisplayTitles.liveDisplayID(identity, title: "Display (19 - Secondary)"), 19)
+  }
+
   func testMeasurementUnderOtherSettingsReplacesTheRating() {
     let ratings = WallpaperEnergyRatings(file: file)
     ratings.record(context(), milliwatts: 1_000, seconds: 120)

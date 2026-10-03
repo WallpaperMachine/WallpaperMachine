@@ -16,7 +16,7 @@ final class WallpaperCollectionStore {
     private let defaults: UserDefaults
     private(set) var collections: [WallpaperCollection]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ClientPreferences.defaults) {
         self.defaults = defaults
         collections = defaults.data(forKey: Self.storageKey)
             .flatMap { try? JSONDecoder().decode([WallpaperCollection].self, from: $0) } ?? []

@@ -201,6 +201,15 @@ jobs:
       - name: Build the renderer and bridge
         run: python3 scripts/build.py --renderer-only
 
+      - name: Rust release checks
+        run: python3 scripts/check_rust.py
+
+      - name: Renderer regressions without a desktop
+        # Standard hosted Macs may have no Metal device. Only the separate
+        # capability probe's explicit exit 77 may skip GPU targets; started
+        # tests still fail on compile/parse/draw errors and timeouts.
+        run: python3 scripts/check_renderer.py --allow-missing-gpu
+
       - name: Test
         # One test class at a time. In parallel, offscreen control-panel suites failed here
         # (never locally) with "InvalidTransition … failed(deinit)": WebKit dropped a
@@ -229,6 +238,8 @@ jobs:
           name: test-logs-${{ inputs.tag }}
           path: |
             artifacts/build/
+            artifacts/rust/
+            artifacts/renderer/adaptive-*/
             artifacts/tests/*.log
             artifacts/tests/reports/
           if-no-files-found: ignore
@@ -238,6 +249,13 @@ jobs:
     needs: [build, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Builds remain per-tag and parallel; publication is repository-wide so the
+    # post-upload Latest decision cannot race another version's promotion.
+    # Queue waiting releases, rather than replacing the one pending job.
+    concurrency:
+      group: release-promotion-${{ github.repository }}
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: write
       # actions/attest-build-provenance signs with a workflow OIDC token and records

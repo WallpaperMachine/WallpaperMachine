@@ -7,8 +7,10 @@ import XCTest
 @MainActor
 final class WallpaperActivationRecoveryTests: XCTestCase {
     private var home: URL!
+    private var previousHome: String?
 
     override func setUpWithError() throws {
+        previousHome = ProcessInfo.processInfo.environment["WALLPAPER_MACHINE_HOME"]
         home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let folder = home.appendingPathComponent("Library/failing", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -22,7 +24,8 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        unsetenv("WALLPAPER_MACHINE_HOME")
+        if let previousHome { setenv("WALLPAPER_MACHINE_HOME", previousHome, 1) }
+        else { unsetenv("WALLPAPER_MACHINE_HOME") }
         try FileManager.default.removeItem(at: home)
     }
 
@@ -452,12 +455,18 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
         bridge.holdApply = { await withCheckedContinuation { release = $0 } }
 
         let activation = Task { try await store.activateWallpaperAsync(id: "failing", displayId: "primary") }
-        while release == nil { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while release == nil && ContinuousClock.now < deadline { await Task.yield() }
+        guard let release else {
+            activation.cancel()
+            XCTFail("The apply operation did not reach its suspension point")
+            return
+        }
         let refresh = Task { try await store.refreshLibraryAsync() }
         for _ in 0..<50 { await Task.yield() }
         XCTAssertNil(bridge.refreshSawActive, "The rescan must not start while the apply is in flight")
 
-        release?.resume()
+        release.resume()
         try await activation.value
         try await refresh.value
         XCTAssertEqual(bridge.refreshSawActive, true)

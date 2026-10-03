@@ -676,5 +676,25 @@ TEST(MediaThumbnailTextureSmoke, RepublishingTheSameCoverChangesNothing) {
     EXPECT_GT(source.Version("$mediaThumbnail"), version);
 }
 
+TEST(MediaThumbnailTextureSmoke, EmptyArtworkClearsBothSlotsAndAReplayDoesNoWork) {
+    RuntimeImageSource source(std::make_unique<NullImageParser>());
+    const std::array<uint8_t, 4> first {255, 0, 0, 255}, second {0, 255, 0, 255}, empty {};
+    ASSERT_TRUE(PublishSystemMediaArtwork(source, 1, 1, first.data(), first.size()));
+    ASSERT_TRUE(PublishSystemMediaArtwork(source, 1, 1, second.data(), second.size()));
+    ASSERT_TRUE(PublishSystemMediaArtwork(source, 0, 0, nullptr, 0));
+    EXPECT_TRUE(source.MatchesRgba("$mediaThumbnail", 1, 1, empty.data(), empty.size()));
+    EXPECT_TRUE(source.MatchesRgba("$mediaPreviousThumbnail", 1, 1, empty.data(), empty.size()));
+    const auto cleared = source.Parse("$mediaThumbnail");
+    const auto version = source.Version("$mediaThumbnail");
+    EXPECT_FALSE(PublishSystemMediaArtwork(source, 0, 0, nullptr, 0));
+    EXPECT_EQ(source.Version("$mediaThumbnail"), version);
+    EXPECT_EQ(source.Parse("$mediaPreviousThumbnail"), cleared);
+    EXPECT_FALSE(PublishSystemMediaArtwork(source, 0, 1, nullptr, 0));
+    EXPECT_FALSE(PublishSystemMediaArtwork(source, 2, 2, first.data(), first.size()));
+    EXPECT_EQ(source.Version("$mediaThumbnail"), version);
+    ASSERT_TRUE(PublishSystemMediaArtwork(source, 1, 1, first.data(), first.size()));
+    EXPECT_EQ(source.Parse("$mediaPreviousThumbnail"), cleared);
+}
+
 } // namespace
 } // namespace wallpaper

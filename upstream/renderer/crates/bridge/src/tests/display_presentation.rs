@@ -304,6 +304,7 @@ async fn a_presentation_transition_never_opens_the_tap_without_a_consumer() {
     let bridge = two_display_bridge(&engine).await;
     set_audio_response(&bridge, "100", false).await;
     set_audio_response(&bridge, "200", false).await;
+    let before_transitions = engine.audio_capture_suspend_calls().len();
 
     // Neither wallpaper asked for audio response, so no presentation
     // transition is a reason to open the system audio tap.
@@ -321,6 +322,7 @@ async fn a_presentation_transition_never_opens_the_tap_without_a_consumer() {
         engine
             .audio_capture_suspend_calls()
             .iter()
+            .skip(before_transitions)
             .all(|suspended| *suspended),
         "resuming presentation with nothing to analyse must not start capture: {:?}",
         engine.audio_capture_suspend_calls()

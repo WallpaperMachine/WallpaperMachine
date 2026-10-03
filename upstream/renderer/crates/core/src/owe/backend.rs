@@ -1045,6 +1045,22 @@ impl OweScene {
         self.registration = Some((registry.clone(), handle));
     }
 
+    /// Publishes the replacement under the previous scene's live identity.
+    /// The old scene relinquishes ownership before it can close and withdraw it.
+    pub fn inherit_runtime_registration(&mut self, previous: &mut Self, display_id: u32) {
+        if self.raw.is_none() { return; }
+        if let Some((registry, handle)) = previous.registration.take() {
+            self.publish_runtime_state(&registry, handle, display_id);
+        }
+    }
+
+    /// Keeps the registry's physical display identity in sync with window moves.
+    pub fn update_runtime_display(&mut self, display_id: u32) {
+        if let (Some((registry, handle)), Some(raw)) = (&self.registration, self.raw) {
+            registry.register(*handle, display_id, raw);
+        }
+    }
+
     pub fn close(&mut self) -> Result<(), EngineError> {
         // Withdraw first, unconditionally, and before anything that can fail
         // or return early. After this line no reader can reach this scene.
@@ -1300,6 +1316,38 @@ fn copy_c_string(value: *const c_char) -> Option<String> {
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+#[cfg(test)]
+mod registration_tests {
+    use super::*;
+
+    // Allocation alone creates no backend, window or audio device. No renderer
+    // initialization or resource loading is performed in this lifecycle test.
+    fn uninitialized_scene() -> OweScene {
+        let mut raw = std::ptr::null_mut();
+        call_status("owe_scene_wallpaper_new", || unsafe {
+            sys::owe_scene_wallpaper_new(&raw mut raw)
+        }).unwrap();
+        OweScene { raw: Some(NonNull::new(raw).unwrap()), render_initialized: false, registration: None }
+    }
+
+    #[test]
+    fn replacement_retains_one_live_report_after_the_old_scene_closes() {
+        let registry = crate::SceneRegistry::new();
+        let mut previous = uninitialized_scene();
+        previous.publish_runtime_state(&registry, 42, 7);
+        let mut replacement = uninitialized_scene();
+        replacement.inherit_runtime_registration(&mut previous, 9);
+        previous.close().unwrap();
+        let reports = registry.reports();
+        assert_eq!(reports.len(), 1);
+        assert_eq!((reports[0].handle, reports[0].display_id), (42, 9));
+        replacement.update_runtime_display(11);
+        assert_eq!(registry.reports()[0].display_id, 11);
+        drop(replacement);
+        assert!(registry.reports().is_empty());
+    }
 }
 
 #[cfg(test)]

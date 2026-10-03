@@ -28,7 +28,10 @@ extern "C" {
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
+#include <optional>
 #include <deque>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -205,6 +208,16 @@ double ProbeFrameDurationSeconds(AVStream* stream)
     return 1.0 / 60.0;
 }
 
+std::optional<std::array<int32_t, 9>> StreamDisplayMatrix(const AVStream* stream) {
+    if (stream == nullptr || stream->codecpar == nullptr) return std::nullopt;
+    const auto* side = av_packet_side_data_get(stream->codecpar->coded_side_data,
+        stream->codecpar->nb_coded_side_data, AV_PKT_DATA_DISPLAYMATRIX);
+    if (side == nullptr || side->data == nullptr || side->size < 9 * sizeof(int32_t)) return std::nullopt;
+    std::array<int32_t, 9> matrix;
+    std::memcpy(matrix.data(), side->data, sizeof(matrix));
+    return matrix;
+}
+
 bool ProbeStreamDimensions(AVStream* stream, uint32_t* width, uint32_t* height, std::string* error)
 {
     if (stream == nullptr) return SetError(error, "FFmpeg video stream must not be null");
@@ -218,21 +231,11 @@ bool ProbeStreamDimensions(AVStream* stream, uint32_t* width, uint32_t* height, 
         return SetError(error, "FFmpeg video stream returned an invalid size");
     }
 
-    const AVPacketSideData* display_side_data = av_packet_side_data_get(
-        stream->codecpar->coded_side_data,
-        stream->codecpar->nb_coded_side_data,
-        AV_PKT_DATA_DISPLAYMATRIX);
-    if (display_side_data != nullptr &&
-        display_side_data->data != nullptr &&
-        display_side_data->size >= static_cast<int>(9 * sizeof(int32_t))) {
-        const auto* display_matrix = reinterpret_cast<const int32_t*>(display_side_data->data);
-        const double rotation = av_display_rotation_get(display_matrix);
-        if (std::isfinite(rotation)) {
-            const double abs_rotation = std::fmod(std::abs(rotation), 360.0);
-            if (std::abs(abs_rotation - 90.0) < 1.0 || std::abs(abs_rotation - 270.0) < 1.0) {
-                std::swap(resolved_width, resolved_height);
-            }
-        }
+    if (const auto matrix = StreamDisplayMatrix(stream)) {
+        const auto transform = ResolveVideoDisplayTransform(*matrix, resolved_width, resolved_height);
+        if (! transform) return SetError(error, "video display transform is not a valid affine transform");
+        resolved_width = transform->width;
+        resolved_height = transform->height;
     }
 
     *width = resolved_width;
@@ -333,6 +336,27 @@ public:
 
     bool prime(std::string* error)
     {
+        // Every consumer waits for the same complete attempt, including its
+        // failure. Decoder handles and the worker thread have one initializer.
+        std::call_once(m_prime_once, [this] {
+            try {
+                m_prime_succeeded = primeOnce(&m_prime_error);
+            } catch (const std::exception& exception) {
+                m_prime_error = std::string("failed to initialize FFmpeg video: ") + exception.what();
+            }
+            if (! m_prime_succeeded) {
+                stop();
+                clearFrames();
+                closeDecoder();
+            }
+        });
+        if (m_prime_succeeded) return true;
+        return SetError(error, m_prime_error);
+    }
+
+private:
+    bool primeOnce(std::string* error)
+    {
         std::unique_lock lock(m_mutex);
         if (m_primed) return true;
         if (!m_initial_error.empty()) return SetError(error, m_initial_error);
@@ -377,6 +401,7 @@ public:
         return true;
     }
 
+public:
     bool syncPlayback(const VideoPlaybackState& state, std::string* error)
     {
         if (state.rate < 0.0f) return SetError(error, "negative video playback rates are not supported");
@@ -777,6 +802,7 @@ private:
         m_format_context = format_context;
         m_codec_context = codec_context;
         m_video_stream = video_stream;
+        m_display_matrix = StreamDisplayMatrix(video_stream);
         m_video_stream_index = video_stream_index;
         m_packet = packet;
         m_frame = frame;
@@ -1004,6 +1030,16 @@ private:
                 return DecodeOutcome::Failed;
             }
 
+            if (m_display_matrix) {
+                const auto transform = ResolveVideoDisplayTransform(*m_display_matrix, frame.width, frame.height);
+                if (! transform) {
+                    ReleaseAppleVideoFrame(&frame);
+                    av_frame_unref(m_frame);
+                    SetError(error, "video display transform is not a valid affine transform");
+                    return DecodeOutcome::Failed;
+                }
+                frame.display_transform = *transform;
+            }
             frame.pts_seconds = frame_absolute_seconds;
             out->frame = frame;
             out->pts_seconds = frame_absolute_seconds;
@@ -1142,12 +1178,16 @@ private:
     /// interrupt callback, so it cannot be guarded by `m_mutex`.
     std::atomic<bool>                m_cancel_requested { false };
     bool                             m_primed { false };
+    std::once_flag                   m_prime_once;
+    bool                             m_prime_succeeded { false };
+    std::string                      m_prime_error;
     std::thread                      m_decode_thread;
     std::string                      m_last_error;
     AVFormatContext*                 m_format_context { nullptr };
     AVCodecContext*                  m_codec_context { nullptr };
     AVBufferRef*                     m_hw_device_context { nullptr };
     AVStream*                        m_video_stream { nullptr };
+    std::optional<std::array<int32_t, 9>> m_display_matrix;
     int                              m_video_stream_index { -1 };
     AVPacket*                        m_packet { nullptr };
     AVFrame*                         m_frame { nullptr };

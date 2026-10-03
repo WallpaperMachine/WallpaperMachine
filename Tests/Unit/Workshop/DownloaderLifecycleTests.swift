@@ -132,10 +132,15 @@ final class DownloaderLifecycleTests: DownloaderTestCase {
             """)
         defer { try? FileManager.default.removeItem(at: root) }
         let downloader = startDownload(in: root)
-        defer { Task { await downloader.shutdown() } }
         let marker = root.appendingPathComponent("claim-visible")
-        try await waitUntil { FileManager.default.fileExists(atPath: marker.path) }
-        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "inherited")
+        do {
+            try await waitUntil { FileManager.default.fileExists(atPath: marker.path) }
+            XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "inherited")
+        } catch {
+            await downloader.shutdown()
+            throw error
+        }
+        await downloader.shutdown()
     }
 
   func testImmediateShutdownWaitsForStagingCleanup() async throws {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Interface/IImageParser.h"
+#include "Runtime/MediaArtwork.hpp"
 
 #include <atomic>
 #include <algorithm>
@@ -221,6 +222,14 @@ private:
 /// caller can skip the work a change would have needed.
 inline bool PublishSystemMediaArtwork(RuntimeImageSource& source, uint32_t width, uint32_t height,
                                       const uint8_t* rgba, std::size_t rgba_len) {
+    if (! IsValidSystemMediaArtwork(width, height, rgba, rgba_len)) return false;
+    if (IsClearSystemMediaArtwork(width, height, rgba_len)) {
+        constexpr std::array<uint8_t, 4> transparent {};
+        if (source.MatchesRgba("$mediaThumbnail", 1, 1, transparent.data(), transparent.size()) &&
+            source.MatchesRgba("$mediaPreviousThumbnail", 1, 1, transparent.data(), transparent.size())) return false;
+        source.SetRgbaImage("$mediaThumbnail", 1, 1, transparent.data(), transparent.size());
+        return true;
+    }
     if (source.MatchesRgba("$mediaThumbnail", width, height, rgba, rgba_len)) return false;
     source.AliasRuntimeImage("$mediaThumbnail", "$mediaPreviousThumbnail");
     source.SetRgbaImage("$mediaThumbnail", width, height, rgba, rgba_len);

@@ -8,13 +8,35 @@ import argparse
 from datetime import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 
 from build import build_environment, cargo_environment
 from lib.paths import RENDERER, RENDERER_ARTIFACTS, ROOT
+from lib.xcode import skipped_test_lines
 
 GENERATED_CASE_COUNT = 12
+# One registry owns the build/run/verdict and the Metal-device prerequisite.
+# VideoToolbox codec prerequisites, if unavailable, are reported by those tests.
+REGRESSION_BINARIES = {
+    "render_target_lifetime_test": False, "text_object_runtime_test": False,
+    "shader_cache_metadata_test": False, "video_decode_pump_test": False,
+    "video_color_conversion_test": False, "video_frame_pacing_test": False,
+    "video_conversion_budget_test": False, "video_source_input_test": False,
+    "shared_video_session_test": False, "render_scale_test": False,
+    "static_subgraph_cache_test": False, "texture_prefetch_test": False,
+    "scene_mesh_tests": False, "particle_rope_geometry_test": False,
+    "particle_mouse_controlpoint_test": False, "layer_texture_reference_test": False,
+    "timer_tests": False, "playback_gpu_test": True, "metal_backend_test": False,
+    "metal_scene_draw_smoke": True, "metal_poster_capture_test": True,
+    "metal_video_texture_test": True, "unchanged_present_test": True,
+    "audio_tests": False, "miniaudio_failure_paths_test": False, "sprite_animation_test": False,
+    "vulkan_sample_count_smoke": False, "rendergraph_smoke": False,
+    "rust_shader_bridge_test": False, "stb_image_regression_test": False,
+}
+OFFSCREEN_PROBE = "offscreen_scene_probe"
+RELOAD_PROBE = "scene_reload_cycle_probe"
 
 
 def run(command, log, env, timeout=180, cwd=ROOT):
@@ -22,6 +44,37 @@ def run(command, log, env, timeout=180, cwd=ROOT):
         return subprocess.run(list(map(str, command)), cwd=cwd, env=env,
                               stdout=stream, stderr=subprocess.STDOUT,
                               timeout=timeout, check=False).returncode
+
+
+def record_skips(report, name, log):
+    reasons = skipped_test_lines(log.read_text(errors="replace").splitlines()) if log.exists() else []
+    if reasons:
+        report["skips"][name] = reasons
+        for reason in reasons:
+            prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "SKIP "
+            print(f"{prefix}{name}: {reason}", flush=True)
+
+
+def gpu_preflight(out, env):
+    """Only a successfully built probe's exit 77 means no Metal device exists."""
+    source = out / "gpu-availability.m"
+    binary = out / "gpu-availability"
+    source.write_text('#import <Metal/Metal.h>\nint main(void) { @autoreleasepool { return MTLCreateSystemDefaultDevice() ? 0 : 77; } }\n')
+    result = {"compile_exit": None, "probe_exit": None}
+    steps = [(["xcrun", "clang", "-fobjc-arc", str(source), "-framework", "Metal", "-o", str(binary)], "compile_exit"),
+             ([binary], "probe_exit")]
+    for command, key in steps:
+        log = out / ("gpu-" + key + ".log")
+        try:
+            result[key] = run(command, log, env, 60)
+        except subprocess.TimeoutExpired:
+            result[key] = "timeout"
+        except OSError as error:
+            result[key] = "error"
+            log.write_text(str(error) + "\n")
+        if key == "compile_exit" and result[key] != 0:
+            break
+    return result
 
 
 def fixtures(root):
@@ -292,12 +345,14 @@ def check_generated_pixels(data, index):
     return pixel(180, 136) != background
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--assets", type=Path, default=Path.home() / "Library/Application Support/WallpaperMachine/SceneAssets")
     parser.add_argument("--project", action="append", type=Path, default=[], help="Additional local scene project; repeatable")
     parser.add_argument("--skip-build", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument("--allow-missing-gpu", action="store_true",
+                        help="CI only: allow explicit GPU skips when a compiled Metal-device probe exits 77. Other failures still fail.")
+    args = parser.parse_args(argv)
     out = RENDERER_ARTIFACTS / ("adaptive-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True)
     env = build_environment()
@@ -308,7 +363,7 @@ def main():
         steps = [
             (["cargo", "build", "-p", "shader", "--features", "ffi", "--release"], "shader-build", RENDERER),
             (["cmake", "-S", RENDERER / "external/open-wallpaper-engine", "-B", build, "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TESTS=ON", "-DRUST_SHADER_FFI=ON", "-DRUST_SHADER_STATICLIB=" + str(RENDERER / "target/release/libshader.a")], "configure", ROOT),
-            (["cmake", "--build", build, "--target", "offscreen_scene_probe", "scene_reload_cycle_probe", "render_target_lifetime_test", "text_object_runtime_test", "shader_cache_metadata_test", "video_decode_pump_test", "video_color_conversion_test", "video_frame_pacing_test", "video_conversion_budget_test", "video_source_input_test", "shared_video_session_test", "render_scale_test", "static_subgraph_cache_test", "texture_prefetch_test", "scene_mesh_tests", "particle_rope_geometry_test", "particle_mouse_controlpoint_test", "layer_texture_reference_test", "timer_tests", "playback_gpu_test", "metal_backend_test", "metal_scene_draw_smoke", "metal_poster_capture_test", "metal_video_texture_test", "unchanged_present_test", "-j", "6"], "build", ROOT),
+            (["cmake", "--build", build, "--target", OFFSCREEN_PROBE, RELOAD_PROBE, *REGRESSION_BINARIES, "-j", "6"], "build", ROOT),
         ]
         for command, name, cwd in steps:
             # Cargo gets the environment without the deployment-target pin:
@@ -318,21 +373,40 @@ def main():
             if run(command, out / (name + ".log"), step_env, 600, cwd):
                 print(f"Build failed; see {out / (name + '.log')}")
                 return 1
-    report = {"desktop_automation": False, "gpu_surface": False, "cases": []}
+    report = {"desktop_automation": False, "gpu_surface": False, "cases": [], "skips": {}}
+    gpu_available = True
+    if args.allow_missing_gpu:
+        report["gpu_preflight"] = gpu_preflight(out, env)
+        probe = report["gpu_preflight"]
+        if probe["compile_exit"] != 0 or probe["probe_exit"] not in (0, 77):
+            (out / "report.json").write_text(json.dumps(report, indent=2))
+            print(f"GPU preflight failed: {probe}; see {out}")
+            return 1
+        gpu_available = probe["probe_exit"] == 0
+    report["gpu_checks_executed"] = gpu_available
+    if not gpu_available:
+        skipped = [name for name, needs_gpu in REGRESSION_BINARIES.items() if needs_gpu] + [OFFSCREEN_PROBE, RELOAD_PROBE]
+        for name in skipped:
+            report[name] = "skipped-no-gpu"
+            report["skips"][name] = ["compiled Metal-device probe reported no device (exit 77)"]
+        print("::warning::No Metal device; unverified GPU targets: " + ", ".join(skipped), flush=True)
     # video_decode_pump_test and video_color_conversion_test need no GPU at all;
     # playback_gpu_test imports synthetic video frames into private textures.
-    for binary in ["render_target_lifetime_test", "text_object_runtime_test", "shader_cache_metadata_test",
-                   "video_decode_pump_test", "video_color_conversion_test", "video_frame_pacing_test",
-                   "video_conversion_budget_test", "video_source_input_test",
-                   "shared_video_session_test", "render_scale_test", "static_subgraph_cache_test", "texture_prefetch_test", "scene_mesh_tests", "particle_rope_geometry_test", "particle_mouse_controlpoint_test", "layer_texture_reference_test",
-                   "timer_tests", "playback_gpu_test", "metal_backend_test", "metal_scene_draw_smoke",
-                   "metal_poster_capture_test", "metal_video_texture_test", "unchanged_present_test"]:
-        status = run([build / "tests" / binary], out / (binary + ".log"), env, 600)
-        report[ binary ] = status
-    for project in [*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
-                    perspective_animation_fixture(out / "fixtures"),
-                    origin_animation_fixture(out / "fixtures"),
-                    alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True), *args.project]:
+    for binary, needs_gpu in REGRESSION_BINARIES.items():
+        if needs_gpu and not gpu_available:
+            continue
+        try:
+            status = run([build / "tests" / binary], out / (binary + ".log"), env, 600)
+        except subprocess.TimeoutExpired:
+            status = "timeout"
+        report[binary] = status
+        record_skips(report, binary, out / (binary + ".log"))
+    projects = ([*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
+                 perspective_animation_fixture(out / "fixtures"),
+                 origin_animation_fixture(out / "fixtures"),
+                 alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True),
+                 *args.project] if gpu_available else [])
+    for project in projects:
         project = project.resolve()
         manifest_bytes = project.read_bytes()
         manifest = json.loads(manifest_bytes)
@@ -351,10 +425,11 @@ def main():
             if mode == "isolated":
                 mode_env["WE_TEST_NO_REUSE"] = "1"
             try:
-                status = run([build / "tests/offscreen_scene_probe"], case_dir / (mode + ".log"), mode_env)
+                status = run([build / "tests" / OFFSCREEN_PROBE], case_dir / (mode + ".log"), mode_env)
             except subprocess.TimeoutExpired:
                 status = "timeout"
             case["runs"].append({"mode": mode, "exit": status})
+            record_skips(report, f"{case_dir.name}/{mode}", case_dir / (mode + ".log"))
         # Rendering without a crash does not prove all authored effects loaded.
         case["diagnostics"] = []
         for mode in ["pooled", "isolated"]:
@@ -376,7 +451,7 @@ def main():
         print(f"{project.parent.name}: {case['runs']}; pixels_equal={case['pixels_equal']}; diagnostics={len(case['diagnostics'])}", flush=True)
     # Switching wallpapers reloads scenes inside one process; per-process state
     # left behind by a previous load must not stall the next parse.
-    reload_projects = [p.resolve() for p in args.project] or list(fixtures(out / "fixtures"))
+    reload_projects = ([p.resolve() for p in args.project] or list(fixtures(out / "fixtures"))) if gpu_available else []
     reload_env = env.copy()
     reload_env.update(
         WE_TEST_PROJECTS=";".join(str(p) for p in reload_projects),
@@ -384,16 +459,21 @@ def main():
         WE_TEST_OUTPUT=str(out / "reload-cycles"),
         WE_TEST_CYCLES="2",
     )
-    try:
-        report["scene_reload_cycle_probe"] = run(
-            [build / "tests/scene_reload_cycle_probe"], out / "reload-cycles.log", reload_env,
-            60 + 60 * len(reload_projects))
-    except subprocess.TimeoutExpired:
-        report["scene_reload_cycle_probe"] = "timeout"
+    if gpu_available:
+        try:
+            report[RELOAD_PROBE] = run(
+                [build / "tests" / RELOAD_PROBE], out / "reload-cycles.log", reload_env,
+                60 + 60 * len(reload_projects))
+        except subprocess.TimeoutExpired:
+            report[RELOAD_PROBE] = "timeout"
+        record_skips(report, RELOAD_PROBE, out / "reload-cycles.log")
     (out / "report.json").write_text(json.dumps(report, indent=2))
     print(f"reload cycles ({len(reload_projects)} projects x2): {report['scene_reload_cycle_probe']}", flush=True)
     print(f"Evidence: {out}")
-    return int(any(report[k] for k in ["render_target_lifetime_test", "text_object_runtime_test", "shader_cache_metadata_test", "video_decode_pump_test", "video_color_conversion_test", "video_frame_pacing_test", "video_conversion_budget_test", "video_source_input_test", "shared_video_session_test", "render_scale_test", "static_subgraph_cache_test", "texture_prefetch_test", "scene_mesh_tests", "particle_rope_geometry_test", "particle_mouse_controlpoint_test", "layer_texture_reference_test", "timer_tests", "playback_gpu_test", "metal_backend_test", "metal_scene_draw_smoke", "unchanged_present_test", "scene_reload_cycle_probe"]) or any(not c["pixels_equal"] for c in report["cases"]) or any(c["diagnostics"] or not c.get("expected_pixels", False) for c in report["cases"][:GENERATED_CASE_COUNT]))
+    return int(any(report[k] not in (0, "skipped-no-gpu") for k in (*REGRESSION_BINARIES, RELOAD_PROBE))
+               or any(not c["pixels_equal"] for c in report["cases"])
+               or any(c["diagnostics"] or not c.get("expected_pixels", False)
+                      for c in report["cases"][:GENERATED_CASE_COUNT]))
 
 
 if __name__ == "__main__":

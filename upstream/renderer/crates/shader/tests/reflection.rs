@@ -13,6 +13,38 @@ fn parse_stage(stage: naga::ShaderStage, source: &str) -> naga::Module {
 }
 
 #[test]
+fn rejects_a_used_storage_buffer_instead_of_omitting_its_binding() {
+    let module = parse_stage(naga::ShaderStage::Fragment, r#"
+        #version 450
+        layout(std430, set = 0, binding = 3) readonly buffer Values { float value; } values;
+        layout(location = 0) out vec4 color;
+        void main() { color = vec4(values.value); }
+    "#);
+    let error = NagaReflector.reflect_stage(ShaderStageKind::Fragment, &module)
+        .expect_err("a used resource the renderer cannot bind must fail reflection");
+    assert!(matches!(error, ShaderError::Reflection { .. }));
+}
+
+#[test]
+fn unused_unsupported_resources_do_not_prevent_an_empty_reflection() {
+    for declaration in [
+        "",
+        "layout(std430, set = 0, binding = 3) readonly buffer Values { float value; } values;",
+    ] {
+        let module = parse_stage(naga::ShaderStage::Fragment, &format!(r#"
+            #version 450
+            {declaration}
+            layout(location = 0) out vec4 color;
+            void main() {{ color = vec4(1.0); }}
+        "#));
+        let reflection = NagaReflector.reflect_stage(ShaderStageKind::Fragment, &module)
+            .expect("resource-free output remains valid");
+        assert!(reflection.descriptor_bindings().is_empty());
+        assert!(reflection.uniform_blocks().is_empty());
+    }
+}
+
+#[test]
 fn reflects_vertex_input_names_locations_and_formats() {
     let source = r#"
 #version 450

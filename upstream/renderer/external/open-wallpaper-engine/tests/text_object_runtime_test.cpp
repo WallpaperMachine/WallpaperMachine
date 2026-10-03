@@ -509,6 +509,92 @@ ShaderDescriptorBindings(const SceneShader& shader) {
 
 } // namespace
 
+TEST(TextObjectRuntime, WidthAndRowLimitsProduceTheSamePixelsAsExplicitLineBreaks) {
+    TextLayerState state {
+        .font_key = "systemfont_sansserif",
+        .resolved_font_path = ResolveSystemFontPath("systemfont_sansserif"),
+        .point_size = 10.0f,
+        .horizontal_align = "left",
+        .vertical_align = "top",
+    };
+    const auto pixels = [](const TextLayerState& text) {
+        const auto size = MeasureTextLayerSize(text);
+        const auto width = static_cast<uint32_t>(std::ceil(size.x()));
+        const auto height = static_cast<uint32_t>(std::ceil(size.y()));
+        std::vector<uint8_t> rgba(static_cast<size_t>(width) * height * 4, 0);
+        RasterizeTextLayer(text, width, height, rgba);
+        return std::make_pair(std::array<uint32_t, 2> {width, height}, rgba);
+    };
+    for (const std::string word : {std::string("WW"), std::string("éé")}) {
+        state.text = word;
+        const float width = MeasureTextLayerSize(state).x();
+        auto expected = state;
+        expected.text = word + "\n" + word;
+        auto limited = state;
+        limited.text = word + " " + word;
+        limited.limit_width = true;
+        limited.max_width = width;
+        EXPECT_EQ(pixels(limited), pixels(expected));
+        limited.text += "\n" + word;
+        limited.limit_rows = true;
+        limited.max_rows = 2;
+        EXPECT_EQ(pixels(limited), pixels(expected));
+    }
+}
+
+TEST(TextObjectRuntime, EllipsisFitsTheLastVisibleRowAndLimitFlagsRemainIndependent) {
+    TextLayerState expected {
+        .text = "WW…",
+        .font_key = "systemfont_sansserif",
+        .resolved_font_path = ResolveSystemFontPath("systemfont_sansserif"),
+        .point_size = 10.0f,
+        .horizontal_align = "left",
+        .vertical_align = "top",
+    };
+    const auto size = MeasureTextLayerSize(expected);
+    TextLayerState limited = expected;
+    limited.text = "WWWWWWWW";
+    limited.max_width = size.x();
+    limited.max_rows = 1;
+    limited.limit_width = limited.limit_rows = limited.use_ellipsis = true;
+    EXPECT_TRUE(MeasureTextLayerSize(limited).isApprox(size));
+    const auto width = static_cast<uint32_t>(std::ceil(size.x()));
+    const auto height = static_cast<uint32_t>(std::ceil(size.y()));
+    std::vector<uint8_t> actual(static_cast<size_t>(width) * height * 4, 0), reference(actual.size(), 0);
+    RasterizeTextLayer(limited, width, height, actual);
+    RasterizeTextLayer(expected, width, height, reference);
+    EXPECT_EQ(actual, reference);
+    EXPECT_TRUE(std::any_of(actual.begin(), actual.end(), [](uint8_t byte) { return byte != 0; }));
+    limited.limit_width = false;
+    EXPECT_GT(MeasureTextLayerSize(limited).x(), size.x());
+    limited.limit_width = true;
+    limited.limit_rows = false;
+    EXPECT_GT(MeasureTextLayerSize(limited).y(), size.y());
+}
+
+TEST(TextObjectRuntime, ParsedLimitsContinueToConstrainDynamicText) {
+    fs::VFS vfs;
+    MountAssets(vfs);
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "text-limits", .project_properties = &properties },
+        MinimalSceneObjects(R"([{"id":1,"name":"caption","text":"ABCDEFGHIJKLMN","font":"Arial",
+            "pointsize":10,"maxwidth":120,"maxrows":2,"limitwidth":true,"limitrows":true,
+            "limituseellipsis":true,"visible":true}])"), vfs, sound);
+    ASSERT_NE(scene, nullptr);
+    ASSERT_NE(scene->runtime, nullptr);
+    const auto original = scene->runtime->NodeSize("caption");
+    EXPECT_GT(original.x(), 0.0f);
+    EXPECT_LE(original.x(), 120.0f);
+    ASSERT_TRUE(scene->runtime->SetNodeText("caption", std::string(100, 'W')));
+    PumpTextUntilClean(*scene->runtime);
+    const auto changed = scene->runtime->NodeSize("caption");
+    EXPECT_LE(changed.x(), 120.0f);
+    EXPECT_FLOAT_EQ(changed.y(), original.y());
+    EXPECT_EQ(scene->runtime->NodeText("caption"), std::string(100, 'W'));
+}
+
 TEST(TextObjectRuntime, ParserCreatesRuntimeTextNodeAndState) {
     fs::VFS vfs;
     MountAssets(vfs);
@@ -1594,40 +1680,37 @@ void main() {
                                          "g_StaleFirstPassMarker"));
 }
 
-TEST(TextObjectRuntime, MalformedRustReflectionJsonFallsBackToSpirvReflect) {
+TEST(TextObjectRuntime, MissingOrInvalidReflectionFailsWithoutLegacyFallback) {
     fs::VFS vfs;
     MountAssets(vfs);
+    SceneShader shader = CompileTextShaderForSpirvReflection(vfs);
+    ASSERT_FALSE(shader.codes.empty());
+    vulkan::ShaderReflected reflected;
+    EXPECT_FALSE(ReflectShaderDescriptors(shader, reflected));
+    shader.rust_reflection_json = "{ incomplete metadata";
+    EXPECT_FALSE(ReflectShaderDescriptors(shader, reflected));
+    shader.rust_reflection_json = "{}";
+    EXPECT_FALSE(ReflectShaderDescriptors(shader, reflected));
+}
 
-    SceneShader malformed_reflection_shader = CompileTextShaderForSpirvReflection(vfs);
-    ASSERT_FALSE(malformed_reflection_shader.codes.empty());
-    malformed_reflection_shader.rust_reflection_json = "{ malformed rust reflection json";
-
-    EXPECT_TRUE(ShaderUsesUniformMember(malformed_reflection_shader,
-                                        "g_ModelViewProjectionMatrix"));
-
-    const auto texture_binding =
-        ShaderDescriptorBinding(malformed_reflection_shader, "g_Texture0");
-    ASSERT_TRUE(texture_binding.has_value());
-    EXPECT_EQ(texture_binding->descriptorType, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-
-    const auto descriptor_bindings = ShaderDescriptorBindings(malformed_reflection_shader);
-    ASSERT_FALSE(descriptor_bindings.empty());
-    bool has_uniform_buffer_descriptor = false;
-    for (const auto& binding : descriptor_bindings) {
-        if (binding.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-            has_uniform_buffer_descriptor = true;
-            EXPECT_NE(binding.binding, texture_binding->binding);
-        }
-    }
-    EXPECT_TRUE(has_uniform_buffer_descriptor);
-
-    SceneShader empty_reflection_shader = malformed_reflection_shader;
-    empty_reflection_shader.rust_reflection_json = "{}";
-    const auto fallback_texture_binding =
-        ShaderDescriptorBinding(empty_reflection_shader, "g_Texture0");
-    ASSERT_TRUE(fallback_texture_binding.has_value());
-    EXPECT_EQ(fallback_texture_binding->descriptorType,
-              VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+TEST(TextObjectRuntime, ResourceFreeShaderUsesItsValidEmptyRustReflection) {
+    shader::RustShaderRequest request;
+    request.shader_name = "empty-resource-reflection";
+    request.cache_enabled = false;
+    request.stages = {
+        {ShaderType::VERTEX, "void main(){gl_Position=vec4(0.0,0.0,0.0,1.0);}"},
+        {ShaderType::FRAGMENT, "void main(){gl_FragColor=vec4(1.0);}"},
+    };
+    shader::RustShaderOutput compiled;
+    ASSERT_TRUE(shader::CompileRustShaderProgram(request, compiled)) << shader::LastRustShaderError();
+    SceneShader source;
+    source.codes = compiled.codes;
+    source.rust_reflection_json = compiled.reflection_json;
+    vulkan::ShaderReflected reflected;
+    ASSERT_TRUE(ReflectShaderDescriptors(source, reflected));
+    EXPECT_TRUE(reflected.binding_map.empty());
+    EXPECT_TRUE(reflected.blocks.empty());
+    EXPECT_TRUE(reflected.input_location_map.empty());
 }
 
 TEST(TextObjectRuntime, ExplicitTextObjectSizeIsMinimumRuntimeTextureDimensions) {

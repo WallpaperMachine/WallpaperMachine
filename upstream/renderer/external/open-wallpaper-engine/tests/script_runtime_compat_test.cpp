@@ -19,6 +19,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -1238,6 +1239,57 @@ function update() {
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
+TEST(ScriptRuntimeCompat, ScriptsLoadedByAnEventStartWithTheFollowingEvent) {
+    for (const int event : {0, 1, 2}) {
+        SCOPED_TRACE(event);
+        Scene scene;
+        auto runtime = MakeRuntimeWithScene(scene);
+        auto observer = std::make_shared<SceneNode>();
+        runtime->RegisterNode("observer", observer.get());
+        scene.sceneGraph->AppendChild(observer);
+        const std::string handler = event == 2 ? "mediaThumbnailChanged" : "cursorClick";
+        const auto increment = [](const std::string& axis) {
+            return "var n=thisScene.getLayer('observer'); var p=n.origin; p." + axis +
+                   "+=1; n.origin=p;";
+        };
+        int loads = 0;
+        runtime->SetLayerTemplateLoader([&](std::string_view path) {
+            ++loads;
+            auto source = std::make_shared<SceneNode>();
+            auto mesh = std::make_shared<SceneMesh>();
+            mesh->AddMaterial(SceneMaterial {});
+            source->AddMesh(mesh);
+            runtime->RegisterMaterialConstant(mesh->MaterialSlotPtr(), "u_Event",
+                ResolveFloatSetting(*runtime, {
+                    {"value", 0.0f}, {"script", "export function " + handler + "(){" + increment("y") + "}"}
+                }));
+            runtime->RegisterSceneScript("function " + handler + "(){" + increment("z") + "}", "");
+            runtime->RegisterLayerTemplate(std::string(path), source, Eigen::Vector2f(16, 16));
+            return true;
+        });
+        runtime->RegisterSceneScript("var made=false; function " + handler +
+            "(){if(!made){made=true;thisScene.createLayer('models/event.json');}" + increment("x") + "}", "");
+        runtime->SetMediaIntegrationEnabled(true);
+        const auto dispatch = [&] {
+            if (event == 0) runtime->DispatchCursorClick(0);
+            else if (event == 1) {
+                runtime->SetCursorEnter(true);
+                runtime->SetCursorButtons(1, 1, 0);
+                runtime->DispatchCursorFrameEvents(true);
+            } else {
+                runtime->DispatchMediaEventJson(R"({"type":"mediaThumbnailChanged","hasThumbnail":false})");
+            }
+        };
+        dispatch();
+        EXPECT_EQ(loads, 1);
+        EXPECT_TRUE(observer->Translate().isApprox(Eigen::Vector3f(1, 0, 0)));
+        dispatch();
+        EXPECT_EQ(loads, 1);
+        EXPECT_TRUE(observer->Translate().isApprox(Eigen::Vector3f(2, 1, 1)));
+        EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+    }
+}
+
 TEST(ScriptRuntimeCompat, LazyTemplateScriptsStartOnTheFollowingTickAndLoadedGeometryIsReusable) {
     Scene scene;
     auto runtime = MakeRuntimeWithScene(scene);
@@ -2333,6 +2385,72 @@ export function update(value) {
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
+TEST(AudioResponseCompat, NativeRegistrationsKeepTypedViewsAndRefreshLateBuffersAtTheSameGeneration) {
+    struct ResetAudioOnExit {
+        ~ResetAudioOnExit() { audio::ResetAudioResponseServiceForTesting(); }
+    } reset;
+    audio::AudioSpectrumSnapshot snapshot;
+    snapshot.generation = 29;
+    snapshot.left16.fill(0.125f); snapshot.right16.fill(0.25f); snapshot.average16.fill(0.375f);
+    snapshot.left32.fill(0.25f); snapshot.right32.fill(0.375f); snapshot.average32.fill(0.5f);
+    snapshot.left64.fill(0.375f); snapshot.right64.fill(0.5f); snapshot.average64.fill(0.625f);
+    audio::SetAudioSpectrumSnapshotForTesting(snapshot);
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    runtime->SetAudioResponseEnabled(true);
+    for (const auto [resolution, expected] : {
+        std::pair {16, Eigen::Vector3f(0.125f, 0.25f, 0.375f)},
+        std::pair {32, Eigen::Vector3f(0.25f, 0.375f, 0.5f)},
+        std::pair {64, Eigen::Vector3f(0.375f, 0.5f, 0.625f)} }) {
+        const auto size = std::to_string(resolution);
+        auto program = runtime->scriptEngine().CreatePropertyScriptProgram(runtime.get(),
+            "const b=engine.registerAudioBuffers(" + size + ");const held=b.average.subarray(" +
+            std::to_string(resolution - 1) + "); export function update(){return new Vec3(b.left[" +
+            std::to_string(resolution - 1) + "],b.right[" + std::to_string(resolution - 1) + "],held[0]);}",
+            "", {}, DynamicValue(Eigen::Vector3f::Zero().eval()), runtime->hostContext());
+        ASSERT_TRUE(program->Valid());
+        const auto value = program->Evaluate(runtime->hostContext(), DynamicValue(Eigen::Vector3f::Zero().eval()));
+        ASSERT_NE(value, nullptr);
+        EXPECT_TRUE(value->getVec3().isApprox(expected));
+    }
+    auto late = runtime->scriptEngine().CreatePropertyScriptProgram(runtime.get(), R"JS(
+let b;
+export function update() {
+    if (!b) { b = engine.registerAudioBuffers(64); return -1; }
+    return b.average[63];
+}
+)JS", "", {}, DynamicValue(0.0f), runtime->hostContext());
+    ASSERT_TRUE(late->Valid());
+    const auto registered = late->Evaluate(runtime->hostContext(), DynamicValue(0.0f));
+    ASSERT_NE(registered, nullptr);
+    EXPECT_FLOAT_EQ(registered->getFloat(), -1.0f);
+    const auto refreshed = late->Evaluate(runtime->hostContext(), DynamicValue(0.0f));
+    ASSERT_NE(refreshed, nullptr);
+    EXPECT_FLOAT_EQ(refreshed->getFloat(), 0.625f);
+    runtime->SetAudioResponseEnabled(false);
+    const auto disabled = late->Evaluate(runtime->hostContext(), DynamicValue(0.0f));
+    ASSERT_NE(disabled, nullptr);
+    EXPECT_FLOAT_EQ(disabled->getFloat(), 0.0f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
+TEST(AudioResponseCompat, ResolutionConversionExceptionIsReturnedToTheCaller) {
+    Scene scene;
+    auto runtime = MakeRuntimeWithScene(scene);
+    auto program = runtime->scriptEngine().CreatePropertyScriptProgram(runtime.get(), R"JS(
+export function update() {
+    try { engine.registerAudioBuffers({valueOf() { throw new Error('conversion'); }}); }
+    catch (error) { return 1; }
+    return 0;
+}
+)JS", "", {}, DynamicValue(0.0f), runtime->hostContext());
+    ASSERT_TRUE(program->Valid());
+    const auto result = program->Evaluate(runtime->hostContext(), DynamicValue(0.0f));
+    ASSERT_NE(result, nullptr);
+    EXPECT_FLOAT_EQ(result->getFloat(), 1.0f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
 TEST(AudioResponseCompat, ShaderSpectrumUniformsUseVec4ArrayStride) {
     struct ResetAudioOnExit {
         ~ResetAudioOnExit() { audio::ResetAudioResponseServiceForTesting(); }
@@ -2662,6 +2780,44 @@ TEST(ShaderValueUpdaterCompat, SlotUniformsUpdateWhenSlotZeroMaterialIsMissing) 
 // layer by its distance from the camera as well pushed a planet near the top of
 // a 4K canvas out of the frame. Away from the centre, layers of one depth move
 // together wherever they sit, nested in a group or not, and depth scales it.
+TEST(ShaderValueUpdaterCompat, DayTimeUniformFollowsLocalClockAndWrapsAtMidnight) {
+    Scene scene;
+    auto camera = std::make_shared<SceneCamera>(32, 32, -1.0f, 1.0f);
+    scene.cameras["clock"] = camera;
+    scene.activeCamera = camera.get();
+    auto node = std::make_shared<SceneNode>();
+    auto mesh = std::make_shared<SceneMesh>();
+    mesh->AddMaterial(SceneMaterial {});
+    node->AddMesh(mesh);
+    std::tm local {};
+    local.tm_year = 126;
+    local.tm_mon = 0;
+    local.tm_mday = 2;
+    local.tm_hour = 12;
+    local.tm_isdst = -1;
+    auto now = std::chrono::system_clock::from_time_t(std::mktime(&local));
+    WPShaderValueUpdater updater(&scene, [&] { return now; });
+    updater.InitUniforms(node.get(), [](std::string_view name) {
+        return name == "g_DayTime" || name == "g_Daytime";
+    });
+    sprite_map_t sprites;
+    const auto sample = [&] {
+        updater.FrameBegin();
+        std::map<std::string, float> values;
+        updater.UpdateUniforms(node.get(), sprites, [&](std::string_view name, const ShaderValue& value) {
+            values[std::string(name)] = value[0];
+        });
+        EXPECT_EQ(values.at("g_DayTime"), values.at("g_Daytime"));
+        return values.at("g_DayTime");
+    };
+    EXPECT_FLOAT_EQ(sample(), 0.5f);
+    now += std::chrono::hours(12) - std::chrono::seconds(1);
+    EXPECT_NEAR(sample(), 86399.0 / 86400.0, 1e-7);
+    now += std::chrono::seconds(1);
+    EXPECT_FLOAT_EQ(sample(), 0.0f);
+    EXPECT_NE(updater.FrameVaryingUniforms(node.get(), 0, "") & frame_varying_uniform::kDayTime, 0u);
+}
+
 TEST(ShaderValueUpdaterCompat, CameraParallaxFollowsTheCursorAndDepthNotThePosition) {
     Scene scene;
     scene.ortho[0] = 3840;

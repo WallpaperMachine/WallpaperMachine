@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include "Video/VideoDisplayTransform.hpp"
 
 namespace wallpaper
 {
@@ -22,6 +23,13 @@ struct VideoTextureFrame {
     uint32_t plane_count { 0 };
     double   pts_seconds { 0.0 };
     uint64_t generation { 0 };
+    VideoDisplayTransform display_transform;
+
+    uint32_t displayWidth() const { return display_transform.width != 0 ? display_transform.width : width; }
+    uint32_t displayHeight() const { return display_transform.height != 0 ? display_transform.height : height; }
+    bool needsDisplayTransform() const {
+        return ! display_transform.identity() || displayWidth() != width || displayHeight() != height;
+    }
 
     [[nodiscard]] bool valid() const
     {

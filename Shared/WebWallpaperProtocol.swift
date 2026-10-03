@@ -192,8 +192,8 @@ enum WebWallpaperProtocol {
         applyGeneralProperties(properties) { lastGeneral = properties; call("applyGeneralProperties", properties); },
         setPaused(paused) { lastPaused = !!paused; call("setPaused", lastPaused); },
         deliverAudio(bins) {
-          if (!audioListener) return;
-          try { audioListener(bins); } catch (error) { console.error("wallpaperRegisterAudioListener callback failed", error); }
+          if (!audioListener) return false;
+          try { audioListener(bins); return true; } catch (error) { console.error("wallpaperRegisterAudioListener callback failed", error); return false; }
         },
         // Each media listener fires only when its own part changed. The host
         // already drops unchanged values, but a resume replay and a provider

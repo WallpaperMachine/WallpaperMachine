@@ -91,7 +91,7 @@ final class StillImagePlacementStore {
     private var lifecycles: [String: UUID] = [:]
     private let beforeValidation: (@Sendable () throws -> Void)?
 
-    init(defaults: UserDefaults = .standard, library: URL = ClientPaths.libraryURL,
+    init(defaults: UserDefaults = ClientPreferences.defaults, library: URL = ClientPaths.libraryURL,
          beforeValidation: (@Sendable () throws -> Void)? = nil) {
         self.defaults = defaults
         self.library = library

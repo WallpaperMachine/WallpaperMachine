@@ -155,6 +155,7 @@ private:
                                 VkSampler sampler_override);
 
     Desc m_desc {};
+    const Scene* m_scene { nullptr };
     PipelineParameters m_presentation_pipeline;
     vvk::RenderPass m_presentation_copy_source_pass;
     std::vector<CachedColorFramebuffer> m_presentation_framebuffers;

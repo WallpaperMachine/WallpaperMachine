@@ -24,6 +24,14 @@ struct WorkshopThumbnailFailure: LocalizedError, Equatable {
 }
 
 struct URLSessionThumbnailFetcher: WorkshopThumbnailFetching {
+    static let maximumBytes = 24 * 1024 * 1024
+    private let transportSession: URLSession
+    private let byteLimit: Int
+
+    init(session: URLSession? = nil, byteLimit: Int = Self.maximumBytes) {
+        transportSession = session ?? Self.session
+        self.byteLimit = max(1, byteLimit)
+    }
     // Thumbnails are cached on disk by the owner, so the session keeps no cache of its own and
     // never shares the browse session's connection pool with dozens of image requests.
     private static let session: URLSession = {
@@ -39,10 +47,22 @@ struct URLSessionThumbnailFetcher: WorkshopThumbnailFetching {
     func fetch(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url)
         request.setValue("WallpaperMachine/1.0 (macOS; public Workshop browser)", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await Self.session.data(for: request)
+        let (bytes, response) = try await transportSession.bytes(for: request)
+        defer { bytes.task.cancel() }
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw WorkshopThumbnailFailure(code: .httpStatus(http.statusCode))
         }
+        guard response.expectedContentLength <= Int64(byteLimit) else {
+            throw WorkshopThumbnailFailure(code: .tooLarge)
+        }
+        var data = Data()
+        data.reserveCapacity(Int(max(0, min(response.expectedContentLength, Int64(byteLimit)))))
+        for try await byte in bytes {
+            if data.count.isMultiple(of: 65_536) { try Task.checkCancellation() }
+            guard data.count < byteLimit else { throw WorkshopThumbnailFailure(code: .tooLarge) }
+            data.append(byte)
+        }
+        try Task.checkCancellation()
         return data
     }
 }
@@ -60,7 +80,7 @@ actor WorkshopThumbnailCache {
     static let frameSamples = 8
     /// Mean luminance (0...1) below which a sampled frame counts as a black fade-in frame.
     static let darkFrameLuminance = 0.08
-    private static let downloadLimit = 24 * 1024 * 1024
+    private static let downloadLimit = URLSessionThumbnailFetcher.maximumBytes
     private static let writesPerPrune = 25
 
     let directory: URL
@@ -154,7 +174,7 @@ actor WorkshopThumbnailCache {
             }
             let data = try await fetcher.fetch(previewURL)
             guard data.count <= Self.downloadLimit else { throw WorkshopThumbnailFailure(code: .tooLarge) }
-            guard Self.frameCount(of: data) > 1 else { throw WorkshopThumbnailFailure(code: .notAnimated) }
+            guard Self.animationFitsBudget(data) else { throw WorkshopThumbnailFailure(code: .notAnimated) }
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? data.write(to: animation, options: .atomic)
             recordWrite()
@@ -219,9 +239,31 @@ actor WorkshopThumbnailCache {
         return CGImageSourceGetCount(source)
     }
 
+    /// The web view receives original animation bytes only when its decoded frame budget fits.
+    /// Larger animations still get the same bounded JPEG thumbnail.
+    nonisolated static func animationFitsBudget(
+        _ data: Data, maximumFrames: Int = 300,
+        maximumFramePixels: Int = 4_194_304, maximumTotalPixels: Int = 33_554_432
+    ) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return false }
+        let count = CGImageSourceGetCount(source)
+        guard count > 1, count <= maximumFrames else { return false }
+        var total = 0
+        for index in 0..<count {
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any],
+                  let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+                  let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+                  width > 0, height > 0, width <= maximumFramePixels / height else { return false }
+            let pixels = width * height
+            guard pixels <= maximumTotalPixels - total else { return false }
+            total += pixels
+        }
+        return true
+    }
+
     /// Bumped when the still a preview yields changes, so entries made by an older frame choice
     /// are regenerated rather than served; pruning removes the orphans oldest-first.
-    private static let keyVersion = "2:"
+    private static let keyVersion = "3:"
 
     nonisolated static func key(for previewURL: URL) -> String {
         let digest = SHA256.hash(data: Data((keyVersion + previewURL.absoluteString).utf8))
@@ -306,7 +348,7 @@ actor WorkshopThumbnailCache {
         let thumbnail = try encodeThumbnail(source, maxPixelSize: maxPixelSize)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         // The animation lands before the still, so a tile that shows its still can always play.
-        if frameCount(of: source) > 1 {
+        if animationFitsBudget(source) {
             try? source.write(to: animationFile(for: file), options: .atomic)
             try? FileManager.default.removeItem(at: stillMarker(for: file))
         } else {

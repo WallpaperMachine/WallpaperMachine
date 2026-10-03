@@ -9,8 +9,41 @@ import XCTest
 @MainActor
 final class WebWallpaperRecoveryTests: XCTestCase {
   private var project: URL!
+  private var madeSurfaces: [FakeSurface] = []
+
+  private final class FakePointerMonitor: WebWallpaperPointerMonitoring {
+    var isActive = false
+    func setActive(_ active: Bool) { isActive = active }
+  }
+
+  private final class FakeSurface: WebWallpaperSurface {
+    let page: WebWallpaperPage
+    var frame: NSRect
+    var posterLayer: CALayer? = CALayer()
+    init(frame: NSRect, page: WebWallpaperPage) {
+      self.frame = frame
+      self.page = page
+      page.webView.setFrameSize(frame.size)
+    }
+    func setScreenFrame(_ frame: NSRect) { self.frame = frame; page.webView.setFrameSize(frame.size) }
+    func present() {}
+    func retire() {}
+  }
+
+  private func makeHost(
+    fetch: @escaping @MainActor () async throws -> [BridgeWebWallpaper],
+    screens: @escaping @MainActor () -> [(id: UInt32, frame: NSRect)], counters: RuntimeCounters? = nil
+  ) -> WebWallpaperHost {
+    WebWallpaperHost(fetch: fetch, screens: screens, counters: counters,
+      pointerMonitor: FakePointerMonitor(), makeSurface: { [weak self] frame, page in
+        let surface = FakeSurface(frame: frame, page: page)
+        self?.madeSurfaces.append(surface)
+        return surface
+      })
+  }
 
   override func setUpWithError() throws {
+    madeSurfaces = []
     project = FileManager.default.temporaryDirectory.appendingPathComponent(
       "web-recovery-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(
@@ -51,7 +84,7 @@ final class WebWallpaperRecoveryTests: XCTestCase {
       top, WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: "sub/../index.html"))
   }
 
-  func testAnEntryOutsideTheProjectFolderIsRejected() {
+  func testAnEntryOutsideTheProjectFolderIsRejected() async {
     for escape in ["../outside.html", "sub/../../outside.html", "/etc/hosts", ""] {
       XCTAssertNil(
         WebWallpaperProtocol.canonicalEntryURL(projectURL: project, entryFile: escape),
@@ -63,15 +96,15 @@ final class WebWallpaperRecoveryTests: XCTestCase {
     let counters = RuntimeCounters()
     counters.startSession(duration: .seconds(60))
     let wallpaper = descriptor(entryFile: "sub/index.html")
-    let host = WebWallpaperHost(
+    let host = makeHost(
       fetch: { [wallpaper] }, screens: { [(id: UInt32(7), frame: NSRect(x: 0, y: 0, width: 320, height: 200))] },
       counters: counters)
 
-    host.apply([wallpaper])
+    await host.apply([wallpaper])
     let surface = RuntimeSurfaceKey(kind: .desktopWeb, displayID: 7, generation: 1)
     XCTAssertEqual(counters.snapshot().value(.webPageCreated, for: surface), 1)
 
-    for _ in 0..<3 { host.apply([wallpaper]) }
+    for _ in 0..<3 { await host.apply([wallpaper]) }
     XCTAssertEqual(
       counters.snapshot().total(.webPageCreated), 1,
       "an unchanged descriptor must reuse the page it already built")
@@ -81,10 +114,10 @@ final class WebWallpaperRecoveryTests: XCTestCase {
 
   func testPointerMonitorFollowsALivePageNotMerelyAnOpenWindow() async throws {
     let wallpaper = descriptor(entryFile: "index.html")
-    let host = WebWallpaperHost(
+    let host = makeHost(
       fetch: { [wallpaper] },
       screens: { [(id: UInt32(7), frame: NSRect(x: 0, y: 0, width: 320, height: 200))] })
-    host.apply([wallpaper])
+    await host.apply([wallpaper])
     XCTAssertFalse(
       host.isPointerMonitorActive,
       "a window whose page has not loaded yet installs no pointer monitor")
@@ -111,29 +144,29 @@ final class WebWallpaperRecoveryTests: XCTestCase {
     XCTAssertFalse(host.isPointerMonitorActive)
   }
 
-  func testChangingTheEntryFileReplacesThePage() {
+  func testChangingTheEntryFileReplacesThePage() async {
     let counters = RuntimeCounters()
     counters.startSession(duration: .seconds(60))
-    let host = WebWallpaperHost(
+    let host = makeHost(
       fetch: { [] }, screens: { [(id: UInt32(7), frame: NSRect(x: 0, y: 0, width: 320, height: 200))] },
       counters: counters)
 
-    host.apply([descriptor(entryFile: "sub/index.html")])
-    host.apply([descriptor(entryFile: "index.html")])
+    await host.apply([descriptor(entryFile: "sub/index.html")])
+    await host.apply([descriptor(entryFile: "index.html")])
     XCTAssertEqual(counters.snapshot().total(.webPageCreated), 2)
     host.shutdown()
   }
 
-  func testAnEscapingEntryIsReportedAndOpensNoPage() {
+  func testAnEscapingEntryIsReportedAndOpensNoPage() async {
     var errors: [String] = []
     let counters = RuntimeCounters()
     counters.startSession(duration: .seconds(60))
-    let host = WebWallpaperHost(
+    let host = makeHost(
       fetch: { [] }, screens: { [(id: UInt32(7), frame: NSRect(x: 0, y: 0, width: 320, height: 200))] },
       counters: counters)
     host.onError = { errors.append($0) }
 
-    host.apply([descriptor(entryFile: "../outside.html")])
+    await host.apply([descriptor(entryFile: "../outside.html")])
     XCTAssertTrue(host.isEmpty)
     XCTAssertEqual(counters.snapshot().total(.webPageCreated), 0)
     XCTAssertEqual(errors.count, 1, "\(errors)")
@@ -325,7 +358,7 @@ final class WebWallpaperRecoveryTests: XCTestCase {
 
   private func descriptor(entryFile: String) -> BridgeWebWallpaper {
     BridgeWebWallpaper(
-      displayId: 7, displayKey: "7", audioSourceDisplayId: 7,
+      displayId: 7, startupRevision: 0, displayKey: "7", audioSourceDisplayId: 7,
       wallpaperId: "1", title: "Test", projectPath: project.path,
       entryFile: entryFile, fps: 30, paused: false, volume: 1, muted: false,
       audioResponseEnabled: false,
