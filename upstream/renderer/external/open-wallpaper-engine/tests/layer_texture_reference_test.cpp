@@ -322,6 +322,32 @@ TEST(LayerTextureReference, ParserKeepsInvisibleCompositeSource) {
     EXPECT_TRUE(source->MustProduce());
 }
 
+// A model may tile a layer texture hundreds of times (UVs far outside 0..1).
+// Clamping smeared the edge texels into solid bands across it.
+TEST(LayerTextureReference, CompositeAddressingFollowsTheSourceLayersClampUvs) {
+    const auto wrap_for = [](std::string_view clamp) {
+        fs::VFS vfs;
+        auto    parsed = ParseScene(vfs, std::string(R"([
+            {"id":159,"name":"source","image":"image.json","visible":false)") +
+                std::string(clamp) + R"(},
+            {"id":160,"name":"consumer","image":"linked.json","dependencies":[159]}
+          ])",
+          {{ "/linked_mat.json",
+             R"({"passes":[{"shader":"genericimage","textures":["_rt_imageLayerComposite_159_a"]}]})" }});
+        EXPECT_NE(parsed, nullptr);
+        const auto* target =
+            parsed == nullptr ? nullptr : parsed->FindRenderTarget(LayerCompositeTargetKey(159));
+        EXPECT_NE(target, nullptr);
+        return target == nullptr ? std::pair { TextureWrap::REPEAT, TextureWrap::REPEAT }
+                                 : std::pair { target->sample.wrapS, target->sample.wrapT };
+    };
+    const auto clamp  = std::pair { TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE };
+    const auto repeat = std::pair { TextureWrap::REPEAT, TextureWrap::REPEAT };
+    EXPECT_EQ(wrap_for(",\"clampuvs\":false"), repeat);
+    EXPECT_EQ(wrap_for(",\"clampuvs\":true"), clamp);
+    EXPECT_EQ(wrap_for(""), clamp);
+}
+
 TEST(LayerTextureReference, ExternalMaterialsKeepHiddenTransitiveProducers) {
     fs::VFS vfs;
     auto parsed = ParseScene(vfs, R"([

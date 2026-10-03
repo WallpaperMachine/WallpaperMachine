@@ -23,10 +23,9 @@ MetalBlendState ToMetalBlendState(BlendMode mode)
         state.destination_alpha = MetalBlendFactor::Zero;
         break;
     case BlendMode::AlphaToCoverage:
-        state.source_rgb        = MetalBlendFactor::SourceAlpha;
-        state.destination_rgb   = MetalBlendFactor::OneMinusSourceAlpha;
-        state.source_alpha      = MetalBlendFactor::SourceAlpha;
-        state.destination_alpha = MetalBlendFactor::OneMinusSourceAlpha;
+        // Coverage decides what is kept; kept samples are written unblended,
+        // as the compatibility backend does.
+        state.blending_enabled  = false;
         state.alpha_to_coverage = true;
         break;
     case BlendMode::Translucent:

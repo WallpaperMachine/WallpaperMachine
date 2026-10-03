@@ -11,6 +11,8 @@ struct Particle {
         float           alpha { 1.0f };
         float           size { 20 };
         float           lifetime { 1.0f };
+        /// Fixed per particle, in [0, 1). Picks a `randomframe` sprite.
+        float           frame { 0.0f };
     };
     Eigen::Vector3f position { 0.0f, 0.0f, 0.0f };
     Eigen::Vector3f color { 1.0f, 1.0f, 1.0f };

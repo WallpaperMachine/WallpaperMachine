@@ -3110,8 +3110,13 @@ void RegisterImageComposite(ParseContext& context, const wpscene::WPImageObject&
     const auto extent = ResolveImageRenderExtent(object, context);
     const auto key = LayerCompositeTargetKey(object.id);
     if (! context.scene->HasRenderTarget(key)) {
+        // A consumer may tile a layer texture across a model (UVs far outside
+        // 0..1). Clamping that smears the edge texels into solid bands; the
+        // layer's own `clampuvs` decides, like a packaged texture's flag.
+        const auto wrap = object.clampuvs ? TextureWrap::CLAMP_TO_EDGE : TextureWrap::REPEAT;
         context.scene->renderTargets[key] = SceneRenderTarget {
             .width = extent[0], .height = extent[1], .allowReuse = true,
+            .sample = { wrap, wrap, TextureFilter::LINEAR, TextureFilter::LINEAR },
             .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
     }
@@ -4126,7 +4131,9 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                 return;
             }
             switch (animationmode) {
-            case ParticleAnimationMode::RANDOMONE: lifetime = std::floor(p.init.lifetime); break;
+            // The sprite shader picks frame floor(frac(lifetime) * frames).
+            // An integral value always selected frame 0.
+            case ParticleAnimationMode::RANDOMONE: lifetime = p.init.frame; break;
             case ParticleAnimationMode::SEQUENCE:
                 lifetime = (1.0f - (p.lifetime / p.init.lifetime)) * sequencemultiplier;
                 break;

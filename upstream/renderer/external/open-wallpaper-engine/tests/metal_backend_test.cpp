@@ -846,12 +846,10 @@ TEST(MetalBlend, EachModeProducesTheAuthoredFactors)
         EXPECT_FALSE(state.alpha_to_coverage);
     }
     {
+        // Kept samples are written at full strength; blending as well would
+        // dim every partially covered texel a second time.
         const auto state = ToMetalBlendState(BlendMode::AlphaToCoverage);
-        EXPECT_TRUE(state.blending_enabled);
-        EXPECT_EQ(state.source_rgb, MetalBlendFactor::SourceAlpha);
-        EXPECT_EQ(state.destination_rgb, MetalBlendFactor::OneMinusSourceAlpha);
-        EXPECT_EQ(state.source_alpha, MetalBlendFactor::SourceAlpha);
-        EXPECT_EQ(state.destination_alpha, MetalBlendFactor::OneMinusSourceAlpha);
+        EXPECT_FALSE(state.blending_enabled);
         EXPECT_TRUE(state.alpha_to_coverage);
     }
 
