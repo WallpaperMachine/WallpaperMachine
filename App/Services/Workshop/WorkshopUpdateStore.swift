@@ -12,7 +12,10 @@ import Observation
 @Observable
 final class WorkshopUpdateStore {
     /// Installed items with a newer version on the Workshop, with Steam's current details.
-    private(set) var available: [String: WorkshopItem] = [:]
+    private(set) var availableRevision: UInt64 = 0
+    private(set) var available: [String: WorkshopItem] = [:] {
+        didSet { if available != oldValue { availableRevision &+= 1 } }
+    }
     private(set) var isChecking = false
     private(set) var lastChecked: Date?
     private(set) var errorMessage: String?
@@ -35,9 +38,11 @@ final class WorkshopUpdateStore {
     @ObservationIgnored private let now: @MainActor () -> Date
     @ObservationIgnored private var installedAt: [String: Date]
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var installedIDs: Set<String> = []
+    @ObservationIgnored private var itemRevisions: [String: UInt64] = [:]
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = ClientPreferences.defaults,
         fetch: @escaping @Sendable ([String]) async throws -> [WorkshopItem] = { try await WorkshopService().details(ids: $0) },
         now: (@MainActor () -> Date)? = nil
     ) {
@@ -61,9 +66,16 @@ final class WorkshopUpdateStore {
     /// Checks `installed` (the library's wallpaper ids) against the Workshop, unless a check is
     /// already running. `library` is where their folders are.
     func check(installed: [String], library: URL) {
-        guard task == nil else { return }
         let ids = installed.filter(Self.isWorkshopID)
+        let currentIDs = Set(ids)
+        for id in installedIDs.subtracting(currentIDs) {
+            itemRevisions[id, default: 0] &+= 1
+            available[id] = nil
+        }
+        installedIDs = currentIDs
+        guard task == nil else { persist(); return }
         let recorded = installedAt
+        let revisions = itemRevisions
         let fetch = fetch
         isChecking = true
         errorMessage = nil
@@ -74,7 +86,7 @@ final class WorkshopUpdateStore {
                     Self.localVersions(ids, recorded: recorded, library: library)
                 }.value
                 let remote = ids.isEmpty ? [] : try await fetch(ids)
-                self?.finish(Self.outdated(remote: remote, local: local), recorded: recorded)
+                self?.finish(Self.outdated(remote: remote, local: local), recorded: recorded, revisions: revisions)
             } catch {
                 self?.fail(error)
             }
@@ -90,6 +102,8 @@ final class WorkshopUpdateStore {
 
     /// Records that `id` was just downloaded, which makes it current.
     func recordInstalled(_ id: String) {
+        installedIDs.insert(id)
+        itemRevisions[id, default: 0] &+= 1
         installedAt[id] = now()
         available[id] = nil
         persist()
@@ -98,6 +112,8 @@ final class WorkshopUpdateStore {
     /// Drops wallpapers that left the library.
     func forget(_ ids: [String]) {
         for id in ids {
+            installedIDs.remove(id)
+            itemRevisions[id, default: 0] &+= 1
             installedAt[id] = nil
             available[id] = nil
         }
@@ -132,8 +148,12 @@ final class WorkshopUpdateStore {
     }
 
     /// `recorded` is what the check compared against; an item downloaded while it ran is current.
-    private func finish(_ outdated: [String: WorkshopItem], recorded: [String: Date]) {
-        available = outdated.filter { installedAt[$0.key] == recorded[$0.key] }
+    private func finish(_ outdated: [String: WorkshopItem], recorded: [String: Date], revisions: [String: UInt64]) {
+        available = outdated.filter {
+            installedIDs.contains($0.key)
+                && itemRevisions[$0.key, default: 0] == revisions[$0.key, default: 0]
+                && installedAt[$0.key] == recorded[$0.key]
+        }
         lastChecked = now()
         isChecking = false
         task = nil

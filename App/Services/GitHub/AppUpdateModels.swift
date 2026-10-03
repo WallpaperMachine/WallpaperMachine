@@ -176,13 +176,14 @@ enum AppUpdateState: Equatable, Sendable {
     case manual(currentVersion: String, availableVersion: String)
     case downloading(currentVersion: String, availableVersion: String, percent: Double, transferred: Int64, total: Int64, bytesPerSecond: Int64)
     case ready(currentVersion: String, availableVersion: String)
+    case preparing(currentVersion: String, availableVersion: String)
     case error(currentVersion: String, operation: AppUpdateOperation, code: AppUpdateErrorCode, availableVersion: String?)
 
     var currentVersion: String {
         switch self {
         case .unsupported(let version), .idle(let version), .checking(let version), .noRelease(let version),
              .upToDate(let version), .available(let version, _), .manual(let version, _),
-             .downloading(let version, _, _, _, _, _), .ready(let version, _), .error(let version, _, _, _):
+             .downloading(let version, _, _, _, _, _), .ready(let version, _), .preparing(let version, _), .error(let version, _, _, _):
             return version
         }
     }
@@ -190,7 +191,7 @@ enum AppUpdateState: Equatable, Sendable {
     var availableVersion: String? {
         switch self {
         case .available(_, let version), .manual(_, let version), .downloading(_, let version, _, _, _, _),
-             .ready(_, let version):
+             .ready(_, let version), .preparing(_, let version):
             return version
         case .error(_, _, _, let version):
             return version
@@ -201,7 +202,7 @@ enum AppUpdateState: Equatable, Sendable {
 
     var isBusy: Bool {
         switch self {
-        case .checking, .downloading: true
+        case .checking, .downloading, .preparing: true
         default: false
         }
     }

@@ -674,6 +674,46 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertEqual(timers.count, 1)
   }
 
+  @MainActor
+  func testContentRefreshAtTheSamePathRebuildsPublishedWebBytesOnlyWhenChanged() async throws {
+    try Data(#"{"type":"web","title":"t","file":"index.html"}"#.utf8).write(
+      to: project.appendingPathComponent("project.json"))
+    try Data("<html>first</html>".utf8).write(to: project.appendingPathComponent("index.html"))
+    var record = scene()
+    record.displayId = 1
+    var contentRevision: UInt64 = 0
+    var publications = 0
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" }, persistConfiguration: { url, bytes in
+        try bytes.write(to: url, options: .atomic)
+        publications += 1
+      }, contentRevision: { contentRevision })
+    try service.start()
+    service.setScreenSaverEnabled(true)
+    await waitFor("initial web publication") { !service.isBusy }
+    let initial = try publishedConfiguration()
+    let count = publications
+    contentRevision += 1
+    service.refresh()
+    await waitFor("unchanged source check") { !service.isBusy }
+    XCTAssertEqual(publications, count)
+    XCTAssertEqual(try publishedConfiguration(), initial)
+    try Data("<html>replacement content</html>".utf8).write(
+      to: project.appendingPathComponent("index.html"), options: .atomic)
+    contentRevision += 1
+    service.refresh()
+    await waitFor("changed source publication") { !service.isBusy }
+    let changed = try publishedConfiguration()
+    XCTAssertNotEqual(changed.scenes.first?.projectPath, initial.scenes.first?.projectPath)
+    let published = exchange.appendingPathComponent(try XCTUnwrap(changed.scenes.first?.projectPath))
+      .deletingLastPathComponent().appendingPathComponent("index.html")
+    XCTAssertEqual(try String(contentsOf: published, encoding: .utf8), "<html>replacement content</html>")
+    service.setScreenSaverEnabled(false)
+    await waitFor("web publication stopped") { !service.isBusy }
+  }
+
   /// A compatibility failure still rolls back to disabled. A later lookup gap must
   /// not erase that error or restart the monitor, and must not touch the selection.
   @MainActor

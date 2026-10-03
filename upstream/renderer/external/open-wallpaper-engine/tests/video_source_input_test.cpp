@@ -13,6 +13,7 @@
 #include "Video/VideoTextureSource.hpp"
 #include "Scene/SceneWallpaper.hpp"
 #include "synthetic_video.hpp"
+#include "video_orientation_cases.hpp"
 
 #include <gtest/gtest.h>
 
@@ -28,11 +29,13 @@ extern "C" {
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -88,8 +91,8 @@ std::filesystem::path VideoCacheDirectory() {
     return std::filesystem::temp_directory_path() / "wallpaper-engine-video";
 }
 
-/// The cache is shared with anything else running on this machine, so tests
-/// compare snapshots of it instead of clearing it.
+/// TMPDIR is private to this test process; production's cache path therefore
+/// remains realistic without touching another renderer's cache.
 std::set<std::filesystem::path> VideoCacheEntries() {
     std::set<std::filesystem::path> entries;
     std::error_code                 ec;
@@ -119,15 +122,21 @@ protected:
                       ("owe-video-source-" + std::to_string(::getpid()) + "-" +
                        std::to_string(serial.fetch_add(1)));
         std::filesystem::create_directories(project_dir);
+        if (const char* previous = std::getenv("TMPDIR")) previous_tmpdir = previous;
+        const auto temp = project_dir / "tmp";
+        std::filesystem::create_directories(temp);
+        ASSERT_EQ(setenv("TMPDIR", temp.c_str(), 1), 0);
+        tmpdir_overridden = true;
     }
 
     void TearDown() override {
+        if (tmpdir_overridden) {
+            if (previous_tmpdir) setenv("TMPDIR", previous_tmpdir->c_str(), 1);
+            else unsetenv("TMPDIR");
+        }
         std::error_code ec;
         std::filesystem::remove_all(project_dir, ec);
         std::filesystem::remove_all(outside_dir, ec);
-        for (const auto& path : published_cache_entries) {
-            std::filesystem::remove(path, ec);
-        }
     }
 
     /// A directory deliberately outside the project, for containment cases.
@@ -139,21 +148,46 @@ protected:
         return outside_dir;
     }
 
-    /// Records whatever the cache gained since `before` so TearDown can undo it.
+    /// Only the private cache is inspected; cleanup owns the whole test root.
     std::set<std::filesystem::path> CacheEntriesAddedSince(
         const std::set<std::filesystem::path>& before) {
         std::set<std::filesystem::path> added;
         for (const auto& path : VideoCacheEntries()) {
             if (before.count(path) == 0) added.insert(path);
         }
-        published_cache_entries.insert(added.begin(), added.end());
         return added;
     }
 
     std::filesystem::path           project_dir;
     std::filesystem::path           outside_dir;
-    std::set<std::filesystem::path> published_cache_entries;
+    std::optional<std::string> previous_tmpdir;
+    bool tmpdir_overridden { false };
 };
+
+TEST_F(VideoSourceInput, DisplayMatrixSurvivesMetadataProbeAndFrameExtraction) {
+    for (const auto& orientation : testing_media::kOrientations) {
+        SCOPED_TRACE(orientation.name);
+        const std::string name = std::string(orientation.name) + ".mp4";
+        ASSERT_TRUE(WriteSyntheticVideo(project_dir / name, 1, name, orientation.matrix()));
+        std::string error;
+        auto image = CreateVideoProjectImage(project_dir, name, &error);
+        ASSERT_NE(image, nullptr) << error;
+        auto source = CreateVideoTextureSource(*image, &error);
+        ASSERT_NE(source, nullptr) << error;
+        ASSERT_TRUE(source->prime(&error)) << error;
+        const auto frame = source->currentFrame();
+        ASSERT_TRUE(frame.valid());
+        EXPECT_EQ(frame.width, kFrameWidth); EXPECT_EQ(frame.height, kFrameHeight);
+        EXPECT_EQ(frame.displayWidth(), orientation.swaps_axes ? kFrameHeight : kFrameWidth);
+        EXPECT_EQ(frame.displayHeight(), orientation.swaps_axes ? kFrameWidth : kFrameHeight);
+        EXPECT_EQ(image->header.width, frame.displayWidth());
+        EXPECT_EQ(image->header.height, frame.displayHeight());
+        const auto expected = ResolveVideoDisplayTransform(orientation.matrix(), kFrameWidth, kFrameHeight);
+        ASSERT_TRUE(expected.has_value());
+        EXPECT_EQ(frame.display_transform.matrix, expected->matrix);
+        EXPECT_EQ(frame.display_transform.offset, expected->offset);
+    }
+}
 
 TEST_F(VideoSourceInput, PlainLocalFileIsDecodedWhereItLies) {
     const auto media = project_dir / "media.mp4";

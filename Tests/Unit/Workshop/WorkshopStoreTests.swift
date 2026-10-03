@@ -921,6 +921,113 @@ final class WorkshopDownloadIntentTests: XCTestCase {
       "Ready assets must not queue a second shared-assets download")
   }
 
+  func testReadyPrerequisitesResumeWhileNoControlPanelExists() async throws {
+    let fixture = try makeFixture()
+    fixture.store.username = "localtest"
+    fixture.store.requestDownload(item: video, rememberSession: false, bridge: fixture.bridge)
+    XCTAssertEqual(try stage(fixture.store), .setup)
+    // Only the app-owned store is alive: no controller or snapshot loop drives this transition.
+    try await makeSetupReady(fixture)
+    try await waitUntil { fixture.store.downloader.download(for: self.video.id)?.isPending == true }
+    XCTAssertTrue(fixture.store.downloadRequests.isEmpty)
+  }
+
+  func testRetainedIntentSurvivesRelaunchAndWaitsForExplicitResume() async throws {
+    let original = try makeFixture()
+    original.store.username = "localtest"
+    original.store.requestDownload(item: video, rememberSession: false, bridge: original.bridge)
+    let restored = try makeFixture()
+    restored.store.startDownloadLifecycle(bridge: restored.bridge)
+    XCTAssertEqual(restored.store.downloadRequests.map(\.id), [video.id])
+    XCTAssertTrue(restored.store.downloadRequests[0].isPaused)
+    try await makeSetupReady(restored)
+    XCTAssertTrue(restored.store.downloader.downloads.isEmpty)
+    XCTAssertTrue(restored.store.resumeDownloadRequest(id: video.id, bridge: restored.bridge))
+    try await waitUntil { restored.store.downloader.download(for: self.video.id)?.isPending == true }
+    XCTAssertTrue(restored.store.downloadRequests.isEmpty)
+  }
+
+  func testCancellingARestoredJobWaitingForSetupCannotRestartItLater() async throws {
+    let original = try makeFixture()
+    try await makeSetupReady(original)
+    original.store.username = "localtest"
+    original.store.requestDownload(item: video, rememberSession: false, bridge: original.bridge)
+    await original.store.downloader.shutdown()
+    let restored = try makeFixture()
+    restored.store.startDownloadLifecycle(bridge: restored.bridge)
+    let paused = try XCTUnwrap(restored.store.downloader.download(for: video.id))
+    XCTAssertTrue(paused.isPaused)
+    XCTAssertNil(restored.store.steamCMDSetup.selectedRuntime)
+    restored.store.resumeDownload(paused, bridge: restored.bridge)
+    XCTAssertEqual(restored.store.downloadRequests.map(\.id), [video.id])
+    XCTAssertTrue(restored.store.downloader.downloads.isEmpty, "the retained intent becomes the sole owner")
+    restored.store.cancelDownload(id: video.id)
+    try await makeSetupReady(restored)
+    restored.store.resumeDownloadRequests(bridge: restored.bridge)
+    XCTAssertTrue(restored.store.downloadRequests.isEmpty)
+    XCTAssertTrue(restored.store.downloader.downloads.isEmpty)
+  }
+
+  func testResumingSceneRechecksSharedAssetConsent() async throws {
+    for assetsReady in [false, true] {
+      let original = try makeFixture(sceneAssetsReady: true)
+      try await makeSetupReady(original)
+      original.store.username = "localtest"
+      original.store.requestDownload(item: scene, rememberSession: false, bridge: original.bridge)
+      await original.store.downloader.shutdown()
+      let restored = try makeFixture(sceneAssetsReady: assetsReady)
+      try await makeSetupReady(restored)
+      let paused = try XCTUnwrap(restored.store.downloader.download(for: scene.id))
+      XCTAssertTrue(paused.isPaused)
+      restored.store.resumeDownload(paused, bridge: restored.bridge)
+      if assetsReady {
+        XCTAssertTrue(restored.store.downloadRequests.isEmpty)
+        XCTAssertEqual(restored.store.downloader.downloads.map(\.id), [scene.id])
+      } else {
+        XCTAssertEqual(try stage(restored.store), .resources)
+        XCTAssertTrue(restored.store.downloader.downloads.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(restored.store.downloadRequests.first).includesResources)
+        restored.store.cancelDownload(id: scene.id)
+      }
+      await restored.store.downloader.shutdown()
+    }
+  }
+
+  func testFailedRequestWriteKeepsThePausedJobAsDurableOwner() async throws {
+    let original = try makeFixture()
+    try await makeSetupReady(original)
+    original.store.username = "localtest"
+    original.store.requestDownload(item: video, rememberSession: false, bridge: original.bridge)
+    await original.store.downloader.shutdown()
+    let restored = try makeFixture()
+    let paused = try XCTUnwrap(restored.store.downloader.download(for: video.id))
+    let requestFile = home.appendingPathComponent("Downloads/workshop-requests.json")
+    try FileManager.default.removeItem(at: requestFile)
+    try FileManager.default.createDirectory(at: requestFile, withIntermediateDirectories: false)
+    restored.store.resumeDownload(paused, bridge: restored.bridge)
+    XCTAssertTrue(restored.store.downloader.download(for: video.id) === paused)
+    XCTAssertTrue(restored.store.downloadRequests.isEmpty)
+    XCTAssertNotNil(restored.store.downloadPersistenceError)
+    let records = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("Downloads/Workshop/queue.json"))) as? [[String: Any]])
+    XCTAssertEqual(records.compactMap { $0["id"] as? String }, [video.id])
+  }
+
+  func testFailedQueueWriteDoesNotDeleteItsDurablePrerequisiteRequest() async throws {
+    let fixture = try makeFixture()
+    fixture.store.username = "localtest"
+    fixture.store.requestDownload(item: video, rememberSession: false, bridge: fixture.bridge)
+    let queueDirectory = home.appendingPathComponent("Downloads/Workshop")
+    try FileManager.default.removeItem(at: queueDirectory)
+    try Data("ordinary filesystem conflict".utf8).write(to: queueDirectory)
+    try await makeSetupReady(fixture)
+    try await waitUntil { fixture.store.downloader.errorMessage != nil }
+    XCTAssertFalse(fixture.store.downloader.isRunning)
+    XCTAssertTrue(fixture.store.downloader.downloads.isEmpty)
+    let records = try JSONDecoder().decode([WorkshopDownloadRequest].self,
+      from: Data(contentsOf: home.appendingPathComponent("Downloads/workshop-requests.json")))
+    XCTAssertEqual(records.map(\.id), [video.id])
+  }
+
   private struct Fixture {
     let store: WorkshopStore
     let bridge: BridgeStore

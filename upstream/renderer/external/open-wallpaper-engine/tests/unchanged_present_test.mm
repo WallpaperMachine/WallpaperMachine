@@ -335,6 +335,21 @@ protected:
 
 } // namespace
 
+TEST_F(UnchangedPresent, PinnedTargetAccountingReturnsToBaselineWhenScenesClose)
+{
+    vulkan::SetSceneOptimizationEnabled(true);
+    const auto baseline = vulkan::CurrentSceneOptimizationTotals().pinned_bytes;
+    const auto project = WriteStaticScene(root_ / "static");
+    for (int load = 0; load < 2; ++load) {
+        {
+            RunningWallpaper running(project, root_ / ("load-" + std::to_string(load)));
+            ASSERT_TRUE(running.WaitForFirstFrame());
+            EXPECT_GT(vulkan::CurrentSceneOptimizationTotals().pinned_bytes, baseline);
+        }
+        EXPECT_EQ(vulkan::CurrentSceneOptimizationTotals().pinned_bytes, baseline);
+    }
+}
+
 TEST_F(UnchangedPresent, APlainVideoPresentsEveryNewFrameAndNothingElse)
 {
     ASSERT_FALSE(testing_media::SharedGop().packets.empty())
@@ -601,4 +616,3 @@ TEST_F(UnchangedPresent, OutputChangesOnAHeldVideoFramePresentOnceEach)
                                              static_cast<int32_t>(FillMode::STRETCH));
     });
 }
-

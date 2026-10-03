@@ -31,6 +31,7 @@
 #include "Shader/RustShaderBridge.hpp"
 #include "Video/VideoColorConversion.hpp"
 #include "Video/VideoConversionBudget.hpp"
+#include "video_orientation_cases.hpp"
 #include "Vulkan/Device.hpp"
 #include <vulkan/vulkan_metal.h>
 #include "Vulkan/Util.hpp"
@@ -1580,6 +1581,35 @@ TEST_F(PlaybackGPU, ClearedCacheAndDestroyedPoolLeaveNoConversionBytesBehind) {
     EXPECT_EQ(domain.live_bytes(), domain_live_before);
 }
 
+TEST_F(PlaybackGPU, VideoImportsUseTheDisplayedDimensionsAndOrientation) {
+    for (const auto format : {kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange}) {
+        for (const auto& orientation : video::testing_media::kOrientations) {
+            SCOPED_TRACE(orientation.name);
+            auto source = std::make_shared<SyntheticVideo>(16, 8);
+            source->Resize(16, 8, format);
+            source->Set(1);
+            ASSERT_TRUE(video::testing_media::FillVideoQuadrants(source->buffer));
+            const auto transform = video::ResolveVideoDisplayTransform(orientation.matrix(), 16, 8);
+            ASSERT_TRUE(transform.has_value());
+            source->frame.display_transform = *transform;
+            const auto key = std::to_string(format) + orientation.name;
+            const auto imported = Register(key, source);
+            const auto& image = imported.getActive();
+            const auto pixels = Read(image);
+            EXPECT_EQ(image.extent.width, orientation.swaps_axes ? 8u : 16u);
+            EXPECT_EQ(image.extent.height, orientation.swaps_axes ? 16u : 8u);
+            for (size_t corner = 0; corner < 4; ++corner) {
+                const size_t x = corner % 2 ? image.extent.width - 2 : 1;
+                const size_t y = corner / 2 ? image.extent.height - 2 : 1;
+                const size_t offset = (y * image.extent.width + x) * 4;
+                const auto expected = video::testing_media::kQuadrantLuma[orientation.source_quadrants[corner]];
+                for (size_t channel = 0; channel < 3; ++channel) EXPECT_NEAR(pixels.at(offset + channel), expected, 2);
+                EXPECT_EQ(pixels.at(offset + 3), 255);
+            }
+        }
+    }
+}
+
 TEST_F(PlaybackGPU, MetalConversionMatchesTheCpuColorReference) {
     // The other video tests compare the GPU result against an import of the
     // same frame, which cannot catch a wrong range or matrix. This one compares
@@ -2510,6 +2540,75 @@ TEST_F(PlaybackGPU, CopyPreparesAgainAfterRenderTargetsAreDroppedAndResized) {
 // released it is drawn into by that key's prepared passes every frame: pinning
 // the new holder kept the other target's pixels where its own skipped draw
 // belonged, and a layer read another layer's picture from the second frame on.
+TEST_F(PlaybackGPU, LastUseReleasesEveryInputAgainAfterRepreparation) {
+    auto& cache = device.tex_cache();
+    const auto first = Target(), second = Target(), output = Target(16, 16);
+    const auto next_first = Target(), next_second = Target();
+    PrePass consumer(PrePass::Desc { .result = output });
+    const std::array<std::string_view, 2> released { first, second };
+    consumer.setReleaseTexs(released);
+    for (int preparation = 0; preparation < 2; ++preparation) {
+        const auto query = [&](const std::string& key) {
+            const auto value = cache.Query(key, ToTexKey(scene.renderTargets.at(key)));
+            Require(value.has_value(), "allocate pooled target");
+            return value->handle;
+        };
+        const std::set<VkImage> original { query(first), query(second) };
+        ASSERT_EQ(original.size(), 2u);
+        consumer.prepare(scene, device, rr);
+        ASSERT_TRUE(consumer.prepared());
+        EXPECT_EQ((std::set<VkImage> {query(next_first), query(next_second)}), original);
+        consumer.destory(device, rr);
+        ASSERT_TRUE(cache.ClearRenderTargets());
+    }
+}
+
+TEST_F(PlaybackGPU, LiveClearColorReachesTheNextFrameWithoutRepreparation) {
+    scene.clearColor = {1.0f, 0.0f, 0.0f};
+    const auto target = Target(4, 4);
+    auto& clear = ClearPass(target);
+    const std::array<VulkanPass*, 1> sequence {&clear};
+    Frame(sequence, false);
+    ExpectSolid(Read(ImageFor(target)), {255, 0, 0, 255});
+    scene.clearColor = {0.0f, 1.0f, 0.0f};
+    Frame(sequence, false);
+    ExpectSolid(Read(ImageFor(target)), {0, 255, 0, 255});
+}
+
+TEST_F(PlaybackGPU, LiveBackgroundReachesHiddenDrawAndFinalMargins) {
+    const std::string output(SpecTex_Default);
+    scene.renderTargets[output] = SceneRenderTarget { .width = 8, .height = 8 };
+    scene.clearColor = {1.0f, 0.0f, 0.0f};
+    auto& hidden = Pass(false, false, output);
+    hidden.desc().visibility_node->SetVisible(false);
+    const auto target = ImageFor(Target(16, 16));
+    auto& final = Final(target);
+    ASSERT_TRUE(final.prepared());
+    rr.wallpaper_viewport = {4, 12, 8, -8, 0, 1};
+    rr.wallpaper_scissor = {{4, 4}, {8, 8}};
+    const std::array<VulkanPass*, 2> sequence {&hidden, &final};
+    Frame(sequence);
+    ExpectSolid(Read(target), {255, 0, 0, 255});
+    scene.clearColor = {0.0f, 1.0f, 0.0f};
+    Frame(sequence);
+    ExpectSolid(Read(hidden.desc().vk_output), {0, 255, 0, 255});
+    ExpectSolid(Read(target), {0, 255, 0, 255});
+}
+
+TEST_F(PlaybackGPU, TransparentClearRemainsTransparentWhenTheBackgroundChanges) {
+    const auto target = Target(4, 4);
+    PrePass clear(PrePass::Desc { .result = target, .transparent = true });
+    clear.prepare(scene, device, rr);
+    ASSERT_TRUE(clear.prepared());
+    const std::array<VulkanPass*, 1> sequence {&clear};
+    for (const auto color : {std::array<float, 3> {1, 0, 0}, std::array<float, 3> {0, 1, 0}}) {
+        scene.clearColor = color;
+        Frame(sequence, false);
+        ExpectSolid(Read(ImageFor(target)), {0, 0, 0, 0});
+    }
+    clear.destory(device, rr);
+}
+
 TEST_F(PlaybackGPU, APooledImageAnotherTargetStillDrawsIntoIsNeverPinned) {
     auto&      cache = device.tex_cache();
     const auto first = Target(), second = Target(), own = Target(), alias = Target();
@@ -2618,13 +2717,33 @@ TEST_F(PlaybackGPU, ClearLookaheadStopsAtPassBoundariesAndUnequalClearColors) {
         const std::array<VulkanPass*,3> sequence {&pre,boundary,&writer};
         CompareClearPaths(sequence,target,0);
     }
-    const std::array<VulkanPass*,2> simple {&pre,&writer};
-    writer.desc().clear_value.color.float32[0]=1.0f;
-    CompareClearPaths(simple,target,0);
-    writer.desc().clear_value.color.float32[0]=-0.0f;
-    CompareClearPaths(simple,target,0); // Bitwise equality, not approximate numeric equality.
-    writer.desc().clear_value.color.float32[0]=0.0f;
-    CompareClearPaths(simple,target,1);
+    // Clear values are prepared frame state, refreshed from each pass's scene.
+    // Separate scene sources exercise unequal values through that real update
+    // contract instead of patching state that the next update replaces.
+    Scene clear_scene;
+    clear_scene.renderTargets[output]=scene.renderTargets.at(output);
+    clear_scene.clearColor={0,0,1};
+    PrePass independent_pre(PrePass::Desc {.result=output});
+    independent_pre.prepare(clear_scene,device,rr);
+    ASSERT_TRUE(independent_pre.prepared());
+    auto& color_writer=Pass(false,false,output,true);
+    const std::array<float,8> left_half {-1,-1,0,-1,-1,1,0,1};
+    ASSERT_TRUE(color_writer.desc().node->Mesh()->GetVertexArray(0).SetVertexs(0,left_half));
+    color_writer.desc().node->Mesh()->SetDirty();
+    const std::array<VulkanPass*,2> simple {&independent_pre,&color_writer};
+    for (const float red : {1.0f,-0.0f,0.0f}) {
+        SCOPED_TRACE(red);
+        scene.clearColor[0]=red;
+        const uint64_t removed=red == 0.0f && !std::signbit(red) ? 1 : 0;
+        CompareClearPaths(simple,target,removed); // Equality includes the sign bit of zero.
+        const auto pixels=Read(target[0]);
+        const Color clear {red == 1.0f ? uint8_t(255) : uint8_t(0),0,255,255};
+        for (uint32_t y=0;y<32;++y) for (uint32_t x=0;x<32;++x) {
+            const auto i=(y*32+x)*4;
+            EXPECT_EQ((Color {pixels[i],pixels[i+1],pixels[i+2],pixels[i+3]}),
+                      (x<16 ? Color {0,255,0,255} : clear)) << x << ',' << y;
+        }
+    }
     auto& load_writer=Pass(false,false,output,false,VK_SAMPLE_COUNT_1_BIT,{},
         [](auto& desc){desc.preserve_target_contents=true;desc.clear_on_first_use=false;});
     const std::array<VulkanPass*,2> load {&pre,&load_writer};

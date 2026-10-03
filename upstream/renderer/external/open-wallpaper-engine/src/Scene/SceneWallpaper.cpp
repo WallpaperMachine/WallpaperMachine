@@ -1311,7 +1311,7 @@ private:
     }
     MHANDLER_CMD(SYSTEM_MEDIA_ARTWORK) {
         std::shared_ptr<SystemMediaArtworkPayload> artwork;
-        if (! msg->findObject("artwork", &artwork) || artwork == nullptr || artwork->rgba.empty())
+        if (! msg->findObject("artwork", &artwork) || artwork == nullptr)
             return;
         if (! applySystemMediaArtworkPayload(*artwork)) {
             m_pending_system_media_artwork = *artwork;
@@ -1883,21 +1883,13 @@ uint32_t SceneWallpaper::sceneDemandReasons() const {
 
 void SceneWallpaper::applySystemMediaArtwork(uint32_t width, uint32_t height, const uint8_t* rgba,
                                              std::size_t rgba_len) {
-    if (width == 0 || height == 0 || rgba == nullptr) return;
-    if (width > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
-        height > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
-        return;
-    }
-    const std::size_t pixel_count = static_cast<std::size_t>(width) * height;
-    if (pixel_count > std::numeric_limits<std::size_t>::max() / 4) return;
-    const std::size_t expected_len = pixel_count * 4;
-    if (rgba_len != expected_len) return;
+    if (! IsValidSystemMediaArtwork(width, height, rgba, rgba_len)) return;
 
     auto artwork    = std::make_shared<SystemMediaArtworkPayload>();
     artwork->width  = width;
     artwork->height = height;
     artwork->rgba.resize(rgba_len);
-    std::memcpy(artwork->rgba.data(), rgba, rgba_len);
+    if (rgba_len != 0) std::memcpy(artwork->rgba.data(), rgba, rgba_len);
 
     auto msg = CreateMsgWithCmd(m_main_handler->renderHandler(),
                                 RenderHandler::CMD::CMD_SYSTEM_MEDIA_ARTWORK);

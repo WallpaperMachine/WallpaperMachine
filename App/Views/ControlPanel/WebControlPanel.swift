@@ -91,6 +91,9 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   var updateTask: Task<Void, Never>?
   var updatePending = false
   var pageGeneration: UInt64 = 0
+  var librarySectionCache: LibrarySection?
+  var pixivInstalledIndex: (revision: UInt64, pages: [String: [Int]])?
+  var deliveredLibraryRevision: String?
   let isPresentationVisible: (@MainActor () -> Bool)?
   var observationInstalled = false
   var actionError: String?
@@ -124,7 +127,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   /// Nil and zero are different answers — "not run" versus "nothing to release" —
   /// so the page is given the distinction rather than a substituted 0.
   var userAssetsReleasedBytes: UInt64?
-  var recoveryAttempted = false
+  var recoveryBudget = WebPanelRecoveryBudget()
   var dismissedErrorRevision: UInt64 = 0
   var dismissedLibraryError: String?
   var dismissedDownloadError: String?
@@ -153,7 +156,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     isPresentationVisible: (@MainActor () -> Bool)? = nil,
     theme: AppThemeStore? = nil,
     displayTitles: DisplayTitleResolver = .system,
-    defaults: UserDefaults = .standard,
+    defaults: UserDefaults = ClientPreferences.defaults,
     libraryMetrics: LibraryMetricsService? = nil,
     assets: WebPanelAssets? = nil,
     energyUsage: EnergyUsageMonitor? = nil,
@@ -198,7 +201,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     defaults.removeObject(forKey: Self.legacyInspectorWidthKey)
     favoriteIDs = Set(
       (try? JSONDecoder().decode(
-        [String].self, from: UserDefaults.standard.data(forKey: Self.favoriteKey) ?? Data())) ?? [])
+        [String].self, from: defaults.data(forKey: Self.favoriteKey) ?? Data())) ?? [])
     super.init()
     self.libraryMetrics.onChange = { [weak self] in self?.scheduleUpdate() }
     self.energyUsage.onChange = { [weak self] in self?.pushEnergyUsage() }
@@ -408,12 +411,22 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     }
   }
 
+  /// Only a library section this page acknowledged can be omitted from the next push.
+  /// Command replies remain full snapshots so a newly loaded page can recover on its own.
+  func deliverySnapshot() -> [String: Any] {
+    var state = snapshot()
+    if let revision = state["libraryRevision"] as? String,
+      revision == deliveredLibraryRevision
+    {
+      state.removeValue(forKey: "wallpapers")
+    }
+    return state
+  }
+
   func scheduleUpdate() {
     guard !stopped else { return }
     updateEnergyMonitoring()
     updatePending = true
-    // Native continuation must not wait for an in-flight page Promise.
-    workshop.resumeDownloadRequests(bridge: store)
     reconcileDismissedErrors()
     if !presentationAllowsUpdates() || !needsDisplayOptions
       || displayOptionsRevision != store.snapshotRevision
@@ -438,11 +451,19 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
         guard self.presentationAllowsUpdates() else { return }
         self.refreshDisplayOptions()
         self.updatePending = false
-        let state = self.snapshot()
+        let state = self.deliverySnapshot()
+        let libraryRevision = state["libraryRevision"] as? String
         do {
-          _ = try await view.callAsyncJavaScript(
+          let result = try await view.callAsyncJavaScript(
             "return window.wallpaperUI.receive(state)", arguments: ["state": state], in: nil,
             contentWorld: .page)
+          guard !Task.isCancelled, self.pageGeneration == generation else { return }
+          if result as? String == "needsFullSnapshot" {
+            self.deliveredLibraryRevision = nil
+            self.updatePending = true
+          } else {
+            self.deliveredLibraryRevision = libraryRevision
+          }
         } catch {
           guard !Task.isCancelled, self.pageGeneration == generation else { return }
           self.actionError = String(
@@ -573,20 +594,20 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     isReady = false
+    deliveredLibraryRevision = nil
     updateEnergyMonitoring()
     pageGeneration &+= 1
     updateTask?.cancel()
     updateTask = nil
     updatePending = true
     cancelDisplayOptions()
-    guard !recoveryAttempted else {
+    guard recoveryBudget.permitRestart(at: ProcessInfo.processInfo.systemUptime) else {
       showLoadFailure(
         String(
           localized:
             "The interface stopped unexpectedly. Close and reopen the control panel to retry."))
       return
     }
-    recoveryAttempted = true
     webView.load(URLRequest(url: WebPanelAssets.indexURL))
   }
 
@@ -615,7 +636,7 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     }
     alert.beginSheetModal(for: window) { [weak self, weak view] response in
       if response == .alertFirstButtonReturn {
-        self?.recoveryAttempted = false
+        self?.recoveryBudget.reset()
         view?.load(URLRequest(url: WebPanelAssets.indexURL))
       }
     }

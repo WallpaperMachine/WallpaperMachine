@@ -102,7 +102,7 @@ final class WallpaperPresetStore {
     managed.root.resolvingSymlinksInPath().standardizedFileURL.appendingPathComponent(Self.retainedDirectoryName, isDirectory: true)
   }
 
-  init(defaults: UserDefaults = .standard, managed: ManagedUserAssetStore = ManagedUserAssetStore(),
+  init(defaults: UserDefaults = ClientPreferences.defaults, managed: ManagedUserAssetStore = ManagedUserAssetStore(),
        fileManager: FileManager = .default) {
     self.defaults = defaults
     self.managed = managed
@@ -164,7 +164,7 @@ final class WallpaperPresetStore {
   nonisolated private func retainAssets(_ original: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot) throws -> WallpaperPropertyPreset {
     var preset = original
     var total: Int64 = 0
-    let manifest = managed.manifest(wallpaperId: options.wallpaperId)
+    let manifest = try managed.manifest(wallpaperId: options.wallpaperId)
     do {
       for index in preset.properties.indices {
         let property = preset.properties[index]
@@ -235,7 +235,9 @@ final class WallpaperPresetStore {
   func apply(_ preset: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot, bridge: BridgeStore) async throws {
     try requireClean(options, hasPendingEdits: bridge.editorState.hasPendingEdits(wallpaperID: options.wallpaperId)
       || bridge.isWallpaperEditInProgress(id: options.wallpaperId))
-    let mutations = try await Task.detached(priority: .utility) { try self.mutations(for: preset, options: options) }.value
+    let mutations = try await Task.detached(priority: .utility) {
+      try self.mutations(for: preset, options: options, allowConditional: true)
+    }.value
     // Awaiting prevalidation cannot make an intervening editor change safe to discard.
     let actual = try await bridge.wallpaperOptionsSnapshotAsync(wallpaperId: options.wallpaperId)
     try requireClean(actual, hasPendingEdits: bridge.editorState.hasPendingEdits(wallpaperID: options.wallpaperId)
@@ -245,7 +247,20 @@ final class WallpaperPresetStore {
     }
     let selections = retainedSelections(preset, options: options, mutations: mutations)
     do {
-      for mutation in mutations {
+      var remaining = mutations
+      while !remaining.isEmpty {
+        let current = try await bridge.wallpaperOptionsSnapshotAsync(wallpaperId: options.wallpaperId)
+        let enabled = remaining.indices.filter { index in
+          current.properties.contains { $0.id == remaining[index].propertyID && $0.enabled }
+        }
+        // Mode switches usually control the authored conditions. Re-read the bridge
+        // after each draft edit so multi-stage dependencies are evaluated by its parser.
+        guard let index = enabled.first(where: { index in
+          current.properties.contains {
+            $0.id == remaining[index].propertyID && ($0.kind == .bool || $0.kind == .combo)
+          }
+        }) ?? enabled.first else { throw Self.disabledProperty(remaining[0].propertyID) }
+        let mutation = remaining.remove(at: index)
         switch mutation.operation {
         case .restoreDefault:
           try await bridge.restorePropertyDefaultAsync(wallpaperId: options.wallpaperId, propertyId: mutation.propertyID)
@@ -254,6 +269,10 @@ final class WallpaperPresetStore {
         case .value(let value):
           try await bridge.editPropertyAsync(wallpaperId: options.wallpaperId, propertyId: mutation.propertyID, value: value)
         }
+      }
+      let target = try await bridge.wallpaperOptionsSnapshotAsync(wallpaperId: options.wallpaperId)
+      for mutation in mutations where !target.properties.contains(where: { $0.id == mutation.propertyID && $0.enabled }) {
+        throw Self.disabledProperty(mutation.propertyID)
       }
       try await validateRetainedSelections(selections, preset: preset, options: options)
       try await UserAssetSelectionAuthorization.perform(managed: managed, wallpaperID: preset.wallpaperID, selections: selections) {
@@ -309,14 +328,16 @@ final class WallpaperPresetStore {
     }
   }
 
-  /// Returns the complete, prevalidated plan. No caller edits the engine before this succeeds.
-  nonisolated func mutations(for preset: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot) throws -> [WallpaperPresetMutation] {
+  /// Validates values and assets before any edit. Conditional enablement can be
+  /// deferred to the draft transaction, which reevaluates it after each mode change.
+  nonisolated func mutations(for preset: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot,
+                            allowConditional: Bool = false) throws -> [WallpaperPresetMutation] {
     try Self.validateStructure(preset)
     guard preset.wallpaperID == options.wallpaperId else {
       throw WallpaperPresetError(message: String(localized: "This property preset belongs to a different wallpaper."))
     }
     var result: [WallpaperPresetMutation] = []
-    let authority = managed.manifest(wallpaperId: preset.wallpaperID).properties
+    let authority = try managed.manifest(wallpaperId: preset.wallpaperID).properties
     for property in preset.properties {
       guard let descriptor = options.properties.first(where: { $0.id == property.id }),
             Self.kind(descriptor.kind) == property.kind else {
@@ -327,7 +348,7 @@ final class WallpaperPresetStore {
       let current = WallpaperPresetValue(descriptor.value)
       if property.usesDefault {
         if descriptor.canRestoreDefaults {
-          guard descriptor.enabled else { throw Self.disabledProperty(property.id) }
+          guard descriptor.enabled || allowConditional else { throw Self.disabledProperty(property.id) }
           result.append(.init(propertyID: property.id, operation: .restoreDefault))
         }
         continue
@@ -358,7 +379,7 @@ final class WallpaperPresetStore {
         let selectedValue = path.map { WallpaperPresetValue.string($0) } ?? .empty
         let currentIsEmpty = current == .empty || current == .string("")
         let changed = path == nil ? !currentIsEmpty : selectedValue != current
-        guard descriptor.enabled || !changed else {
+        guard descriptor.enabled || !changed || allowConditional else {
           throw Self.disabledProperty(property.id)
         }
         if changed {
@@ -367,11 +388,11 @@ final class WallpaperPresetStore {
       } else if property.kind == "texture", case .string(let path) = value, path.hasPrefix("/") {
         try requireRegularFile(URL(fileURLWithPath: path), propertyID: property.id)
         if value != current {
-          guard descriptor.enabled else { throw Self.disabledProperty(property.id) }
+          guard descriptor.enabled || allowConditional else { throw Self.disabledProperty(property.id) }
           result.append(.init(propertyID: property.id, operation: .value(value.bridgeValue)))
         }
       } else if value != current {
-        guard descriptor.enabled else { throw Self.disabledProperty(property.id) }
+        guard descriptor.enabled || allowConditional else { throw Self.disabledProperty(property.id) }
         result.append(.init(propertyID: property.id, operation: .value(value.bridgeValue)))
       }
     }
@@ -481,7 +502,7 @@ final class WallpaperPresetStore {
         document.preset.properties[index].retainedPath = path
         document.preset.properties[index].value = .string(path)
       }
-      _ = try mutations(for: document.preset, options: options)
+      _ = try mutations(for: document.preset, options: options, allowConditional: true)
       try writeOwner(document.preset)
       return document.preset
     } catch {
@@ -643,7 +664,7 @@ final class WallpaperPresetStore {
     guard Self.safeComponent(wallpaperID) else { throw Self.invalidDocument() }
     var paths = preservingPaths
     if includeManagedReferences {
-      paths.formUnion(managed.manifest(wallpaperId: wallpaperID).properties.values.map(\.sourcePath))
+      paths.formUnion(try managed.manifest(wallpaperId: wallpaperID).properties.values.map(\.sourcePath))
     }
     let rootComponents = retentionRoot.resolvingSymlinksInPath().pathComponents
     var protectedIDs = savedIDs

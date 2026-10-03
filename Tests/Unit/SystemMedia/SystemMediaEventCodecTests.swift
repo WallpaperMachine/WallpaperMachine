@@ -52,4 +52,9 @@ final class SystemMediaEventCodecTests: XCTestCase {
             SystemMediaEventCodec.json(for: .playback(.stopped)),
             #"{"state":2,"type":"mediaPlaybackChanged"}"#)
     }
+
+    func testEmptyArtworkExplicitlyClearsThumbnailFlag() throws {
+        let json = try XCTUnwrap(SystemMediaEventCodec.json(for: .thumbnail(.empty)))
+        XCTAssertTrue(json.contains("\"hasThumbnail\":false"))
+    }
 }

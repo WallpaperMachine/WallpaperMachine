@@ -299,7 +299,14 @@ runner that carries Xcode 26, whose Homebrew bottles set the published app's
 minimum macOS) while `test` runs on `macos-26`, 150-minute timeout each, so the
 test gate adds no time on top of the Release build. `publish` runs on
 `ubuntu-latest` only after both succeed, so a published binary has passed the same
-gate a change has to pass.
+gate a change has to pass. The test job also runs `scripts/check_rust.py` and
+`scripts/check_renderer.py --allow-missing-gpu`; a failure in either prevents
+publication. These checks use isolated Rust state and private renderer images,
+with desktop/network opt-ins disabled. Only a compiled device probe's exact exit
+77 permits the renderer's named GPU checks to skip, with a CI warning; all other
+probe/test failures remain failures. Explicit exclusions and asset-dependent
+skips remain in their JSON reports and logs, rather than counting as verified
+asset or GPU coverage.
 
 **Why the icon is compiled apart.** On macOS 15, Xcode 26's `actool` exits 255 on
 most attempts to compile the Icon Composer `AppIcon.icon`: a probe on the
@@ -416,14 +423,16 @@ failed upload and reversed completion order:
   draft-first order closes. A failure anywhere before the last command leaves a
   draft, which neither the API's `releases/latest` nor github.com's
   `releases/latest/download/…` returns.
-- **Latest cannot go backwards.** Both callers hold a `publish-<tag>` concurrency
-  group, which locks per tag, not per repository, so `v0.6.0` and `v0.7.0` can
-  build at the same time and finish in whatever order their caches allow. The
-  script therefore passes `--latest` only when no greater public, non-prerelease
-  version exists, and `--latest=false` otherwise; an older build finishing last
-  cannot take Latest and start offering users the wrong version. The residue is
-  the interval between reading the published versions and writing the flag — two
-  consecutive API calls, rather than a whole macOS build.
+- **Latest cannot go backwards between workflow publishers.** The callers keep
+  their per-tag build locks, so different versions can build concurrently. Build's
+  final `publish` job holds a repository-wide `release-promotion-<repository>`
+  concurrency group, with [`queue: max`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+  so waiting releases are queued rather than replacing the pending job. While holding that lock, the script uploads the
+  complete draft and then re-reads public versions immediately before clearing
+  the draft flag. It passes `--latest` only if no greater public, non-prerelease
+  version exists, and `--latest=false` otherwise. A failed final lookup leaves
+  the uploaded draft unpublished. Manual script invocations must be serialized
+  with every other publisher too; use the release workflow for the shared lock.
 
 ### Warm caches (`warm-caches.yml`)
 
@@ -492,13 +501,12 @@ request.
 
 The app also checks on its own, once the library has loaded (whether or not it
 loaded cleanly) and every six hours after, since a menu-bar app can run for weeks.
-When the copy can be replaced in place, a newer version is downloaded in the
-background and one alert offers **Restart to Update** or **Later**; elsewhere the
-alert offers **View Update**, which opens About, because a download there opens
-the image in Finder. Each version prompts once per launch. After **Later**, the
-status menu keeps **Restart to Update to x.y.z** (or **WallpaperMachine x.y.z
-Available…**) until the app restarts. This path ships from 1.0.1; 1.0.0 only
-checks silently at launch and shows the result in About. The install runs the
+These unattended checks only discover updates. One alert offers **View Update**,
+which opens About, or **Later**; downloading still requires **Download Update**.
+Each version prompts once per launch. An update the user has already downloaded
+can offer **Restart to Update**. After **Later**, the status menu keeps the
+available or ready update until the app restarts. Earlier versions automatically
+downloaded replaceable updates in the background. The install runs the
 *running* version's code, so the staged replacement and the writability check below
 apply from 1.0.2 on: 1.0.1 still deletes the old app before copying the new one and
 offers in-place installs to any copy under an Applications folder. Up to 1.0.2,
@@ -532,11 +540,19 @@ The contract it relies on:
   `Applications` link, the image is detached whatever happens, and the copy must
   carry `app.wallpapermachine` and its executable before the restart-install
   replaces the running app;
+- preparation runs on a worker actor, reports a busy state and can be canceled.
+  Cancellation stops the preparation process, detaches the image and removes
+  its staging directory; it never starts a replacement helper;
 - the restart-install waits for the app to exit, copies the new app beside the old
   one as a hidden `.WallpaperMachine.app.update-<pid>`, renames the old one aside,
   moves the new one in and only then deletes the old one. Any failed step puts the
   old app back, removes the partial copy and reopens whichever version is in place,
   so a failed install relaunches the previous version rather than leaving no app;
+- one kernel file lock owns each destination throughout the helper's lifetime.
+  Its hidden `.WallpaperMachine.app.update.lock` file is kept for reuse; kernel
+  ownership ends with the process, so no stale-lock cleanup is needed. The app
+  retains the helper and cancels it if quitting times out. Retry is enabled only
+  after cancellation confirms the old helper has stopped;
 - the installed copy must live in `/Applications` or `~/Applications`, and this
   user must be able to write both the bundle and its folder. A copy anywhere else,
   or one a standard account cannot replace (for example installed by an

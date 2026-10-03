@@ -2,6 +2,17 @@
    and data-i18n in WebUI/; see docs/localization.md for how a catalog is maintained. */
 
 export default {
+  'pixiv downloads run two at a time; paused downloads stay in the queue.': 'pixivのダウンロードは同時に2件まで実行され、一時停止した項目はキューに残ります。',
+  'On. Waiting for an audio frame.': 'オン。音声フレームを待っています。',
+  'On. Connecting to audio…': 'オン。音声に接続中…',
+  'Audio could not be connected. Turn Audio response off and on to retry.': '音声に接続できませんでした。「音声に反応」をオフにしてからオンにすると再試行できます。',
+  'Download paused': 'ダウンロードを一時停止中',
+  'Pause download': 'ダウンロードを一時停止',
+  'Resume download': 'ダウンロードを再開',
+  'Wallpaper could not load': '壁紙を読み込めませんでした',
+  'Wallpaper content is ready': '壁紙のコンテンツが準備できました',
+  'Loading wallpaper content…': '壁紙のコンテンツを読み込み中…',
+  'Retry wallpaper': '壁紙を再試行',
   'Wallpaper Engine ownership confirmed. You can download its Workshop wallpapers.': 'Wallpaper Engineの所有を確認しました。Workshopの壁紙をダウンロードできます。',
   'This Steam account does not own Wallpaper Engine. Please purchase it on Steam to download Wallpaper Engine wallpapers. You can still download from Pixiv, browse the Workshop, and view Wallpaper Engine wallpapers you already have.': 'このSteamアカウントはWallpaper Engineを所有していません。Wallpaper Engineの壁紙をダウンロードするには、Steamで購入してください。Pixivからのダウンロード、Workshopの閲覧、お持ちのWallpaper Engineの壁紙の表示は引き続き利用できます。',
   'Wallpaper Engine ownership has not been confirmed. Check again to verify this account can download its Workshop wallpapers. You can still download from Pixiv, browse the Workshop, and view wallpapers you already have.': 'Wallpaper Engineの所有を確認できていません。再確認して、このアカウントでWorkshopの壁紙をダウンロードできるか確認してください。Pixivからのダウンロード、Workshopの閲覧、お持ちの壁紙の表示は引き続き利用できます。',

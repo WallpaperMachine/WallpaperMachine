@@ -22,7 +22,7 @@ enum ClientPaths {
     /// the user's imported files with it.
     static var userAssetsURL: URL { supportURL.appendingPathComponent("UserAssets", isDirectory: true) }
     static var assetsURL: URL {
-        if let configured = UserDefaults.standard.string(forKey: "WallpaperMachineAssetsPath"), !configured.isEmpty {
+        if let configured = ClientPreferences.defaults.string(forKey: "WallpaperMachineAssetsPath"), !configured.isEmpty {
             let url = URL(fileURLWithPath: configured, isDirectory: true)
             if hasSceneAssets(at: url) { return url }
         }
@@ -73,7 +73,7 @@ enum ClientPaths {
         guard hasSceneAssets(at: url) else {
             throw WorkshopFailure(message: String(localized: "This folder does not contain Wallpaper Engine’s shared shaders and materials. Choose its complete assets folder, or install scene assets through Steam."))
         }
-        UserDefaults.standard.set(url.path, forKey: "WallpaperMachineAssetsPath")
+        ClientPreferences.defaults.set(url.path, forKey: "WallpaperMachineAssetsPath")
         setenv("WALLPAPER_MACHINE_ASSETS_ROOT", url.path, 1)
     }
 

@@ -68,6 +68,11 @@ struct TextLayerState {
     std::string          horizontal_align;
     std::string          vertical_align;
     std::string          anchor;
+    float                max_width { 0.0f };
+    uint32_t             max_rows { 0 };
+    bool                 limit_width { false };
+    bool                 limit_rows { false };
+    bool                 use_ellipsis { false };
     bool                 dirty { false };
     bool                 cache_dirty { false };
     bool                 full_dirty { false };

@@ -18,6 +18,10 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     private(set) var isRunning = false
     private(set) var phase = Phase.preparing
     private(set) var wasCancelled = false
+    private(set) var completedSuccessfully = false
+    @ObservationIgnored private var pauseRequested = false
+    @ObservationIgnored private var discardPartialRequested = false
+    @ObservationIgnored private let checkpointDirectory: URL?
     private(set) var status = String(localized: "Ready to download")
     private(set) var progress: Double?
     private(set) var bytesReceived: Int64?
@@ -72,8 +76,9 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
 
     init(sessionDirectory: URL = ClientPaths.supportURL.appendingPathComponent("SteamSession", isDirectory: true),
          runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
-         networkMonitor: (any ProcessNetworkMonitoring)? = nil) {
+         networkMonitor: (any ProcessNetworkMonitoring)? = nil, checkpointDirectory: URL? = nil) {
         self.sessionDirectory = sessionDirectory
+        self.checkpointDirectory = checkpointDirectory
         self.runtimeProvider = runtimeProvider
         self.networkMonitor = networkMonitor ?? ProcessNetworkMonitor()
         savedAccount = Self.readSavedAccount(at: sessionDirectory)
@@ -150,6 +155,9 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         }
         failure = nil
         wasCancelled = false
+        completedSuccessfully = false
+        pauseRequested = false
+        discardPartialRequested = false
         errorMessage = nil
         sessionWarning = nil
         cachedCredentialsRejected = false
@@ -196,6 +204,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                 bytesReceived = nil
                 bytesExpected = nil
                 progress = nil
+                if completedSuccessfully { wasCancelled = false }
                 isRunning = false
                 task = nil
                 onFinished?()
@@ -204,6 +213,11 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             do {
                 let prepared = try await runtimeProvider.prepare(executable: executable, staging: staging)
                 claim = Self.claimStaging(staging)
+                if let checkpointDirectory, !signInOnly {
+                    try await Task.detached(priority: .utility) {
+                        try WorkshopDownloadCheckpoint.restore(from: checkpointDirectory, to: staging)
+                    }.value
+                }
                 if rememberSession {
                     let directory = sessionDirectory
                     restoredSessionRevision = try await Task.detached(priority: .utility) {
@@ -298,13 +312,14 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                     status = String(localized: "Downloading the wallpaper this preset is based on…")
                 }
                 try await onDownloaded(staging)
+                completedSuccessfully = true
             } catch is CancellationError {
-                wasCancelled = true
+                wasCancelled = !pauseRequested
                 await stopProcess()
                 try? readTerminalOutput()
                 authenticationFailed = false
                 steamGuardChallenge = nil
-                status = String(localized: "Download cancelled")
+                status = pauseRequested ? String(localized: "Download paused") : String(localized: "Download cancelled")
             } catch {
                 await stopProcess()
                 try? readTerminalOutput()
@@ -331,10 +346,27 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                 }
             }
             savedAccount = Self.readSavedAccount(at: sessionDirectory)
-            // Large runtimes and partial downloads are removed off the UI actor.
-            await Task.detached(priority: .utility) {
-                try? FileManager.default.removeItem(at: staging)
-            }.value
+            // Retain only content and Steam's download manifests. Programs, authentication,
+            // terminal state and the private runtime always leave with staging.
+            let keepPartial = !completedSuccessfully && !signInOnly && (pauseRequested || errorMessage != nil)
+            let checkpoint = checkpointDirectory
+            do {
+                try await Task.detached(priority: .utility) {
+                    defer { try? FileManager.default.removeItem(at: staging) }
+                    if let checkpoint {
+                        if keepPartial { try WorkshopDownloadCheckpoint.save(from: staging, to: checkpoint) }
+                        else { try WorkshopDownloadCheckpoint.remove(at: checkpoint) }
+                    }
+                }.value
+            } catch {
+                errorMessage = String(localized: "Could not save partial download data: \(error.localizedDescription)")
+            }
+            // Cancel can arrive while the detached checkpoint move is finishing a pause.
+            if discardPartialRequested, let checkpoint {
+                await Task.detached(priority: .utility) {
+                    try? WorkshopDownloadCheckpoint.remove(at: checkpoint)
+                }.value
+            }
         }
     }
 
@@ -355,8 +387,23 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         }
     }
 
+    func pause() {
+        guard isRunning, !isSigningInOnly else { return }
+        pauseRequested = true
+        task?.cancel()
+        status = String(localized: "Pausing…")
+    }
+
+    func discardCheckpoint() {
+        guard !isRunning, let checkpointDirectory else { return }
+        try? WorkshopDownloadCheckpoint.remove(at: checkpointDirectory)
+    }
+
     func cancel() {
         guard isRunning else { return }
+        pauseRequested = false
+        discardPartialRequested = true
+        wasCancelled = true
         receivesNetwork = false
         bytesPerSecond = nil
         progress = nil

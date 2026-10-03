@@ -15,10 +15,18 @@ extension WebPanelController {
     if try await performImagePlacement(action, request: request) { return }
     switch action {
     case "ready":
-      // A page that reports ready has recovered, so a later crash may reload again.
-      recoveryAttempted = false
+      deliveredLibraryRevision = nil
+      recoveryBudget.ready(at: ProcessInfo.processInfo.systemUptime)
       isReady = true
       Task { await workshop.steamCMDSetup.refresh() }
+      return
+    case "retryHostWallpaper":
+      let id = try wallpaperID(request)
+      guard let displayID = UInt32(try request.string("displayID")),
+            store.hostWallpaperStates.values.contains(where: {
+              $0.kind == .web && $0.wallpaperID == id && $0.displayID == displayID && $0.phase == .failed && $0.canRetry
+            }) else { throw WebPanelRequest.invalid }
+      store.retryHostWallpaper?(id, displayID)
       return
     case "themeSetting":
       try theme.set(try request.string("key"), value: try request.string("value"))
@@ -37,7 +45,7 @@ extension WebPanelController {
       imports.dismissFailure()
       dismissedErrorRevision = store.latestBridgeErrorRevision
       dismissedLibraryError = libraryFailureMessage
-      dismissedDownloadError = workshop.downloader.errorMessage
+      dismissedDownloadError = workshop.downloader.errorMessage ?? workshop.downloadPersistenceError ?? pixiv.downloads.persistenceError
       return
     case "navigate":
       switch try request.string("page") {
@@ -165,7 +173,10 @@ extension WebPanelController {
       imports.cancel()
       return
     case "downloadCancel":
-      workshop.downloader.cancel(try download(request))
+      workshop.cancelDownload(id: try request.string("id"))
+      return
+    case "downloadPause":
+      workshop.downloader.pause(try download(request))
       return
     case "downloadInput":
       let job = try download(request)
@@ -183,6 +194,9 @@ extension WebPanelController {
       return
     case "downloadUpdate":
       _ = await updater.downloadUpdate()
+      return
+    case "cancelUpdate":
+      updater.cancel()
       return
     case "openReleases":
       updater.openReleases()
@@ -234,7 +248,7 @@ extension WebPanelController {
     case "favorite":
       let id = try wallpaperID(request)
       if !favoriteIDs.insert(id).inserted { favoriteIDs.remove(id) }
-      UserDefaults.standard.set(
+      defaults.set(
         try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
     case "reveal":
       NSWorkspace.shared.activateFileViewerSelecting([
@@ -549,7 +563,7 @@ extension WebPanelController {
           localized: "Only caches that can be rebuilt are removed. Files you chose in wallpaper settings are kept."),
         button: String(localized: "Clear Caches"))
       {
-        let released = try UserAssetStorage.purgeUnreferencedDerivedCaches()
+        let released = try await UserAssetStorage.purgeUnreferencedDerivedCaches()
         // A negative figure would be a bug in the accounting, not a real
         // amount, so it is reported as nothing released rather than wrapped.
         userAssetsReleasedBytes = UInt64(max(0, released))
@@ -652,6 +666,12 @@ extension WebPanelController {
       workshop.removeDownloadRequest(id: try request.string("id"))
     case "changeDownloadAccount":
       await workshop.changeDownloadAccount(id: try download(request).id)
+    case "downloadResume":
+      let id = try request.string("id")
+      if !workshop.resumeDownloadRequest(id: id, bridge: store) {
+        workshop.resumeDownload(try download(request), bridge: store)
+      }
+      try checkDownloadError()
     case "downloadRetry":
       let job = try download(request)
       guard !job.isPending else { throw WebPanelRequest.invalid }
@@ -660,7 +680,9 @@ extension WebPanelController {
         id: job.id, account: job.account, rememberSession: remembersSession,
         includeResources: false, bridge: store)
       try checkDownloadError()
-    case "clearDownloads": workshop.clearDownloadActivity()
+    case "clearDownloads":
+      workshop.clearDownloadActivity()
+      pixiv.downloads.clearFinished()
     case "logOutSteam":
       let account = workshop.downloader.savedAccount ?? ""
       if await confirm(
@@ -721,7 +743,7 @@ extension WebPanelController {
   func forgetFavorites(_ ids: [String]) throws {
     guard ids.contains(where: favoriteIDs.contains) else { return }
     favoriteIDs.subtract(ids)
-    UserDefaults.standard.set(
+    defaults.set(
       try JSONEncoder().encode(favoriteIDs.sorted()), forKey: Self.favoriteKey)
   }
 
@@ -808,7 +830,7 @@ extension WebPanelController {
   }
 
   func checkDownloadError() throws {
-    if let error = workshop.downloader.errorMessage {
+    if let error = workshop.downloader.errorMessage ?? workshop.downloadPersistenceError {
       throw WallpaperActionError(message: error)
     }
   }

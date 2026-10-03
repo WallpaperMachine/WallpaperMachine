@@ -107,7 +107,7 @@ impl ProgramResourceLayout {
         }
 
         let reserved_bindings = reservations.set_zero_binding_indices().collect();
-        let uniform_block_binding = if uniform_members.is_empty() {
+        let mut uniform_block_binding = if uniform_members.is_empty() {
             None
         } else {
             let binding = explicit_uniform_binding.unwrap_or_else(|| {
@@ -139,6 +139,16 @@ impl ProgramResourceLayout {
         for plane in &video_planes {
             uniform_members.push(plane.uniform_member_a());
             uniform_members.push(plane.uniform_member_b());
+            uniform_members.push(plane.uv_transform_member());
+            uniform_members.push(plane.uv_offset_member());
+        }
+        // Plane conversion needs its own constants even when the author declared
+        // only textures. Allocate after those resources to preserve their bindings.
+        if uniform_block_binding.is_none() && !uniform_members.is_empty() {
+            uniform_block_binding = Some(allocator.allocate(ProgramBindingReservation {
+                name: SmolStr::new("GlobalUniforms"),
+                kind: ProgramBindingReservationKind::GeneratedUniformBlock,
+            }));
         }
 
         Ok(Self {
@@ -270,6 +280,26 @@ impl ProgramVideoPlaneBinding {
         UniformMember {
             ty: SmolStr::new_static("vec4"),
             name: VideoPlaneResource::matrix_uniform_name(self.slot),
+            array_suffix: None,
+            explicit_binding: None,
+            binding: None,
+        }
+    }
+
+    fn uv_transform_member(&self) -> UniformMember {
+        UniformMember {
+            ty: SmolStr::new_static("vec4"),
+            name: VideoPlaneResource::uv_transform_uniform_name(self.slot),
+            array_suffix: None,
+            explicit_binding: None,
+            binding: None,
+        }
+    }
+
+    fn uv_offset_member(&self) -> UniformMember {
+        UniformMember {
+            ty: SmolStr::new_static("vec2"),
+            name: VideoPlaneResource::uv_offset_uniform_name(self.slot),
             array_suffix: None,
             explicit_binding: None,
             binding: None,

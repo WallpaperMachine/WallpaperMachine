@@ -11,7 +11,7 @@ final class FocusFilterState {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ClientPreferences.defaults) {
         self.defaults = defaults
     }
 

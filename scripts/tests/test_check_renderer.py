@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
+import contextlib
+import io
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -81,6 +86,138 @@ class PerspectiveCornerPixelTests(unittest.TestCase):
                 page = quad_mask(AUTHORED)
                 shade = lambda u, v: PAGE if page(u, v) == PAGE else wrong
                 self.assertFalse(check_renderer.check_generated_pixels(ppm(shade), 9))
+
+
+@unittest.skipUnless(sys.platform == "darwin", "Metal-device capability probe requires the macOS SDK")
+class GPUAvailabilityProbeTests(unittest.TestCase):
+    def test_compiled_probe_distinguishes_device_presence_without_rendering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = check_renderer.gpu_preflight(Path(directory), dict(check_renderer.os.environ))
+            log = (Path(directory) / "gpu-compile_exit.log").read_text()
+        self.assertEqual(result["compile_exit"], 0, log)
+        self.assertIn(result["probe_exit"], (0, 77))
+
+
+class GateExitStatusTests(unittest.TestCase):
+    def gate(self, failed=None, timeout=False, skipped=None, gpu=None):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project.json"
+            project.write_text('{"file":"scene.json"}')
+            calls = []
+
+            def run(command, log, env, *args):
+                name = Path(command[0]).name
+                calls.append(name)
+                log.write_text("[  SKIPPED ] unavailable fixture codec\n" if name == skipped else "")
+                if name in ("xcrun", "gpu-availability"):
+                    result = gpu[0 if name == "xcrun" else 1]
+                    if result == "timeout":
+                        raise check_renderer.subprocess.TimeoutExpired(command, 1)
+                    return result
+                if name == failed:
+                    if timeout:
+                        raise check_renderer.subprocess.TimeoutExpired(command, 1)
+                    return 1
+                if name == check_renderer.OFFSCREEN_PROBE:
+                    output = Path(env["WE_TEST_OUTPUT"])
+                    output.mkdir(parents=True)
+                    (output / "frame-2.ppm").write_bytes(b"same synthetic pixels")
+                return 0
+
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(patch.object(check_renderer, "RENDERER_ARTIFACTS", root / "evidence"))
+                stack.enter_context(patch.object(check_renderer, "build_environment", return_value={}))
+                stack.enter_context(patch.object(check_renderer, "run", side_effect=run))
+                stack.enter_context(patch.object(check_renderer, "fixtures", return_value=[]))
+                for name in ("alpha_composite_fixture", "perspective_animation_fixture"):
+                    stack.enter_context(patch.object(check_renderer, name, return_value=project))
+                stack.enter_context(patch.object(check_renderer, "check_generated_pixels", return_value=True))
+                output = io.StringIO()
+                stack.enter_context(contextlib.redirect_stdout(output))
+                arguments = ["--skip-build", "--assets", str(root / "assets")]
+                if gpu is not None:
+                    arguments.append("--allow-missing-gpu")
+                status = check_renderer.main(arguments)
+                self.last_output = output.getvalue()
+            report = json.loads(next((root / "evidence").glob("*/report.json")).read_text())
+            return status, report, calls
+
+    def test_each_required_binary_failure_and_timeout_fail_the_gate(self):
+        for binary in (*check_renderer.REGRESSION_BINARIES, check_renderer.RELOAD_PROBE):
+            for timeout in (False, True):
+                with self.subTest(binary=binary, timeout=timeout):
+                    status, report, calls = self.gate(binary, timeout)
+                    self.assertEqual(status, 1)
+                    self.assertEqual(report[binary], "timeout" if timeout else 1)
+                    self.assertIn(check_renderer.RELOAD_PROBE, calls)
+
+    def test_all_successful_binaries_and_pixel_checks_pass(self):
+        status, report, calls = self.gate()
+        self.assertEqual(status, 0)
+        self.assertTrue(all(report[name] == 0 for name in check_renderer.REGRESSION_BINARIES))
+        self.assertTrue(all(case["pixels_equal"] for case in report["cases"]))
+
+    def test_skip_reason_is_reported_separately_from_successful_exit(self):
+        binary = next(iter(check_renderer.REGRESSION_BINARIES))
+        status, report, _ = self.gate(skipped=binary)
+        self.assertEqual(status, 0)
+        self.assertEqual(report[binary], 0)
+        self.assertEqual(report["skips"][binary], ["[  SKIPPED ] unavailable fixture codec"])
+
+    def test_available_gpu_runs_every_registered_target_and_image_probe(self):
+        status, report, calls = self.gate(gpu=(0, 0))
+        self.assertEqual(status, 0)
+        self.assertTrue(report["gpu_checks_executed"])
+        self.assertTrue(set(check_renderer.REGRESSION_BINARIES).issubset(calls))
+        self.assertIn(check_renderer.OFFSCREEN_PROBE, calls)
+
+    def test_only_explicit_no_device_skips_exact_gpu_targets_and_warns(self):
+        status, report, calls = self.gate(gpu=(0, 77))
+        self.assertEqual(status, 0)
+        expected = {name for name, needed in check_renderer.REGRESSION_BINARIES.items() if needed}
+        expected.update([check_renderer.OFFSCREEN_PROBE, check_renderer.RELOAD_PROBE])
+        self.assertEqual(set(report["skips"]), expected)
+        self.assertTrue(expected.isdisjoint(calls))
+        self.assertTrue({name for name, needed in check_renderer.REGRESSION_BINARIES.items() if not needed}.issubset(calls))
+        self.assertFalse(report["gpu_checks_executed"])
+        self.assertIn("::warning::", self.last_output)
+        for target in expected:
+            self.assertIn(target, self.last_output)
+
+    def test_preflight_compilation_failure_is_a_failure_not_a_skip(self):
+        status, report, calls = self.gate(gpu=(1, None))
+        self.assertEqual(status, 1)
+        self.assertEqual(report["gpu_preflight"]["compile_exit"], 1)
+        self.assertEqual(report["skips"], {})
+        self.assertNotIn("gpu-availability", calls)
+
+    def test_abnormal_or_timed_out_preflight_is_a_failure_not_a_skip(self):
+        for result in (1, 2, "timeout"):
+            with self.subTest(result=result):
+                status, report, _ = self.gate(gpu=(0, result))
+                self.assertEqual(status, 1)
+                self.assertEqual(report["gpu_preflight"]["probe_exit"], result)
+                self.assertEqual(report["skips"], {})
+
+    def test_started_gpu_failure_and_cpu_failure_without_gpu_still_fail(self):
+        gpu_test = next(name for name, needed in check_renderer.REGRESSION_BINARIES.items() if needed)
+        cpu_test = next(name for name, needed in check_renderer.REGRESSION_BINARIES.items() if not needed)
+        for target, probe in ((gpu_test, (0, 0)), (cpu_test, (0, 77))):
+            with self.subTest(target=target):
+                status, report, _ = self.gate(failed=target, gpu=probe)
+                self.assertEqual(status, 1)
+                self.assertEqual(report[target], 1)
+                self.assertNotIn(target, report["skips"])
+
+    def test_image_probe_failure_or_timeout_is_not_a_missing_gpu_skip(self):
+        for timeout in (False, True):
+            with self.subTest(timeout=timeout):
+                status, report, _ = self.gate(failed=check_renderer.OFFSCREEN_PROBE, timeout=timeout, gpu=(0, 0))
+                self.assertEqual(status, 1)
+                self.assertTrue(report["gpu_checks_executed"])
+                self.assertFalse(any(case["pixels_equal"] for case in report["cases"]))
+                self.assertNotIn(check_renderer.OFFSCREEN_PROBE, report["skips"])
 
 
 if __name__ == "__main__":

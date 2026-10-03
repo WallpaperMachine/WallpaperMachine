@@ -1,6 +1,7 @@
 #include "Platform/Apple/FfmpegVideoInterop.hpp"
 #include "Video/VideoColorConversion.hpp"
 #include "Video/VideoConversionBudget.hpp"
+#include "Video/VideoConversionMetal.hpp"
 #include "Utils/Logging.h"
 
 #include <CoreVideo/CoreVideo.h>
@@ -32,6 +33,7 @@ struct CachedMetalInteropState {
     void* command_queue { nullptr };
     void* texture_cache { nullptr };
     void* nv12_pipeline { nullptr };
+    void* bgra_pipeline { nullptr };
 };
 
 bool SetError(std::string* error, std::string message)
@@ -403,50 +405,6 @@ bool ExtractSoftwareVideoFrame(const AVFrame* frame,
     return true;
 }
 
-static constexpr const char* kNv12ConversionShaderSource = R"(
-#include <metal_stdlib>
-using namespace metal;
-
-// Field order and meaning are fixed by wallpaper::video::YuvColorParams, so the
-// kernel and the CPU reference conversion cannot disagree about range or matrix.
-struct YuvColorParams {
-    float y_offset;
-    float y_scale;
-    float chroma_offset;
-    float chroma_scale;
-    float r_cr;
-    float g_cb;
-    float g_cr;
-    float b_cb;
-};
-
-kernel void nv12_to_bgra(texture2d<float, access::sample> y_texture [[texture(0)]],
-                         texture2d<float, access::sample> uv_texture [[texture(1)]],
-                         texture2d<half, access::write> output_texture [[texture(2)]],
-                         constant YuvColorParams& params [[buffer(0)]],
-                         uint2 gid [[thread_position_in_grid]])
-{
-    if (gid.x >= output_texture.get_width() || gid.y >= output_texture.get_height()) {
-        return;
-    }
-
-    constexpr sampler sample_state(coord::normalized, address::clamp_to_edge, filter::linear);
-    const float2 uv = (float2(gid) + 0.5f) /
-        float2(output_texture.get_width(), output_texture.get_height());
-    const float  y = y_texture.sample(sample_state, uv).r;
-    // Limited-range chroma spans 224 code values around the midpoint, so the
-    // offset and the scale are both part of the contract.
-    const float2 cbcr = (uv_texture.sample(sample_state, uv).rg - params.chroma_offset) *
-        params.chroma_scale;
-    const float  luma = clamp((y - params.y_offset) * params.y_scale, 0.0f, 1.0f);
-
-    const float r = saturate(luma + params.r_cr * cbcr.y);
-    const float g = saturate(luma + params.g_cb * cbcr.x + params.g_cr * cbcr.y);
-    const float b = saturate(luma + params.b_cb * cbcr.x);
-    output_texture.write(half4(half(r), half(g), half(b), half(1.0f)), gid);
-}
-)";
-
 CachedMetalInteropState* GetCachedMetalInteropState(id<MTLDevice> device, std::string* error)
 {
     static std::mutex                                               mutex;
@@ -464,22 +422,24 @@ CachedMetalInteropState* GetCachedMetalInteropState(id<MTLDevice> device, std::s
 
         NSError* library_error = nil;
         NSString* source =
-            [NSString stringWithUTF8String:kNv12ConversionShaderSource];
+            [NSString stringWithUTF8String:kVideoConversionMetalSource];
         id<MTLLibrary> library = [device newLibraryWithSource:source options:nil error:&library_error];
         if (library != nil) {
-            id<MTLFunction> function = [library newFunctionWithName:@"nv12_to_bgra"];
-            if (function != nil) {
+            const auto make_pipeline = [&](NSString* name) -> void* {
+                id<MTLFunction> function = [library newFunctionWithName:name];
+                if (function == nil) {
+                    SetError(error, "failed to load a video conversion Metal function");
+                    return nullptr;
+                }
                 NSError* pipeline_error = nil;
-                id<MTLComputePipelineState> pipeline =
-                    [device newComputePipelineStateWithFunction:function error:&pipeline_error];
-                if (pipeline != nil) {
-                    iterator->second.nv12_pipeline = (__bridge_retained void*)pipeline;
-                } else if (error != nullptr && pipeline_error != nil && error->empty()) {
+                id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:function error:&pipeline_error];
+                if (pipeline == nil && error != nullptr && pipeline_error != nil) {
                     *error = std::string([[pipeline_error localizedDescription] UTF8String]);
                 }
-            } else if (error != nullptr && error->empty()) {
-                *error = "failed to load nv12_to_bgra Metal function";
-            }
+                return (__bridge_retained void*)pipeline;
+            };
+            iterator->second.nv12_pipeline = make_pipeline(@"nv12_to_bgra");
+            iterator->second.bgra_pipeline = make_pipeline(@"bgra_transform");
         } else if (error != nullptr && library_error != nil && error->empty()) {
             *error = std::string([[library_error localizedDescription] UTF8String]);
         }
@@ -507,10 +467,10 @@ CVMetalTextureCacheRef GetTextureCacheForDevice(id<MTLDevice> device, std::strin
     return texture_cache;
 }
 
-id<MTLComputePipelineState> GetNv12PipelineForDevice(id<MTLDevice> device, std::string* error)
+id<MTLComputePipelineState> GetVideoPipelineForDevice(id<MTLDevice> device, bool nv12, std::string* error)
 {
     CachedMetalInteropState* state = GetCachedMetalInteropState(device, error);
-    id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)state->nv12_pipeline;
+    id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)(nv12 ? state->nv12_pipeline : state->bgra_pipeline);
     if (pipeline == nil) {
         if (error != nullptr && error->empty()) {
             SetError(error, "failed to create Metal compute pipeline for NV12 video conversion");
@@ -637,158 +597,117 @@ std::atomic<bool> g_async_conversion_error_reported { false };
 /// completes. Without a queue the conversion runs on this file's private queue
 /// and returns only once it has completed, for callers that read the texture
 /// on the CPU straight away.
-id<MTLTexture> CreateConvertedMetalTexture(id<MTLDevice>        device,
-                                           CVPixelBufferRef     pixel_buffer,
-                                           OSType               pixel_format,
-                                           uint32_t             width,
-                                           uint32_t             height,
-                                           id<MTLTexture>       reusable_destination,
-                                           id<MTLCommandQueue>  frame_queue,
+id<MTLTexture> CreateConvertedMetalTexture(id<MTLDevice> device,
+                                           const VideoTextureFrame& frame,
+                                           id<MTLTexture> reusable_destination,
+                                           id<MTLCommandQueue> frame_queue,
                                            id<MTLCommandBuffer>* out_pending,
-                                           bool*                destination_allocation_failed,
-                                           std::string*         error)
+                                           bool* destination_allocation_failed,
+                                           std::string* error)
 {
-    CVMetalTextureCacheRef texture_cache = GetTextureCacheForDevice(device, error);
-    if (texture_cache == nullptr) return nil;
-
-    id<MTLCommandQueue> command_queue =
-        frame_queue != nil ? frame_queue : GetCommandQueueForDevice(device, error);
-    if (command_queue == nil) return nil;
-
-    id<MTLComputePipelineState> pipeline = GetNv12PipelineForDevice(device, error);
+    const auto pixel_buffer = reinterpret_cast<CVPixelBufferRef>(frame.pixel_buffer);
+    const auto pixel_format = static_cast<OSType>(frame.pixel_format);
+    const bool nv12 = pixel_format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange ||
+                      pixel_format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+    CVMetalTextureCacheRef cache = GetTextureCacheForDevice(device, error);
+    if (cache == nullptr) return nil;
+    id<MTLCommandQueue> queue = frame_queue != nil ? frame_queue : GetCommandQueueForDevice(device, error);
+    if (queue == nil) return nil;
+    id<MTLComputePipelineState> pipeline = GetVideoPipelineForDevice(device, nv12, error);
     if (pipeline == nil) return nil;
 
-    CVMetalTextureRef y_plane_ref = nullptr;
-    CVMetalTextureRef uv_plane_ref = nullptr;
-    const CVReturn y_result = CVMetalTextureCacheCreateTextureFromImage(
-        kCFAllocatorDefault,
-        texture_cache,
-        pixel_buffer,
-        nullptr,
-        MTLPixelFormatR8Unorm,
-        width,
-        height,
-        0,
-        &y_plane_ref);
-    if (y_result != kCVReturnSuccess || y_plane_ref == nullptr) {
-        return SetError(error, "failed to create Metal texture for NV12 luma plane"), nil;
+    CVMetalTextureRef first_wrapper = nullptr, second_wrapper = nullptr;
+    const auto release_sources = [&] {
+        if (first_wrapper != nullptr) CFRelease(first_wrapper);
+        if (second_wrapper != nullptr) CFRelease(second_wrapper);
+    };
+    id<MTLTexture> first = nil, second = nil;
+    if (pixel_buffer != nullptr) {
+        const auto format = nv12 ? MTLPixelFormatR8Unorm : MTLPixelFormatBGRA8Unorm;
+        if (CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, cache, pixel_buffer,
+            nullptr, format, frame.width, frame.height, 0, &first_wrapper) != kCVReturnSuccess || first_wrapper == nullptr) {
+            release_sources();
+            return SetError(error, "failed to import video transform source"), nil;
+        }
+        first = CVMetalTextureGetTexture(first_wrapper);
+    } else if (! nv12 && frame.io_surface != nullptr) {
+        first = CreateDirectMetalTexture(device, reinterpret_cast<IOSurfaceRef>(frame.io_surface),
+                                          frame.width, frame.height, error);
     }
-
-    const CVReturn uv_result = CVMetalTextureCacheCreateTextureFromImage(
-        kCFAllocatorDefault,
-        texture_cache,
-        pixel_buffer,
-        nullptr,
-        MTLPixelFormatRG8Unorm,
-        width / 2u,
-        height / 2u,
-        1,
-        &uv_plane_ref);
-    if (uv_result != kCVReturnSuccess || uv_plane_ref == nullptr) {
-        CFRelease(y_plane_ref);
-        return SetError(error, "failed to create Metal texture for NV12 chroma plane"), nil;
+    if (nv12) {
+        if (pixel_buffer == nullptr || CVMetalTextureCacheCreateTextureFromImage(
+            kCFAllocatorDefault, cache, pixel_buffer, nullptr, MTLPixelFormatRG8Unorm,
+            CVPixelBufferGetWidthOfPlane(pixel_buffer, 1), CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
+            1, &second_wrapper) != kCVReturnSuccess || second_wrapper == nullptr) {
+            release_sources();
+            return SetError(error, "failed to import video chroma transform source"), nil;
+        }
+        second = CVMetalTextureGetTexture(second_wrapper);
     }
-
-    id<MTLTexture> y_texture = CVMetalTextureGetTexture(y_plane_ref);
-    id<MTLTexture> uv_texture = CVMetalTextureGetTexture(uv_plane_ref);
-    if (y_texture == nil || uv_texture == nil) {
-        CFRelease(y_plane_ref);
-        CFRelease(uv_plane_ref);
-        return SetError(error, "CVMetalTextureCache returned null plane textures"), nil;
+    if (first == nil || (nv12 && second == nil)) {
+        release_sources();
+        return SetError(error, "video transform source is unavailable"), nil;
     }
-
     id<MTLTexture> texture = reusable_destination;
     if (texture == nil) {
-        MTLTextureDescriptor* descriptor =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:kConversionDestinationPixelFormat
-                                                               width:width
-                                                              height:height
-                                                           mipmapped:NO];
+        MTLTextureDescriptor* descriptor = [MTLTextureDescriptor
+            texture2DDescriptorWithPixelFormat:kConversionDestinationPixelFormat
+            width:frame.displayWidth() height:frame.displayHeight() mipmapped:NO];
         descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
         descriptor.storageMode = MTLStorageModeShared;
-        descriptor.resourceOptions = MTLResourceStorageModeShared;
         texture = [device newTextureWithDescriptor:descriptor];
-        if (texture == nil && destination_allocation_failed != nullptr) {
-            *destination_allocation_failed = true;
-        }
+        if (texture == nil && destination_allocation_failed != nullptr) *destination_allocation_failed = true;
     }
     if (texture == nil) {
-        CFRelease(y_plane_ref);
-        CFRelease(uv_plane_ref);
-        SetError(error, "failed to allocate destination Metal texture for video texture conversion");
-        return nil;
+        release_sources();
+        return SetError(error, "failed to allocate a video conversion destination"), nil;
     }
-
-    id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
-    if (command_buffer == nil) {
-        CFRelease(y_plane_ref);
-        CFRelease(uv_plane_ref);
-        SetError(error, "failed to allocate Metal command buffer for video texture conversion");
-        return nil;
-    }
-
-    id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+    id<MTLCommandBuffer> command = [queue commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = command != nil ? [command computeCommandEncoder] : nil;
     if (encoder == nil) {
-        CFRelease(y_plane_ref);
-        CFRelease(uv_plane_ref);
-        SetError(error, "failed to allocate Metal compute encoder for video texture conversion");
-        return nil;
+        release_sources();
+        return SetError(error, "failed to allocate a video conversion command encoder"), nil;
     }
-
-    const YuvColorDescription description =
-        ColorDescriptionForPixelBuffer(pixel_buffer, pixel_format, width, height);
-    ReportInferredColor(description);
-    const YuvColorParams params = MakeYuvColorParams(description);
-
     [encoder setComputePipelineState:pipeline];
-    [encoder setTexture:y_texture atIndex:0];
-    [encoder setTexture:uv_texture atIndex:1];
+    [encoder setTexture:first atIndex:0];
+    [encoder setTexture:second atIndex:1];
     [encoder setTexture:texture atIndex:2];
-    [encoder setBytes:&params length:sizeof(params) atIndex:0];
-
-    const NSUInteger thread_width = std::min<NSUInteger>(16u, pipeline.threadExecutionWidth);
-    const NSUInteger thread_height = std::max<NSUInteger>(1u, pipeline.maxTotalThreadsPerThreadgroup / thread_width);
-    const MTLSize threads_per_group = MTLSizeMake(thread_width, std::min<NSUInteger>(16u, thread_height), 1u);
-    const MTLSize threads_per_grid = MTLSizeMake(width, height, 1u);
-    [encoder dispatchThreads:threads_per_grid threadsPerThreadgroup:threads_per_group];
+    if (nv12) {
+        const auto description = ColorDescriptionForPixelBuffer(pixel_buffer, pixel_format, frame.width, frame.height);
+        ReportInferredColor(description);
+        const auto color = MakeYuvColorParams(description);
+        [encoder setBytes:&color length:sizeof(color) atIndex:0];
+    }
+    const auto transform = VideoTransformConstants(frame.display_transform);
+    [encoder setBytes:&transform length:sizeof(transform) atIndex:1];
+    const NSUInteger x = std::min<NSUInteger>(16, pipeline.threadExecutionWidth);
+    const NSUInteger y = std::min<NSUInteger>(16, std::max<NSUInteger>(1, pipeline.maxTotalThreadsPerThreadgroup / x));
+    [encoder dispatchThreads:MTLSizeMake(frame.displayWidth(), frame.displayHeight(), 1)
+        threadsPerThreadgroup:MTLSizeMake(x, y, 1)];
     [encoder endEncoding];
     if (frame_queue != nil) {
-        // Everything the kernel reads stays alive until the GPU has read it.
-        // The command buffer retains the Metal textures, but Core Video
-        // documents the wrappers, and the pixel buffer behind them, as what
-        // governs the planes' validity.
-        CFRetain(pixel_buffer);
-        [command_buffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            if (completed.status == MTLCommandBufferStatusError &&
-                ! g_async_conversion_error_reported.exchange(true)) {
-                LOG_ERROR("Metal command buffer failed while converting a VideoToolbox frame: %s",
-                          completed.error != nil
-                              ? [[completed.error localizedDescription] UTF8String]
-                              : "no error description");
+        if (pixel_buffer != nullptr) CFRetain(pixel_buffer);
+        [command addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status == MTLCommandBufferStatusError && ! g_async_conversion_error_reported.exchange(true)) {
+                LOG_ERROR("Metal video conversion failed: %s", completed.error != nil
+                    ? [[completed.error localizedDescription] UTF8String] : "no error description");
             }
-            CFRelease(y_plane_ref);
-            CFRelease(uv_plane_ref);
-            CFRelease(pixel_buffer);
+            if (first_wrapper != nullptr) CFRelease(first_wrapper);
+            if (second_wrapper != nullptr) CFRelease(second_wrapper);
+            if (pixel_buffer != nullptr) CFRelease(pixel_buffer);
         }];
-        [command_buffer commit];
-        *out_pending = command_buffer;
+        [command commit];
+        *out_pending = command;
         return texture;
     }
-
-    [command_buffer commit];
-    [command_buffer waitUntilCompleted];
+    [command commit];
+    [command waitUntilCompleted];
     g_conversion_cpu_waits.fetch_add(1, std::memory_order_relaxed);
-    CFRelease(y_plane_ref);
-    CFRelease(uv_plane_ref);
-    if (command_buffer.status == MTLCommandBufferStatusError) {
-        SetError(
-            error,
-            command_buffer.error != nil
-                ? std::string([[command_buffer.error localizedDescription] UTF8String])
-                : "Metal command buffer failed while converting VideoToolbox frame");
-        return nil;
+    release_sources();
+    if (command.status == MTLCommandBufferStatusError) {
+        return SetError(error, command.error != nil ? std::string([[command.error localizedDescription] UTF8String])
+                                                    : "Metal video conversion failed"), nil;
     }
-
     return texture;
 }
 
@@ -1364,13 +1283,13 @@ void* CreateAppleVideoFrameLease(const VideoTextureFrame& frame,
             pixel_format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
         id<MTLTexture> destination = (__bridge id<MTLTexture>)reusable_destination;
         if (destination != nil &&
-            (!is_nv12 || !CompatibleConvertedDestination(destination, device, frame.width, frame.height))) {
+            (!(is_nv12 || frame.needsDisplayTransform()) || !CompatibleConvertedDestination(destination, device, frame.displayWidth(), frame.displayHeight()))) {
             return SetError(error, "incompatible reusable NV12 conversion destination"), nullptr;
         }
         if (is_nv12 && frame.pixel_buffer == nullptr) {
             return SetError(error, "NV12 conversion requires a pixel buffer"), nullptr;
         }
-        if (pixel_format == kCVPixelFormatType_32BGRA && frame.io_surface != nullptr) {
+        if (pixel_format == kCVPixelFormatType_32BGRA && frame.io_surface != nullptr && !frame.needsDisplayTransform()) {
             // An IOSurface-backed texture owns its own backing; no Core Video
             // wrapper is involved.
             texture = CreateDirectMetalTexture(
@@ -1379,7 +1298,7 @@ void* CreateAppleVideoFrameLease(const VideoTextureFrame& frame,
                 frame.width,
                 frame.height,
                 error);
-        } else if (pixel_format == kCVPixelFormatType_32BGRA && frame.pixel_buffer != nullptr) {
+        } else if (pixel_format == kCVPixelFormatType_32BGRA && frame.pixel_buffer != nullptr && !frame.needsDisplayTransform()) {
             texture = CreatePixelBufferBackedMetalTexture(
                 device,
                 reinterpret_cast<CVPixelBufferRef>(frame.pixel_buffer),
@@ -1388,16 +1307,13 @@ void* CreateAppleVideoFrameLease(const VideoTextureFrame& frame,
                 frame.height,
                 &wrapper,
                 error);
-        } else if (is_nv12) {
+        } else if (is_nv12 || frame.needsDisplayTransform()) {
             // The conversion writes an ordinary destination texture, which is
             // what the pool can take back. On the caller's frame queue it is
             // not waited for; see CreateConvertedMetalTexture.
             texture = CreateConvertedMetalTexture(
                 device,
-                reinterpret_cast<CVPixelBufferRef>(frame.pixel_buffer),
-                pixel_format,
-                frame.width,
-                frame.height,
+                frame,
                 destination,
                 (__bridge id<MTLCommandQueue>)metal_command_queue,
                 &conversion,

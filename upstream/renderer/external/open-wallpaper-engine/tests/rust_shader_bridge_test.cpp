@@ -105,6 +105,7 @@ TEST(RustShaderBridge, BuildsSerdeTaggedRequestJsonWithEnabledCachePolicy)
                                                                { "compo1", true },
                                                                { "compo2", false },
                                                                { "compo3", false },
+                                                               { "compo4", false },
                                                            }));
     ASSERT_TRUE(json.at("properties").is_array());
 }

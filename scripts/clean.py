@@ -126,18 +126,39 @@ def label(path):
 def reclaimable(path):
     """Bytes an unlink actually frees. A file with other hard links onto it frees none,
     which is how every staged user asset on the same volume as its source is held."""
-    status = path.stat()
+    try:
+        status = path.lstat()
+    except FileNotFoundError:
+        return 0  # A concurrent cleanup may already have removed this candidate.
     return status.st_size if status.st_nlink == 1 else 0
+
+
+def independent_targets(paths):
+    """Each lexical path once, omitting children already covered by a parent.
+
+    Do not resolve symbolic links: cleaning a link must never name its target.
+    """
+    accepted = []
+    for path in sorted({Path(os.path.abspath(path)) for path in paths}, key=lambda p: (len(p.parts), str(p))):
+        if not any(parent == path or parent in path.parents for parent in accepted):
+            accepted.append(path)
+    return accepted
 
 
 def remove(paths, dry_run):
     total = 0
-    for path in paths:
-        size = sum(reclaimable(file) for file in path.rglob("*") if file.is_file()) if path.is_dir() else reclaimable(path)
+    for path in independent_targets(paths):
+        if not path.exists() and not path.is_symlink():
+            continue
+        directory = path.is_dir() and not path.is_symlink()
+        size = sum(reclaimable(file) for file in path.rglob("*") if file.is_file() or file.is_symlink()) if directory else reclaimable(path)
         total += size
         print(f"{MARK.step} {'would remove' if dry_run else 'removing'} {label(path)} ({size / 1e9:.2f} GB)")
         if not dry_run:
-            shutil.rmtree(path) if path.is_dir() else path.unlink()
+            try:
+                shutil.rmtree(path) if directory else path.unlink(missing_ok=True)
+            except FileNotFoundError:
+                pass
     return total
 
 

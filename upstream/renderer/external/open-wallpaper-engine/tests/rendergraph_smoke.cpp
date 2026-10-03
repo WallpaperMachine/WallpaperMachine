@@ -8,7 +8,8 @@
 #include "VulkanRender/SceneToRenderGraph.hpp"
 
 #include <algorithm>
-#include <cassert>
+#include <gtest/gtest.h>
+#include "TestRequire.hpp"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -225,9 +226,9 @@ std::vector<GraphPassView> graphPasses(const wallpaper::rg::RenderGraph& graph) 
     std::vector<GraphPassView> passes;
     for (const auto id : graph.topologicalOrder()) {
         auto* pass_node = graph.getPassNode(id);
-        assert(pass_node != nullptr);
+        REQUIRE(pass_node != nullptr);
         auto* pass = graph.getPass(id);
-        assert(pass != nullptr);
+        REQUIRE(pass != nullptr);
         passes.push_back(GraphPassView {
             .name   = std::string(pass_node->name()),
             .custom = dynamic_cast<const CustomShaderPass*>(pass),
@@ -243,7 +244,7 @@ const CustomShaderPass* findCustomPass(
     const auto it = std::find_if(passes.begin(), passes.end(), [&name](const auto& pass) {
         return pass.custom != nullptr && pass.name == name;
     });
-    assert(it != passes.end());
+    REQUIRE(it != passes.end());
     return it->custom;
 }
 
@@ -254,7 +255,7 @@ const CustomShaderPass* findCustomPassByNodeName(
         return pass.custom != nullptr && pass.custom->desc().node != nullptr &&
             pass.custom->desc().node->Name() == name;
     });
-    assert(it != passes.end());
+    REQUIRE(it != passes.end());
     return it->custom;
 }
 
@@ -265,7 +266,7 @@ const GraphPassView* findCustomPassViewByNodeName(
         return pass.custom != nullptr && pass.custom->desc().node != nullptr &&
             pass.custom->desc().node->Name() == name;
     });
-    assert(it != passes.end());
+    REQUIRE(it != passes.end());
     return &(*it);
 }
 
@@ -273,7 +274,7 @@ size_t findPassIndex(const std::vector<GraphPassView>& passes, const std::string
     const auto it = std::find_if(passes.begin(), passes.end(), [&name](const auto& pass) {
         return pass.name == name;
     });
-    assert(it != passes.end());
+    REQUIRE(it != passes.end());
     return static_cast<size_t>(std::distance(passes.begin(), it));
 }
 
@@ -299,7 +300,44 @@ void installDefaultTargets(Scene& scene, bool default_reuse = true) {
     scene.cameras["effect"] = std::make_shared<SceneCamera>(1920, 1080, 0.01f, 100.0f);
 }
 
-void renderTargetAliasesResolveForOutputAndSampledSpecTextures() {
+TEST(RenderGraph, ConsecutiveAndTerminalEffectCopiesKeepTheirDependencies) {
+    Scene scene;
+    installDefaultTargets(scene);
+    const std::string input = std::string(wallpaper::WE_EFFECT_PPONG_PREFIX_A) + "copies";
+    for (const auto& key : { input, std::string("_rt_ping_b"), std::string("_rt_copy_a"),
+                            std::string("_rt_copy_b"), std::string("_rt_copy_c") }) {
+        scene.renderTargets[key] = { .width = 16, .height = 16, .allowReuse = true };
+    }
+    auto owner = makeNode("effect owner");
+    owner->SetSkipRenderPass(true);
+    owner->SetCamera("local");
+    auto camera = std::make_shared<SceneCamera>(16, 16, -1, 1);
+    auto layer = std::make_shared<SceneImageEffectLayer>(owner.get(), 16, 16, input, "_rt_ping_b");
+    layer->SetFinalBlend(wallpaper::BlendMode::Translucent);
+    auto effect = std::make_shared<SceneImageEffect>();
+    effect->nodes.push_back({ std::string(SpecTex_Default), makeNode("effect draw", {"_rt_copy_b"}) });
+    effect->commands.push_back({ .dst = "_rt_copy_a", .src = input, .afterpos = 0 });
+    effect->commands.push_back({ .dst = "_rt_copy_c", .src = std::string(SpecTex_Default), .afterpos = 1 });
+    effect->commands.push_back({ .dst = "_rt_copy_b", .src = "_rt_copy_a", .afterpos = 0 });
+    layer->AddEffect(effect);
+    camera->AttatchImgEffect(layer);
+    scene.cameras["local"] = camera;
+    scene.sceneGraph->AppendChild(owner);
+
+    const auto graph = wallpaper::sceneToRenderGraph(scene);
+    ASSERT_NE(graph, nullptr);
+    const auto passes = graphPasses(*graph);
+    std::map<std::string, size_t> copies;
+    for (size_t index = 0; index < passes.size(); ++index) {
+        if (passes[index].copy != nullptr) copies[passes[index].copy->desc().dst] = index;
+    }
+    ASSERT_EQ(copies.size(), 3u);
+    EXPECT_LT(copies.at("_rt_copy_a"), copies.at("_rt_copy_b"));
+    EXPECT_LT(copies.at("_rt_copy_b"), findPassIndex(passes, "effect draw"));
+    EXPECT_LT(findPassIndex(passes, "effect draw"), copies.at("_rt_copy_c"));
+}
+
+TEST(RenderGraph, renderTargetAliasesResolveForOutputAndSampledSpecTextures) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_resolved"] = SceneRenderTarget {
@@ -329,14 +367,14 @@ void renderTargetAliasesResolveForOutputAndSampledSpecTextures() {
     const auto passes = graphPasses(*graph);
 
     const auto* output_pass = findCustomPass(passes, "sampled_writer");
-    assert(output_pass->desc().output == "_rt_resolved");
+    REQUIRE(output_pass->desc().output == "_rt_resolved");
 
     const auto* sampled_pass = findCustomPass(passes, "alias_sampler");
-    assert(sampled_pass->desc().textures.size() == 1);
-    assert(sampled_pass->desc().textures[0] == "_rt_resolved");
+    REQUIRE(sampled_pass->desc().textures.size() == 1);
+    REQUIRE(sampled_pass->desc().textures[0] == "_rt_resolved");
 }
 
-void runtimeTextTextureNamesStayImported() {
+TEST(RenderGraph, runtimeTextTextureNamesStayImported) {
     Scene scene;
     installDefaultTargets(scene);
     scene.textures["runtime/text/Clock"].url = "runtime/text/Clock";
@@ -348,8 +386,8 @@ void runtimeTextTextureNamesStayImported() {
     const auto passes = graphPasses(*graph);
 
     const auto* text_pass = findCustomPass(passes, "text");
-    assert(text_pass->desc().textures.size() == 1);
-    assert(text_pass->desc().textures[0] == "runtime/text/Clock");
+    REQUIRE(text_pass->desc().textures.size() == 1);
+    REQUIRE(text_pass->desc().textures[0] == "runtime/text/Clock");
 
     const auto order = graph->topologicalOrder();
     const auto reads = graph->getLastReadTexs({ order });
@@ -362,10 +400,10 @@ void runtimeTextTextureNamesStayImported() {
             }
         }
     }
-    assert(found_imported_text_texture);
+    REQUIRE(found_imported_text_texture);
 }
 
-void submeshMaterialSlotsEmitDistinctCustomPasses() {
+TEST(RenderGraph, submeshMaterialSlotsEmitDistinctCustomPasses) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_submesh_slots"] = SceneRenderTarget {
@@ -409,19 +447,19 @@ void submeshMaterialSlotsEmitDistinctCustomPasses() {
     const auto* body_pass = findCustomPass(passes, "body");
     const auto* eyes_pass = findCustomPass(passes, "eyes");
 
-    assert(body_pass->desc().output == "_rt_submesh_slots");
-    assert(eyes_pass->desc().output == "_rt_submesh_slots");
-    assert(body_pass->desc().submesh_index == 0);
-    assert(body_pass->desc().material_slot == 0);
-    assert(eyes_pass->desc().submesh_index == 1);
-    assert(eyes_pass->desc().material_slot == 1);
-    assert(body_pass->desc().clear_on_first_use);
-    assert(!body_pass->desc().preserve_target_contents);
-    assert(!eyes_pass->desc().clear_on_first_use);
-    assert(eyes_pass->desc().preserve_target_contents);
+    REQUIRE(body_pass->desc().output == "_rt_submesh_slots");
+    REQUIRE(eyes_pass->desc().output == "_rt_submesh_slots");
+    REQUIRE(body_pass->desc().submesh_index == 0);
+    REQUIRE(body_pass->desc().material_slot == 0);
+    REQUIRE(eyes_pass->desc().submesh_index == 1);
+    REQUIRE(eyes_pass->desc().material_slot == 1);
+    REQUIRE(body_pass->desc().clear_on_first_use);
+    REQUIRE(!body_pass->desc().preserve_target_contents);
+    REQUIRE(!eyes_pass->desc().clear_on_first_use);
+    REQUIRE(eyes_pass->desc().preserve_target_contents);
 }
 
-void submeshMaterialRoutingDoesNotRequireSlotZero() {
+TEST(RenderGraph, submeshMaterialRoutingDoesNotRequireSlotZero) {
     Scene scene;
     installDefaultTargets(scene);
 
@@ -445,17 +483,17 @@ void submeshMaterialRoutingDoesNotRequireSlotZero() {
     const auto graph  = wallpaper::sceneToRenderGraph(scene);
     const auto passes = graphPasses(*graph);
 
-    assert(std::none_of(passes.begin(), passes.end(), [](const auto& pass) {
+    REQUIRE(std::none_of(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.custom != nullptr && pass.name.empty();
     }));
 
     const auto* slot_one_pass = findCustomPass(passes, "slot_one");
-    assert(slot_one_pass->desc().output == SpecTex_Default);
-    assert(slot_one_pass->desc().submesh_index == 1);
-    assert(slot_one_pass->desc().material_slot == 1);
+    REQUIRE(slot_one_pass->desc().output == SpecTex_Default);
+    REQUIRE(slot_one_pass->desc().submesh_index == 1);
+    REQUIRE(slot_one_pass->desc().material_slot == 1);
 }
 
-void submeshOutputOverrideRoutesOnlyThatPass() {
+TEST(RenderGraph, submeshOutputOverrideRoutesOnlyThatPass) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_puppet_mask"] = SceneRenderTarget {
@@ -505,13 +543,13 @@ void submeshOutputOverrideRoutesOnlyThatPass() {
 
     const auto* mask_pass = findCustomPass(passes, "mask_pass");
     const auto* clipped_pass = findCustomPass(passes, "clipped_pass");
-    assert(mask_pass->desc().output == "_rt_puppet_mask");
-    assert(clipped_pass->desc().output == "_rt_puppet_layer");
-    assert(clipped_pass->desc().textures.size() == 9);
-    assert(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
+    REQUIRE(mask_pass->desc().output == "_rt_puppet_mask");
+    REQUIRE(clipped_pass->desc().output == "_rt_puppet_layer");
+    REQUIRE(clipped_pass->desc().textures.size() == 9);
+    REQUIRE(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
 }
 
-void generatedPuppetMaskSubmeshesRoutePrepassAndMainClip() {
+TEST(RenderGraph, generatedPuppetMaskSubmeshesRoutePrepassAndMainClip) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_puppet_mask"] = SceneRenderTarget {
@@ -557,18 +595,18 @@ void generatedPuppetMaskSubmeshesRoutePrepassAndMainClip() {
 
     const auto* prepass_pass = findCustomPass(passes, "generated_mask_prepass");
     const auto* clipped_pass = findCustomPass(passes, "generated_clipped_main");
-    assert(prepass_pass->desc().output == "_rt_puppet_mask");
-    assert(prepass_pass->desc().submesh_index == 1);
-    assert(prepass_pass->desc().material_slot == 1);
-    assert(clipped_pass->desc().output == SpecTex_Default);
-    assert(clipped_pass->desc().submesh_index == 2);
-    assert(clipped_pass->desc().material_slot == 2);
-    assert(clipped_pass->desc().textures.size() == 9);
-    assert(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
-    assert(clipped_pass->desc().preserve_target_contents);
+    REQUIRE(prepass_pass->desc().output == "_rt_puppet_mask");
+    REQUIRE(prepass_pass->desc().submesh_index == 1);
+    REQUIRE(prepass_pass->desc().material_slot == 1);
+    REQUIRE(clipped_pass->desc().output == SpecTex_Default);
+    REQUIRE(clipped_pass->desc().submesh_index == 2);
+    REQUIRE(clipped_pass->desc().material_slot == 2);
+    REQUIRE(clipped_pass->desc().textures.size() == 9);
+    REQUIRE(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
+    REQUIRE(clipped_pass->desc().preserve_target_contents);
 }
 
-void parsedMaskedPuppetMaterialSlotsReachRenderGraph() {
+TEST(RenderGraph, parsedMaskedPuppetMaterialSlotsReachRenderGraph) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/puppet_image.json",
@@ -641,13 +679,13 @@ void main() {
         { "/materials/head.tex.tex", "" },
         { "/materials/masks/iris_mask.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     auto parsed = parser.Parse(
         "parsed-masked-puppet", BasicSceneJson("puppet_image.json"), vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
     const auto passes = graphPasses(*graph);
@@ -658,21 +696,21 @@ void main() {
         return pass.custom != nullptr && pass.name == "puppetmain" &&
             pass.custom->desc().material_slot == 2;
     });
-    assert(clipped_it != passes.end());
+    REQUIRE(clipped_it != passes.end());
     const auto* clipped_pass = clipped_it->custom;
 
-    assert(base_pass->desc().submesh_index == 0);
-    assert(base_pass->desc().material_slot == 0);
-    assert(prepass_pass->desc().submesh_index == 1);
-    assert(prepass_pass->desc().material_slot == 1);
-    assert(prepass_pass->desc().output == "_rt_puppet_mask");
-    assert(clipped_pass->desc().submesh_index == 2);
-    assert(clipped_pass->desc().material_slot == 2);
-    assert(clipped_pass->desc().textures.size() == 9);
-    assert(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
+    REQUIRE(base_pass->desc().submesh_index == 0);
+    REQUIRE(base_pass->desc().material_slot == 0);
+    REQUIRE(prepass_pass->desc().submesh_index == 1);
+    REQUIRE(prepass_pass->desc().material_slot == 1);
+    REQUIRE(prepass_pass->desc().output == "_rt_puppet_mask");
+    REQUIRE(clipped_pass->desc().submesh_index == 2);
+    REQUIRE(clipped_pass->desc().material_slot == 2);
+    REQUIRE(clipped_pass->desc().textures.size() == 9);
+    REQUIRE(clipped_pass->desc().textures[8] == "_rt_puppet_mask");
 }
 
-void skippedBasePassStillEmitsEffectPasses() {
+TEST(RenderGraph, skippedBasePassStillEmitsEffectPasses) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_fx_a"] = SceneRenderTarget { .width = 64, .height = 64 };
@@ -705,13 +743,13 @@ void skippedBasePassStillEmitsEffectPasses() {
     const auto graph  = wallpaper::sceneToRenderGraph(scene);
     const auto passes = graphPasses(*graph);
 
-    assert(std::none_of(passes.begin(), passes.end(), [](const auto& pass) {
+    REQUIRE(std::none_of(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.name == "skipped_base";
     }));
-    assert(findCustomPass(passes, "effect_after_skipped_base") != nullptr);
+    REQUIRE(findCustomPass(passes, "effect_after_skipped_base") != nullptr);
 }
 
-void composeBaseRunsBeforeChildrenAndEffectsAfterChildren() {
+TEST(RenderGraph, composeBaseRunsBeforeChildrenAndEffectsAfterChildren) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_compose_a"] = SceneRenderTarget { .width = 64, .height = 64 };
@@ -753,11 +791,11 @@ void composeBaseRunsBeforeChildrenAndEffectsAfterChildren() {
     const auto child_index  = findPassIndex(passes, "compose_child");
     const auto effect_index = findPassIndex(passes, "compose_effect");
 
-    assert(base_index < child_index);
-    assert(child_index < effect_index);
+    REQUIRE(base_index < child_index);
+    REQUIRE(child_index < effect_index);
 }
 
-void parsedContainerDeclarationOrderControlsRenderPassOrder() {
+TEST(RenderGraph, parsedContainerDeclarationOrderControlsRenderPassOrder) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/image.json", R"({"width":64,"height":32,"material":"mat.json"})" },
@@ -781,9 +819,9 @@ void main() {
 )" },
         { "/materials/a.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -804,7 +842,7 @@ void main() {
     })";
 
     auto parsed = parser.Parse("rendergraph-declaration-order", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     installDefaultTargets(*parsed);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
@@ -816,10 +854,10 @@ void main() {
         static_cast<size_t>(std::distance(passes.data(), child_view));
     const auto sibling_index =
         static_cast<size_t>(std::distance(passes.data(), sibling_view));
-    assert(child_index < sibling_index);
+    REQUIRE(child_index < sibling_index);
 }
 
-void parsedForwardParentDeclarationOrderControlsRenderPassOrder() {
+TEST(RenderGraph, parsedForwardParentDeclarationOrderControlsRenderPassOrder) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/image.json", R"({"width":64,"height":32,"material":"mat.json"})" },
@@ -843,9 +881,9 @@ void main() {
 )" },
         { "/materials/a.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -866,7 +904,7 @@ void main() {
     })";
 
     auto parsed = parser.Parse("rendergraph-forward-parent-order", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     installDefaultTargets(*parsed);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
@@ -878,10 +916,10 @@ void main() {
         static_cast<size_t>(std::distance(passes.data(), child_view));
     const auto root_index =
         static_cast<size_t>(std::distance(passes.data(), root_view));
-    assert(root_index < child_index);
+    REQUIRE(root_index < child_index);
 }
 
-void reusableNonDefaultTargetClearsOnlyOnFirstWriter() {
+TEST(RenderGraph, reusableNonDefaultTargetClearsOnlyOnFirstWriter) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_reusable"] = SceneRenderTarget {
@@ -921,16 +959,16 @@ void reusableNonDefaultTargetClearsOnlyOnFirstWriter() {
     const auto* first_pass  = findCustomPass(passes, "first_reusable_writer");
     const auto* second_pass = findCustomPass(passes, "second_reusable_writer");
 
-    assert(first_pass->desc().output == "_rt_reusable");
-    assert(first_pass->desc().clear_on_first_use);
-    assert(!first_pass->desc().preserve_target_contents);
+    REQUIRE(first_pass->desc().output == "_rt_reusable");
+    REQUIRE(first_pass->desc().clear_on_first_use);
+    REQUIRE(!first_pass->desc().preserve_target_contents);
 
-    assert(second_pass->desc().output == "_rt_reusable");
-    assert(!second_pass->desc().clear_on_first_use);
-    assert(second_pass->desc().preserve_target_contents);
+    REQUIRE(second_pass->desc().output == "_rt_reusable");
+    REQUIRE(!second_pass->desc().clear_on_first_use);
+    REQUIRE(second_pass->desc().preserve_target_contents);
 }
 
-void forceClearReusableTargetClearsEveryWriter() {
+TEST(RenderGraph, forceClearReusableTargetClearsEveryWriter) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_force_clear"] = SceneRenderTarget {
@@ -971,16 +1009,16 @@ void forceClearReusableTargetClearsEveryWriter() {
     const auto* first_pass  = findCustomPass(passes, "first_force_clear_writer");
     const auto* second_pass = findCustomPass(passes, "second_force_clear_writer");
 
-    assert(first_pass->desc().output == "_rt_force_clear");
-    assert(first_pass->desc().clear_on_first_use);
-    assert(!first_pass->desc().preserve_target_contents);
+    REQUIRE(first_pass->desc().output == "_rt_force_clear");
+    REQUIRE(first_pass->desc().clear_on_first_use);
+    REQUIRE(!first_pass->desc().preserve_target_contents);
 
-    assert(second_pass->desc().output == "_rt_force_clear");
-    assert(second_pass->desc().clear_on_first_use);
-    assert(!second_pass->desc().preserve_target_contents);
+    REQUIRE(second_pass->desc().output == "_rt_force_clear");
+    REQUIRE(second_pass->desc().clear_on_first_use);
+    REQUIRE(!second_pass->desc().preserve_target_contents);
 }
 
-void forceClearDoesNotChangeDefaultOutputPreservation() {
+TEST(RenderGraph, forceClearDoesNotChangeDefaultOutputPreservation) {
     Scene scene;
     installDefaultTargets(scene);
     scene.clearEnabled = false;
@@ -997,16 +1035,16 @@ void forceClearDoesNotChangeDefaultOutputPreservation() {
     const auto* first_pass  = findCustomPass(passes, "first_default_force_clear_guard");
     const auto* second_pass = findCustomPass(passes, "second_default_force_clear_guard");
 
-    assert(first_pass->desc().output == SpecTex_Default);
-    assert(!first_pass->desc().clear_on_first_use);
-    assert(!first_pass->desc().preserve_target_contents);
+    REQUIRE(first_pass->desc().output == SpecTex_Default);
+    REQUIRE(!first_pass->desc().clear_on_first_use);
+    REQUIRE(!first_pass->desc().preserve_target_contents);
 
-    assert(second_pass->desc().output == SpecTex_Default);
-    assert(!second_pass->desc().clear_on_first_use);
-    assert(second_pass->desc().preserve_target_contents);
+    REQUIRE(second_pass->desc().output == SpecTex_Default);
+    REQUIRE(!second_pass->desc().clear_on_first_use);
+    REQUIRE(second_pass->desc().preserve_target_contents);
 }
 
-void renderTargetSampleCountPropagatesToCustomPassDesc() {
+TEST(RenderGraph, renderTargetSampleCountPropagatesToCustomPassDesc) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_msaa_scaffold"] = SceneRenderTarget {
@@ -1033,11 +1071,11 @@ void renderTargetSampleCountPropagatesToCustomPassDesc() {
     const auto passes = graphPasses(*graph);
 
     const auto* pass = findCustomPass(passes, "msaa_scaffold_writer");
-    assert(pass->desc().output == "_rt_msaa_scaffold");
-    assert(pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(pass->desc().output == "_rt_msaa_scaffold");
+    REQUIRE(pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void copyWrittenMsaaTargetsPreserveWithSingleSamplePasses() {
+TEST(RenderGraph, copyWrittenMsaaTargetsPreserveWithSingleSamplePasses) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_msaa_after_copy"] = SceneRenderTarget {
@@ -1064,12 +1102,12 @@ void copyWrittenMsaaTargetsPreserveWithSingleSamplePasses() {
     const auto passes = graphPasses(*graph);
 
     const auto* pass = findCustomPass(passes, "msaa_after_copy_writer");
-    assert(pass->desc().output == "_rt_msaa_after_copy");
-    assert(pass->desc().preserve_target_contents);
-    assert(pass->desc().sample_count == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(pass->desc().output == "_rt_msaa_after_copy");
+    REQUIRE(pass->desc().preserve_target_contents);
+    REQUIRE(pass->desc().sample_count == VK_SAMPLE_COUNT_1_BIT);
 }
 
-void separateMsaaRenderTargetWritersPreserveWithMsaaSampleCount() {
+TEST(RenderGraph, separateMsaaRenderTargetWritersPreserveWithMsaaSampleCount) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_msaa_multi_writer"] = SceneRenderTarget {
@@ -1110,18 +1148,18 @@ void separateMsaaRenderTargetWritersPreserveWithMsaaSampleCount() {
     const auto* first_pass  = findCustomPass(passes, "first_msaa_multi_writer");
     const auto* second_pass = findCustomPass(passes, "second_msaa_multi_writer");
 
-    assert(first_pass->desc().output == "_rt_msaa_multi_writer");
-    assert(first_pass->desc().clear_on_first_use);
-    assert(!first_pass->desc().preserve_target_contents);
-    assert(first_pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(first_pass->desc().output == "_rt_msaa_multi_writer");
+    REQUIRE(first_pass->desc().clear_on_first_use);
+    REQUIRE(!first_pass->desc().preserve_target_contents);
+    REQUIRE(first_pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
 
-    assert(second_pass->desc().output == "_rt_msaa_multi_writer");
-    assert(!second_pass->desc().clear_on_first_use);
-    assert(second_pass->desc().preserve_target_contents);
-    assert(second_pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(second_pass->desc().output == "_rt_msaa_multi_writer");
+    REQUIRE(!second_pass->desc().clear_on_first_use);
+    REQUIRE(second_pass->desc().preserve_target_contents);
+    REQUIRE(second_pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void videoTextureSamplingIsPreservedInMsaaScenePass() {
+TEST(RenderGraph, videoTextureSamplingIsPreservedInMsaaScenePass) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_msaa_video"] = SceneRenderTarget {
@@ -1152,13 +1190,13 @@ void videoTextureSamplingIsPreservedInMsaaScenePass() {
     const auto passes = graphPasses(*graph);
 
     const auto* pass = findCustomPass(passes, "msaa_video_sampler");
-    assert(pass->desc().output == "_rt_msaa_video");
-    assert(pass->desc().textures.size() == 1);
-    assert(pass->desc().textures[0] == "video://clip");
-    assert(pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(pass->desc().output == "_rt_msaa_video");
+    REQUIRE(pass->desc().textures.size() == 1);
+    REQUIRE(pass->desc().textures[0] == "video://clip");
+    REQUIRE(pass->desc().sample_count == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void defaultOutputUsesSceneClearEnabledWhileNonDefaultWritesAlpha() {
+TEST(RenderGraph, defaultOutputUsesSceneClearEnabledWhileNonDefaultWritesAlpha) {
     Scene scene;
     installDefaultTargets(scene);
     scene.clearEnabled = false;
@@ -1187,14 +1225,14 @@ void defaultOutputUsesSceneClearEnabledWhileNonDefaultWritesAlpha() {
     const auto passes = graphPasses(*graph);
 
     const auto* default_pass = findCustomPass(passes, "default_writer");
-    assert(default_pass->desc().output == SpecTex_Default);
-    assert(!default_pass->desc().clear_on_first_use);
-    assert(!default_pass->desc().write_alpha);
+    REQUIRE(default_pass->desc().output == SpecTex_Default);
+    REQUIRE(!default_pass->desc().clear_on_first_use);
+    REQUIRE(!default_pass->desc().write_alpha);
 
     const auto* offscreen_pass = findCustomPass(passes, "alpha_writer");
-    assert(offscreen_pass->desc().output == "_rt_alpha");
-    assert(offscreen_pass->desc().clear_on_first_use);
-    assert(offscreen_pass->desc().write_alpha);
+    REQUIRE(offscreen_pass->desc().output == "_rt_alpha");
+    REQUIRE(offscreen_pass->desc().clear_on_first_use);
+    REQUIRE(offscreen_pass->desc().write_alpha);
 
     Scene clear_scene;
     installDefaultTargets(clear_scene);
@@ -1207,12 +1245,12 @@ void defaultOutputUsesSceneClearEnabledWhileNonDefaultWritesAlpha() {
     const auto clear_passes = graphPasses(*clear_graph);
 
     const auto* clear_pass = findCustomPass(clear_passes, "default_clear_writer");
-    assert(clear_pass->desc().output == SpecTex_Default);
-    assert(clear_pass->desc().clear_on_first_use);
-    assert(!clear_pass->desc().write_alpha);
+    REQUIRE(clear_pass->desc().output == SpecTex_Default);
+    REQUIRE(clear_pass->desc().clear_on_first_use);
+    REQUIRE(!clear_pass->desc().write_alpha);
 }
 
-void postProcessesAppendPassesAndCopiesAfterSceneGraph() {
+TEST(RenderGraph, postProcessesAppendPassesAndCopiesAfterSceneGraph) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_post_pass"] = SceneRenderTarget {
@@ -1251,19 +1289,19 @@ void postProcessesAppendPassesAndCopiesAfterSceneGraph() {
         return pass.copy != nullptr && pass.copy->desc().src == "_rt_post_pass"
             && pass.copy->desc().dst == "_rt_post_copy";
     });
-    assert(copy_it != passes.end());
+    REQUIRE(copy_it != passes.end());
     const auto copy_index = static_cast<size_t>(std::distance(passes.begin(), copy_it));
 
-    assert(scene_index < post_index);
-    assert(post_index < copy_index);
+    REQUIRE(scene_index < post_index);
+    REQUIRE(post_index < copy_index);
 
     const auto* post_pass = findCustomPass(passes, "post_process_writer");
-    assert(post_pass->desc().output == "_rt_post_pass");
-    assert(copy_it->copy->desc().src == "_rt_post_pass");
-    assert(copy_it->copy->desc().dst == "_rt_post_copy");
+    REQUIRE(post_pass->desc().output == "_rt_post_pass");
+    REQUIRE(copy_it->copy->desc().src == "_rt_post_pass");
+    REQUIRE(copy_it->copy->desc().dst == "_rt_post_copy");
 }
 
-void nullPostProcessPassNodesAreSkipped() {
+TEST(RenderGraph, nullPostProcessPassNodesAreSkipped) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_after_null_pass"] = SceneRenderTarget {
@@ -1298,14 +1336,14 @@ void nullPostProcessPassNodesAreSkipped() {
     const auto passes = graphPasses(*graph);
 
     const auto* post_pass = findCustomPass(passes, "post_after_null_pass");
-    assert(post_pass->desc().output == "_rt_after_null_pass");
-    assert(std::any_of(passes.begin(), passes.end(), [](const auto& pass) {
+    REQUIRE(post_pass->desc().output == "_rt_after_null_pass");
+    REQUIRE(std::any_of(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.copy != nullptr && pass.copy->desc().src == "_rt_after_null_pass"
             && pass.copy->desc().dst == "_rt_after_null_copy";
     }));
 }
 
-void postProcessCopyStepsResolveRenderTargetAliases() {
+TEST(RenderGraph, postProcessCopyStepsResolveRenderTargetAliases) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_alias_resolved_src"] = SceneRenderTarget {
@@ -1338,20 +1376,20 @@ void postProcessCopyStepsResolveRenderTargetAliases() {
     const auto passes = graphPasses(*graph);
 
     const auto* post_pass = findCustomPass(passes, "alias_post_writer");
-    assert(post_pass->desc().output == "_rt_alias_resolved_src");
+    REQUIRE(post_pass->desc().output == "_rt_alias_resolved_src");
 
     const auto copy_it = std::find_if(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.copy != nullptr && pass.copy->desc().src == "_rt_alias_resolved_src"
             && pass.copy->desc().dst == "_rt_alias_resolved_dst";
     });
-    assert(copy_it != passes.end());
+    REQUIRE(copy_it != passes.end());
 
     const auto post_index = findPassIndex(passes, "alias_post_writer");
     const auto copy_index = static_cast<size_t>(std::distance(passes.begin(), copy_it));
-    assert(post_index < copy_index);
+    REQUIRE(post_index < copy_index);
 }
 
-void linkedImageCompositeTexturesResolveToSourceLayerOutput() {
+TEST(RenderGraph, linkedImageCompositeTexturesResolveToSourceLayerOutput) {
     Scene scene;
     installDefaultTargets(scene);
 
@@ -1367,16 +1405,16 @@ void linkedImageCompositeTexturesResolveToSourceLayerOutput() {
     const auto passes = graphPasses(*graph);
 
     const auto* consumer_pass = findCustomPass(passes, "consumer_layer");
-    assert(consumer_pass->desc().textures.size() == 1);
-    assert(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(159));
+    REQUIRE(consumer_pass->desc().textures.size() == 1);
+    REQUIRE(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(159));
 
     const auto copy_it = std::find_if(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.copy != nullptr && pass.copy->desc().dst == wallpaper::GenLinkTex(159);
     });
-    assert(copy_it != passes.end());
+    REQUIRE(copy_it != passes.end());
 }
 
-void parsedInvisibleDependencySourceResolvesLinkedRenderTexture() {
+TEST(RenderGraph, parsedInvisibleDependencySourceResolvesLinkedRenderTexture) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/image.json", R"({"width":64,"height":32,"material":"mat.json"})" },
@@ -1404,9 +1442,9 @@ void main() {
 )" },
         { "/materials/a.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -1426,23 +1464,23 @@ void main() {
     })";
 
     auto parsed = parser.Parse("linked-invisible-dependency", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     installDefaultTargets(*parsed);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
     const auto passes = graphPasses(*graph);
 
     const auto* consumer_pass = findCustomPassByNodeName(passes, "consumer");
-    assert(consumer_pass->desc().textures.size() == 1);
-    assert(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(159));
+    REQUIRE(consumer_pass->desc().textures.size() == 1);
+    REQUIRE(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(159));
 
     const auto copy_it = std::find_if(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.copy != nullptr && pass.copy->desc().dst == wallpaper::GenLinkTex(159);
     });
-    assert(copy_it != passes.end());
+    REQUIRE(copy_it != passes.end());
 }
 
-void parsedZeroHeightDependencyEffectUsesNonZeroRenderTargets() {
+TEST(RenderGraph, parsedZeroHeightDependencyEffectUsesNonZeroRenderTargets) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/models/util/solidlayer.json",
@@ -1477,9 +1515,9 @@ void main() {
 )" },
         { "/materials/solid.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -1500,20 +1538,20 @@ void main() {
     })";
 
     auto parsed = parser.Parse("zero-height-dependency-effect", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     installDefaultTargets(*parsed);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
     const auto passes = graphPasses(*graph);
 
     const auto* consumer_pass = findCustomPassByNodeName(passes, "consumer");
-    assert(consumer_pass->desc().textures.size() == 1);
-    assert(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(915));
+    REQUIRE(consumer_pass->desc().textures.size() == 1);
+    REQUIRE(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(915));
 
     const auto copy_it = std::find_if(passes.begin(), passes.end(), [](const auto& pass) {
         return pass.copy != nullptr && pass.copy->desc().dst == wallpaper::GenLinkTex(915);
     });
-    assert(copy_it != passes.end());
+    REQUIRE(copy_it != passes.end());
 
     const std::string full_compo_prefix =
         std::string(wallpaper::WE_FULL_COMPO_BUFFER_PREFIX);
@@ -1524,17 +1562,17 @@ void main() {
             name.rfind(full_compo_prefix, 0) == 0 || name.rfind(effect_pingpong_prefix, 0) == 0 ||
             name.find("_rt_TinyScaledBuffer") != std::string::npos;
         if (!relevant) continue;
-        assert(target.width * target.height > 4);
-        assert(target.width >= 4);
-        assert(target.height >= 4);
+        REQUIRE(target.width * target.height > 4);
+        REQUIRE(target.width >= 4);
+        REQUIRE(target.height >= 4);
         if (name.find("_rt_TinyScaledBuffer") == std::string::npos) {
-            assert(target.width == 64);
-            assert(target.height == 360);
+            REQUIRE(target.width == 64);
+            REQUIRE(target.height == 360);
         }
     }
 }
 
-void linkedEffectSourceFallsBackToBaseTargetWhenEffectsFailToLoad() {
+TEST(RenderGraph, linkedEffectSourceFallsBackToBaseTargetWhenEffectsFailToLoad) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/source.json", R"({"width":64,"height":32,"material":"mat.json"})" },
@@ -1564,9 +1602,9 @@ void main() {
 )" },
         { "/materials/a.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -1587,21 +1625,21 @@ void main() {
     })";
 
     auto parsed = parser.Parse("failed-effect-linked-source", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     installDefaultTargets(*parsed);
 
     const auto graph  = wallpaper::sceneToRenderGraph(*parsed);
     const auto passes = graphPasses(*graph);
 
     const auto* consumer_pass = findCustomPassByNodeName(passes, "consumer");
-    assert(consumer_pass->desc().textures.size() == 1);
-    assert(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(915));
+    REQUIRE(consumer_pass->desc().textures.size() == 1);
+    REQUIRE(consumer_pass->desc().textures[0] == wallpaper::GenLinkTex(915));
 
     const auto* source_view = findCustomPassViewByNodeName(passes, "dependency source with failed effect");
     const auto* source_pass = source_view->custom;
-    assert(source_pass->desc().output.rfind(wallpaper::WE_EFFECT_PPONG_PREFIX_A, 0) == 0);
+    REQUIRE(source_pass->desc().output.rfind(wallpaper::WE_EFFECT_PPONG_PREFIX_A, 0) == 0);
     const auto* link_copy = findCopyPass(passes, source_pass->desc().output, wallpaper::GenLinkTex(915));
-    assert(link_copy != nullptr);
+    REQUIRE(link_copy != nullptr);
 
     const auto source_index =
         static_cast<size_t>(std::distance(passes.data(), source_view));
@@ -1610,11 +1648,11 @@ void main() {
     const auto* consumer_view = findCustomPassViewByNodeName(passes, "consumer");
     const auto consumer_index =
         static_cast<size_t>(std::distance(passes.data(), consumer_view));
-    assert(source_index < copy_index);
-    assert(copy_index < consumer_index);
+    REQUIRE(source_index < copy_index);
+    REQUIRE(copy_index < consumer_index);
 }
 
-void linkedEffectSourceDoesNotUseIntermediateTargetAsFallback() {
+TEST(RenderGraph, linkedEffectSourceDoesNotUseIntermediateTargetAsFallback) {
     Scene scene;
     installDefaultTargets(scene);
     scene.renderTargets["_rt_source_base"] = SceneRenderTarget {
@@ -1660,13 +1698,13 @@ void linkedEffectSourceDoesNotUseIntermediateTargetAsFallback() {
     const auto passes = graphPasses(*graph);
 
     const auto* consumer_pass = findCustomPass(passes, "consumer_of_base");
-    assert(consumer_pass->desc().textures.size() == 1);
-    assert(consumer_pass->desc().textures[0].empty());
-    assert(findCopyPass(passes, "_rt_source_base", wallpaper::GenLinkTex(915)) == nullptr);
-    assert(findCopyPass(passes, "_rt_intermediate_effect", wallpaper::GenLinkTex(915)) == nullptr);
+    REQUIRE(consumer_pass->desc().textures.size() == 1);
+    REQUIRE(consumer_pass->desc().textures[0].empty());
+    REQUIRE(findCopyPass(passes, "_rt_source_base", wallpaper::GenLinkTex(915)) == nullptr);
+    REQUIRE(findCopyPass(passes, "_rt_intermediate_effect", wallpaper::GenLinkTex(915)) == nullptr);
 }
 
-void parsedFullscreenScaledFbosStayValidAfterScreenBindSizing() {
+TEST(RenderGraph, parsedFullscreenScaledFbosStayValidAfterScreenBindSizing) {
     wallpaper::fs::VFS vfs;
     auto files = std::map<std::string, std::string> {
         { "/fullscreen.json",
@@ -1695,9 +1733,9 @@ void main() {
 )" },
         { "/materials/solid.tex.tex", "" },
     };
-    assert(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    REQUIRE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
 
-    wallpaper::audio::SoundManager sound_manager;
+    wallpaper::audio::SoundManager sound_manager(wallpaper::audio::SoundManager::OutputBackend::Null);
     wallpaper::WPSceneParser       parser;
     const std::string              scene_json = R"({
       "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
@@ -1717,22 +1755,22 @@ void main() {
     })";
 
     auto parsed = parser.Parse("fullscreen-scaled-fbo", scene_json, vfs, sound_manager);
-    assert(parsed != nullptr);
+    REQUIRE(parsed != nullptr);
     const auto tiny_it = std::find_if(
         parsed->renderTargets.begin(),
         parsed->renderTargets.end(),
         [](const auto& item) {
             return item.first.find("_rt_TinyFullscreenBuffer") != std::string::npos;
         });
-    assert(tiny_it != parsed->renderTargets.end());
+    REQUIRE(tiny_it != parsed->renderTargets.end());
 
     const auto& target = tiny_it->second;
-    assert(target.bind.enable);
-    assert(target.bind.screen);
+    REQUIRE(target.bind.enable);
+    REQUIRE(target.bind.screen);
     const auto& default_target = parsed->renderTargets.at(std::string(SpecTex_Default));
-    assert(default_target.width == 160);
-    assert(default_target.height == 90);
-    assert(std::abs(target.bind.scale - (1.0 / 512.0)) < 0.000001);
+    REQUIRE(default_target.width == 160);
+    REQUIRE(default_target.height == 90);
+    REQUIRE(std::abs(target.bind.scale - (1.0 / 512.0)) < 0.000001);
 
     auto runtime_target = target;
     Scene runtime_scene;
@@ -1745,12 +1783,12 @@ void main() {
             .height = 999,
         });
     runtime_target = runtime_scene.renderTargets.at("fullscreen_runtime_target");
-    assert(runtime_target.width >= 4);
-    assert(runtime_target.height >= 4);
-    assert(runtime_target.width * runtime_target.height > 4);
+    REQUIRE(runtime_target.width >= 4);
+    REQUIRE(runtime_target.height >= 4);
+    REQUIRE(runtime_target.width * runtime_target.height > 4);
 }
 
-void screenBoundSizingHonorsTinyAuthoredDefaultExtent() {
+TEST(RenderGraph, screenBoundSizingHonorsTinyAuthoredDefaultExtent) {
     Scene scene;
     scene.ortho[0] = 640;
     scene.ortho[1] = 360;
@@ -1776,11 +1814,11 @@ void screenBoundSizingHonorsTinyAuthoredDefaultExtent() {
             .height = 999,
         });
 
-    assert(source_extent.width == 1);
-    assert(source_extent.height == 90);
+    REQUIRE(source_extent.source.width == 1);
+    REQUIRE(source_extent.source.height == 90);
     const auto& target = scene.renderTargets.at("screen_bound_tiny");
-    assert(target.width == 4);
-    assert(target.height == 90);
+    REQUIRE(target.width == 4);
+    REQUIRE(target.height == 90);
 
     const auto second_source_extent = wallpaper::vulkan::ResolveScreenBoundRenderTargetSizes(
         scene,
@@ -1788,17 +1826,19 @@ void screenBoundSizingHonorsTinyAuthoredDefaultExtent() {
             .width  = 999,
             .height = 999,
         });
-    assert(second_source_extent.width == 1);
-    assert(second_source_extent.height == 90);
+    REQUIRE(second_source_extent.source.width == 1);
+    REQUIRE(second_source_extent.source.height == 90);
     const auto& second_target = scene.renderTargets.at("screen_bound_tiny");
-    assert(second_target.width == 4);
-    assert(second_target.height == 90);
+    REQUIRE(second_target.width == 4);
+    REQUIRE(second_target.height == 90);
     const auto& default_target = scene.renderTargets.at(std::string(SpecTex_Default));
-    assert(default_target.width == 1);
-    assert(default_target.height == 90);
+    REQUIRE(source_extent.raster.width == 4);
+    REQUIRE(default_target.authored_width == 1);
+    REQUIRE(default_target.width == 4);
+    REQUIRE(default_target.height == 90);
 }
 
-void textureDescriptorReadinessRejectsMissingImages() {
+TEST(RenderGraph, textureDescriptorReadinessRejectsMissingImages) {
     wallpaper::vulkan::CustomShaderPass::Desc desc {};
     desc.textures = { "_rt_imageLayerComposite_159_a" };
     desc.vk_textures.resize(1);
@@ -1811,10 +1851,10 @@ void textureDescriptorReadinessRejectsMissingImages() {
     wallpaper::vulkan::CustomShaderPass pass(desc);
     pass.desc().vk_textures = desc.vk_textures;
     pass.desc().vk_texture_bindings = desc.vk_texture_bindings;
-    assert(! pass.textureDescriptorsReady());
+    REQUIRE(! pass.textureDescriptorsReady());
 }
 
-void textureDescriptorReadinessRejectsMissingSeparateSampler() {
+TEST(RenderGraph, textureDescriptorReadinessRejectsMissingSeparateSampler) {
     wallpaper::vulkan::CustomShaderPass::Desc desc {};
     desc.textures = { "image.png" };
     desc.vk_textures.resize(1);
@@ -1833,41 +1873,6 @@ void textureDescriptorReadinessRejectsMissingSeparateSampler() {
     wallpaper::vulkan::CustomShaderPass pass(desc);
     pass.desc().vk_textures = desc.vk_textures;
     pass.desc().vk_texture_bindings = desc.vk_texture_bindings;
-    assert(! pass.textureDescriptorsReady());
+    REQUIRE(! pass.textureDescriptorsReady());
 }
 } // namespace
-
-int main() {
-    renderTargetAliasesResolveForOutputAndSampledSpecTextures();
-    runtimeTextTextureNamesStayImported();
-    submeshMaterialSlotsEmitDistinctCustomPasses();
-    submeshMaterialRoutingDoesNotRequireSlotZero();
-    submeshOutputOverrideRoutesOnlyThatPass();
-    generatedPuppetMaskSubmeshesRoutePrepassAndMainClip();
-    parsedMaskedPuppetMaterialSlotsReachRenderGraph();
-    skippedBasePassStillEmitsEffectPasses();
-    composeBaseRunsBeforeChildrenAndEffectsAfterChildren();
-    parsedContainerDeclarationOrderControlsRenderPassOrder();
-    parsedForwardParentDeclarationOrderControlsRenderPassOrder();
-    reusableNonDefaultTargetClearsOnlyOnFirstWriter();
-    forceClearReusableTargetClearsEveryWriter();
-    forceClearDoesNotChangeDefaultOutputPreservation();
-    renderTargetSampleCountPropagatesToCustomPassDesc();
-    copyWrittenMsaaTargetsPreserveWithSingleSamplePasses();
-    separateMsaaRenderTargetWritersPreserveWithMsaaSampleCount();
-    videoTextureSamplingIsPreservedInMsaaScenePass();
-    defaultOutputUsesSceneClearEnabledWhileNonDefaultWritesAlpha();
-    postProcessesAppendPassesAndCopiesAfterSceneGraph();
-    nullPostProcessPassNodesAreSkipped();
-    postProcessCopyStepsResolveRenderTargetAliases();
-    linkedImageCompositeTexturesResolveToSourceLayerOutput();
-    parsedInvisibleDependencySourceResolvesLinkedRenderTexture();
-    parsedZeroHeightDependencyEffectUsesNonZeroRenderTargets();
-    linkedEffectSourceFallsBackToBaseTargetWhenEffectsFailToLoad();
-    linkedEffectSourceDoesNotUseIntermediateTargetAsFallback();
-    parsedFullscreenScaledFbosStayValidAfterScreenBindSizing();
-    screenBoundSizingHonorsTinyAuthoredDefaultExtent();
-    textureDescriptorReadinessRejectsMissingImages();
-    textureDescriptorReadinessRejectsMissingSeparateSampler();
-    return 0;
-}

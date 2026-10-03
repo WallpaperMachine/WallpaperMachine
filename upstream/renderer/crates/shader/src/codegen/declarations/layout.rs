@@ -49,6 +49,18 @@ impl VideoPlaneResource {
         SmolStr::new(format!("_we_VideoMatrix{slot}"))
     }
 
+    /// Display-to-source UV matrix rows, initialized to identity by the host.
+    #[must_use]
+    pub(crate) fn uv_transform_uniform_name(slot: u8) -> SmolStr {
+        SmolStr::new(format!("_we_VideoUvTransform{slot}"))
+    }
+
+    /// Display-to-source UV translation, initialized to zero by the host.
+    #[must_use]
+    pub(crate) fn uv_offset_uniform_name(slot: u8) -> SmolStr {
+        SmolStr::new(format!("_we_VideoUvOffset{slot}"))
+    }
+
     /// Returns the generated sampling helper name for this slot.
     #[must_use]
     pub(crate) fn helper_name(slot: u8) -> String {

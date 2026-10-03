@@ -67,9 +67,14 @@ actor PixivService {
 
     /// The original of `page`, streamed with progress.
     func original(
-        of page: PixivPage, progress: @escaping @Sendable (Int64, Int64?) -> Void
+        of page: PixivPage, checkpoint: URL? = nil,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void
     ) async throws -> Data {
         guard Self.isImageURL(page.originalURL) else { throw PixivFailure(code: .unreadable) }
+        if let checkpoint {
+            return try await transport.image(from: page.originalURL, limit: Self.originalByteLimit,
+                                             checkpoint: checkpoint, progress: progress)
+        }
         return try await transport.image(from: page.originalURL, limit: Self.originalByteLimit, progress: progress)
     }
 

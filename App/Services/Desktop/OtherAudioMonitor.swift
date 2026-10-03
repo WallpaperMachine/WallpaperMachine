@@ -10,6 +10,8 @@ struct ProcessAudioSample: Equatable, Sendable {
 /// sample may have changed. Core Audio work stays off the main thread.
 protocol ProcessAudioSource: AnyObject {
     func sample() -> [ProcessAudioSample]
+    /// Installed before each start. Asynchronous stop work must never clear a
+    /// handler installed for a later start; the caller owns that lifecycle.
     var onChange: (@MainActor () -> Void)? { get set }
     func start()
     func stop()
@@ -74,7 +76,6 @@ final class OtherAudioMonitor {
                 MainActor.assumeIsolated { self?.refreshSource() }
             }
         }
-        source.onChange = { [weak self] in self?.schedule() }
         refreshSource()
     }
 
@@ -104,6 +105,7 @@ final class OtherAudioMonitor {
         guard shouldListen else {
             settle?.cancel()
             settle = nil
+            source.onChange = nil
             if sourceRunning {
                 source.stop()
                 sourceRunning = false
@@ -112,8 +114,9 @@ final class OtherAudioMonitor {
             return
         }
         if !sourceRunning {
-            source.start()
+            source.onChange = { [weak self] in self?.schedule() }
             sourceRunning = true
+            source.start()
         }
         schedule()
     }
@@ -216,7 +219,6 @@ private final class CoreAudioProcessSource: ProcessAudioSource, @unchecked Senda
     private func teardown() {
         lock.lock()
         running = false
-        changeHandler = nil
         lock.unlock()
         if let listListener {
             var address = Self.address(kAudioHardwarePropertyProcessObjectList)

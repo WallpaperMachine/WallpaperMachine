@@ -28,6 +28,10 @@ final class AppUpdateStore {
     @ObservationIgnored private var activeOperation: AppUpdateOperation?
     @ObservationIgnored private var installScheduled = false
     @ObservationIgnored private var installWatchdog: Task<Void, Never>?
+    @ObservationIgnored private var preparationTask: Task<URL, Error>?
+    @ObservationIgnored private var installationTask: (any AppUpdateInstallationTask)?
+    @ObservationIgnored private var installAttempt: UInt64 = 0
+    @ObservationIgnored private var retryCancellationInProgress = false
 
     init(currentVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
          client: any AppUpdateClient = GitHubReleaseClient(),
@@ -58,6 +62,7 @@ final class AppUpdateStore {
     }
 
     func checkForUpdates() async -> AppUpdateState {
+        if case .preparing = state { return state }
         if case .downloading = state { return state }
         if case .ready = state { return state }
         if let checkTask { return await checkTask.value }
@@ -66,14 +71,10 @@ final class AppUpdateStore {
         return await task.value
     }
 
-    /// The unattended path the app runs at launch and on a schedule. When the new version
-    /// can replace this copy in place it is downloaded too, so the prompt that follows is a
-    /// one-click restart. A copy outside Applications stops at `.available`: downloading
-    /// there opens the disk image in Finder, which only a user who asked should see.
-    func checkAndDownloadInBackground() async -> AppUpdateState {
-        let checked = await checkForUpdates()
-        guard case .available = checked, installer.canInstallInPlace else { return checked }
-        return await downloadUpdate()
+    /// Discovery never spends bandwidth on the archive or opens Finder. Download
+    /// and restart remain separate choices in About.
+    func checkInBackground() async -> AppUpdateState {
+        await checkForUpdates()
     }
 
     func downloadUpdate() async -> AppUpdateState {
@@ -94,6 +95,15 @@ final class AppUpdateStore {
             }
             return false
         }()
+        if installScheduled {
+            guard canRetryInstall, !retryCancellationInProgress, let installationTask else { return }
+            retryCancellationInProgress = true
+            let ended = await installationTask.cancel()
+            retryCancellationInProgress = false
+            guard ended else { return }
+            self.installationTask = nil
+            installScheduled = false
+        }
         let isReady: Bool
         if case .ready = state { isReady = true } else { isReady = false }
         guard isReady || canRetryInstall else {
@@ -104,16 +114,41 @@ final class AppUpdateStore {
             fail(.install, AppUpdateIssue(code: .permission, detail: String(localized: "The updater doesn't have permission to install this update.")))
             return
         }
-        guard !installScheduled else { return }
         installScheduled = true
+        installAttempt &+= 1
+        let attempt = installAttempt
+        let version = state.availableVersion ?? available?.version.display ?? ""
+        state = .preparing(currentVersion: currentVersion, availableVersion: version)
         do {
             let archive = try resolvedArchive()
-            let extracted = try extractedApp ?? installer.prepareInstallation(archive: archive)
+            let extracted: URL
+            if let extractedApp { extracted = extractedApp }
+            else {
+                let installer = installer
+                let task = Task {
+                    let app = try await installer.prepareInstallation(archive: archive)
+                    do { try Task.checkCancellation() } catch {
+                        await installer.discardPreparation(app)
+                        throw error
+                    }
+                    return app
+                }
+                preparationTask = task
+                extracted = try await withTaskCancellationHandler {
+                    try await task.value
+                } onCancel: { task.cancel() }
+            }
+            guard attempt == installAttempt else {
+                await installer.discardPreparation(extracted)
+                return
+            }
+            preparationTask = nil
             extractedApp = extracted
+            state = .ready(currentVersion: currentVersion, availableVersion: version)
             scheduleInstall { [weak self] in
-                guard let self else { return }
+                guard let self, self.installScheduled, self.installAttempt == attempt else { return }
                 do {
-                    try self.installer.install(extractedApp: extracted, replacing: Bundle.main.bundleURL)
+                    self.installationTask = try self.installer.install(extractedApp: extracted, replacing: Bundle.main.bundleURL)
                     self.armInstallWatchdog()
                     self.terminate()
                 } catch {
@@ -122,8 +157,12 @@ final class AppUpdateStore {
                 }
             }
         } catch {
+            guard attempt == installAttempt else { return }
+            preparationTask = nil
             installScheduled = false
-            fail(.install, error)
+            if error is CancellationError {
+                state = .ready(currentVersion: currentVersion, availableVersion: version)
+            } else { fail(.install, error) }
         }
     }
 
@@ -139,6 +178,9 @@ final class AppUpdateStore {
     func cancel() {
         checkTask?.cancel()
         downloadTask?.cancel()
+        // A scheduled replacement must survive the app's ordinary shutdown.
+        // Only preparation is cancelled here; the watchdog owns helper cancellation.
+        preparationTask?.cancel()
     }
 
     private func performCheck() async -> AppUpdateState {
@@ -266,7 +308,12 @@ final class AppUpdateStore {
         installWatchdog = Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard let self, !Task.isCancelled, self.installScheduled else { return }
-            self.installScheduled = false
+            guard let installation = self.installationTask else { return }
+            let ended = await installation.cancel()
+            if ended {
+                self.installationTask = nil
+                self.installScheduled = false
+            }
             self.fail(.install, AppUpdateIssue(code: .unknown, detail: String(localized: "Install timed out: the app did not quit and relaunch.")))
         }
     }

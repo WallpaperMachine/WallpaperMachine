@@ -47,10 +47,9 @@ It assembles the Homebrew environment from `scripts/build.py`, then:
    `CMAKE_BUILD_TYPE=Release`, `BUILD_TESTS=ON`, `RUST_SHADER_FFI=ON`, and
    `RUST_SHADER_STATICLIB`
    pointing at `upstream/renderer/target/release/libshader.a`,
-3. builds `offscreen_scene_probe`, `scene_reload_cycle_probe`,
-   `render_target_lifetime_test`, `text_object_runtime_test` and
-   `shader_cache_metadata_test`,
-4. runs the three test binaries,
+3. builds the two image/reload probes and every target in the script's
+   `REGRESSION_BINARIES` registry,
+4. runs the registered binaries, recording failures, timeouts and explicit skips,
 5. renders every case twice through `offscreen_scene_probe` — once pooled, once
    isolated (`WE_TEST_NO_REUSE=1`) — and compares `frame-2` byte for byte,
 6. scans both logs for `ERROR` diagnostics (ignoring shader-cache misses),
@@ -63,6 +62,7 @@ It assembles the Homebrew environment from `scripts/build.py`, then:
 | `--skip-build` | Reuse the existing binaries instead of rebuilding |
 | `--project PATH` | Add a local scene `project.json`; repeatable |
 | `--assets PATH` | Shared assets directory (default `~/Library/Application Support/WallpaperMachine/SceneAssets`) |
+| `--allow-missing-gpu` | CI fallback only: compile a Metal-device probe; its exact exit 77 skips the named GPU targets. Compile errors, abnormal exits and timeouts still fail. Default local runs require GPU checks. |
 
 Reports, SHA-256 hashes, logs, the generated synthetic fixtures and private GPU
 output go under a fresh `artifacts/renderer/<run>/` directory, with
@@ -73,6 +73,13 @@ generated pixel assertion failed. `report.json` records
 `full_compatibility_verified: false` on every case: there is no
 authored-reference comparison, so rendering without a crash does not prove all
 authored effects loaded.
+
+Hosted CI may lack a Metal device. With the explicit fallback flag, the report
+sets `gpu_checks_executed: false`, lists each skipped target (including the image
+and reload probes), and emits a CI warning. CPU/capability tests still execute;
+VideoToolbox-dependent tests report their own codec skips. A started test's
+failure is never converted into a missing-device skip. A default local renderer
+run remains necessary evidence for the GPU checks skipped by CI.
 
 The generated matrix is ten original synthetic scenes; it contains no workshop
 identifiers and no workshop-specific rendering rules.
@@ -618,6 +625,20 @@ cache invalidation after include edits, corrupt-cache recovery, parent-aware
 compose-background sampling, and SceneScript AM/PM sprite-frame selection;
 these create no window and no Vulkan device.
 
+Authored `maxwidth`, `maxrows`, `limitwidth`, `limitrows` and `limituseellipsis`
+constrain both measurement and rasterization, including dynamic text updates.
+`WidthAndRowLimitsProduceTheSamePixelsAsExplicitLineBreaks` and
+`EllipsisFitsTheLastVisibleRowAndLimitFlagsRemainIndependent` compare the
+actual rendered pixels and layout bounds. FreeType and fallback fonts use the
+same wrapping and truncation rules.
+
+`ShaderValueUpdaterCompat.DayTimeUniformFollowsLocalClockAndWrapsAtMidnight`
+injects a wall clock and checks `g_Daytime` and the compatible `g_DayTime`
+spelling as the local fraction of a day. `SoundLayerControlTest` checks authored
+random playback delays between clips against emitted sample counts, including
+different callback sizes, pause/resume, stop/restart and seeded bounds. Its
+null audio backend never opens an audio device.
+
 Text raster caches hold neutral glyph coverage. Color, brightness and alpha
 bindings reach uniforms, including text under effects, without relayout or
 uploads (`MetalSceneDraw.TextStylingChangesPixelsWithoutRerasterizingGlyphs`).
@@ -859,6 +880,17 @@ studio-swing frame, and that specific regression has a case of its own.
 `nv12_to_bgra` kernel against the same CPU reference, so the two paths cannot
 drift apart.
 
+Stream display matrices survive metadata probing and frame extraction. The
+decoded buffer keeps its coded dimensions; output dimensions and sampling use
+the affine display transform. `VideoDisplayTransform` checks all eight
+orthogonal orientations plus scale and shear, and
+`VideoSourceInput.DisplayMatrixSurvivesMetadataProbeAndFrameExtraction` reads
+ordinary synthetic MP4 metadata. Private-texture Vulkan and Metal checks draw
+four distinct corner colors through BGRA, converted NV12 and direct NV12
+sampling. They compare orientation, logical size and transparent uncovered
+corners for shear; converted and direct output may differ by at most two
+channel levels. No desktop surface is used.
+
 Video frame imports are owned by a lease that retains the Core Video texture
 wrapper and the pixel buffer for as long as the frame can be sampled, not just
 the vended `MTLTexture`. `playback_gpu_test` exercises pool reuse, generation
@@ -935,7 +967,14 @@ conditional helper headers, source-defined `log10`, legacy scalar/vector
 argument conversion, compound assignment narrowing, and scalar initializer
 conversion. The pipeline revision is part of the cache key and is bumped
 whenever codegen can produce different output for source that already
-compiled; it is 9 now, and each bump invalidates previously compiled programs.
+compiled; it is 10 now, and each bump invalidates previously compiled programs.
+
+Floating remainder uses a generated typed helper accepted by Naga, preserving
+truncating remainder and single evaluation of its operands. Active `#undef`
+directives remove macros across includes; inactive branches leave them intact.
+Generated NV12 members create and bind a uniform block even when a material has
+no authored scalar uniforms. The `legalize`, `preprocess` and `video_planes`
+Rust regressions cover these paths with synthetic shader sources.
 
 It also absorbs idioms author shaders inherit from the permissive path they
 were written against, each of which otherwise drops a whole effect rather than
@@ -985,6 +1024,15 @@ unmasked region continues to pulse.
 
 ## Rust crates
 
+`python3 scripts/check_rust.py` is the release-CI entry point. It supplies the
+Homebrew Cargo environment, uses a temporary `WALLPAPER_MACHINE_HOME`, and runs
+the core/bridge library tests, four device-free core integration targets, and
+the shader crate with `ffi`, all with `--release --locked`. It prints and records
+the six explicit desktop/external-corpus exclusions and any emitted skip
+reasons. A nonzero command or missing tool fails the check. Full logs and the
+JSON verdict are under `artifacts/rust/`; CI uploads them on failure. This does
+not certify skipped corpus inputs or authorize a desktop run.
+
 Run from `upstream/renderer` with the Homebrew environment from
 `scripts/build.py`. The first `cargo test` after that environment changes fails
 in its CMake configure step and succeeds on an unchanged retry, so a single
@@ -1025,23 +1073,30 @@ cargo test -p shader --test pipeline -- --nocapture
 
 ## C++/CMake test binaries
 
-Built into the renderer check build directory under `artifacts/renderer/bin/`:
-`scene_schema_tests`, `mdl_schema_tests`, `tex_schema_tests`,
-`script_runtime_compat_test`, `text_object_runtime_test`,
-`render_target_lifetime_test`, `shader_cache_metadata_test`, `audio_tests`,
-`mouse_input_test`, `particle_mouse_controlpoint_test`,
-`particle_rope_geometry_test`, `layer_texture_reference_test`, `scene_mesh_tests`, `timer_tests`,
-`playback_gpu_test`, `video_decode_pump_test`, `video_color_conversion_test`,
-`video_frame_pacing_test`,
-plus the `offscreen_scene_probe`, `scene_reload_cycle_probe` and `wpdump`
-diagnostics. `scripts/check_renderer.py` builds and runs
-`render_target_lifetime_test`, `text_object_runtime_test`,
-`shader_cache_metadata_test`, `video_decode_pump_test`,
-`video_color_conversion_test`, `video_frame_pacing_test`, `timer_tests`,
-`playback_gpu_test` and `unchanged_present_test` (Compatibility frames that
-would repeat the picture, through a real swapchain on a `CAMetalLayer` no window
-owns; skips without a Metal device); a non-zero exit from any of them fails the
-check. The
+CMake test binaries are built under `artifacts/renderer/bin/`. The authoritative
+routine build/run list is `REGRESSION_BINARIES` in `scripts/check_renderer.py`;
+a non-zero exit from any registered binary fails the check. It includes the
+texture/cache/lifetime, audio, video, graph, script-derived rendering and Metal
+checks. `scene_schema_tests`, `mdl_schema_tests`, `tex_schema_tests`,
+`script_runtime_compat_test` and `media_thumbnail_texture_smoke` also provide
+targeted parser, SceneScript and media protocol coverage when those paths change.
+
+`rendergraph_smoke` and `vulkan_sample_count_smoke` use always-active GTest
+checks in Release builds. `sprite_animation_test` checks elapsed time across
+cadences and long loops. `video_source_input_test` owns a private `TMPDIR` and
+only removes its own media cache; never clear the app's decode cache to make a
+test pass. All sound fixtures use the null backend.
+
+`stb_image_regression_test` decodes ordinary generated JPEG/PNG/BMP images,
+checks cleanup under controlled allocator refusal, and compares scalar versus
+arm64 NEON JPEG pixels. Arm64 production decoding enables NEON. The disabled
+`Arm64NeonJpegDecodeBenchmark` is explicitly opt-in; its first-decode and warm
+in-memory decoder timings are not disk-cold startup, whole-app performance or
+energy measurements. `miniaudio_failure_paths_test` covers allocation failures
+without opening audio hardware.
+
+`unchanged_present_test` exercises Compatibility frames that would repeat the
+picture through a real swapchain on a `CAMetalLayer` no window owns. The
 native Metal backend adds `metal_backend_test` (capability and graph gate, no
 device needed), `metal_scene_draw_smoke` (author shaders and same-frame
 intermediates drawn and read back, plus target reuse, dynamic-geometry upload,
@@ -1072,32 +1127,6 @@ SceneScript views.
 
 ## Known limitations
 
-- **Pre-existing failure:**
-  `ScriptRuntimeCompat.HostVectorUpdatesDoNotCallMutableGlobalVectorConstructors`
-  references undeclared `scriptProperties` and fails with the original
-  `ScriptEngine.cpp` as well. It is not a regression; do not report it as one
-  and do not claim it is fixed by excluding it.
-- **Pre-existing failures:** `SceneSchema.PointerCapabilityFollowsActualCommitsWithoutFirstFrame`
-  and `SceneSchema.MouseButtonCommitBaselineKeepsVideoGatingFromStickingNativeLatch`
-  in `scene_schema_tests` time out (`Wait`) waiting for a pointer-capability
-  callback after a scene commit. Both were reproduced on an unmodified HEAD
-  worktree, and both build a `Scene` by hand under the default Compatibility
-  preference, where `SelectSceneBackend` returns before any capability code.
-  `scene_schema_tests` is not in `scripts/check_renderer.py`; when you run it by
-  hand, expect these two and do not attribute them to your change.
-- **Stale, not a Release-build test:** `rendergraph_smoke` checks with plain
-  `assert`, and some of those asserts carry the setup itself
-  (`assert(vfs.Mount(...))`). In the check directory's Release build they
-  compile out, the scene fails to parse and the binary crashes (`ctest -R
-  rendergraph_smoke` reports SEGFAULT). With asserts enabled it no longer
-  compiles (`SceneRasterExtents` has no `width`/`height`). It is not in
-  `scripts/check_renderer.py`; do not read its result as a regression signal.
-- **Stale decode cache, not a regression:** `video_source_input_test` shares
-  `$TMPDIR/wallpaper-engine-video` with the app and with earlier runs.
-  `ConcurrentPackagedOpensPublishExactlyOneFile` and
-  `EvictingTheCacheDoesNotDisturbAnOpenSource` count published files, so
-  leftovers from a previous run make them fail (`added.size()==2`). Delete that
-  directory and re-run the same binary before investigating.
 - `tex_schema_tests` links `PkgConfig::TEST_LZ4` itself (`tests/CMakeLists.txt`),
   the same way the video suites re-resolve FFmpeg: the renderer links LZ4
   `PRIVATE`, so the include directory does not propagate to a test that builds

@@ -207,6 +207,27 @@ final class WorkshopThumbnailCacheTests: XCTestCase {
         XCTAssertEqual(remaining, ["entry-2.jpg", "entry-3.jpg"])
     }
 
+    func testAnimationBudgetKeepsStillFallbackForOrdinaryImagesAboveTheChosenBudget() throws {
+        let gif = try Self.image(type: .gif, width: 32, height: 24, frames: 3)
+        XCTAssertTrue(WorkshopThumbnailCache.animationFitsBudget(gif))
+        XCTAssertFalse(WorkshopThumbnailCache.animationFitsBudget(gif, maximumFrames: 2))
+        XCTAssertFalse(WorkshopThumbnailCache.animationFitsBudget(gif, maximumFramePixels: 512))
+        XCTAssertFalse(WorkshopThumbnailCache.animationFitsBudget(gif, maximumTotalPixels: 2_000))
+        XCTAssertFalse(try WorkshopThumbnailCache.encodeThumbnail(gif).isEmpty)
+    }
+
+    func testLongAnimationKeepsItsStillWithoutRelayingTheOriginalFrames() async throws {
+        let gif = try Self.image(type: .gif, width: 16, height: 16, frames: 301)
+        let fetcher = RecordingFetcher { _ in gif }
+        let cache = WorkshopThumbnailCache(directory: root, fetcher: fetcher)
+        let url = try XCTUnwrap(URL(string: "https://images.steamusercontent.com/ugc/9/long-preview/"))
+        let still = try await cache.thumbnail(for: url)
+        XCTAssertEqual(WorkshopThumbnailCache.frameCount(of: still), 1)
+        do { _ = try await cache.animatedPreview(for: url); XCTFail("long animation should use its still") }
+        catch let failure as WorkshopThumbnailFailure { XCTAssertEqual(failure.code, .notAnimated) }
+        XCTAssertEqual(fetcher.requests.count, 1)
+    }
+
     private static func meanLuminance(of encoded: Data) throws -> Double {
         let source = try XCTUnwrap(CGImageSourceCreateWithData(encoded as CFData, nil))
         let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))

@@ -26,6 +26,8 @@ pub(super) struct FloatModulo<'statement, 'src> {
     pub facts: &'statement SymbolFacts<'src>,
     /// Shared tokenizer declaration facts.
     pub token_facts: &'statement TypedTokenFacts,
+    /// Set when a replacement calls the generated remainder helper.
+    pub helper_requested: &'statement std::cell::Cell<bool>,
 }
 
 impl FloatModulo<'_, '_> {

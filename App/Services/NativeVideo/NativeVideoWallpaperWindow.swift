@@ -10,11 +10,15 @@ import AppKit
 /// desktop-level window onto the screen would be doing exactly that.
 @MainActor
 protocol NativeVideoSurface: AnyObject {
+    var posterLayer: CALayer? { get }
+    func setScreenFrame(_ frame: NSRect)
     func setVolume(_ volume: Float, muted: Bool)
     func setScaling(_ mode: BridgeScalingMode)
     func setUserPaused(_ paused: Bool)
     func setPresentationSuspended(_ suspended: Bool)
     var isPlaying: Bool { get }
+    var isReadyForDisplay: Bool { get }
+    var onReadyForDisplay: (@MainActor () -> Void)? { get set }
     func posterImage() async -> CGImage?
     /// Called when the platform player fails to prepare or play the asset.
     ///
@@ -41,6 +45,7 @@ protocol NativeVideoSurface: AnyObject {
 @objc(MWENativeVideoDesktopWindow)
 final class NativeVideoWallpaperWindow: NSWindow {
     let player: NativeVideoPlayer
+    private var scalingMode: BridgeScalingMode = .fill
 
     init(frame: NSRect, player: NativeVideoPlayer) {
         self.player = player
@@ -72,14 +77,52 @@ final class NativeVideoWallpaperWindow: NSWindow {
 }
 
 extension NativeVideoWallpaperWindow: NativeVideoSurface {
+    var posterLayer: CALayer? { contentView?.layer }
+    func setScreenFrame(_ frame: NSRect) {
+        if self.frame != frame { setFrame(frame, display: false) }
+    }
     func setVolume(_ volume: Float, muted: Bool) { player.setVolume(volume, muted: muted) }
-    func setScaling(_ mode: BridgeScalingMode) { player.setScaling(mode) }
+    func setScaling(_ mode: BridgeScalingMode) {
+        scalingMode = mode
+        player.setScaling(mode)
+    }
     func setUserPaused(_ paused: Bool) { player.setUserPaused(paused) }
     func setPresentationSuspended(_ suspended: Bool) {
         player.setPresentationSuspended(suspended)
     }
     var isPlaying: Bool { player.isPlaying }
-    func posterImage() async -> CGImage? { await player.posterImage() }
+    var isReadyForDisplay: Bool { player.isReadyForDisplay }
+    var onReadyForDisplay: (@MainActor () -> Void)? {
+        get { player.onReadyForDisplay }
+        set { player.onReadyForDisplay = newValue }
+    }
+    func posterImage() async -> CGImage? {
+        guard let image = await player.posterImage() else { return nil }
+        return Self.fittedPoster(image, pixelSize: CGSize(
+            width: frame.width * backingScaleFactor, height: frame.height * backingScaleFactor),
+            stretching: scalingMode == .stretch)
+    }
+
+    /// The desktop picture API stretches the supplied poster. Bake the same crop as
+    /// AVPlayerLayer into it first, so other Spaces do not stretch an uncropped clip.
+    static func fittedPoster(_ image: CGImage, pixelSize: CGSize, stretching: Bool) -> CGImage? {
+        guard pixelSize.width.isFinite, pixelSize.height.isFinite,
+              pixelSize.width > 0, pixelSize.height > 0,
+              pixelSize.width <= 16_384, pixelSize.height <= 16_384 else { return nil }
+        let width = Int(pixelSize.width.rounded(.up)), height = Int(pixelSize.height.rounded(.up))
+        guard width * height <= 32 * 1024 * 1024,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                  bytesPerRow: width * 4, space: space,
+                  bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        let size = CGSize(width: width, height: height)
+        let scale = max(size.width / CGFloat(image.width), size.height / CGFloat(image.height))
+        let drawn = stretching ? size : CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        context.draw(image, in: CGRect(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2,
+                                      width: drawn.width, height: drawn.height))
+        return context.makeImage()
+    }
     /// Forwarded straight to the player, which is what observes
     /// `AVPlayerItem.status` and knows its own surface generation.
     var onPreparationFailure: (@MainActor (UInt64, String) -> Void)? {

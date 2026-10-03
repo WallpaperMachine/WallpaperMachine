@@ -629,7 +629,7 @@ function draw(view) {
       `<div class="settings-notes">${noteSections.map(part => (part.title ? `<h4>${e(t(part.title))}</h4>` : '')
         + `<ul>${(part.items || []).map(item => `<li>${e(item)}</li>`).join('')}</ul>`).join('')}</div>`)
     : '';
-  const updateActions = (update.showsAction && update.action ? button(update.actionLabel || t('Check for Updates'), update.action, {}, updateBusy || busy, update.status === 'available' || update.status === 'ready' ? 'settings-primary' : '') : '')
+  const updateActions = (update.showsAction && update.action ? button(update.actionLabel || t('Check for Updates'), update.action, {}, update.action === 'cancelUpdate' ? view.pending.has('cancelUpdate') : updateBusy || busy, update.status === 'available' || update.status === 'ready' ? 'settings-primary' : '') : '')
     + (update.showsReleases ? button(update.releasesLabel || t('Open GitHub Releases'), 'openReleases', {}, updateBusy) : '')
     + (update.showsReveal ? button(update.revealLabel || t('Show in Finder'), 'revealDownloadedUpdate', {}, updateBusy) : '');
   const about = `<div class="settings-product"><span class="settings-product-mark">${helpers.icon('wallpaperMachine', 48)}</span><div><h3>WallpaperMachine</h3><span class="settings-note">${e(t('Independent macOS client'))}</span></div></div>`

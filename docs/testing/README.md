@@ -65,8 +65,8 @@ with an installed newer interpreter (for example, `python3.12`).
 | XCUITest (desktop) | `Tests/UI/` | `python3 scripts/test.py --ui` — opt-in only |
 | Media/device integration | `Tests/Unit/NativeVideo/` | `WALLPAPER_MACHINE_MEDIA_TESTS=1 python3 scripts/test.py` — opt-in only |
 | Live Steam pages / native SteamCMD install | `Tests/Unit/Workshop/WorkshopTests.swift`, `Tests/Unit/Steam/SteamCMDLiveInstallTests.swift` | `WALLPAPER_MACHINE_NETWORK_TESTS=1 python3 scripts/test.py` — opt-in only |
-| Rust crates | `upstream/renderer/crates/` | `cargo test --release -p wallpaper-core --lib`, `cargo test --release -p wallpaper-bridge --lib`, `cargo test -p shader --test pipeline -- --nocapture` |
-| C++ renderer tests | `upstream/renderer/external/open-wallpaper-engine` | `python3 scripts/check_renderer.py` builds and runs a fixed list: the script's `cmake --build … --target` build list and its `for binary in` run list. `scene_schema_tests`, `script_runtime_compat_test`, `mouse_input_test` and `audio_tests` are not in that list: build them in `artifacts/renderer/bin` with `cmake --build artifacts/renderer/bin --target <name>` and run `artifacts/renderer/bin/tests/<name>`; see [renderer.md](renderer.md#ccmake-test-binaries) |
+| Rust crates | `upstream/renderer/crates/` | `python3 scripts/check_rust.py` runs the isolated release checks and reports exclusions/skips; individual Cargo commands remain available |
+| C++ renderer tests | `upstream/renderer/external/open-wallpaper-engine` | `python3 scripts/check_renderer.py` uses one `REGRESSION_BINARIES` registry for build, execution and the verdict, plus image/reload probes. `scene_schema_tests`, `script_runtime_compat_test` and `mouse_input_test` are not in that list: build them in `artifacts/renderer/bin` with `cmake --build artifacts/renderer/bin --target <name>` and run `artifacts/renderer/bin/tests/<name>`; see [renderer.md](renderer.md#ccmake-test-binaries) |
 | Headless GPU probes | same CMake tree | explicitly invoked executables (`offscreen_scene_probe`, `scene_reload_cycle_probe`, `playback_gpu_test`, `wpdump`); see [renderer.md](renderer.md) |
 
 `python3 scripts/test.py` is the routine gate: it runs the Python script test
@@ -162,6 +162,17 @@ bundle runs inside the real app as its test host, so `UserDefaults.standard`
 the first-run welcome's `welcomeSeen` flag, sidebar choices, favorites — and
 silently changes what the app does at the next launch. Pass the test's own
 suite everywhere; `PanelFixture` does.
+
+For an explicitly authorized UI run, `WallpaperMachineUITests` creates both a
+unique `WALLPAPER_MACHINE_HOME` and a `WALLPAPER_MACHINE_DEFAULTS_SUITE`. App-owned
+default stores and direct private-key accesses use `ClientPreferences`; backup
+preference domain names follow the same override. The suite pins English and
+marks onboarding/launch announcements complete. Launch arguments pin Foundation's
+native language without changing the system domain. Teardown stops the test app,
+then removes the suite and support root, including when setup or a test fails.
+System-global readers (title-bar double-click behavior, system language and
+desktop-click preferences) keep their original domains. UI assertions read the
+actual page-number field value instead of expecting a combined pagination label.
 
 The same rule covers a second shape: a test that measures a *wall-clock window*
 rather than shared state. It is still a race, it can lose alone as well as in

@@ -332,6 +332,14 @@ pub struct SetPowerSource {
 
 pub struct InitialFrameReady;
 
+pub struct ReportHostWallpaperStartup {
+    pub display_id: u32,
+    pub wallpaper_id: String,
+    pub startup_revision: u64,
+    pub native_admission_key: Option<u64>,
+    pub ready: bool,
+}
+
 pub struct EditProperty {
     pub wallpaper_id: String,
     pub property_id: String,

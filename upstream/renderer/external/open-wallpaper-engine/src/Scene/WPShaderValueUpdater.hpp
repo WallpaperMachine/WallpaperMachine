@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <chrono>
 #include <optional>
+#include <functional>
 
 #include <Eigen/Dense>
 
@@ -36,6 +37,7 @@ struct WPUniformInfo {
     bool has_BONES { false };
     bool has_TIME { false };
     bool has_DAYTIME { false };
+    bool has_DAYTIME_ALIAS { false };
     bool has_POINTERPOSITION { false };
     bool has_PARALLAXPOSITION { false };
     bool has_TEXELSIZE { false };
@@ -85,7 +87,9 @@ struct WPCameraParallax {
 
 class WPShaderValueUpdater : public IShaderValueUpdater {
 public:
-    WPShaderValueUpdater(Scene* scene): m_scene(scene) {}
+    using WallClock = std::function<std::chrono::system_clock::time_point()>;
+    explicit WPShaderValueUpdater(Scene* scene, WallClock clock = std::chrono::system_clock::now)
+        : m_scene(scene), m_wall_clock(std::move(clock)) {}
     virtual ~WPShaderValueUpdater() {}
 
     void FrameBegin() override;
@@ -123,6 +127,7 @@ private:
     std::vector<PuppetAttachmentGroup> m_puppetAttachments;
 
     Scene*               m_scene;
+    WallClock            m_wall_clock;
     WPCameraParallax     m_parallax;
     double               m_dayTime { 0.0f };
     std::array<float, 2> m_texelSize { 1.0f / 1920.0f, 1.0f / 1080.0f };

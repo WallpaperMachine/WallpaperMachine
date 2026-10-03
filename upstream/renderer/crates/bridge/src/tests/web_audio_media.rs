@@ -59,7 +59,8 @@ async fn scene_media_requires_consent_and_clears_on_disable() {
     bridge.set_media_integration_enabled("301".into(), false).await.unwrap();
     let calls = engine.media_calls();
     assert!(!calls.last().unwrap().1);
-    assert_eq!(calls.last().unwrap().2.artwork.as_ref().unwrap().rgba, vec![0, 0, 0, 0]);
+    let cleared = calls.last().unwrap().2.artwork.as_ref().unwrap();
+    assert_eq!((cleared.width, cleared.height, cleared.rgba.len()), (0, 0, 0));
     bridge.update_scene_media("301".into(), snapshot).await.unwrap();
     assert_eq!(engine.media_calls().len(), calls.len());
 }
@@ -67,6 +68,12 @@ async fn scene_media_requires_consent_and_clears_on_disable() {
 #[test]
 fn scene_media_rejects_invalid_artwork_and_timeline() {
     use crate::api::BridgeMediaSnapshot;
+    let cleared = BridgeMediaSnapshot::default().into_state().unwrap().artwork.unwrap();
+    assert_eq!((cleared.width, cleared.height, cleared.rgba.len()), (0, 0, 0));
+    for (width, height) in [(0, 1), (1, 0), (1, 1), (513, 0)] {
+        assert!(BridgeMediaSnapshot { artwork_width: width, artwork_height: height,
+            ..Default::default() }.into_state().is_err());
+    }
     assert!(BridgeMediaSnapshot { duration: f64::NAN, ..Default::default() }.into_state().is_err());
     assert!(BridgeMediaSnapshot { playback_state: 3, ..Default::default() }.into_state().is_err());
     assert!(BridgeMediaSnapshot { artwork_width: 1024, artwork_height: 1024,
@@ -99,6 +106,10 @@ async fn web_bridge(engine: &FakeEngineFacade) -> WallpaperBridge {
 }
 
 fn tap_open(engine: &FakeEngineFacade) -> bool {
+    tap_open_for_scenes(engine, &[])
+}
+
+pub(super) fn tap_open_for_scenes(engine: &FakeEngineFacade, scenes: &[SceneHandle]) -> bool {
     use std::sync::Arc;
     use wallpaper_core::media::audio::{
         AudioCaptureBackend, AudioCaptureController, AudioCaptureError, AudioFrameConsumer,
@@ -138,9 +149,17 @@ fn tap_open(engine: &FakeEngineFacade) -> bool {
     // the real controller. Merely observing `suspended == false` missed the bug:
     // the controller still required a scene handle before starting its backend.
     let mut controller = AudioCaptureController::new(Arc::new(Consumer), Backend::default());
+    for (handle, enabled) in engine.audio_capture_calls() {
+        if scenes.contains(&handle) {
+            if enabled && !controller.has_permission().unwrap() {
+                assert!(controller.request_permission().unwrap());
+            }
+            controller.set_scene_capturing(handle, enabled).unwrap();
+        }
+    }
     for demand in engine.audio_capture_demands() {
         crate::engine::apply_audio_capture_demand(&mut controller, demand).unwrap();
-        controller.retain_scenes(&[]).unwrap();
+        controller.retain_scenes(scenes).unwrap();
     }
     controller.is_capturing()
 }
@@ -544,6 +563,14 @@ async fn scene_media_events_fan_out_only_to_opted_in_handles() {
         engine.media_artwork_calls(),
         vec![(SceneHandle::new(11), 2, 2, 16)]
     );
+    bridge.apply_system_media_artwork(0, 0, Vec::new()).await.unwrap();
+    assert_eq!(engine.media_artwork_calls().last(), Some(&(SceneHandle::new(11), 0, 0, 0)));
+    let calls = engine.media_artwork_calls().len();
+    assert!(bridge.apply_system_media_artwork(0, 1, Vec::new()).await.is_err());
+    assert!(bridge.apply_system_media_artwork(2, 2, vec![0; 4]).await.is_err());
+    assert_eq!(engine.media_artwork_calls().len(), calls);
+    bridge.apply_system_media_artwork(1, 1, vec![0, 200, 0, 255]).await.unwrap();
+    assert_eq!(engine.media_artwork_calls().last(), Some(&(SceneHandle::new(11), 1, 1, 4)));
 }
 
 #[tokio::test]

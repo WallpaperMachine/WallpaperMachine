@@ -222,7 +222,6 @@ void CopyPass::destory(const Device&, RenderingResources&) {
     // unprepared. Staying prepared would keep recording copies between freed
     // images.
     setPrepared(false);
-    clearReleaseTexs();
     m_desc.vk_src = {};
     m_desc.vk_dst = {};
 }

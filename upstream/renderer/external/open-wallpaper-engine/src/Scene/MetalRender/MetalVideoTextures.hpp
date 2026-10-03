@@ -14,6 +14,7 @@
 
 #include "MetalRender/MetalVideoSupport.hpp"
 #include "Video/VideoColorConversion.hpp"
+#include "Video/VideoDisplayTransform.hpp"
 
 namespace wallpaper
 {
@@ -49,6 +50,7 @@ struct VideoFramePlanes
     video::YuvColorParams   params {};
     std::uint32_t           width { 0 };
     std::uint32_t           height { 0 };
+    video::VideoDisplayTransform display_transform;
 
     [[nodiscard]] bool valid() const { return luma != nil && chroma != nil; }
 };

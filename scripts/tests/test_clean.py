@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import io
 import os
 import sys
 import tempfile
@@ -186,6 +187,40 @@ class ManagedUserAssetTests(unittest.TestCase):
             (self.repository / "build" / "Build").exists(),
             "the default pass keeps the built app; only strays under build/ go")
         self.assertFalse((self.repository / "build" / "stray.log").exists())
+
+    def test_nested_evidence_is_reported_once_and_cleanup_finishes(self):
+        nested = self.repository / "artifacts/cache/__pycache__"
+        nested.mkdir(parents=True)
+        (nested / "cached.pyc").write_bytes(b"cache")
+        (nested.parent / ".DS_Store").write_bytes(b"metadata")
+        later = self.repository / "scripts/__pycache__"
+        later.mkdir(parents=True)
+        (later / "cached.pyc").write_bytes(b"cache")
+        preview = io.StringIO()
+        with contextlib.redirect_stdout(preview):
+            self.run_clean("--dry-run")
+        self.assertTrue(nested.exists())
+        self.assertNotIn("artifacts/cache", preview.getvalue())
+        self.assertIn("scripts/__pycache__", preview.getvalue())
+        self.run_clean()
+        self.assertFalse((self.repository / "artifacts").exists())
+        self.assertFalse(later.exists())
+        self.assertFalse((self.repository / "build/stray.log").exists())
+        self.assertTrue(self.asset.exists())
+
+    def test_disappearing_candidate_and_cache_symlink_do_not_affect_other_targets(self):
+        outside = self.home / "outside"
+        outside.mkdir()
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("preserved")
+        link = self.repository / "__pycache__"
+        link.symlink_to(outside, target_is_directory=True)
+        missing = self.repository / "already-removed"
+        with contextlib.redirect_stdout(io.StringIO()):
+            clean.remove([missing, link, self.repository / "build/stray.log"], dry_run=False)
+        self.assertFalse(link.is_symlink())
+        self.assertEqual(sentinel.read_text(), "preserved")
+        self.assertFalse((self.repository / "build/stray.log").exists())
 
 
 class ReclaimableTests(unittest.TestCase):

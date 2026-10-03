@@ -633,6 +633,11 @@ are retained independently of the current property under `UserAssets/PresetAsset
 deleting a saved preset does not delete a directory still used by an applied
 wallpaper. Ordinary cache cleaning leaves these retained originals alone.
 
+Presets can switch a mode and set fields that mode enables. All values and
+resources are validated first; enabled mode controls are edited before dependent
+fields, and the bridge reevaluates authored conditions after each draft edit.
+If a target field remains disabled, the draft is reverted without applying it.
+
 Portable documents embed up to 32 MB of managed attachments, within a 48 MB
 document limit. Hidden files in retained directories (such as Finder metadata)
 are excluded from portable exports. Preset names accept 1–120 characters.
@@ -713,6 +718,11 @@ files into the library and leave the originals untouched, with a duplicate
 policy of **Skip duplicates** or **Keep both copies**. Closing a popover, or the
 window, never cancels work: `LibraryImportStore` runs the import for the app, not
 for the page.
+
+Quitting cancels and awaits an active local import. Its temporary directory holds
+an ownership marker and a live file lock. Startup reclaims abandoned marked
+directories; an unmarked legacy directory must have a valid task name and an
+entire inspected tree older than 24 hours. Active or uncertain directories are kept.
 
 An import takes Wallpaper Engine project folders, a Steam library, videos
 (`mp4`, `m4v`, `mov`, `webm`, `mkv`, `avi`), HTML files and pictures (`jpg`,

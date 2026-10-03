@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -68,6 +69,9 @@ struct GlyphRun {
     uint32_t codepoint { 0 };
     float    advance { 0.0f };
     bool     fallback { false };
+    float    left { 0.0f };
+    float    right { 0.0f };
+    bool     has_ink { false };
 };
 
 struct LineRun {
@@ -259,8 +263,28 @@ float HorizontalLineStart(const TextLayerState& state, float line_width, float p
     return padding;
 }
 
-void AppendGlyphRun(FT_Face primary_face, FT_Face fallback_face, uint32_t codepoint,
-                    LineRun& line) {
+void AppendGlyphMetrics(LineRun& line, const GlyphRun& glyph) {
+    if (glyph.has_ink) {
+        const auto left = line.advance_width + glyph.left;
+        const auto right = line.advance_width + glyph.right;
+        if (! line.has_bounds) {
+            line.bounds_left = left;
+            line.bounds_right = right;
+            line.has_bounds = true;
+        } else {
+            line.bounds_left = std::min(line.bounds_left, left);
+            line.bounds_right = std::max(line.bounds_right, right);
+        }
+    }
+    line.advance_width += glyph.advance;
+}
+
+void AppendMeasuredGlyph(LineRun& line, const GlyphRun& glyph) {
+    AppendGlyphMetrics(line, glyph);
+    line.glyphs.push_back(glyph);
+}
+
+std::optional<GlyphRun> MeasureGlyph(FT_Face primary_face, FT_Face fallback_face, uint32_t codepoint) {
     FT_Face face     = primary_face;
     bool    fallback = false;
     if (FT_Get_Char_Index(face, codepoint) == 0u && fallback_face != nullptr &&
@@ -268,40 +292,93 @@ void AppendGlyphRun(FT_Face primary_face, FT_Face fallback_face, uint32_t codepo
         face     = fallback_face;
         fallback = true;
     }
-    if (FT_Get_Char_Index(face, codepoint) == 0u) return;
-    if (FT_Load_Char(face, codepoint, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) return;
+    if (FT_Get_Char_Index(face, codepoint) == 0u) return std::nullopt;
+    if (FT_Load_Char(face, codepoint, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) return std::nullopt;
 
     const FT_GlyphSlot slot        = face->glyph;
-    const float        glyph_left  = line.advance_width + static_cast<float>(slot->bitmap_left);
+    const float        glyph_left  = static_cast<float>(slot->bitmap_left);
     const float        glyph_right = glyph_left + static_cast<float>(slot->bitmap.width);
-    if (slot->bitmap.width > 0u && slot->bitmap.rows > 0u) {
-        if (! line.has_bounds) {
-            line.bounds_left  = glyph_left;
-            line.bounds_right = glyph_right;
-            line.has_bounds   = true;
-        } else {
-            line.bounds_left  = std::min(line.bounds_left, glyph_left);
-            line.bounds_right = std::max(line.bounds_right, glyph_right);
-        }
-    }
-
     const float advance = static_cast<float>(slot->advance.x) / 64.0f;
-    line.glyphs.push_back({ codepoint, advance, fallback });
-    line.advance_width += advance;
+    return GlyphRun { codepoint, advance, fallback, glyph_left, glyph_right,
+                      slot->bitmap.width > 0u && slot->bitmap.rows > 0u };
 }
 
-std::vector<LineRun> BuildLineRuns(FT_Face primary_face, FT_Face fallback_face,
-                                   std::string_view text) {
+float TextWidthLimit(const TextLayerState& state) {
+    if (! state.limit_width || ! std::isfinite(state.max_width) || state.max_width <= 0.0f) return 0.0f;
+    return std::max(1.0f, state.max_width - 2.0f * std::max(0.0f, state.padding));
+}
+
+LineRun MakeLine(std::span<const GlyphRun> glyphs) {
+    LineRun line;
+    for (const auto& glyph : glyphs) AppendMeasuredGlyph(line, glyph);
+    return line;
+}
+
+bool BreakSpace(const GlyphRun& glyph) { return glyph.codepoint == ' ' || glyph.codepoint == '\t'; }
+
+template<typename Measure>
+std::vector<LineRun> BuildLineRuns(const TextLayerState& state, Measure measure) {
     std::vector<LineRun> lines;
     lines.emplace_back();
-    for (uint32_t codepoint : DecodeUtf8(text)) {
+    const float width_limit = TextWidthLimit(state);
+    const size_t row_limit = state.limit_rows && state.max_rows != 0 ? state.max_rows : SIZE_MAX;
+    bool omitted = false;
+    for (uint32_t codepoint : DecodeUtf8(state.text)) {
         if (codepoint == '\n') {
+            if (lines.size() == row_limit) { omitted = true; break; }
             lines.emplace_back();
             continue;
         }
-        AppendGlyphRun(primary_face, fallback_face, codepoint, lines.back());
+        if (codepoint == '\r') continue;
+        auto glyph = measure(codepoint);
+        if (! glyph) continue;
+        AppendMeasuredGlyph(lines.back(), *glyph);
+        if (width_limit == 0.0f || lines.back().LayoutWidth() <= width_limit || lines.back().glyphs.size() == 1) continue;
+
+        auto& current = lines.back();
+        size_t split = current.glyphs.size() - 1;
+        if (! BreakSpace(current.glyphs.back())) {
+            for (size_t index = split; index > 0; --index) {
+                if (BreakSpace(current.glyphs[index - 1])) { split = index; break; }
+            }
+        }
+        std::vector<GlyphRun> carry(current.glyphs.begin() + split, current.glyphs.end());
+        current.glyphs.resize(split);
+        while (! current.glyphs.empty() && BreakSpace(current.glyphs.back())) current.glyphs.pop_back();
+        current = MakeLine(current.glyphs);
+        if (lines.size() == row_limit) { omitted = true; break; }
+        while (! carry.empty() && BreakSpace(carry.front())) carry.erase(carry.begin());
+        lines.push_back(MakeLine(carry));
+    }
+    if (omitted && state.use_ellipsis) {
+        auto& line = lines.back();
+        while (! line.glyphs.empty() && BreakSpace(line.glyphs.back())) line.glyphs.pop_back();
+        std::vector<GlyphRun> marker;
+        if (auto glyph = measure(0x2026)) marker.push_back(*glyph);
+        else if (auto dot = measure('.')) marker.assign(3, *dot);
+        // Prefix metrics make fitting a suffix linear even for a long row.
+        std::vector<LineRun> prefix(1);
+        for (const auto& glyph : line.glyphs) {
+            auto metrics = prefix.back();
+            AppendGlyphMetrics(metrics, glyph);
+            prefix.push_back(std::move(metrics));
+        }
+        size_t count = line.glyphs.size();
+        while (true) {
+            auto candidate = prefix[count];
+            for (const auto& glyph : marker) AppendGlyphMetrics(candidate, glyph);
+            if (width_limit == 0.0f || candidate.LayoutWidth() <= width_limit) break;
+            if (count == 0) { marker.clear(); break; }
+            --count;
+        }
+        line = MakeLine(std::span<const GlyphRun>(line.glyphs).first(count));
+        for (const auto& glyph : marker) AppendMeasuredGlyph(line, glyph);
     }
     return lines;
+}
+
+std::vector<LineRun> BuildFreeTypeLines(const TextLayerState& state, FT_Face face, FT_Face fallback) {
+    return BuildLineRuns(state, [&](uint32_t codepoint) { return MeasureGlyph(face, fallback, codepoint); });
 }
 
 float FirstBaselineY(const TextLayerState& state, FT_Face face, std::size_t line_count,
@@ -327,36 +404,58 @@ float FirstBaselineY(const TextLayerState& state, FT_Face face, std::size_t line
     return top + ascender;
 }
 
+std::vector<LineRun> BuildFallbackLines(const TextLayerState& state) {
+    const float pixels = static_cast<float>(FreeTypePixelSize(state.point_size));
+    return BuildLineRuns(state, [pixels](uint32_t codepoint) -> std::optional<GlyphRun> {
+        const float advance = std::max(1.0f, pixels * 0.6f);
+        const float ink = std::max(1.0f, pixels * 0.45f);
+        return GlyphRun {codepoint, codepoint == '\t' ? advance * 4.0f : advance, false,
+                         0.0f, ink, codepoint != ' ' && codepoint != '\t'};
+    });
+}
+
+Eigen::Vector2f MeasureFallbackText(const TextLayerState& state) {
+    const auto lines = BuildFallbackLines(state);
+    const float pixels = static_cast<float>(FreeTypePixelSize(state.point_size));
+    const float padding = std::max(0.0f, std::isfinite(state.padding) ? state.padding : 0.0f);
+    float width = 0.0f;
+    for (const auto& line : lines) width = std::max(width, line.LayoutWidth());
+    width += padding * 2.0f;
+    if (TextWidthLimit(state) > 0.0f) width = std::min(width, state.max_width);
+    return {std::max(1.0f, width), std::max(1.0f, float(lines.size()) * pixels * 1.2f + padding * 2.0f)};
+}
+
 void RasterizeFallbackText(const TextLayerState& state, uint32_t width, uint32_t height,
                            std::vector<uint8_t>& rgba) {
-    const auto  color        = TextColorBytes(state);
-    const float glyph_width  = std::max(1.0f, state.point_size * 0.45f);
-    const float glyph_height = std::max(1.0f, state.point_size * 0.9f);
-    const float advance      = std::max(1.0f, state.point_size * 0.6f);
-    float       pen          = std::max(0.0f, state.padding);
-    const auto  top          = static_cast<uint32_t>(std::max(0.0f, state.padding));
-    const auto  bottom =
-        std::min<uint32_t>(height, top + static_cast<uint32_t>(std::ceil(glyph_height)));
-
-    for (unsigned char ch : state.text) {
-        if (ch == '\n') break;
-        if (ch != ' ') {
-            const auto left =
-                std::min<uint32_t>(width, static_cast<uint32_t>(std::floor(std::max(0.0f, pen))));
-            const auto right =
-                std::min<uint32_t>(width, left + static_cast<uint32_t>(std::ceil(glyph_width)));
-            for (uint32_t y = top; y < bottom; ++y) {
-                for (uint32_t x = left; x < right; ++x) {
-                    const std::size_t offset = (static_cast<std::size_t>(y) * width + x) * 4u;
-                    rgba[offset + 0]         = color[0];
-                    rgba[offset + 1]         = color[1];
-                    rgba[offset + 2]         = color[2];
-                    rgba[offset + 3]         = color[3];
+    const auto color = TextColorBytes(state);
+    const auto lines = BuildFallbackLines(state);
+    const float pixels = static_cast<float>(FreeTypePixelSize(state.point_size));
+    const float glyph_height = std::max(1.0f, pixels * 0.9f);
+    const float line_height = std::max(1.0f, pixels * 1.2f);
+    const float padding = std::max(0.0f, std::isfinite(state.padding) ? state.padding : 0.0f);
+    float top = padding;
+    const auto align = state.vertical_align.empty() ? state.anchor : state.vertical_align;
+    const float room = std::max(0.0f, float(height) - 2.0f * padding - float(lines.size()) * line_height);
+    if (ContainsSubstring(align, "bottom")) top += room;
+    else if (ContainsSubstring(align, "center") || ContainsSubstring(align, "middle")) top += room * 0.5f;
+    for (const auto& line : lines) {
+        const float limit = TextWidthLimit(state);
+        const float line_width = limit > 0.0f ? std::min(limit, line.LayoutWidth()) : line.LayoutWidth();
+        float pen = HorizontalLineStart(state, line_width, padding, width);
+        const float right_edge = limit > 0.0f ? std::min(float(width), pen + limit) : float(width);
+        for (const auto& glyph : line.glyphs) {
+            if (glyph.has_ink) {
+                for (int y = std::max(0, int(std::floor(top))); y < std::min(int(height), int(std::ceil(top + glyph_height))); ++y) {
+                    for (int x = std::max(0, int(std::floor(pen))); x < std::min(int(std::ceil(right_edge)), int(std::ceil(pen + glyph.right))); ++x) {
+                        const size_t offset = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                        std::copy(color.begin(), color.end(), rgba.begin() + offset);
+                    }
                 }
             }
+            pen += glyph.advance;
         }
-        pen += advance;
-        if (pen >= static_cast<float>(width)) break;
+        top += line_height;
+        if (top >= height) break;
     }
 }
 
@@ -370,7 +469,7 @@ bool RasterizeFreeTypeText(const TextLayerState& state, uint32_t width, uint32_t
     auto fallback_face = CreateFallbackFace(state);
 
     const auto lines =
-        BuildLineRuns(face.get(), fallback_face ? fallback_face->face.get() : nullptr, state.text);
+        BuildFreeTypeLines(state, face.get(), fallback_face ? fallback_face->face.get() : nullptr);
 
     const auto  metrics     = face->size->metrics;
     const float line_height = std::max(1.0f, static_cast<float>(metrics.height) / 64.0f);
@@ -380,9 +479,11 @@ bool RasterizeFreeTypeText(const TextLayerState& state, uint32_t width, uint32_t
 
     float baseline_y = FirstBaselineY(state, face.get(), lines.size(), padding, height);
     for (const auto& line : lines) {
-        const float line_width = line.LayoutWidth();
-        float       pen_x = HorizontalLineStart(state, line_width, padding, width) -
-                      line.ExtentLeft();
+        const float limit = TextWidthLimit(state);
+        const float line_width = limit > 0.0f ? std::min(limit, line.LayoutWidth()) : line.LayoutWidth();
+        const float left_edge = HorizontalLineStart(state, line_width, padding, width);
+        const float right_edge = limit > 0.0f ? std::min(float(width), left_edge + limit) : float(width);
+        float pen_x = left_edge - line.ExtentLeft();
         for (const auto& glyph : line.glyphs) {
             FT_Face glyph_face =
                 glyph.fallback && fallback_face ? fallback_face->face.get() : face.get();
@@ -405,7 +506,7 @@ bool RasterizeFreeTypeText(const TextLayerState& state, uint32_t width, uint32_t
 
                 for (uint32_t column = 0; column < bitmap.width; ++column) {
                     const int dest_x = left + static_cast<int>(column);
-                    if (dest_x < 0 || dest_x >= static_cast<int>(width)) continue;
+                    if (dest_x < 0 || dest_x >= static_cast<int>(width) || dest_x >= right_edge) continue;
 
                     const auto coverage =
                         bitmap.buffer[static_cast<std::size_t>(source_row) * pitch + column];
@@ -440,7 +541,7 @@ std::optional<Eigen::Vector2f> MeasureFreeTypeText(const TextLayerState& state) 
     auto fallback_face = CreateFallbackFace(state);
 
     const auto lines =
-        BuildLineRuns(face.get(), fallback_face ? fallback_face->face.get() : nullptr, state.text);
+        BuildFreeTypeLines(state, face.get(), fallback_face ? fallback_face->face.get() : nullptr);
     float max_line_width = 0.0f;
     bool  saw_glyph      = false;
     for (const auto& line : lines) {
@@ -460,7 +561,10 @@ std::optional<Eigen::Vector2f> MeasureFreeTypeText(const TextLayerState& state) 
                                std::max(1.0f, padding * 2.0f + glyph_height));
     }
 
-    return Eigen::Vector2f(std::max(1.0f, max_line_width + padding * 2.0f),
+    const float width = TextWidthLimit(state) > 0.0f
+        ? std::min(state.max_width, max_line_width + padding * 2.0f)
+        : max_line_width + padding * 2.0f;
+    return Eigen::Vector2f(std::max(1.0f, width),
                            std::max(1.0f,
                                     glyph_height +
                                         static_cast<float>(lines.size() - 1u) * line_height +
@@ -517,7 +621,7 @@ Eigen::Vector2f MeasureTextLayerSize(const TextLayerState& state) {
     if (measured.has_value()) {
         return *measured;
     }
-    return EstimateTextLayerSize(state.text, state.point_size, state.padding);
+    return MeasureFallbackText(state);
 }
 
 Eigen::Vector2f TextLayerLayoutSize(const TextLayerState& state) {
@@ -713,7 +817,12 @@ void TextLayer::EnsureCacheIdentity() {
     const std::string material = m_state.layer_key + "|" + m_state.text + "|" +
                                  m_state.resolved_font_kind + "|" + m_state.resolved_font_identity +
                                  "|" + m_state.resolved_font_path + "|" +
-                                 std::to_string(m_state.point_size);
+                                 std::to_string(m_state.point_size) + "|" +
+                                 std::to_string(m_state.max_width) + "|" +
+                                 std::to_string(m_state.max_rows) + "|" +
+                                 std::to_string(m_state.limit_width) + "|" +
+                                 std::to_string(m_state.limit_rows) + "|" +
+                                 std::to_string(m_state.use_ellipsis);
     m_state.texture_cache_key = "textcache:" + std::to_string(std::hash<std::string> {}(material));
 }
 

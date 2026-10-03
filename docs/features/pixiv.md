@@ -74,7 +74,20 @@ whole, a page stepper for works with several, **Download** (or **Download page
 N**) and **View on pixiv**. Double-clicking a tile downloads the page the
 inspector shows, and applies it once it is in the library. Downloads run two at
 a time in the order asked for, each with progress on its tile and in the
-activity bar, and can be cancelled or retried.
+activity bar and shared Downloads popover. They can be paused, resumed, cancelled
+or retried. Queue order and original-image checkpoints survive quitting and
+relaunch in the app's `Downloads/Pixiv` directory; restored jobs wait for an
+explicit **Resume download**. No pixiv session cookie is stored with the queue.
+
+For a partial original with an ETag or Last-Modified validator, resuming sends
+HTTP Range and If-Range. A matching partial response continues at the saved byte
+offset; a full response replaces the old partial bytes. A server that supplies
+no usable validator starts that original again. Cancel immediately removes the
+job from the saved queue, then discards its checkpoint when the transfer stops;
+it cannot return as paused if the app exits during that cleanup. Starting that
+page again discards any partial bytes left by the interrupted cleanup. Clearing
+finished jobs keeps paused work. The byte limit applies to the whole
+original, including the bytes retained before pausing.
 
 A page is saved as a `web` project, since the renderer plays scene, video and web
 projects only (`PixivWallpaperPackager`, with the page, properties and sizes of

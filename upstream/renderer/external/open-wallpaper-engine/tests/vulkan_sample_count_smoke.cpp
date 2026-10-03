@@ -6,7 +6,8 @@
 #include "VulkanRender/FinPass.hpp"
 #include "VulkanRender/PassCommon.hpp"
 
-#include <cassert>
+#include <gtest/gtest.h>
+#include "TestRequire.hpp"
 
 namespace
 {
@@ -45,38 +46,38 @@ TextureKey makeDepthKey(VkSampleCountFlagBits sample_count) {
     return key;
 }
 
-void requestedZeroOrOneResolvesToOne() {
+TEST(VulkanSampleCount, requestedZeroOrOneResolvesToOne) {
     const auto supported = VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT |
                            VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
 
-    assert(ResolveSampleCount(0, supported) == VK_SAMPLE_COUNT_1_BIT);
-    assert(ResolveSampleCount(1, supported) == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(ResolveSampleCount(0, supported) == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(ResolveSampleCount(1, supported) == VK_SAMPLE_COUNT_1_BIT);
 }
 
-void requestedAboveSupportedFallsBackToHighestSupported() {
+TEST(VulkanSampleCount, requestedAboveSupportedFallsBackToHighestSupported) {
     const auto supported =
         VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT;
 
-    assert(ResolveSampleCount(8, supported) == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(ResolveSampleCount(8, supported) == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void unsupportedRequestsFallBackToOne() {
-    assert(ResolveSampleCount(16, VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT);
+TEST(VulkanSampleCount, unsupportedRequestsFallBackToOne) {
+    REQUIRE(ResolveSampleCount(16, VK_SAMPLE_COUNT_1_BIT) == VK_SAMPLE_COUNT_1_BIT);
 }
 
-void sampleCountValueReturnsIntegerSamples() {
-    assert(SampleCountValue(VK_SAMPLE_COUNT_1_BIT) == 1);
-    assert(SampleCountValue(VK_SAMPLE_COUNT_4_BIT) == 4);
+TEST(VulkanSampleCount, sampleCountValueReturnsIntegerSamples) {
+    REQUIRE(SampleCountValue(VK_SAMPLE_COUNT_1_BIT) == 1);
+    REQUIRE(SampleCountValue(VK_SAMPLE_COUNT_4_BIT) == 4);
 }
 
-void textureKeyHashIncludesSampleCount() {
+TEST(VulkanSampleCount, textureKeyHashIncludesSampleCount) {
     const TextureKey single_sample = makeKey(VK_SAMPLE_COUNT_1_BIT);
     const TextureKey four_sample   = makeKey(VK_SAMPLE_COUNT_4_BIT);
 
-    assert(TextureKey::HashValue(single_sample) != TextureKey::HashValue(four_sample));
+    REQUIRE(TextureKey::HashValue(single_sample) != TextureKey::HashValue(four_sample));
 }
 
-void sceneRenderTargetSampleCountConvertsToTextureKey() {
+TEST(VulkanSampleCount, sceneRenderTargetSampleCountConvertsToTextureKey) {
     const SceneRenderTarget render_target {
         .width        = 64,
         .height       = 64,
@@ -86,36 +87,36 @@ void sceneRenderTargetSampleCountConvertsToTextureKey() {
 
     const TextureKey key = ToTexKey(render_target);
 
-    assert(key.sample_count == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(key.sample_count == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void customPassRenderTargetSampleCountFallsBackToSupportedColorSamples() {
+TEST(VulkanSampleCount, customPassRenderTargetSampleCountFallsBackToSupportedColorSamples) {
     const auto supported =
         VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT;
 
-    assert(ResolveCustomPassRenderTargetSampleCount(8, supported) == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(ResolveCustomPassRenderTargetSampleCount(8, supported) == VK_SAMPLE_COUNT_4_BIT);
 }
 
-void customPassRenderTargetSampleCountFallsBackToSingleSampleWhenUnsupported() {
-    assert(ResolveCustomPassRenderTargetSampleCount(4, VK_SAMPLE_COUNT_1_BIT) ==
+TEST(VulkanSampleCount, customPassRenderTargetSampleCountFallsBackToSingleSampleWhenUnsupported) {
+    REQUIRE(ResolveCustomPassRenderTargetSampleCount(4, VK_SAMPLE_COUNT_1_BIT) ==
            VK_SAMPLE_COUNT_1_BIT);
 }
 
-void customPassRenderTargetSampleCountPreservesGraphFallbackToSingleSample() {
+TEST(VulkanSampleCount, customPassRenderTargetSampleCountPreservesGraphFallbackToSingleSample) {
     const auto supported =
         VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT;
 
-    assert(ResolveCustomPassRenderTargetSampleCount(1, supported) == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(ResolveCustomPassRenderTargetSampleCount(1, supported) == VK_SAMPLE_COUNT_1_BIT);
 }
 
-void gpuAllocationSampleCountPlansRequestedSamplesForInternalColorTargets() {
+TEST(VulkanSampleCount, gpuAllocationSampleCountPlansRequestedSamplesForInternalColorTargets) {
     const TextureKey key = makeKey(VK_SAMPLE_COUNT_4_BIT);
 
-    assert(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
+    REQUIRE(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
            VK_SAMPLE_COUNT_1_BIT);
 }
 
-void gpuAllocationSampleCountUsesRequestedSamplesForMsaaSidecars() {
+TEST(VulkanSampleCount, gpuAllocationSampleCountUsesRequestedSamplesForMsaaSidecars) {
     SceneRenderTarget render_target {
         .width        = 64,
         .height       = 64,
@@ -124,69 +125,50 @@ void gpuAllocationSampleCountUsesRequestedSamplesForMsaaSidecars() {
     };
     const TextureKey key = wallpaper::vulkan::ToTexKeyMsaa(render_target, VK_SAMPLE_COUNT_4_BIT);
 
-    assert(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
+    REQUIRE(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
            VK_SAMPLE_COUNT_4_BIT);
 }
 
-void gpuAllocationSampleCountKeepsDepthSingleSampleInThisSlice() {
+TEST(VulkanSampleCount, gpuAllocationSampleCountMatchesDepthToMsaaColor) {
     const TextureKey key = makeDepthKey(VK_SAMPLE_COUNT_4_BIT);
 
-    assert(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
-           VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(wallpaper::vulkan::PlannedTextureSampleCountForGpuAllocation(key) ==
+           VK_SAMPLE_COUNT_4_BIT);
 }
 
-void graphicsPipelineStoresRequestedSampleCount() {
+TEST(VulkanSampleCount, graphicsPipelineStoresRequestedSampleCount) {
     wallpaper::vulkan::GraphicsPipeline pipeline;
 
-    assert(pipeline.sampleCount() == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(pipeline.sampleCount() == VK_SAMPLE_COUNT_1_BIT);
     pipeline.setSampleCount(VK_SAMPLE_COUNT_4_BIT);
-    assert(pipeline.sampleCount() == VK_SAMPLE_COUNT_4_BIT);
-    assert(pipeline.multisample.rasterizationSamples == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(pipeline.sampleCount() == VK_SAMPLE_COUNT_4_BIT);
+    REQUIRE(pipeline.multisample.rasterizationSamples == VK_SAMPLE_COUNT_4_BIT);
     pipeline.toDefault();
-    assert(pipeline.sampleCount() == VK_SAMPLE_COUNT_1_BIT);
+    REQUIRE(pipeline.sampleCount() == VK_SAMPLE_COUNT_1_BIT);
 }
 
-void pipelineParametersResetDropsDescriptorLayouts() {
+TEST(VulkanSampleCount, pipelineParametersResetDropsDescriptorLayouts) {
     wallpaper::vulkan::PipelineParameters parameters;
 
     parameters.descriptor_layouts.emplace_back();
-    assert(parameters.descriptor_layouts.size() == 1);
+    REQUIRE(parameters.descriptor_layouts.size() == 1);
 
     wallpaper::vulkan::ResetPipelineParameters(parameters);
 
-    assert(parameters.descriptor_layouts.empty());
-    assert(! parameters.handle);
-    assert(! parameters.layout);
-    assert(! parameters.pass);
+    REQUIRE(parameters.descriptor_layouts.empty());
+    REQUIRE(! parameters.handle);
+    REQUIRE(! parameters.layout);
+    REQUIRE(! parameters.pass);
 }
 
-void finPassDestroyResetsPersistentPipelineState() {
+TEST(VulkanSampleCount, finPassDestroyResetsPersistentPipelineState) {
     wallpaper::vulkan::FinPass pass(wallpaper::vulkan::FinPass::Desc {});
     pass.pipelineForTests().descriptor_layouts.emplace_back();
-    assert(pass.pipelineForTests().descriptor_layouts.size() == 1);
+    REQUIRE(pass.pipelineForTests().descriptor_layouts.size() == 1);
 
     wallpaper::vulkan::RenderingResources resources {};
     pass.destroyForTests(resources);
 
-    assert(pass.pipelineForTests().descriptor_layouts.empty());
+    REQUIRE(pass.pipelineForTests().descriptor_layouts.empty());
 }
 } // namespace
-
-int main() {
-    requestedZeroOrOneResolvesToOne();
-    requestedAboveSupportedFallsBackToHighestSupported();
-    unsupportedRequestsFallBackToOne();
-    sampleCountValueReturnsIntegerSamples();
-    textureKeyHashIncludesSampleCount();
-    sceneRenderTargetSampleCountConvertsToTextureKey();
-    customPassRenderTargetSampleCountFallsBackToSupportedColorSamples();
-    customPassRenderTargetSampleCountFallsBackToSingleSampleWhenUnsupported();
-    customPassRenderTargetSampleCountPreservesGraphFallbackToSingleSample();
-    gpuAllocationSampleCountPlansRequestedSamplesForInternalColorTargets();
-    gpuAllocationSampleCountUsesRequestedSamplesForMsaaSidecars();
-    gpuAllocationSampleCountKeepsDepthSingleSampleInThisSlice();
-    graphicsPipelineStoresRequestedSampleCount();
-    pipelineParametersResetDropsDescriptorLayouts();
-    finPassDestroyResetsPersistentPipelineState();
-    return 0;
-}

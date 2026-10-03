@@ -58,13 +58,30 @@ enum SyntheticVideoFixture {
         case writerFailed(String)
         case pixelBufferFailed
         case noInput
+        case inputTimedOut
 
         var description: String {
             switch self {
             case let .writerFailed(detail): return "asset writer failed: \(detail)"
             case .pixelBufferFailed: return "could not create a pixel buffer"
             case .noInput: return "writer input never became ready"
+            case .inputTimedOut: return "writer input readiness timed out"
             }
+        }
+    }
+
+    static func waitUntilReady(
+        isReady: () -> Bool, status: () -> AVAssetWriter.Status,
+        failure: () -> String? = { nil }, timeout: Duration = .seconds(5)
+    ) async throws {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while !isReady() {
+            try Task.checkCancellation()
+            guard status() == .writing else {
+                throw FixtureError.writerFailed(failure() ?? "writer stopped before input became ready")
+            }
+            guard ContinuousClock.now < deadline else { throw FixtureError.inputTimedOut }
+            try await Task.sleep(for: .milliseconds(5))
         }
     }
 
@@ -73,6 +90,7 @@ enum SyntheticVideoFixture {
         let url = directory.appendingPathComponent("\(request.name).mov")
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        defer { if writer.status == .writing { writer.cancelWriting() } }
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: request.width,
@@ -110,9 +128,8 @@ enum SyntheticVideoFixture {
 
         var elapsed: CMTimeValue = 0
         for (index, duration) in request.frameDurations.enumerated() {
-            while !input.isReadyForMoreMediaData {
-                try await Task.sleep(for: .milliseconds(5))
-            }
+            try await waitUntilReady(isReady: { input.isReadyForMoreMediaData },
+                status: { writer.status }, failure: { writer.error?.localizedDescription })
             guard let pool = adaptor.pixelBufferPool else { throw FixtureError.pixelBufferFailed }
             var buffer: CVPixelBuffer?
             guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess,
@@ -149,6 +166,7 @@ enum SyntheticVideoFixture {
         let url = directory.appendingPathComponent("\(name).mov")
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        defer { if writer.status == .writing { writer.cancelWriting() } }
         let sampleRate = 44_100.0
         var format = AudioStreamBasicDescription(
             mSampleRate: sampleRate,
@@ -200,9 +218,8 @@ enum SyntheticVideoFixture {
             let sample
         else { throw FixtureError.writerFailed("audio sample buffer") }
 
-        while !input.isReadyForMoreMediaData {
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        try await waitUntilReady(isReady: { input.isReadyForMoreMediaData },
+            status: { writer.status }, failure: { writer.error?.localizedDescription })
         guard input.append(sample) else {
             throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "append audio")
         }

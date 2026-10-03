@@ -70,6 +70,7 @@ struct ScenePassDescription
     uint32_t             target_height { 0 };
     MetalLoadAction      load_action { MetalLoadAction::DontCare };
     std::array<float, 4> clear_color { 0.0f, 0.0f, 0.0f, 0.0f };
+    bool uses_scene_clear_color { false };
 
     // ---- Copy
     std::string source_key;

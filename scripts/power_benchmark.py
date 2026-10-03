@@ -26,8 +26,10 @@ from __future__ import annotations
 import argparse
 import ctypes
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
+from pathlib import Path
 import plistlib
 import re
 import subprocess
@@ -110,7 +112,8 @@ GPU_CONTENTION_SHARE = 0.25
 def command_output(command):
     """Stdout of a read-only inspection command, or None when unavailable."""
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False,
+                                   env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.SubprocessError):
         return None
     return completed.stdout.strip() if completed.returncode == 0 else None
@@ -165,7 +168,7 @@ def thermal_state():
     return raw.splitlines() if raw else []
 
 
-def build_identity(configuration):
+def workspace_identity(configuration):
     project = ROOT / "project.yml"
     version = None
     if project.is_file():
@@ -177,8 +180,85 @@ def build_identity(configuration):
         "commit": command_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"]),
         "dirty": bool(command_output(["git", "-C", str(ROOT), "status", "--porcelain"])),
         "marketing_version": version,
-        "configuration": configuration,
+        "requested_configuration": configuration,
     }
+
+
+def process_stamp(pid):
+    """Executable path and launch time reported by this PID, without opening it."""
+    path = command_output(["ps", "-p", str(pid), "-o", "comm="])
+    launched = command_output(["ps", "-p", str(pid), "-o", "lstart="])
+    if not path or not Path(path).is_absolute() or not launched:
+        return None
+    try:
+        started = time.mktime(time.strptime(launched, "%a %b %d %H:%M:%S %Y"))
+    except ValueError:
+        return None
+    return {"executable": path, "launched_at": launched, "started_epoch": started}
+
+
+def file_stamp(path):
+    status = path.stat()
+    return [status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns, status.st_ctime_ns]
+
+
+def process_build_identity(pid):
+    """Identify a measured executable on disk, or explain why it cannot be trusted.
+
+    A rebuilt bundle at the same path is not the process's original image. Refuse
+    files changed since launch and recheck both PID and file identity after reading.
+    Source revision/configuration and loaded dylibs are unknown unless the running
+    process exposes them; repository HEAD and current Homebrew links are no proof.
+    """
+    identity = {"pid": pid, "status": "unknown", "source_revision": None,
+                "configuration": None, "loaded_renderer_libraries": None}
+    process = process_stamp(pid)
+    if process is None:
+        return {**identity, "reason": "process path or launch time is unavailable"}
+    executable = Path(process["executable"])
+    bundle = executable.parent.parent if executable.parent.name == "MacOS" else None
+    metadata = bundle / "Info.plist" if bundle and bundle.name == "Contents" else None
+    try:
+        paths = [executable] + ([metadata] if metadata and metadata.is_file() else [])
+        stamps = {str(path): file_stamp(path) for path in paths}
+        if any(max(stamp[3:]) / 1e9 >= process["started_epoch"] for stamp in stamps.values()):
+            return {**identity, "executable": str(executable),
+                    "reason": "executable or bundle metadata changed at or after process launch"}
+        with executable.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        info = plistlib.loads(metadata.read_bytes()) if metadata and str(metadata) in stamps else {}
+        if not isinstance(info, dict):
+            raise ValueError("bundle metadata is not a dictionary")
+        architectures = command_output(["lipo", "-archs", str(executable)])
+        if process_stamp(pid) != process or any(file_stamp(Path(path)) != stamp for path, stamp in stamps.items()):
+            return {**identity, "reason": "process or executable changed while its identity was read"}
+    except (OSError, ValueError, plistlib.InvalidFileException) as error:
+        return {**identity, "executable": str(executable), "reason": str(error)}
+    return {
+        **identity, "status": "identified", "identity_scope": "PID executable and unchanged on-disk bundle at measurement start",
+        "executable": str(executable), "executable_sha256": digest,
+        "binary_architectures": architectures.split() if architectures else None,
+        "bundle_identifier": info.get("CFBundleIdentifier"),
+        "marketing_version": info.get("CFBundleShortVersionString"),
+        "build_number": info.get("CFBundleVersion"),
+        "process_stamp": process, "file_stamps": stamps,
+        "unknown_fields_reason": "the process does not expose its source revision, build configuration or loaded renderer library versions",
+    }
+
+
+def verify_process_build(identity):
+    """Do not attribute a window to a replaced executable or reused PID."""
+    if identity["status"] != "identified":
+        return identity
+    try:
+        current = process_stamp(identity["pid"]) == identity["process_stamp"] and all(
+            file_stamp(Path(path)) == stamp for path, stamp in identity["file_stamps"].items())
+    except OSError:
+        current = False
+    if not current:
+        return {"pid": identity["pid"], "status": "unknown",
+                "reason": "process or executable changed during the measurement window"}
+    return identity
 
 
 def system_identity():
@@ -192,7 +272,7 @@ def system_identity():
 
 
 def renderer_libraries():
-    """Actual dynamic-library versions the run linked against."""
+    """Current host Homebrew versions; these do not identify a running process."""
     versions = {}
     for formula in ("mwe-ffmpeg", "quickjs-ng", "glslang", "molten-vk", "freetype", "lz4"):
         target = command_output(["readlink", f"/opt/homebrew/opt/{formula}"])
@@ -221,16 +301,18 @@ def provenance():
 
 def manifest(args):
     return {
+        "schema_version": 2,
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "note": args.note,
-        "build": build_identity(args.configuration),
+        "workspace": workspace_identity(args.configuration),
+        "build": {"status": "not_measured", "processes": {}},
         "system": system_identity(),
         "hardware": hardware(),
         "displays": displays(),
         "power": power_state(),
         "thermal": thermal_state(),
-        "renderer_libraries": renderer_libraries(),
-        "upstream_revisions": provenance(),
+        "host_renderer_libraries": renderer_libraries(),
+        "workspace_upstream_revisions": provenance(),
         "measured": False,
         "measurement_tool": None,
         "conditions": [{"id": key, "description": value, "measured": False}
@@ -512,6 +594,9 @@ def role_usage(pids, cpu_before, cpu_after, gpu_before, gpu_after, elapsed) -> d
 def measure(seconds: int, use_powermetrics: bool, sudo_password: str | None) -> dict:
     """Sample every role and the machine before and after the window, package power across it."""
     roles = role_pids()
+    # Hashing belongs before the sampling window, so it is not charged as app work.
+    builds = {role: [process_build_identity(pid) for pid in roles.get(role, [])]
+              for role in ("app", "extension")}
     pids = sorted({pid for group in roles.values() for pid in group})
     reader = CoalitionReader.open()
     started = time.monotonic()
@@ -543,6 +628,8 @@ def measure(seconds: int, use_powermetrics: bool, sudo_password: str | None) -> 
     if power["measured"]:
         tools.append("powermetrics cpu_power,gpu_power")
     return {
+        "process_builds": {role: [verify_process_build(identity) for identity in identities]
+                           for role, identities in builds.items()},
         "tools": tools,
         "elapsed_seconds": round(elapsed, 2),
         "processes": {
@@ -576,6 +663,12 @@ def describe_role(role: str, usage: dict, energy: dict | None = None) -> str:
 def attach_measurement(document: dict, condition: str, seconds: int, measurement: dict) -> None:
     document["measured"] = True
     document["measurement_tool"] = "; ".join(measurement["tools"])
+    builds = measurement["process_builds"]
+    identities = [identity for entries in builds.values() for identity in entries]
+    document["build"] = {
+        "status": "identified" if identities and all(i["status"] == "identified" for i in identities) else "unknown",
+        "processes": builds,
+    }
     for entry in document["conditions"]:
         if entry["id"] == condition:
             entry["measured"] = True
@@ -657,7 +750,7 @@ def main():
                   f"GPU {power['gpu_mw']}, ANE {power['ane_mw']}) over {power['samples']} samples")
         else:
             print(f"{MARK.warn} Package power not measured: {power['reason']}")
-    if document["build"]["dirty"]:
+    if document["workspace"]["dirty"]:
         print(f"{MARK.warn} Working tree is dirty; the commit alone does not identify this build.")
     return 0
 

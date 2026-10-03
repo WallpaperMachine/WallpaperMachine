@@ -200,6 +200,11 @@ async function sendDialog(action, args = {}) {
 }
 function receive(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
+  if (!Array.isArray(snapshot.wallpapers)) {
+    if (!snapshot.libraryRevision || state?.libraryRevision !== snapshot.libraryRevision
+        || !Array.isArray(state.wallpapers)) return 'needsFullSnapshot';
+    snapshot = { ...snapshot, wallpapers: state.wallpapers };
+  }
   if (snapshot.import?.busy) importReportUnseen = false;
   else if (importWasBusy && snapshot.import?.report) importReportUnseen = popover !== 'import';
   importWasBusy = Boolean(snapshot.import?.busy);
@@ -456,7 +461,7 @@ function tileMarksMarkup(item, discover) {
 function tileDownloadMarkup(item) {
   const request = requestByID(item.id);
   const job = jobByID(item.id);
-  if (request) return tileRing({ kind: 'attention', glyph: 'shield', action: 'continueSetup', id: item.id, label: t('Continue setup to download {title}', { title: item.title }) });
+  if (request) return tileRing({ kind: request.paused ? 'queued' : 'attention', glyph: request.paused ? 'play' : 'shield', action: request.paused ? 'downloadResume' : 'continueSetup', id: item.id, label: request.paused ? t('Resume download') : t('Continue setup to download {title}', { title: item.title }) });
   if (job?.pending) {
     if (job.queued) return tileRing({ kind: 'queued', glyph: 'download', hoverGlyph: 'close', action: 'downloadCancel', id: item.id, label: t('{title} is waiting to download. Click to remove it from the queue', { title: item.title }) });
     if (job.prompt || job.challenge) return tileRing({ kind: 'attention', glyph: 'shield', action: 'continueSetup', id: item.id, label: t('Finish the Steam sign-in to download {title}', { title: item.title }) });
@@ -472,6 +477,7 @@ function tileDownloadMarkup(item) {
     const word = finishing ? phase : percent === null && (job.phase !== 'transferring' || !pace) ? phase : '';
     return tileRing({ kind: percent === null ? 'busy' : 'progress', progress: percent === null ? null : clamp(job.progress), text: word || (percent === null ? '' : `${percent}%`), word: !!word, speed: pace, phase: job.phase, hoverGlyph: 'close', action: 'downloadCancel', id: item.id, label: t('{progress}: {title}. Click to cancel', { progress: pace ? t('{progress} at {speed}', { progress: progressText, speed: pace }) : progressText, title: item.title }) });
   }
+  if (job?.paused) return tileRing({ kind: 'queued', glyph: 'play', action: 'downloadResume', id: item.id, label: t('Resume download') });
   if (job && needsReview(job)) return tileRing({ kind: 'failed', glyph: 'refresh', action: 'downloadRetry', id: item.id, label: t('{error} Click to try again', { error: job.error || t('Download cancelled.') }), disabled: !state.setup?.ready });
   return '';
 }
@@ -560,7 +566,9 @@ function renderInspector(discover) {
   const downloadAction = discover && item.collection
     ? button(t('Open collection'), 'workshopCollection', { id: item.id, title: item.title }, { icon: 'layers', className: 'primary' })
     : request
-    ? button(t('Continue setup'), 'continueSetup', { id: request.id }, { icon: 'shield', className: 'primary' })
+    ? button(request.paused ? t('Resume download') : t('Continue setup'), request.paused ? 'downloadResume' : 'continueSetup', { id: request.id }, { icon: request.paused ? 'play' : 'shield', className: 'primary' })
+    : download?.paused && !download.pending
+      ? button(t('Resume download'), 'downloadResume', { id: item.id }, { icon: 'play', className: 'primary' })
     : download?.pending
       ? `${download.prompt || download.challenge ? button(t('Finish sign-in'), 'continueSetup', { id: item.id }, { icon: 'shield', className: 'primary' }) : button(download.queued ? t('Waiting to download') : percent === null ? t('Downloading') : t('Downloading {percent}%', { percent }), 'openDownloads', {}, { icon: 'download', className: 'primary' })}${button(download.queued ? t('Remove from queue') : t('Cancel'), 'downloadCancel', { id: item.id }, { className: 'quiet' })}`
       : button(download?.error ? t('Download again') : t('Download'), 'requestDownload', { id: item.id }, { icon: 'download', className: 'primary' });
@@ -600,6 +608,7 @@ function renderInspector(discover) {
     ${request ? `<p class="muted"><small>${escapeHTML(stageHint(request.stage))}</small></p>` : ''}
     ${updateNotice}
     ${failureNotice}
+    ${!discover ? hostStatusMarkup(item.id) : ''}
     ${isInstalled && download && !download.pending && !download.error ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : ''}
     ${download || request ? button(t('Show in downloads'), 'openDownloads', {}, { className: 'link' }) : ''}
     ${compatibility ? `<p class="inspector-compatibility muted"><small>${escapeHTML(compatibility)}</small></p>` : ''}${artworkLink}${reportLink}
@@ -610,10 +619,15 @@ function renderInspector(discover) {
   placement.layout();
 }
 const draftKey = (id, propertyID) => `${id}\u0000${propertyID}`;
-// The audio and media status lines report the user's own setting and what it does not
-// promise. Whether a page registered a listener, and whether the system will report what
-// is playing, are facts the wallpaper host holds and the panel has no way to read, so
-// neither is asserted here and nothing stands in for them.
+function hostStatusMarkup(id) {
+  return (state.hostStates || []).filter(row => row.wallpaperID === id).map(row => {
+    const label = row.phase === 'failed' ? t('Wallpaper could not load')
+      : row.phase === 'ready' ? t('Wallpaper content is ready') : t('Loading wallpaper content…');
+    return `<div class="notice ${row.phase === 'failed' ? 'error' : 'muted'}" data-host-display="${escapeHTML(row.displayID)}" role="status"><strong>${escapeHTML(row.displayTitle)} · ${escapeHTML(label)}</strong>${row.message ? `<p>${escapeHTML(row.message)}</p>` : ''}${row.canRetry ? button(t('Retry wallpaper'), 'retryHostWallpaper', { id, displayID: row.displayID }, { className: 'link', icon: 'refresh', disabled: busy('retryHostWallpaper', { id, displayID: row.displayID }) }) : ''}</div>`;
+  }).join('');
+}
+// Delivery is reported by the native host for this wallpaper. A setting or a
+// subscription alone is never presented as a received audio frame.
 function renderAudioAndMedia(options, lock) {
   const id = options.id;
   const web = options.kind === 'Web';
@@ -629,6 +643,12 @@ function renderAudioAndMedia(options, lock) {
       ? t('On. Parts of the wallpaper made to react to sound will respond.')
       : delivering === true
         ? t('On. The wallpaper is receiving audio.')
+        : options.audioDeliveryState === 'subscribed'
+          ? t('On. Waiting for an audio frame.')
+        : options.audioDeliveryState === 'connecting'
+          ? t('On. Connecting to audio…')
+        : options.audioDeliveryState === 'failed'
+          ? t('Audio could not be connected. Turn Audio response off and on to retry.')
         : delivering === false
           ? t('On, but this wallpaper doesn’t use audio.')
           : t('On. Apply the wallpaper to see whether it uses audio.');
@@ -820,7 +840,12 @@ function signInGuide(job, account) {
 const guideMarkup = (guide, extra = '') => `<section class="dialog-guide" aria-label="${escapeHTML(guide.title)}"><span class="dialog-guide-icon">${icon(guide.icon, 20)}</span><div class="dialog-guide-body"><p class="dialog-guide-title" role="status">${escapeHTML(guide.title)}</p>${guide.steps?.length ? `<ol class="dialog-steps">${guide.steps.map(step => `<li><span>${step}</span></li>`).join('')}</ol>` : ''}${guide.note ? `<p class="dialog-guide-note">${escapeHTML(guide.note)}</p>` : ''}${extra}</div></section>`;
 function queueState() {
   // A finished sign-in-only session is not a download; it only shows while it is running.
-  const downloads = (state.downloads || []).filter(item => item.id !== SIGN_IN_ID || item.pending);
+  const pixivDownloads = (state.pixiv?.downloads || []).map(job => ({ ...job, source: 'pixiv',
+    wallpaperID: job.id, queued: job.status === 'waiting', paused: job.status === 'paused',
+    cancelled: job.status === 'cancelled', bytesReceived: job.received, bytesExpected: job.expected,
+    status: job.status === 'paused' ? t('Download paused') : job.status === 'waiting' ? t('Waiting to download') : job.status === 'installing' ? t('Saving to your library…') : job.status === 'finished' ? t('In your library') : job.status === 'failed' ? job.error : job.status === 'cancelled' ? t('Download cancelled.') : t('Downloading'),
+  }));
+  const downloads = [...(state.downloads || []).filter(item => item.id !== SIGN_IN_ID || item.pending), ...pixivDownloads];
   const requests = state.downloadRequests || [];
   const active = downloads.filter(item => item.pending && !item.queued);
   const queued = downloads.filter(item => item.pending && item.queued);
@@ -888,12 +913,13 @@ function queueMarkup() {
   return `<div class="popover-heading"><h2 id="queue-popover-title">${escapeHTML(t('Downloads'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close downloads'), className: 'quiet icon-button' })}</div>${rows ? `<ul class="queue-list">${rows}</ul>` : `<p class="queue-empty">${escapeHTML(empty)}</p>`}<div class="popover-footer"><p class="queue-note">${escapeHTML(queueNote())}</p><div class="actions">${succeeded.length ? button(queueExpanded ? t('Hide completed') : t('Show completed ({count})', { count: succeeded.length }), 'toggleQueueHistory', {}, { className: 'link' }) : ''}${downloads.length > active.length ? button(t('Clear finished'), 'clearDownloads', {}, { className: 'quiet' }) : ''}${button(t('Show download logs'), 'showLogs', {}, { icon: 'folder', className: 'link' })}</div></div>`;
 }
 const queueNote = () => {
+  if (!(state.downloads || []).some(job => job.id !== SIGN_IN_ID) && state.pixiv?.downloads?.length) return t('pixiv downloads run two at a time; paused downloads stay in the queue.');
   const slots = Number(state?.downloadSlots) || 1;
   return slots > 1 ? t('Up to {slots} downloads run at once and share your saved sign-in; the rest wait in order. Steam may still ask you to approve a sign-in.', { slots }) : t('Downloads run one at a time; the rest wait in order. Steam may still ask you to approve a sign-in.');
 };
-const needsReview = (item) => Boolean(item.error) || Boolean(item.cancelled);
+const needsReview = (item) => Boolean(item.error) || Boolean(item.cancelled) || Boolean(item.paused);
 function queueRequestRow(request) {
-  return `<li class="queue-row attention" ${keyAttr(`request-${request.id}`)}><span class="queue-thumb">${previewThumb(request.thumbnail || request.preview)}</span><div class="queue-body"><p class="queue-title">${escapeHTML(request.title)}</p><p class="queue-status">${escapeHTML(stageHint(request.stage))}</p><div class="actions">${button(t('Continue setup'), 'continueSetup', { id: request.id }, { className: 'primary' })}${button('', 'removeDownloadRequest', { id: request.id }, { icon: 'close', title: t('Remove {title} from downloads', { title: request.title }), className: 'quiet icon-button' })}</div></div></li>`;
+  return `<li class="queue-row attention" ${keyAttr(`request-${request.id}`)}><span class="queue-thumb">${previewThumb(request.thumbnail || request.preview)}</span><div class="queue-body"><p class="queue-title">${escapeHTML(request.title)}</p><p class="queue-status">${escapeHTML(request.paused ? t('Download paused') : stageHint(request.stage))}</p><div class="actions">${button(request.paused ? t('Resume download') : t('Continue setup'), request.paused ? 'downloadResume' : 'continueSetup', { id: request.id }, { className: 'primary' })}${button('', 'removeDownloadRequest', { id: request.id }, { icon: 'close', title: t('Remove {title} from downloads', { title: request.title }), className: 'quiet icon-button' })}</div></div></li>`;
 }
 function queueJobRow(item) {
   const installedItem = (state.wallpapers || []).find(wallpaper => wallpaper.id === item.id);
@@ -901,7 +927,8 @@ function queueJobRow(item) {
   const running = item.pending && !item.queued;
   const needsAuth = running && Boolean(item.prompt || item.challenge);
   const review = !item.pending && needsReview(item);
-  return `<li class="queue-row${needsAuth || review ? ' attention' : ''}" ${keyAttr(`job-${item.id}`)}><span class="queue-thumb">${previewThumb(item.thumbnail || item.preview)}</span><div class="queue-body"><p class="queue-title">${escapeHTML(item.title)}</p><p class="queue-status">${escapeHTML(item.status)}${running && transfer(item) ? ` · ${transfer(item)}` : ''}</p>${running ? `<progress max="1"${percent === null ? '' : ` value="${clamp(item.progress)}"`} aria-label="${escapeHTML(t('{title} download progress', { title: item.title }))}"></progress>` : ''}${item.error ? `<p class="notice error" role="alert">${escapeHTML(item.error)}</p>` : ''}${item.warning ? `<p class="notice warning">${escapeHTML(item.warning)}</p>` : ''}<div class="actions">${needsAuth ? button(t('Finish sign-in'), 'continueSetup', { id: item.id }, { icon: 'shield', className: 'primary' }) : ''}${item.pending ? button(item.queued ? t('Remove from queue') : t('Cancel'), 'downloadCancel', { id: item.id }, { className: 'quiet' }) : ''}${review ? button(t('Try again'), 'downloadRetry', { id: item.id }, { icon: 'refresh', className: 'primary', disabled: !state.setup?.ready }) : ''}${review && !state.setup?.ready ? `<span class="queue-status">${escapeHTML(stageHint('setup'))}</span>` : ''}${installedItem ? `${button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' })}${button(t('Show in Finder'), 'reveal', { id: item.id }, { icon: 'folder', className: 'link' })}` : ''}</div></div></li>`;
+  const jobAction = kind => item.source === 'pixiv' ? ({ pause: 'pixivPause', resume: 'pixivResume', cancel: 'pixivCancel', retry: 'pixivRetryDownload' })[kind] : ({ pause: 'downloadPause', resume: 'downloadResume', cancel: 'downloadCancel', retry: 'downloadRetry' })[kind];
+  return `<li class="queue-row${needsAuth || review ? ' attention' : ''}" ${keyAttr(`job-${item.id}`)}><span class="queue-thumb">${previewThumb(item.thumbnail || item.preview)}</span><div class="queue-body"><p class="queue-title">${escapeHTML(item.title)}</p><p class="queue-status">${escapeHTML(item.status)}${running && transfer(item) ? ` · ${transfer(item)}` : ''}</p>${running ? `<progress max="1"${percent === null ? '' : ` value="${clamp(item.progress)}"`} aria-label="${escapeHTML(t('{title} download progress', { title: item.title }))}"></progress>` : ''}${item.error ? `<p class="notice error" role="alert">${escapeHTML(item.error)}</p>` : ''}${item.warning ? `<p class="notice warning">${escapeHTML(item.warning)}</p>` : ''}<div class="actions">${needsAuth ? button(t('Finish sign-in'), 'continueSetup', { id: item.id }, { icon: 'shield', className: 'primary' }) : ''}${item.pending && !item.paused && !item.signInOnly ? button(t('Pause download'), jobAction('pause'), { id: item.id }, { className: 'quiet' }) : ''}${item.pending || item.paused ? button(item.queued ? t('Remove from queue') : t('Cancel'), jobAction('cancel'), { id: item.id }, { className: 'quiet' }) : ''}${item.paused && !item.pending ? button(t('Resume download'), jobAction('resume'), { id: item.id }, { icon: 'play', className: 'primary' }) : review && !item.paused ? button(t('Try again'), jobAction('retry'), { id: item.id }, { icon: 'refresh', className: 'primary', disabled: item.source !== 'pixiv' && !state.setup?.ready }) : ''}${review && item.source !== 'pixiv' && !state.setup?.ready ? `<span class="queue-status">${escapeHTML(stageHint('setup'))}</span>` : ''}${installedItem ? `${button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' })}${button(t('Show in Finder'), 'reveal', { id: item.id }, { icon: 'folder', className: 'link' })}` : ''}</div></div></li>`;
 }
 function importMarkup() {
   const status = state.import || {};

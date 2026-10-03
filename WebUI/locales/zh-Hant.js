@@ -2,6 +2,17 @@
    and data-i18n in WebUI/; see docs/localization.md for how a catalog is maintained. */
 
 export default {
+  'pixiv downloads run two at a time; paused downloads stay in the queue.': 'pixiv 下載每次同時執行兩個；已暫停的下載會保留在佇列中。',
+  'On. Waiting for an audio frame.': '已開啟，正在等待音訊資料。',
+  'On. Connecting to audio…': '已開啟，正在連接音訊…',
+  'Audio could not be connected. Turn Audio response off and on to retry.': '音訊連接失敗。關閉再開啟「音訊回應」以重試。',
+  'Download paused': '下載已暫停',
+  'Pause download': '暫停下載',
+  'Resume download': '繼續下載',
+  'Wallpaper could not load': '桌布無法載入',
+  'Wallpaper content is ready': '桌布內容已就緒',
+  'Loading wallpaper content…': '正在載入桌布內容…',
+  'Retry wallpaper': '重試桌布',
   'Wallpaper Engine ownership confirmed. You can download its Workshop wallpapers.': '已確認擁有 Wallpaper Engine。你可以下載其工作坊桌布。',
   'This Steam account does not own Wallpaper Engine. Please purchase it on Steam to download Wallpaper Engine wallpapers. You can still download from Pixiv, browse the Workshop, and view Wallpaper Engine wallpapers you already have.': '此 Steam 帳號未擁有 Wallpaper Engine。請在 Steam 上購買後再下載 Wallpaper Engine 桌布。你仍可從 Pixiv 下載、瀏覽工作坊，以及檢視已有的 Wallpaper Engine 桌布。',
   'Wallpaper Engine ownership has not been confirmed. Check again to verify this account can download its Workshop wallpapers. You can still download from Pixiv, browse the Workshop, and view wallpapers you already have.': '尚未確認是否擁有 Wallpaper Engine。請重新檢查此帳號能否下載其工作坊桌布。你仍可從 Pixiv 下載、瀏覽工作坊，以及檢視已有的桌布。',

@@ -4,6 +4,34 @@ import XCTest
 
 @MainActor
 final class SceneMediaSinkTests: XCTestCase {
+    func testClearedCoverIsAppliedBeforeMetadataAndReplayedToNewScenes() async throws {
+        let provider = ScriptedSystemMediaProvider()
+        let session = DesktopMediaSession(provider: provider)
+        var deliveries: [String] = []
+        var handles: Set<UInt64> = [11]
+        let sink = SceneMediaSink(session: session, submit: { deliveries.append($0) },
+            applyArtwork: { width, height, data in
+                deliveries.append("pixels:\(width)x\(height):\(data.count)")
+            }, fetchHandles: { handles })
+        defer { sink.shutdown() }
+        sink.reconcile()
+        try await poll { provider.consumers == 1 }
+        provider.emitThumbnail(marker: 42)
+        try await poll { deliveries.contains { $0.contains("\"hasThumbnail\":true") } }
+        deliveries.removeAll()
+        provider.clearThumbnail()
+        try await poll { deliveries.contains { $0.contains("\"hasThumbnail\":false") } }
+        XCTAssertEqual(deliveries.first, "pixels:0x0:0")
+        deliveries.removeAll()
+        handles = [12, 13]
+        sink.reconcile()
+        try await poll { deliveries.contains { $0.contains("\"hasThumbnail\":false") } }
+        XCTAssertTrue(deliveries.contains("pixels:0x0:0"))
+        XCTAssertFalse(deliveries.contains("pixels:1x1:4"))
+        provider.emitThumbnail(marker: 99)
+        try await poll { deliveries.contains("pixels:1x1:4") }
+    }
+
     /// Swapping one opted-in Scene for another, or lighting a second display,
     /// hands the engine a scene that has been told nothing. The track has not
     /// changed, so no provider callback will fire; without a replay keyed on
@@ -297,6 +325,11 @@ final class ScriptedSystemMediaProvider: SystemMediaProvider {
             tertiaryColor: "rgb(0, 0, 0)", textColor: "rgb(255, 255, 255)",
             highContrastColor: "rgb(0, 0, 0)", rgba: [marker, 0, 0, 255], width: 1, height: 1)
         onThumbnailChanged?(thumbnail!)
+    }
+
+    func clearThumbnail() {
+        thumbnail = .empty
+        onThumbnailChanged?(.empty)
     }
 }
 

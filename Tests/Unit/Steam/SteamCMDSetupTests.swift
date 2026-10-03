@@ -817,14 +817,20 @@ final class SteamCMDSetupTests: XCTestCase {
         store.install()
         var last: Int64 = 0
         var observed = false
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
         while store.isBusy {
+            guard ContinuousClock.now < deadline else {
+                await store.shutdown()
+                XCTFail("SteamCMD setup did not finish before the deadline")
+                return
+            }
             if case .downloading(let received, let expected) = store.state, let expected {
                 observed = true
                 XCTAssertGreaterThanOrEqual(received, last)
                 XCTAssertLessThanOrEqual(received, expected)
                 last = received
             }
-            await Task.yield()
+            try await Task.sleep(for: .milliseconds(1))
         }
         XCTAssertTrue(observed)
         XCTAssertEqual(store.state, .ready)

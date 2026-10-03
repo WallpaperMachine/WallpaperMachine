@@ -74,7 +74,7 @@ Swift hosts it, but the page is app-owned: the renderer never draws into this we
 Protocol, both directions:
 
 - **Assets.** `WebPanelAssets` is a `WKURLSchemeHandler` for the private `mwe-ui` scheme. The
-  page loads from `mwe-ui://app/index.html`, and only the six known file names are served.
+  page loads from `mwe-ui://app/index.html`, and only allowlisted bundled assets are served.
   Wallpaper previews are served as `mwe-ui://preview/<wallpaperID>` from a per-snapshot allow
   list, so no library path is exposed to the page. `index.html` additionally carries a
   restrictive CSP (`default-src 'none'`, `connect-src 'none'`).
@@ -85,6 +85,12 @@ Protocol, both directions:
   hidden, miniaturized or occluded. Observation is installed with
   `withObservationTracking { trackSnapshotDependencies() }`, so any observed store property that
   the snapshot reads re-arms an update.
+  The library rows are cached by their own inputs and carry `libraryRevision`.
+  The first delivery and action replies include the complete list; progress-only
+  pushes omit unchanged rows. The page reuses only a matching revision, otherwise
+  requests a full snapshot through the delivery result. Reloading the document
+  resets that agreement. Metadata, assignments, target display, energy ratings,
+  update availability and language changes invalidate the cached rows.
   The one exception is the Settings energy readout, pushed every two seconds as
   `window.wallpaperUI.energy(reading)` so it patches its own row instead of re-rendering the
   panel. Sampling runs only while the window is visible on Settings. See
@@ -104,8 +110,10 @@ Protocol, both directions:
 - **Theme.** `theme.js` reads `window.__appTheme`, injected as the panel's only `WKUserScript` at
   document start so the resolved appearance is correct before first paint;
   `window.appTheme.apply(theme)` is called on every snapshot.
-- **Recovery.** `webViewWebContentProcessDidTerminate` reloads the page once, then surfaces a
-  native `NSAlert` with a Reload action. Navigation policy allows only the index URL; external
+- **Recovery.** `webViewWebContentProcessDidTerminate` permits three automatic restarts
+  within 120 seconds, then surfaces a native `NSAlert` with a Reload action. A ready
+  handshake alone does not restore the budget; 60 seconds of stable operation does.
+  Navigation policy allows only the index URL; external
   links are filtered by `WebPanelController.allowedExternalURL`.
 
 ### Observable state

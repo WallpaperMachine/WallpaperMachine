@@ -1,6 +1,16 @@
 import AppKit
 import WebKit
 
+@MainActor
+protocol WebWallpaperSurface: AnyObject {
+    var page: WebWallpaperPage { get }
+    var frame: NSRect { get }
+    var posterLayer: CALayer? { get }
+    func setScreenFrame(_ frame: NSRect)
+    func present()
+    func retire()
+}
+
 /// Borderless desktop-level window hosting one web wallpaper on one display.
 /// Mirrors the renderer's `MWEWallpaperDesktopWindow` configuration so the
 /// presentation policy and poster sync can treat both kinds alike. The
@@ -49,6 +59,13 @@ final class WebWallpaperWindow: NSWindow {
 
     /// Desktop windows must cover the whole display, including under the menu bar.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+extension WebWallpaperWindow: WebWallpaperSurface {
+    var posterLayer: CALayer? { contentView?.layer }
+    func setScreenFrame(_ frame: NSRect) { setFrame(frame, display: true) }
+    func present() { orderFrontRegardless() }
+    func retire() { orderOut(nil); close() }
 }
 
 /// One `WKWebView` running a Wallpaper Engine web project, with the host side
@@ -111,6 +128,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     private var suspensionGeneration: UInt64 = 0
     var onFailure: (@MainActor (String) -> Void)?
     var onLoaded: (@MainActor () -> Void)?
+    var onLoading: (@MainActor () -> Void)?
 
     /// Which of the page's own media listeners a payload belongs to. Kept as a
     /// plain slot name so this file never has to know what a media property or
@@ -248,10 +266,13 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     }
 
     func load() {
+        restartTask?.cancel()
+        restartTask = nil
         isLoaded = false
         documentGeneration += 1
         lastLoadFinished = nil
         forgetDocumentState()
+        onLoading?()
         deliverAudioOutput()
         webView.loadFileURL(entryURL, allowingReadAccessTo: projectURL)
     }
@@ -459,9 +480,18 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
 
     /// One audio frame: 128 floats, indices 0-63 the left channel and 64-127
     /// the right, as the Wallpaper Engine listener contract specifies.
-    func deliverAudio(_ bins: [Float]) {
-        guard audioDemand else { return }
-        run("window.__mweWallpaperHost.deliverAudio(bins)", arguments: ["bins": bins.map { Double($0) }])
+    func deliverAudio(_ bins: [Float], completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard audioDemand, bins.count == 128, bins.allSatisfy(\.isFinite) else { completion?(false); return }
+        let generation = documentGeneration
+        Task { @MainActor [weak self] in
+            guard let self, self.documentGeneration == generation, self.audioDemand else { completion?(false); return }
+            do {
+                let delivered = try await self.webView.callAsyncJavaScript(
+                    "return window.__mweWallpaperHost.deliverAudio(bins)",
+                    arguments: ["bins": bins.map { Double($0) }], in: nil, contentWorld: .page) as? Bool
+                completion?(delivered == true && self.documentGeneration == generation && self.audioDemand)
+            } catch { completion?(false) }
+        }
     }
 
     /// One media listener payload. The host builds the event object, so this
@@ -674,6 +704,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         isLoaded = false
+        onLoading?()
         // The crashed document's listeners died with it. Restarting inherits
         // nothing, so a page that crashes repeatedly cannot accumulate
         // subscriptions the host would keep feeding.
@@ -716,10 +747,14 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        isLoaded = false
+        forgetDocumentState()
         onFailure?(error.localizedDescription)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        isLoaded = false
+        forgetDocumentState()
         onFailure?(error.localizedDescription)
     }
 }

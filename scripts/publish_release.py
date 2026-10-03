@@ -15,10 +15,10 @@ Two things the naive `gh` sequence gets wrong, both covered by
   only puts it back if the upload succeeds — the window the draft-first order
   exists to close. Republishing different bytes under a tag people already
   downloaded is wrong anyway: cut the next version.
-* Latest is claimed only when no greater version is already public. The workflows
-  lock per tag, not per repository, so two versions can build at once and finish in
-  whatever order their caches allow; promoting unconditionally lets the older build
-  finish last, take Latest, and offer users the wrong version.
+* Latest is decided after upload, using the releases public at promotion time.
+  Build's publish job holds a repository-wide concurrency lock; builds for different
+  tags can still overlap. Manual invocations must use the same serialized publishing
+  boundary rather than run alongside a workflow or another publisher.
 
     python3 scripts/publish_release.py --tag v0.6.0 --notes notes.md app.dmg app.dmg.sha256 WallpaperMachine-update.json
     python3 scripts/publish_release.py --tag v0.6.0 --notes notes.md --dry-run app.dmg
@@ -72,12 +72,8 @@ def promotes_to_latest(tag, published):
     return not any(other > ours for other in published)
 
 
-def commands(tag, action, notes, assets, latest):
-    """The `gh` invocations for an action, in the only order that is safe.
-
-    The draft flag is cleared last and in its own command, so an upload that fails
-    never reaches it.
-    """
+def draft_commands(tag, action, notes, assets):
+    """Create/resume the draft, then attach all its files before promotion."""
     if action == CREATE:
         first = ["gh", "release", "create", tag, "--draft", "--verify-tag", "--title", tag, "--notes-file", notes]
     else:
@@ -85,7 +81,6 @@ def commands(tag, action, notes, assets, latest):
     return [
         first,
         ["gh", "release", "upload", tag, *assets, "--clobber"],
-        ["gh", "release", "edit", tag, "--draft=false", "--latest" if latest else "--latest=false"],
     ]
 
 
@@ -121,6 +116,7 @@ def published_versions(run):
 
 
 def publish(tag, notes, assets, run=runner, dry_run=False):
+    promotes_to_latest(tag, [])  # Refuse malformed versions before any mutation.
     action = plan(lookup(tag, run))
     if action == REFUSE:
         raise PublishError(
@@ -128,12 +124,19 @@ def publish(tag, notes, assets, run=runner, dry_run=False):
             "which is what the draft-first order exists to prevent. Cut the next version, or delete "
             "that release by hand if it was a mistake."
         )
-    latest = promotes_to_latest(tag, published_versions(run))
-    for command in commands(tag, action, notes, assets, latest):
+    for command in draft_commands(tag, action, notes, assets):
         if dry_run:
             print(f"{MARK.step} {' '.join(command)}")
             continue
         run(command)
+    # This check must be inside the workflow's repository-wide publish lock and
+    # after the potentially slow upload. Never reuse a pre-upload decision.
+    latest = promotes_to_latest(tag, published_versions(run))
+    promotion = ["gh", "release", "edit", tag, "--draft=false", "--latest" if latest else "--latest=false"]
+    if dry_run:
+        print(f"{MARK.step} {' '.join(promotion)}")
+    else:
+        run(promotion)
     return action, latest
 
 
@@ -148,7 +151,8 @@ def main(argv=None):
         if not Path(path).is_file():
             raise PublishError(f"Not a file: {path}")
     action, latest = publish(args.tag, args.notes, args.assets, dry_run=args.dry_run)
-    verb = "Created and published" if action == CREATE else "Finished the draft for"
+    verb = ("Would create and publish" if action == CREATE else "Would finish the draft for") if args.dry_run else (
+        "Created and published" if action == CREATE else "Finished the draft for")
     mark = "Latest" if latest else "not Latest: a greater version is already public"
     print(f"{MARK.ok} {verb} {args.tag} ({mark}): {', '.join(Path(asset).name for asset in args.assets)}")
     return 0

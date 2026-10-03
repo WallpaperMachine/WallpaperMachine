@@ -19,6 +19,8 @@ pub(super) struct ModuloLowerer<'facts, 'src> {
     pub token_facts: &'facts TypedTokenFacts,
     /// Modulo lowering style.
     pub mode: ModuloLoweringMode,
+    /// Shared request for the generated single-evaluation helper.
+    pub helper_requested: &'facts std::cell::Cell<bool>,
 }
 
 impl ModuloLowerer<'_, '_> {
@@ -47,10 +49,12 @@ mod tests {
         let tokens = stream.cursor();
         let token_facts = stream.facts();
         let facts = SymbolFacts::default();
+        let helper_requested = std::cell::Cell::new(false);
         let lowered = ModuloLowerer {
             facts: &facts,
             token_facts: &token_facts,
             mode: ModuloLoweringMode::BuiltinFmod,
+            helper_requested: &helper_requested,
         }
         .lower(tokens, TokenIndexRange::from_inclusive(0, stream.len() - 1))
         .expect("initializer lowers");
@@ -65,17 +69,17 @@ mod tests {
 
     #[test]
     fn comparison_boundaries_do_not_swallow_modulo_operands() {
-        assert_eq!(lower_initializer("a % b <= c"), "fmod(a, b) <= c");
-        assert_eq!(lower_initializer("a % b >= c"), "fmod(a, b) >= c");
-        assert_eq!(lower_initializer("a % b == c"), "fmod(a, b) == c");
-        assert_eq!(lower_initializer("a % b != c"), "fmod(a, b) != c");
+        assert_eq!(lower_initializer("a % b <= c"), "_we_Fmod(a, b) <= c");
+        assert_eq!(lower_initializer("a % b >= c"), "_we_Fmod(a, b) >= c");
+        assert_eq!(lower_initializer("a % b == c"), "_we_Fmod(a, b) == c");
+        assert_eq!(lower_initializer("a % b != c"), "_we_Fmod(a, b) != c");
     }
 }
 
 /// Available `%` lowering forms.
 #[derive(Clone, Copy)]
 pub(super) enum ModuloLoweringMode {
-    /// Emits `fmod(left, right)`.
+    /// Emits a call to the generated truncating remainder helper.
     BuiltinFmod,
     /// Emits arithmetic GLSL accepted by Naga's parser.
     NagaCompatible,
@@ -319,11 +323,14 @@ impl ModuloLowerer<'_, '_> {
         right_ty: Option<SymbolType>,
     ) -> ExpressionReplacement {
         match self.mode {
-            ModuloLoweringMode::BuiltinFmod => ExpressionReplacement::changed_text("fmod(")
-                .with_replacement(left)
-                .with_text(", ")
-                .with_replacement(right)
-                .with_text(")"),
+            ModuloLoweringMode::BuiltinFmod => {
+                self.helper_requested.set(true);
+                ExpressionReplacement::changed_text("_we_Fmod(")
+                    .with_replacement(left.into_float_operand(left_ty))
+                    .with_text(", ")
+                    .with_replacement(right.into_float_operand(right_ty))
+                    .with_text(")")
+            }
             ModuloLoweringMode::NagaCompatible => {
                 let left = left.into_float_operand(left_ty);
                 let right = right.into_float_operand(right_ty);

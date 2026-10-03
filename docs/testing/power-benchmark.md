@@ -14,10 +14,23 @@ the output geometry and the machine state match. Brightness, HDR, an external
 display's own panel power, charging state and thermal history all move the
 result more than most renderer changes do. `python3 scripts/power_benchmark.py`
 writes that configuration to `artifacts/power/manifest-<timestamp>.json`:
-commit and whether the tree was dirty, build configuration, chip and memory,
+workspace commit and whether the tree was dirty, requested build configuration, chip and memory,
 macOS build, every online display's pixel geometry and refresh rate, charging
-and low-power state, recorded thermal warnings, the Homebrew library versions
-actually linked, and the pinned `upstream/` revisions.
+and low-power state, recorded thermal warnings, current host Homebrew versions,
+and the workspace's pinned `upstream/` revisions. These workspace/host fields do
+not identify the application already running.
+
+Schema version 2 separates `workspace`, `host_renderer_libraries` and
+`workspace_upstream_revisions` from `build.processes`. During a measurement, the
+latter records each measured app/extension PID's executable path and SHA-256,
+binary architectures, bundle version and build number. The process launch time
+and file identity must remain unchanged across the read and measurement; a
+bundle changed since launch, exited/reused PID or unreadable file is reported as
+unknown. Source revision, build configuration and loaded renderer dylib versions
+remain explicitly unknown because the running process does not expose them.
+Never substitute the worktree HEAD or current Homebrew symlink for those values.
+Identity hashing happens before the sample window. Older manifests whose `build`
+field came from the repository are not proof of the measured executable's identity.
 
 Without `--measure` the script measures nothing. Every condition is written as
 `"measured": false`, and `measurement_tool` stays `null`. `--print-only` emits

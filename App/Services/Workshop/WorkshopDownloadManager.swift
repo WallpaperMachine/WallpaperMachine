@@ -21,17 +21,19 @@ final class WorkshopDownload: Identifiable {
   let account: String
   let worker: WorkshopDownloader
   fileprivate(set) var isQueued = true
+  fileprivate(set) var isPaused = false
   fileprivate(set) var hold = Hold.slot
   fileprivate var occupiesSlot = false
   fileprivate var wasCancelled = false
   /// Set once Steam ended this session for another sign-in and the manager put it back in line.
   fileprivate(set) var retriesAfterSessionConflict = false
-  fileprivate let rememberSession: Bool
+  let rememberSession: Bool
   @ObservationIgnored fileprivate var begin: (() -> Void)?
 
   var isPending: Bool { isQueued || occupiesSlot }
   var isCancelled: Bool { wasCancelled || worker.wasCancelled }
   var status: String {
+    if isPaused { return String(localized: "Download paused") }
     if isQueued {
       if retriesAfterSessionConflict {
         return String(localized: "Steam allows one session at a time for this account; waiting to retry")
@@ -58,14 +60,16 @@ final class WorkshopDownload: Identifiable {
 
   fileprivate init(
     id: String, item: WorkshopItem?, account: String, rememberSession: Bool,
-    sessionDirectory: URL, runtimeProvider: any SteamCMDRuntimeProviding
+    sessionDirectory: URL, runtimeProvider: any SteamCMDRuntimeProviding, checkpointDirectory: URL? = nil,
+    networkMonitor: (any ProcessNetworkMonitoring)? = nil
   ) {
     self.id = id
     self.item = item
     self.account = account
     self.rememberSession = rememberSession
     worker = WorkshopDownloader(
-      sessionDirectory: sessionDirectory, runtimeProvider: runtimeProvider)
+      sessionDirectory: sessionDirectory, runtimeProvider: runtimeProvider,
+      networkMonitor: networkMonitor, checkpointDirectory: checkpointDirectory)
   }
 }
 
@@ -81,7 +85,7 @@ final class WorkshopDownload: Identifiable {
 @MainActor
 @Observable
 final class WorkshopDownloadManager: SteamCMDDownloadActivity {
-  static let defaultConcurrentDownloads = 3
+  nonisolated static let defaultConcurrentDownloads = 3
   /// The choices Settings offers. More sessions mean more Steam sign-ins per minute, so the
   /// ceiling stays at what a real account has been seen to sustain.
   nonisolated static let concurrentDownloadRange = 1...6
@@ -97,7 +101,58 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
   private(set) var maximumConcurrentDownloads: Int
   @ObservationIgnored private let sessionDirectory: URL
   @ObservationIgnored private let runtimeProvider: any SteamCMDRuntimeProviding
+  @ObservationIgnored private let networkMonitorFactory: (@MainActor () -> any ProcessNetworkMonitoring)?
   @ObservationIgnored private var isShuttingDown = false
+  @ObservationIgnored private var persistenceDirectory: URL?
+
+  private struct SavedDownload: Codable {
+    let id: String
+    let item: WorkshopItem?
+    let account: String
+    let rememberSession: Bool
+  }
+
+  /// Configured by the app store, separate from Steam's replaceable sign-in directory.
+  func configurePersistence(at directory: URL) {
+    guard persistenceDirectory == nil else { return }
+    persistenceDirectory = directory
+    guard downloads.isEmpty, let data = try? Data(contentsOf: directory.appendingPathComponent("queue.json")),
+      let saved = try? JSONDecoder().decode([SavedDownload].self, from: data)
+    else { return }
+    var seen = Set<String>()
+    for record in saved where record.id != Self.signInID && seen.insert(record.id).inserted {
+      guard record.id == "scene-assets" || (record.item?.id == record.id && record.id.allSatisfy(\.isNumber)),
+        WorkshopDownloader.normalizedAccount(record.account) != nil else { continue }
+      let job = WorkshopDownload(id: record.id, item: record.item, account: record.account,
+        rememberSession: record.rememberSession, sessionDirectory: sessionDirectory,
+        runtimeProvider: runtimeProvider, checkpointDirectory: checkpointDirectory(for: record.id),
+        networkMonitor: networkMonitorFactory?())
+      job.isQueued = false
+      job.isPaused = true
+      downloads.append(job)
+    }
+  }
+
+  private func checkpointDirectory(for id: String) -> URL? {
+    guard id != Self.signInID else { return nil }
+    return persistenceDirectory?.appendingPathComponent(id, isDirectory: true)
+  }
+
+  @discardableResult
+  private func persist() -> Bool {
+    guard let directory = persistenceDirectory else { return true }
+    let saved = downloads.filter { !$0.isSignIn && !$0.isCancelled && ($0.isPending || $0.isPaused || $0.errorMessage != nil) }.map {
+      SavedDownload(id: $0.id, item: $0.item, account: $0.account, rememberSession: $0.rememberSession)
+    }
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try JSONEncoder().encode(saved).write(to: directory.appendingPathComponent("queue.json"), options: .atomic)
+      return true
+    } catch {
+      errorMessage = String(localized: "Could not save the download queue: \(error.localizedDescription)")
+      return false
+    }
+  }
 
   var activeCount: Int { downloads.lazy.filter { $0.occupiesSlot }.count }
   var queuedCount: Int { downloads.lazy.filter { $0.isQueued }.count }
@@ -113,10 +168,12 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
     sessionDirectory: URL = ClientPaths.supportURL.appendingPathComponent(
       "SteamSession", isDirectory: true),
     runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
-    maximumConcurrentDownloads: Int = WorkshopDownloadManager.defaultConcurrentDownloads
+    maximumConcurrentDownloads: Int = WorkshopDownloadManager.defaultConcurrentDownloads,
+    networkMonitorFactory: (@MainActor () -> any ProcessNetworkMonitoring)? = nil
   ) {
     self.sessionDirectory = sessionDirectory
     self.runtimeProvider = runtimeProvider
+    self.networkMonitorFactory = networkMonitorFactory
     self.maximumConcurrentDownloads = Self.clampedConcurrentDownloads(maximumConcurrentDownloads)
     savedAccount = WorkshopDownloader.readSavedAccount(at: sessionDirectory)
   }
@@ -177,19 +234,50 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
   }
 
   func cancel(_ job: WorkshopDownload) {
-    guard downloads.contains(where: { $0 === job }), job.isPending else { return }
-    if job.isQueued {
+    guard downloads.contains(where: { $0 === job }), job.isPending || job.isPaused else { return }
+    job.isPaused = false
+    job.wasCancelled = true
+    if job.isQueued || !job.occupiesSlot {
       job.isQueued = false
       job.wasCancelled = true
       job.begin = nil
+      job.worker.discardCheckpoint()
       startQueuedDownloads()
     } else {
       job.worker.cancel()
     }
+    persist()
+  }
+
+  func pause(_ job: WorkshopDownload) {
+    guard downloads.contains(where: { $0 === job }), job.isPending, !job.isSignIn else { return }
+    job.isPaused = true
+    if job.isQueued {
+      job.isQueued = false
+      startQueuedDownloads()
+    } else {
+      job.worker.pause()
+    }
+    persist()
+  }
+
+  /// A prerequisite request owns this paused job until it can be enqueued again.
+  /// Its content checkpoint remains available under the same stable id.
+  func transferPausedToRequest(id: String) {
+    downloads.removeAll { $0.id == id && $0.isPaused && !$0.isPending }
+    persist()
+  }
+
+  func discardRetainedCheckpoint(id: String) {
+    guard !downloads.contains(where: { $0.id == id && $0.isPending }),
+      let checkpoint = checkpointDirectory(for: id) else { return }
+    try? WorkshopDownloadCheckpoint.remove(at: checkpoint)
   }
 
   func clearCompleted() {
-    downloads.removeAll { !$0.isPending }
+    for job in downloads where !job.isPending && !job.isPaused { job.worker.discardCheckpoint() }
+    downloads.removeAll { !$0.isPending && !$0.isPaused }
+    persist()
   }
 
   func forgetSavedAccount() {
@@ -209,10 +297,12 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
 
   func shutdown() async {
     isShuttingDown = true
-    // Cancel every child before awaiting any one of them. Completion must not
-    // launch queued work while the app is waiting for staging cleanup.
-    for job in downloads where job.isPending { cancel(job) }
+    // Stop every child before awaiting any one. Download bytes survive; sign-in prompts do not.
+    for job in downloads where job.isPending {
+      if job.isSignIn { cancel(job) } else { pause(job) }
+    }
     for job in downloads where job.occupiesSlot { await job.worker.shutdown() }
+    persist()
   }
 
   private func enqueue(
@@ -237,7 +327,8 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
     errorMessage = nil
     let job = WorkshopDownload(
       id: id, item: item, account: account, rememberSession: rememberSession,
-      sessionDirectory: sessionDirectory, runtimeProvider: runtimeProvider)
+      sessionDirectory: sessionDirectory, runtimeProvider: runtimeProvider,
+      checkpointDirectory: checkpointDirectory(for: id), networkMonitor: networkMonitorFactory?())
     job.begin = { [weak job] in
       guard let job else { return }
       begin(job.worker, account)
@@ -252,12 +343,22 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
       guard let self, let job else { return }
       job.occupiesSlot = false
       self.savedAccount = WorkshopDownloader.readSavedAccount(at: self.sessionDirectory)
+      if job.worker.completedSuccessfully {
+        job.isPaused = false
+        job.wasCancelled = false
+      }
       self.settleSessionConflict(for: job)
-      if !job.isQueued { job.begin = nil }
+      if !job.isQueued && !job.isPaused { job.begin = nil }
+      self.persist()
       self.startQueuedDownloads()
     }
-    downloads.removeAll { $0.id == job.id }
-    downloads.append(job)
+    let previous = downloads
+    if let index = downloads.firstIndex(where: { $0.id == job.id }) { downloads[index] = job }
+    else { downloads.append(job) }
+    guard persist() else {
+      downloads = previous
+      return
+    }
     startQueuedDownloads()
   }
 
@@ -265,7 +366,7 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
   /// sign-in was one of our own sessions, the account cannot run two at once: the queue turns
   /// serial and the ended job goes back in line once, behind whatever is still running.
   private func settleSessionConflict(for job: WorkshopDownload) {
-    guard job.worker.endedBySessionConflict, !job.isCancelled, !isShuttingDown else { return }
+    guard job.worker.endedBySessionConflict, !job.isCancelled, !job.isPaused, !isShuttingDown else { return }
     let sibling = downloads.contains { $0 !== job && $0.occupiesSlot && $0.account == job.account }
     guard sibling else {
       AppLog.warn("Steam ended the download session for \(job.id): the account signed in elsewhere")
@@ -285,7 +386,7 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
   /// Fills free slots in queue order. The queue holds, in order, rather than skipping a job.
   private func startQueuedDownloads() {
     guard !isShuttingDown else { return }
-    for job in downloads where job.isQueued {
+    for job in downloads where job.isQueued && !job.isPaused {
       if let reason = activeCount < slotLimit ? holdBehindRunningJobs(job) : .slot {
         hold(reason, from: job)
         return
@@ -294,6 +395,7 @@ final class WorkshopDownloadManager: SteamCMDDownloadActivity {
       job.occupiesSlot = true
       AppLog.info("Starting Workshop download \(job.id) (\(activeCount) of \(slotLimit) slots in use)")
       job.begin?()
+      persist()
       if !job.worker.isRunning {
         // Invalid input can fail synchronously without starting a task.
         job.occupiesSlot = false

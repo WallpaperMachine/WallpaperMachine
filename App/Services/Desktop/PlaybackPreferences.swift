@@ -76,7 +76,7 @@ final class PlaybackPreferences {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = ClientPreferences.defaults) {
         self.defaults = defaults
         appRules = Self.loadRules(from: defaults)
     }

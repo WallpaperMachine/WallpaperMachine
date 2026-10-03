@@ -44,6 +44,26 @@ final class ControlPanelPixivTests: ControlPanelTestCase {
     }
   }
 
+  func testPausedPixivDownloadResumesFromTheSharedQueueWithoutWindow() async throws {
+    try await withPanel { panel in
+      try await panel.finishWelcome()
+      panel.show()
+      _ = try await panel.js("document.querySelector('.tabs [data-page=\"pixiv\"]').click()")
+      try await panel.waitUntil(timeout: 5) { panel.pixiv.hasLoaded }
+      let work = try XCTUnwrap(panel.pixiv.works.first { $0.id == "301" })
+      panel.pixiv.requestDownload(work, page: 1)
+      panel.pixiv.downloads.pause("pixiv-301-p1")
+      try await panel.waitUntil { panel.pixiv.downloads.download(for: "pixiv-301-p1")?.status == .paused }
+      try await panel.waitJS("document.querySelector('#wallpaper-grid [data-action=\"pixivResume\"]') !== null")
+      _ = try await panel.js("document.querySelector('#top-actions [data-action=\"openDownloads\"]').click()")
+      try await panel.waitJS("document.querySelector('.queue-row [data-action=\"pixivResume\"][data-id=\"pixiv-301-p1\"]') !== null")
+      _ = try await panel.js("document.querySelector('.queue-row [data-action=\"pixivResume\"][data-id=\"pixiv-301-p1\"]').click()")
+      try await panel.waitUntil(timeout: 10) { panel.pixiv.downloads.download(for: "pixiv-301-p1")?.status == .finished }
+      XCTAssertNil(panel.controller.actionError)
+      XCTAssertNil(panel.web.window)
+    }
+  }
+
   func testSigningInUnlocksMatureWorksAndLoggingOutLocksThemAgainWithoutWindow() async throws {
     try await withPanel { panel in
       var windowsOpened = 0

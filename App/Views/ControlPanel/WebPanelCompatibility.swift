@@ -82,7 +82,7 @@ extension WebPanelController {
     // Reading the configured path is cheap; selecting/probing a usable assets
     // folder happens on the service actor, not through ClientPaths.assetsURL here.
     let assetsConfiguration = ProcessInfo.processInfo.environment["WALLPAPER_MACHINE_ASSETS_ROOT"]
-      ?? UserDefaults.standard.string(forKey: "WallpaperMachineAssetsPath") ?? ""
+      ?? ClientPreferences.defaults.string(forKey: "WallpaperMachineAssetsPath") ?? ""
     return .init(wallpaperID: id, displayID: displayID, kind: kind, supported: entry.supported,
                  targetFPS: fps, targetAvailable: available && options != nil && fps > 0,
                  videoBackend: settings.videoBackend, sceneRenderer: settings.sceneRenderer,

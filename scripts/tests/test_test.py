@@ -87,6 +87,18 @@ class PruneResultBundles(unittest.TestCase):
         runner.prune_result_bundles(keep=1, directory=self.directory)
         self.assertEqual(self.remaining(), ["Tests-002.xcresult", "notes.txt"])
 
+    def test_mixed_ui_and_native_prefixes_keep_the_five_latest_timestamps_and_logs(self):
+        names = ([f"UI-2020010{day}-120000" for day in range(1, 6)]
+                 + ["Tests-20261003-080000", "UI-20261003-080000-123456", "Tests-20261003-080001"])
+        for name in names:
+            (self.directory / f"{name}.xcresult").mkdir()
+            (self.directory / f"{name}.log").write_text(name)
+        stale = runner.prune_result_bundles(directory=self.directory)
+        self.assertEqual({entry.stem for entry in stale}, set(names[:3]))
+        self.assertEqual(set(self.remaining()), {
+            name + suffix for name in names[3:] for suffix in (".xcresult", ".log")
+        })
+
 
 class OptInVariables(unittest.TestCase):
     def test_both_opt_in_layers_are_forwarded(self):

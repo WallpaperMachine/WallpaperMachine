@@ -3,6 +3,7 @@
 #include "Audio/AudioResponseService.h"
 #include "Core/RendererCounters.hpp"
 #include "SceneWallpaper.hpp"
+#include "Runtime/MediaArtwork.hpp"
 #include "SceneWallpaperSurface.hpp"
 #include "Utils/Logging.h"
 #include "MetalRender/MetalBackendRouter.hpp"
@@ -790,13 +791,8 @@ extern "C" int owe_scene_wallpaper_apply_system_media_artwork(
 {
     clear_last_error();
     if (!valid_scene(scene)) return finish_with_error("scene must not be null");
-    if (width == 0 || height == 0) {
-        return finish_with_error("media artwork dimensions must be non-zero");
-    }
-    if (rgba == nullptr) return finish_with_error("media artwork rgba must not be null");
-    const std::size_t expected_len = static_cast<std::size_t>(width) * height * 4;
-    if (rgba_len != expected_len) {
-        return finish_with_error("media artwork rgba length must equal width * height * 4");
+    if (!wallpaper::IsValidSystemMediaArtwork(width, height, rgba, static_cast<std::size_t>(rgba_len))) {
+        return finish_with_error("media artwork must be complete RGBA pixels or the empty clear value");
     }
 
     scene->scene.applySystemMediaArtwork(

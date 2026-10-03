@@ -34,7 +34,7 @@ enum SystemMediaEventCodec {
         case let .thumbnail(thumbnail):
             object = [
                 "type": "mediaThumbnailChanged",
-                "hasThumbnail": true,
+                "hasThumbnail": !thumbnail.isEmpty,
                 "primaryColor": vec3(fromCSS: thumbnail.primaryColor),
                 "secondaryColor": vec3(fromCSS: thumbnail.secondaryColor),
                 "tertiaryColor": vec3(fromCSS: thumbnail.tertiaryColor),

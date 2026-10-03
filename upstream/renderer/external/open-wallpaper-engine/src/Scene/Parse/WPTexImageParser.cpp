@@ -14,6 +14,9 @@
 #include "Fs/VFS.h"
 #include "Utils/BitFlags.hpp"
 
+#if (defined(__aarch64__) || defined(__arm64__)) && !defined(STBI_NO_SIMD)
+#define STBI_NEON
+#endif
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 

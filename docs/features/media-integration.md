@@ -55,6 +55,11 @@ can prompt macOS Automation permission. The app declares
 `NSAppleEventsUsageDescription`; without it macOS refuses every Apple Event
 before the Automation prompt can appear.
 
+If the fallback player exits or neither player reports a readable track, it
+withdraws the title, cover, playback, timeline and transport target together.
+Late artwork from the previous subscription is ignored. A recovered player is
+read afresh, including its cover; a new track with no artwork clears the old one.
+
 The stream runs only while a host has consumers. Complete JSON snapshots are
 decoded with an 8 MiB pending-input bound. Artwork is downscaled to 256 pixels;
 track changes clear stale covers, canceled subscriptions ignore late messages,
@@ -130,6 +135,13 @@ binds either always has an image. The previous slot is an alias of the image
 the current slot used to hold, not a second copy. Clearing artwork clears both
 textures. Repeated artwork does not rebuild the scene graph, and a recreated
 renderer receives the current snapshot again.
+
+The native artwork protocol represents absence as width 0, height 0 and an
+empty byte payload. This explicit clear survives bridge validation, pending
+scene creation and renderer replay, then publishes transparent 1×1 images to
+both texture names. Other empty dimensions or inconsistent RGBA byte counts
+are rejected. A later cover replaces the clear normally; repeated clears do
+not wake an unchanged scene.
 
 Because the previous slot is an alias, both names resolve to one cached
 texture until the next change. A binding therefore shares ownership of the
@@ -218,6 +230,9 @@ See [Web wallpapers](web-wallpapers.md).
 timeline progression, paused playback, missing artwork, empty players,
 consumer lifetime, late callbacks and unexpected exit.
 `FallbackSystemMediaProviderTests` covers the adapter-to-AppleScript switch.
+`AppleScriptMediaProviderTests` covers unavailable/recovered players and cover
+withdrawal with injected script results; `SceneMediaSinkTests` checks that an
+empty cover reaches the renderer before its metadata and is replayed to new scenes.
 Rust bridge tests cover consent, disabling/clearing, invalid states, nonfinite
 times and artwork bounds. `scenescript_media_event_smoke` and
 `media_thumbnail_texture_smoke` exercise script delivery and runtime textures

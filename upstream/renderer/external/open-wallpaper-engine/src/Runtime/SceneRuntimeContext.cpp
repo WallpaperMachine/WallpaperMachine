@@ -2402,62 +2402,36 @@ void SceneRuntimeContext::DispatchPendingAnimationEvents() {
 
 void SceneRuntimeContext::DispatchCursorClick(int button) {
     m_host_context->cursor_button = button;
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorClick(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorClick(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorClick(*m_host_context); });
 }
 
 void SceneRuntimeContext::DispatchCursorDown(int button) {
     m_host_context->cursor_button = button;
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorDown(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorDown(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorDown(*m_host_context); });
 }
 
 void SceneRuntimeContext::DispatchCursorEnter() {
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorEnter(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorEnter(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorEnter(*m_host_context); });
 }
 
 void SceneRuntimeContext::DispatchCursorLeave() {
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorLeave(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorLeave(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorLeave(*m_host_context); });
 }
 
 void SceneRuntimeContext::DispatchCursorMove() {
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorMove(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorMove(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorMove(*m_host_context); });
 }
 
 void SceneRuntimeContext::DispatchCursorUp(int button) {
     m_host_context->cursor_button = button;
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchCursorUp(*m_host_context);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchCursorUp(*m_host_context);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchCursorUp(*m_host_context); });
 }
 
 bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
+    // Callbacks can load templates and append to either registry. Keep only
+    // stable pointees across a callback and let new registrations join the next event.
+    const auto value_count = m_scripted_values.size();
+    const auto script_count = m_scene_scripts.size();
     constexpr auto hover_mask = static_cast<uint8_t>(ScriptCursorEvent::Enter) |
                                 static_cast<uint8_t>(ScriptCursorEvent::Leave) |
                                 static_cast<uint8_t>(ScriptCursorEvent::Move);
@@ -2465,35 +2439,40 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
                                 static_cast<uint8_t>(ScriptCursorEvent::Click);
     const bool cursor_in_window = m_host_context->cursor_in_window;
     if (cursor_in_window && ! cursor_was_in_window) {
-        for (auto* value : m_scripted_values) {
+        for (std::size_t index = 0; index < value_count; ++index) {
+            auto* value = m_scripted_values[index];
             if (value != nullptr && (value->CursorHandlerMask() & hover_mask) != 0 &&
                 CursorHitsScriptLayer(*value)) {
                 value->DispatchCursorEnter(*m_host_context);
                 m_scripted_value_cursor_inside[value] = true;
             }
         }
-        for (auto& script : m_scene_scripts) {
-            if (script.script == nullptr) continue;
-            script.cursor_inside = CursorHitsScriptLayer(*script.script);
-            if (script.cursor_inside) script.script->DispatchCursorEnter(*m_host_context);
+        for (std::size_t index = 0; index < script_count; ++index) {
+            auto* script = m_scene_scripts[index].script.get();
+            if (script == nullptr) continue;
+            m_scene_scripts[index].cursor_inside = CursorHitsScriptLayer(*script);
+            if (m_scene_scripts[index].cursor_inside) script->DispatchCursorEnter(*m_host_context);
         }
     } else if (! cursor_in_window && cursor_was_in_window) {
-        for (auto* value : m_scripted_values) {
+        for (std::size_t index = 0; index < value_count; ++index) {
+            auto* value = m_scripted_values[index];
             if (value == nullptr || (value->CursorHandlerMask() & hover_mask) == 0) continue;
             if (m_scripted_value_cursor_inside[value]) {
                 value->DispatchCursorLeave(*m_host_context);
             }
             m_scripted_value_cursor_inside[value] = false;
         }
-        for (auto& script : m_scene_scripts) {
-            if (script.script == nullptr) continue;
-            if (script.cursor_inside) script.script->DispatchCursorLeave(*m_host_context);
-            script.cursor_inside = false;
+        for (std::size_t index = 0; index < script_count; ++index) {
+            auto* script = m_scene_scripts[index].script.get();
+            if (script == nullptr) continue;
+            if (m_scene_scripts[index].cursor_inside) script->DispatchCursorLeave(*m_host_context);
+            m_scene_scripts[index].cursor_inside = false;
         }
     }
 
     if (cursor_in_window) {
-        for (auto* value : m_scripted_values) {
+        for (std::size_t index = 0; index < value_count; ++index) {
+            auto* value = m_scripted_values[index];
             if (value == nullptr || (value->CursorHandlerMask() & hover_mask) == 0) continue;
             const bool now_inside = CursorHitsScriptLayer(*value);
             bool&      was_inside = m_scripted_value_cursor_inside[value];
@@ -2507,18 +2486,19 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
             }
             if (now_inside) value->DispatchCursorMove(*m_host_context);
         }
-        for (auto& script : m_scene_scripts) {
-            if (script.script == nullptr) continue;
-            const bool now_inside = CursorHitsScriptLayer(*script.script);
-            if (now_inside != script.cursor_inside) {
+        for (std::size_t index = 0; index < script_count; ++index) {
+            auto* script = m_scene_scripts[index].script.get();
+            if (script == nullptr) continue;
+            const bool now_inside = CursorHitsScriptLayer(*script);
+            if (now_inside != m_scene_scripts[index].cursor_inside) {
                 if (now_inside) {
-                    script.script->DispatchCursorEnter(*m_host_context);
+                    script->DispatchCursorEnter(*m_host_context);
                 } else {
-                    script.script->DispatchCursorLeave(*m_host_context);
+                    script->DispatchCursorLeave(*m_host_context);
                 }
-                script.cursor_inside = now_inside;
+                m_scene_scripts[index].cursor_inside = now_inside;
             }
-            if (now_inside) script.script->DispatchCursorMove(*m_host_context);
+            if (now_inside) script->DispatchCursorMove(*m_host_context);
         }
     }
 
@@ -2530,18 +2510,19 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
             auto& held_scripts = m_scene_script_cursor_held[mask];
             held_values.clear();
             held_scripts.clear();
-            for (auto* value : m_scripted_values) {
+            for (std::size_t index = 0; index < value_count; ++index) {
+                auto* value = m_scripted_values[index];
                 if (value == nullptr || (value->CursorHandlerMask() & press_mask) == 0 ||
                     ! CursorHitsScriptLayer(*value)) continue;
                 value->DispatchCursorDown(*m_host_context);
                 value->DispatchCursorClick(*m_host_context);
                 held_values.push_back(value);
             }
-            for (std::size_t index = 0; index < m_scene_scripts.size(); ++index) {
-                auto& script = m_scene_scripts[index];
-                if (script.script == nullptr || ! CursorHitsScriptLayer(*script.script)) continue;
-                script.script->DispatchCursorDown(*m_host_context);
-                script.script->DispatchCursorClick(*m_host_context);
+            for (std::size_t index = 0; index < script_count; ++index) {
+                auto* script = m_scene_scripts[index].script.get();
+                if (script == nullptr || ! CursorHitsScriptLayer(*script)) continue;
+                script->DispatchCursorDown(*m_host_context);
+                script->DispatchCursorClick(*m_host_context);
                 held_scripts.push_back(index);
             }
         }
@@ -2558,7 +2539,8 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
             const auto took_press = [](const auto& held, const auto& item) {
                 return std::find(held.begin(), held.end(), item) != held.end();
             };
-            for (auto* value : m_scripted_values) {
+            for (std::size_t index = 0; index < value_count; ++index) {
+                auto* value = m_scripted_values[index];
                 if (value == nullptr ||
                     (value->CursorHandlerMask() & static_cast<uint8_t>(ScriptCursorEvent::Up)) == 0) continue;
                 if (! took_press(held_values, value)) {
@@ -2573,17 +2555,17 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
                 }
                 value->DispatchCursorUp(*m_host_context);
             }
-            for (std::size_t index = 0; index < m_scene_scripts.size(); ++index) {
-                auto& script = m_scene_scripts[index];
-                if (script.script == nullptr) continue;
+            for (std::size_t index = 0; index < script_count; ++index) {
+                auto* script = m_scene_scripts[index].script.get();
+                if (script == nullptr) continue;
                 if (! took_press(held_scripts, index)) {
                     if (cursor_in_window) {
-                        if (! CursorHitsScriptLayer(*script.script)) continue;
-                    } else if (! script.script->LayerName().empty()) {
+                        if (! CursorHitsScriptLayer(*script)) continue;
+                    } else if (! script->LayerName().empty()) {
                         continue;
                     }
                 }
-                script.script->DispatchCursorUp(*m_host_context);
+                script->DispatchCursorUp(*m_host_context);
             }
         }
     }
@@ -2593,14 +2575,7 @@ bool SceneRuntimeContext::DispatchCursorFrameEvents(bool cursor_was_in_window) {
 
 void SceneRuntimeContext::DispatchMediaThumbnailChanged(const Eigen::Vector3f& primary_color,
                                                         const Eigen::Vector3f& text_color) {
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchMediaThumbnailChanged(primary_color, text_color);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) {
-            script.script->DispatchMediaThumbnailChanged(primary_color, text_color);
-        }
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchMediaThumbnailChanged(primary_color, text_color); });
 }
 
 void SceneRuntimeContext::SetMediaIntegrationEnabled(bool enabled) {
@@ -2611,13 +2586,7 @@ bool SceneRuntimeContext::MediaIntegrationEnabled() const { return m_media_integ
 
 void SceneRuntimeContext::DispatchMediaEventJson(std::string_view event_json) {
     if (! m_media_integration_enabled || event_json.empty()) return;
-
-    for (auto* value : m_scripted_values) {
-        if (value != nullptr) value->DispatchMediaEventJson(event_json);
-    }
-    for (auto& script : m_scene_scripts) {
-        if (script.script != nullptr) script.script->DispatchMediaEventJson(event_json);
-    }
+    ForEachEventScript([&](auto* script) { script->DispatchMediaEventJson(event_json); });
 }
 
 void SceneRuntimeContext::RequestUserShortcut(std::string_view property_name,

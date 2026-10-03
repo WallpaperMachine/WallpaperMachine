@@ -119,6 +119,65 @@ final class FallbackSystemMediaProviderTests: XCTestCase {
 
 @MainActor
 final class AppleScriptMediaProviderTests: XCTestCase {
+    func testUnavailableWithdrawsTrackCoverAndControlsThenRecovers() async throws {
+        let runner = FakeAppleScriptRunner()
+        runner.running = [.music]
+        runner.answers[.music] = Self.track(.music, title: "Old track", durationSeconds: 100)
+        runner.artwork = try makeSolidPNG(200, 40, 40)
+        let scheduler = ManualMediaTimerScheduler()
+        let provider = AppleScriptMediaProvider(runner: runner, scheduler: scheduler)
+        var titles: [String] = []
+        var covers: [SystemMediaThumbnail] = []
+        var states: [SystemMediaPlaybackState] = []
+        var timelines: [SystemMediaTimeline?] = []
+        provider.onPropertiesChanged = { titles.append($0.title) }
+        provider.onThumbnailChanged = { covers.append($0) }
+        provider.onPlaybackChanged = { states.append($0) }
+        provider.onTimelineChanged = { timelines.append($0) }
+        provider.addConsumer()
+        defer { provider.removeConsumer() }
+        try await poll { covers.count == 1 }
+        runner.answers[.music] = nil
+        try await poll(after: { scheduler.fireRepeating() }) { titles.last == "" }
+        XCTAssertEqual(covers.last, .empty)
+        XCTAssertEqual(states.last, .stopped)
+        XCTAssertNil(timelines.last!)
+        let controlled = await provider.send(.nextTrack)
+        XCTAssertFalse(controlled)
+        XCTAssertTrue(runner.controls.isEmpty)
+        titles.removeAll()
+        provider.replayCurrentState()
+        XCTAssertTrue(titles.isEmpty)
+        runner.answers[.music] = Self.track(.music, title: "Recovered", durationSeconds: 100)
+        try await poll(after: { scheduler.fireRepeating() }) { titles == ["Recovered"] && covers.count == 3 }
+        XCTAssertEqual(runner.artworkFetches, 2, "Recovery must reacquire the cover even for the same ID")
+        runner.running = []
+        let afterExit = await provider.send(.nextTrack)
+        XCTAssertFalse(afterExit)
+        XCTAssertEqual(titles.last, "")
+        XCTAssertTrue(runner.controls.isEmpty)
+    }
+
+    func testTrackWithoutArtworkClearsPreviousCover() async throws {
+        let runner = FakeAppleScriptRunner()
+        runner.running = [.music]
+        runner.answers[.music] = Self.track(.music, title: "Covered", durationSeconds: 100)
+        runner.artwork = try makeSolidPNG(200, 40, 40)
+        let scheduler = ManualMediaTimerScheduler()
+        let provider = AppleScriptMediaProvider(runner: runner, scheduler: scheduler)
+        var covers: [SystemMediaThumbnail] = []
+        provider.onThumbnailChanged = { covers.append($0) }
+        provider.addConsumer()
+        defer { provider.removeConsumer() }
+        try await poll { covers.count == 1 }
+        var next = Self.track(.music, title: "No cover", durationSeconds: 100)
+        next.trackIdentity = "music\u{1F}2"
+        runner.answers[.music] = next
+        runner.artwork = nil
+        try await poll(after: { scheduler.fireRepeating() }) { covers.count == 2 }
+        XCTAssertEqual(covers.last, .empty)
+    }
+
     /// A wallpaper must never start the user's music player, and asking an
     /// application that is not running over Apple Events does exactly that.
     func testOnlyRunningPlayersAreContacted() async throws {

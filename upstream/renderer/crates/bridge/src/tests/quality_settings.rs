@@ -267,6 +267,60 @@ async fn video_backend_report_names_the_running_backend_and_only_real_fallbacks(
 }
 
 #[tokio::test]
+async fn battery_video_backend_report_preserves_native_rejection() {
+    let temp = tempfile::tempdir().unwrap();
+    let engine = FakeEngineFacade::default();
+    engine.set_snapshot(vec![display_with_scene(7, 1)]);
+    let bridge = bridge_with(&engine, &temp);
+    commit(&bridge, "300", "video", "7").await;
+
+    let compatibility = settings(&bridge).await;
+    assert_eq!(compatibility.video_backend, "compatibility");
+    assert_eq!(compatibility.video_backends.len(), 1);
+    assert_eq!(compatibility.video_backends[0].display_id, 7);
+    assert_eq!(compatibility.video_backends[0].wallpaper_id, "300");
+    assert_eq!(compatibility.video_backends[0].backend, "legacy");
+    assert_eq!(
+        compatibility.video_backends[0].fallback_reason, None,
+        "the scene engine is not a fallback when it is what the user chose"
+    );
+
+    let native = bridge
+        .set_video_backend("native_preferred".into())
+        .await
+        .unwrap()
+        .settings;
+    assert_eq!(native.video_backend, "native_preferred");
+    assert_eq!(native.video_backends[0].backend, "native");
+    assert_eq!(native.video_backends[0].fallback_reason, None);
+
+    bridge.set_battery_quality_profile(0.5, 24).await.unwrap();
+    bridge.set_battery_mode(crate::BridgeBatteryMode::ReducedQuality).await.unwrap();
+    bridge.set_power_source_for_test(PowerSource::Battery).await;
+    assert_eq!(bridge.native_video_wallpapers().await.unwrap()[0].admission_fps, 24);
+
+    let key = bridge
+        .native_video_wallpapers()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.wallpaper_id == "300")
+        .expect("the wallpaper has to be offered natively before it can be refused")
+        .admission_key;
+    bridge
+        .reject_native_video("300".into(), key, "codec the player cannot decode".into())
+        .await
+        .unwrap();
+
+    let refused = settings(&bridge).await;
+    assert_eq!(refused.video_backends[0].backend, "legacy");
+    assert_eq!(
+        refused.video_backends[0].fallback_reason.as_deref(),
+        Some("codec the player cannot decode")
+    );
+}
+
+#[tokio::test]
 async fn unknown_video_backend_mode_is_rejected() {
     let temp = tempfile::tempdir().unwrap();
     let engine = FakeEngineFacade::default();

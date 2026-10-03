@@ -353,11 +353,13 @@ impl BridgeActorState {
                         .into_iter()
                         .find(|candidate| candidate.selector == *selector)
                 });
-                let wallpaper_id = row.config.wallpaper.as_ref().or_else(|| {
+                let wallpaper_id = if mirror_target.is_some() {
                     target_row
                         .as_ref()
                         .and_then(|target| target.config.wallpaper.as_ref())
-                })?;
+                } else {
+                    row.config.wallpaper.as_ref()
+                }?;
                 let wallpaper_title = self
                     .library
                     .iter()
@@ -470,6 +472,7 @@ impl BridgeActorState {
     ) -> BTreeMap<u32, SceneReportLabels> {
         let primary = displays.first().map(|first| first.desc.display_id);
         let rows = app_config.monitor_rows(displays);
+        let monitor_info = self.monitor_info(displays);
         scene_reports
             .iter()
             .map(|report| report.display_id)
@@ -488,7 +491,9 @@ impl BridgeActorState {
                             .and_then(|index| displays.get(index))
                             .is_some_and(|entry| entry.desc.display_id == display_id)
                     })
-                    .and_then(|row| row.config.wallpaper.clone())
+                    .and_then(|row| monitor_info.rows.iter()
+                        .find(|info| info.display_id == row.selector.id())
+                        .map(|info| info.wallpaper_id.clone()))
                     .unwrap_or_default();
                 let wallpaper_title = self
                     .library
@@ -617,7 +622,7 @@ impl BridgeActorState {
             native_video_enabled: self.app_config.video_backend
                 == VideoBackendModeCfg::NativePreferred,
             native_video_rejected: &self.native_video_rejected,
-            frame_rate_cap: self.app_config.quality.frame_rate_cap,
+            frame_rate_cap: self.active_target_fps_cap(),
             audio_suppressed: self.audio_suppressed,
         }
         .render_backends();
