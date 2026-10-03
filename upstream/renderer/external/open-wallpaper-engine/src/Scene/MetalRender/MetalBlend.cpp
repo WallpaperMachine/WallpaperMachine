@@ -3,8 +3,10 @@
 namespace wallpaper::metal
 {
 
-MetalBlendState ToMetalBlendState(BlendMode mode)
+MetalBlendState ToMetalBlendState(BlendMode mode, std::uint32_t sample_count)
 {
+    // Without multisampling there is no coverage mask to preserve transparency.
+    if (mode == BlendMode::AlphaToCoverage && sample_count <= 1) mode = BlendMode::Translucent;
     MetalBlendState state {};
     state.blending_enabled = true;
     state.rgb_operation    = MetalBlendOperation::Add;
@@ -23,10 +25,9 @@ MetalBlendState ToMetalBlendState(BlendMode mode)
         state.destination_alpha = MetalBlendFactor::Zero;
         break;
     case BlendMode::AlphaToCoverage:
-        state.source_rgb        = MetalBlendFactor::SourceAlpha;
-        state.destination_rgb   = MetalBlendFactor::OneMinusSourceAlpha;
-        state.source_alpha      = MetalBlendFactor::SourceAlpha;
-        state.destination_alpha = MetalBlendFactor::OneMinusSourceAlpha;
+        // Coverage decides what is kept; kept samples are written unblended,
+        // as the compatibility backend does.
+        state.blending_enabled  = false;
         state.alpha_to_coverage = true;
         break;
     case BlendMode::Translucent:

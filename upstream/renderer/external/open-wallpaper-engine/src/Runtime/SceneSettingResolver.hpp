@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Runtime/CameraPath.hpp"
 #include "Runtime/DynamicValue.hpp"
 #include "Runtime/ScalarAnimation.hpp"
 
@@ -14,6 +15,13 @@ namespace wallpaper
 {
 
 class SceneRuntimeContext;
+class SceneNode;
+
+// Binds scripts/properties as before, or an authored absolute/relative origin
+// timeline. Static settings allocate no per-tick binding.
+void RegisterNodeOriginSetting(SceneRuntimeContext& context, SceneNode* node,
+                               std::string_view layer_name, const nlohmann::json& setting,
+                               bool animate = true);
 
 enum class Vec3SettingSemantic
 {
@@ -46,6 +54,8 @@ std::unique_ptr<DynamicValue> ResolveStringSetting(
     SceneRuntimeContext& context,
     const nlohmann::json& value,
     std::string_view current_layer_name = {});
+std::vector<CameraPath> ParseCameraPaths(const nlohmann::json& json);
+
 // `component` selects the `c0`-`c3` curve and the matching entry of a vector
 // initial value; scalar settings keep their single curve at component 0.
 std::optional<ScalarAnimation> ResolveScalarAnimation(const nlohmann::json& value,

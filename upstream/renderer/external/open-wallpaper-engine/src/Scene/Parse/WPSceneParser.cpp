@@ -1,4 +1,5 @@
 #include "WPSceneParser.hpp"
+#include "LayerParallax.hpp"
 #include "WPJson.hpp"
 #include "Scene/SceneIndexArray.h"
 
@@ -296,6 +297,7 @@ struct RawLayerObject {
     bool                 dynamic_scale { false };
     bool                 dynamic_angles { false };
     bool                 dynamic_visible { false };
+    bool                 schema_placeholder { false };
     nlohmann::json       origin_setting;
     nlohmann::json       scale_setting;
     nlohmann::json       angles_setting;
@@ -550,6 +552,7 @@ bool ParseLayerObject(const nlohmann::json& json, const nlohmann::json& objects,
         (! IsSchemaOnlyObject(json) || layer.id == 0 || ! HasChildObject(objects, layer.id)))
         return false;
 
+    layer.schema_placeholder = IsSchemaOnlyObject(json);
     GET_JSON_NAME_VALUE_NOWARN(json, "parent", layer.parent_id);
     GET_JSON_NAME_VALUE_NOWARN(json, "name", layer.name);
     ReadVec3Setting(json, "origin", &layer.origin, &layer.origin_setting, &layer.dynamic_origin);
@@ -594,15 +597,10 @@ void ParseLayerNodes(ParseContext& context, const nlohmann::json& objects) {
                                    layer.dynamic_visible ? layer.visible_setting
                                                          : nlohmann::json(layer.visible),
                                    runtime_name));
-            if (layer.dynamic_origin) {
-                context.scene->runtime->RegisterNodeTranslate(
-                    runtime_name,
-                    node.get(),
-                    ResolveVec3Setting(*context.scene->runtime,
-                                       layer.origin_setting,
-                                       runtime_name,
-                                       Vec3SettingSemantic::Generic));
-            }
+            // Typed parents get their timeline when their real object is
+            // parsed; registering it on the placeholder creates a second clock.
+            RegisterNodeOriginSetting(*context.scene->runtime, node.get(), runtime_name,
+                                      layer.origin_setting, !layer.schema_placeholder);
             if (layer.dynamic_scale) {
                 context.scene->runtime->RegisterNodeScale(
                     runtime_name,
@@ -1288,6 +1286,10 @@ bool LoadMaterial(fs::VFS& vfs, const wpscene::WPMaterial& wpmat, Scene* pScene,
         pWPShaderInfo->combos[el.first] = std::to_string(el.second);
     }
     pWPShaderInfo->combos["HDR"] = pScene->hdr ? "1" : "0";
+    // This describes the authored scene, not an effect pass's local camera.
+    // Lit 2D layers use a fixed view direction; a perspective eye on their
+    // plane makes their normal/view dot product zero.
+    pWPShaderInfo->combos["SCENE_ORTHO"] = pScene->display_sized ? "0" : "1";
 
     if (exists(pWPShaderInfo->combos, "LIGHTING")) {
         // pWPShaderInfo->combos["PRELIGHTING"] =
@@ -1815,15 +1817,8 @@ void ParseTextObj(ParseContext& context, wpscene::WPTextObject& obj) {
         }
         context.scene->runtime->SetNodeAnchorAlignment(
             runtime_name, anchor, Vector3f(obj.origin.data()));
-        if (obj.dynamic_origin) {
-            context.scene->runtime->RegisterNodeTranslate(
-                runtime_name,
-                node.get(),
-                ResolveVec3Setting(*context.scene->runtime,
-                                   obj.origin_setting,
-                                   runtime_name,
-                                   Vec3SettingSemantic::Generic));
-        }
+        RegisterNodeOriginSetting(*context.scene->runtime, node.get(), runtime_name,
+                                  obj.origin_setting);
         if (obj.dynamic_scale) {
             context.scene->runtime->RegisterNodeScale(
                 runtime_name,
@@ -2478,8 +2473,9 @@ std::optional<NodeHitMask> BuildImageHitMask(ParseContext& context,
 
 // Binds each authored animation layer's visible/rate/blend to user properties
 // (and scripts) so the shared puppet state follows the wallpaper settings.
+template <typename Object>
 void BindPuppetAnimationLayerSettings(ParseContext& context, const std::string& runtime_name,
-                                      const wpscene::WPImageObject& wpimgobj,
+                                      const Object& wpimgobj,
                                       WPPuppetLayer layer) {
     auto& runtime = *context.scene->runtime;
     const auto count = std::min(wpimgobj.puppet_layer_settings.size(), layer.layerCount());
@@ -3119,8 +3115,13 @@ void RegisterImageComposite(ParseContext& context, const wpscene::WPImageObject&
     const auto extent = ResolveImageRenderExtent(object, context);
     const auto key = LayerCompositeTargetKey(object.id);
     if (! context.scene->HasRenderTarget(key)) {
+        // A consumer may tile a layer texture across a model (UVs far outside
+        // 0..1). Clamping that smears the edge texels into solid bands; the
+        // layer's own `clampuvs` decides, like a packaged texture's flag.
+        const auto wrap = object.clampuvs ? TextureWrap::CLAMP_TO_EDGE : TextureWrap::REPEAT;
         context.scene->renderTargets[key] = SceneRenderTarget {
             .width = extent[0], .height = extent[1], .allowReuse = true,
+            .sample = { wrap, wrap, TextureFilter::LINEAR, TextureFilter::LINEAR },
             .format = context.scene->hdr ? TextureFormat::RGBA16F : TextureFormat::RGBA8,
         };
     }
@@ -3315,15 +3316,8 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
                                wpimgobj.dynamic_visible ? wpimgobj.visible_setting
                                                         : nlohmann::json(wpimgobj.visible),
                                runtime_name));
-        if (wpimgobj.dynamic_origin) {
-            context.scene->runtime->RegisterNodeTranslate(
-                runtime_name,
-                spImgNode.get(),
-                ResolveVec3Setting(*context.scene->runtime,
-                                   wpimgobj.origin_setting,
-                                   runtime_name,
-                                   Vec3SettingSemantic::Generic));
-        }
+        RegisterNodeOriginSetting(*context.scene->runtime, spImgNode.get(), runtime_name,
+                                  wpimgobj.origin_setting);
         if (wpimgobj.dynamic_scale) {
             context.scene->runtime->RegisterNodeScale(
                 runtime_name,
@@ -3392,8 +3386,16 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
 
         shaderInfo.baseConstSvs = baseConstSvs;
 
+        // Effects on a puppet run over its unassembled texture sheet. The
+        // final skinned pass below uses the authored material in world space;
+        // lighting the sheet as well both darkens it twice and bakes different
+        // illumination into adjacent cut-out pieces (notably eyelids).
+        auto input_material = wpimgobj.material;
+        if (hasEffect && has_puppet_bones) {
+            input_material.combos["LIGHTING"] = 0;
+        }
         if (! LoadMaterial(vfs,
-                           wpimgobj.material,
+                           input_material,
                            context.scene.get(),
                            spImgNode.get(),
                            &material,
@@ -3905,15 +3907,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                                    wppartobj.dynamic_visible ? wppartobj.visible_setting
                                                              : nlohmann::json(wppartobj.visible),
                                    runtime_name));
-            if (wppartobj.dynamic_origin) {
-                context.scene->runtime->RegisterNodeTranslate(
-                    runtime_name,
-                    spNode.get(),
-                    ResolveVec3Setting(*context.scene->runtime,
-                                       wppartobj.origin_setting,
-                                       runtime_name,
-                                       Vec3SettingSemantic::Generic));
-            }
+            RegisterNodeOriginSetting(*context.scene->runtime, spNode.get(), runtime_name,
+                                      wppartobj.origin_setting);
             if (wppartobj.dynamic_scale) {
                 context.scene->runtime->RegisterNodeScale(
                     runtime_name,
@@ -4141,7 +4136,9 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
                 return;
             }
             switch (animationmode) {
-            case ParticleAnimationMode::RANDOMONE: lifetime = std::floor(p.init.lifetime); break;
+            // The sprite shader picks frame floor(frac(lifetime) * frames).
+            // An integral value always selected frame 0.
+            case ParticleAnimationMode::RANDOMONE: lifetime = p.init.frame; break;
             case ParticleAnimationMode::SEQUENCE:
                 lifetime = (1.0f - (p.lifetime / p.init.lifetime)) * sequencemultiplier;
                 break;
@@ -4249,7 +4246,8 @@ void ParseParticleObj(ParseContext& context, wpscene::WPParticleObject& wppartob
 
 void RegisterCommonNodeBindings(ParseContext& context, SceneNode& node, std::string_view runtime_name,
                                 const wpscene::WPMiscObjectBase& obj,
-                                const std::string& previous_runtime_name) {
+                                const std::string& previous_runtime_name,
+                                bool animate_origin = true) {
     if (context.scene->runtime == nullptr) return;
     if (! previous_runtime_name.empty() && previous_runtime_name != runtime_name) {
         context.scene->runtime->UnregisterNode(previous_runtime_name);
@@ -4261,15 +4259,8 @@ void RegisterCommonNodeBindings(ParseContext& context, SceneNode& node, std::str
         ResolveBoolSetting(*context.scene->runtime,
                            obj.dynamic_visible ? obj.visible_setting : nlohmann::json(obj.visible),
                            std::string(runtime_name)));
-    if (obj.dynamic_origin) {
-        context.scene->runtime->RegisterNodeTranslate(
-            std::string(runtime_name),
-            &node,
-            ResolveVec3Setting(*context.scene->runtime,
-                               obj.origin_setting,
-                               std::string(runtime_name),
-                               Vec3SettingSemantic::Generic));
-    }
+    RegisterNodeOriginSetting(*context.scene->runtime, &node, runtime_name,
+                              obj.origin_setting, animate_origin);
     if (obj.dynamic_scale) {
         context.scene->runtime->RegisterNodeScale(
             std::string(runtime_name),
@@ -4328,10 +4319,25 @@ void ParseModelObj(ParseContext& context, wpscene::WPModelObject& obj) {
     WPMdlParser::GenPuppetMesh(*mesh, mdl, false);
 
     WPShaderValueData               svData;
+    if (has_bones) {
+        auto layer = WPPuppetLayer(mdl.puppet);
+        layer.prepared(obj.puppet_layers);
+        context.layer_puppets[obj.id] = mdl.puppet;
+        context.layer_puppet_animations.emplace(obj.id, layer);
+        svData.puppet_layer = layer;
+    }
     std::vector<LoadedMaterialSlot> slots;
     auto load_material = [&](const std::string& path) {
         if (path.empty()) return false;
         wpscene::WPMaterial source;
+        // Mesh materials omit the ordinary opaque 3D state. Image-layer
+        // defaults (alpha blending, no depth, double-sided) expose rear
+        // triangles through the front of a model. Explicit author state still
+        // wins when FromJson reads the pass below.
+        source.blending = "normal";
+        source.cullmode = "normal";
+        source.depthtest = "enabled";
+        source.depthwrite = "enabled";
         if (! LoadWPMaterialFromPath(*context.vfs, path, source)) return false;
         if (has_bones) WPMdlParser::AddPuppetMatInfo(source, mdl);
         WPShaderInfo shader_info;
@@ -4360,6 +4366,11 @@ void ParseModelObj(ParseContext& context, wpscene::WPModelObject& obj) {
     node->AddMesh(mesh);
 
     RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name);
+    if (has_bones && context.scene->runtime != nullptr) {
+        const auto& layer = context.layer_puppet_animations.at(obj.id);
+        context.scene->runtime->RegisterPuppetLayer(runtime_name, layer);
+        BindPuppetAnimationLayerSettings(context, runtime_name, obj, layer);
+    }
     QueueSceneScriptIfNeeded(context, runtime_name, obj.visible_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.origin_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.scale_setting);
@@ -4431,47 +4442,28 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
     // fov 50 -- leaves a magnified sliver of one corner and nothing else. The
     // layer stays a node scripts can read and move; it just does not replace
     // the projection the canvas defines.
+    SceneCamera* perspective_camera = nullptr;
     if (! context.is_ortho) {
-        // Official scenes name the playing camera "default". That is this
-        // scene's perspective camera, not a second unused one. scene.camera
-        // eye/center is the editor preview pose and is often pointed at empty
-        // space; the object origin/angles are what the wallpaper actually uses.
-        std::string cam_name = obj.camera;
-        if (cam_name.empty() || cam_name == "default") {
-            cam_name = "global_perspective";
-        }
+        const std::string cam_name = obj.camera.empty() || obj.camera == "default"
+                                         ? "global_perspective" : obj.camera;
         auto existing = context.scene->cameras.find(cam_name);
-        if (existing != context.scene->cameras.end() && existing->second != nullptr) {
-            if (existing->second->IsPerspective() && obj.fov > 0.0f) {
-                existing->second->SetFov(obj.fov);
-                existing->second->LockFov(true);
-            }
-            existing->second->AttatchNode(node);
-            if (cam_name == "global_perspective") {
-                context.global_perspective_camera_node = node;
-                if (obj.visible) {
-                    context.scene->activeCamera = existing->second.get();
-                }
-            } else if (cam_name == "global") {
-                context.global_camera_node = node;
-            }
+        if (existing != context.scene->cameras.end()) {
+            perspective_camera = existing->second.get();
         } else if (context.scene->cameras.count("global_perspective") != 0) {
             const auto& source = context.scene->cameras.at("global_perspective");
             auto camera = std::make_shared<SceneCamera>(
-                static_cast<float>(source->Aspect()),
-                static_cast<float>(source->NearClip()),
-                static_cast<float>(source->FarClip()),
-                ResolvePerspectiveFov({}, obj.fov));
-            camera->LockFov(true);
-            camera->AttatchNode(node);
-            context.scene->cameras[cam_name] = camera;
-            if (obj.visible && camera->IsPerspective()) {
-                context.scene->activeCamera = camera.get();
-            }
+                static_cast<float>(source->Aspect()), static_cast<float>(source->NearClip()),
+                static_cast<float>(source->FarClip()), ResolvePerspectiveFov({}, obj.fov));
+            camera->AttatchNode(source->GetAttachedNode());
+            perspective_camera = camera.get();
+            context.scene->cameras[cam_name] = std::move(camera);
         }
+        if (perspective_camera) perspective_camera->LockFov(true);
     }
 
-    RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name);
+    // Orthographic shots already share an origin/zoom clock below.
+    RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name,
+                               !context.is_ortho);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.visible_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.origin_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.scale_setting);
@@ -4496,6 +4488,26 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
                                        std::move(timeline), obj.dynamic_origin);
         } else if (obj.visible) {
             context.scene->FrameCanvas(obj.zoom, Eigen::Vector2f(obj.origin[0], obj.origin[1]));
+        }
+    } else if (perspective_camera) {
+        std::vector<CameraPath> paths;
+        if (!obj.path.empty()) {
+            nlohmann::json json;
+            if (PARSE_JSON(fs::GetFileContent(*context.vfs, "/assets/" + obj.path), json)) {
+                paths = ParseCameraPaths(json);
+            }
+        }
+        // Visibility bindings are registered first. Merely parsing a hidden
+        // preset must never move the shared camera off the shot that is playing.
+        CameraPathPlayback path(std::move(paths), obj.queuemode);
+        if (context.scene->runtime) {
+            context.scene->runtime->RegisterPerspectiveCameraShot(
+                node, perspective_camera, ResolvePerspectiveFov({}, obj.fov), std::move(path));
+        } else if (obj.visible) {
+            perspective_camera->AttatchNode(node);
+            perspective_camera->SetFov(ResolvePerspectiveFov({}, obj.fov));
+            path.Apply(*node, *perspective_camera);
+            context.scene->activeCamera = perspective_camera;
         }
     }
 
@@ -4661,6 +4673,7 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
     sc.FromJson(json, request.pkg_version);
     //	LOG_INFO(nlohmann::json(sc).dump(4));
 
+    ResolveLayerParallax(json.at("objects"));
     ParseContext context;
     context.request     = &request;
     context.object_list = &json.at("objects");
@@ -4783,9 +4796,12 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
     // Register before compiling scripts so module-level lookups work too.
     if (context.scene->runtime != nullptr) {
         for (const auto& object : *context.object_list) {
+            if (!object.is_object() || (object.contains("name") && !object.at("name").is_string()))
+                continue;
             const auto name = object.value("name", std::string {});
             const auto count = context.layer_name_counts.find(name);
             if (count == context.layer_name_counts.end() || count->second <= 1u) continue;
+            if (object.contains("id") && !object.at("id").is_number()) continue;
             const auto id = object.value("id", 0);
             if (const auto key = context.object_runtime_names.find(id);
                 key != context.object_runtime_names.end()) {

@@ -76,6 +76,7 @@ struct MetalBlendState
 /// `BlendMode::Normal` is ONE / ZERO, an opaque replace. It is not Porter-Duff
 /// source-over despite the name, and turning it into source-over would change
 /// every scene that uses it.
-[[nodiscard]] MetalBlendState ToMetalBlendState(BlendMode mode);
+/// Single-sample targets use source-over instead of a nonexistent coverage mask.
+[[nodiscard]] MetalBlendState ToMetalBlendState(BlendMode mode, std::uint32_t sample_count = 1);
 
 } // namespace wallpaper::metal

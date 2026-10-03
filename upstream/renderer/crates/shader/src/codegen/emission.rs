@@ -90,7 +90,12 @@ impl SourceEmitter<'_, '_> {
         }
 
         for interface in self.declarations.stage_interfaces() {
-            interface.emit(output)?;
+            let mut resolved = interface.clone();
+            if let Some(suffix) = interface.array_suffix.as_deref() {
+                let size = super::interface_array_size(self.module, suffix)?;
+                resolved.array_suffix = Some(format!("[{size}]").into());
+            }
+            resolved.emit(output)?;
         }
         if self.declarations.has_fragment_output() {
             writeln!(output, "layout(location = 0) out vec4 _we_FragColor;")

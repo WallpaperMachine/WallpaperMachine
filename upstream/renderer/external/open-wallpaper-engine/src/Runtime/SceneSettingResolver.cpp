@@ -484,6 +484,52 @@ std::unique_ptr<DynamicValue> ResolveStringSetting(
     return value;
 }
 
+void RegisterNodeOriginSetting(SceneRuntimeContext& context, SceneNode* node,
+                               std::string_view layer_name, const nlohmann::json& setting,
+                               bool animate)
+{
+    if (node == nullptr || !setting.is_object()) return;
+    // Do not introduce a second writer for a script or user property.
+    if (setting.contains("script") || setting.contains("user")) {
+        context.RegisterNodeTranslate(std::string(layer_name), node,
+                                      ResolveVec3Setting(context, setting, layer_name));
+        return;
+    }
+    if (!animate) return;
+
+    const auto source = setting.find("animation");
+    if (source == setting.end() || !source->is_object()) return;
+    auto animation = std::make_shared<NodeOriginAnimation>();
+    std::size_t first = animation->components.size();
+    double last_frame = 0.0;
+    const auto base = parse_vec3(setting);
+    const auto relative_value = source->find("relative");
+    const bool relative = relative_value != source->end() && relative_value->is_boolean() &&
+                          relative_value->get<bool>();
+    for (std::size_t i = 0; i < animation->components.size(); ++i) {
+        animation->offset[i] = relative ? base[i] : 0.0f;
+        auto curve = ResolveScalarAnimation(setting, i);
+        if (!curve) {
+            animation->components[i].initial_value = relative ? 0.0f : base[i];
+            continue;
+        }
+        if (first == animation->components.size()) first = i;
+        if (relative) curve->initial_value = 0.0f;
+        last_frame = std::max(last_frame, curve->keyframes.back().frame);
+        animation->components[i] = std::move(*curve);
+    }
+    if (first == animation->components.size()) return;
+    auto clock = animation->components[first];
+    if (!(clock.length_frames > 0.0)) clock.length_frames = last_frame;
+    animation->playback = context.RegisterScalarAnimation(layer_name, std::move(clock));
+    // Only the clock wraps; short component curves must hold their last key
+    // until that shared clock loops, just like vector material timelines.
+    for (auto& curve : animation->components) curve.mode = ScalarAnimationMode::Single;
+    context.RegisterNodeTranslate(std::string(layer_name), node,
+                                  ResolveVec3Setting(context, setting, layer_name),
+                                  std::move(animation));
+}
+
 std::optional<ScalarAnimation> ResolveScalarAnimation(const nlohmann::json& setting,
                                                       std::size_t component)
 {

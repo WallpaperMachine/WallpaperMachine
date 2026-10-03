@@ -81,7 +81,7 @@ VideoToolbox-dependent tests report their own codec skips. A started test's
 failure is never converted into a missing-device skip. A default local renderer
 run remains necessary evidence for the GPU checks skipped by CI.
 
-The generated matrix is ten original synthetic scenes; it contains no workshop
+The generated matrix is twelve original synthetic scenes; it contains no workshop
 identifiers and no workshop-specific rendering rules.
 
 ## Probes
@@ -191,6 +191,11 @@ executable directly from the renderer check build directory.
 | --- | --- |
 | Camera zoom | `scene_schema_tests --gtest_filter='SceneSchema.*CameraZoom*'`. Scene `general.zoom` may contain an authored scalar animation, not just a fixed camera scale. |
 | Camera layers in 2D scenes | `SceneSchema.CameraObjectKeepsAnOrthographicSceneOnItsCanvas` next to `SceneSchema.DefaultCameraObjectBecomesActivePerspective`, plus `SceneSchema.CameraObjectTimelineGlidesFromItsFirstShotToWhereItRests`, `.TheLastVisibleCameraObjectFramesTheCanvas` and `.AScriptedShotOriginFramesTheViewOnceATickHasAppliedIt`, in `scene_schema_tests`. A scene with `orthogonalprojection` is projected by that canvas; a `camera` layer in one must not become the active perspective camera, but it does frame the canvas. Its zoom narrows the view, its origin moves the view centre away from the canvas centre, a timeline plays both on one clock, and the last visible shot wins. The perspective camera follows it. A single-play timeline that has ended no longer asks for frames, and a script-bound origin frames the view only once a tick has applied it (see below). |
+| Perspective camera shots and paths | `SceneSchema.PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverrides`, `.PerspectiveCameraPathsSampleAndQueueAuthoredCurves` and `.RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup`. The last effectively visible shot for a camera owns its pose and FOV; hidden presets cannot reattach that shared camera. Selection follows runtime visibility, and no visible shot restores the editor pose. Packaged eye/center/up/FOV curves share the path clock, with sequential or random queuing and bounded catch-up. Only selected paths advance; hidden paths add no animation demand. Curves are parsed once, not per frame. Camera-path zoom, path events and camera-cut fades are not implemented. `.CameraPathsPreserveSteepAndRolledLookAtOrientation` checks reconstructed look-at vectors near vertical and Euler singularities; `.CameraPathsAndLayerTimelinesShareScaledAndZeroDeltas` checks the shared scaled Tick delta, and `.PerspectiveFallbackCapturesTheCameraAtFirstRegistrationOnly` protects the editor-camera fallback against later shot registrations. |
+| 3D model materials and skinning | `SceneSchema.ModelMaterialDefaultsAreOpaqueDepthTestedAndExplicitStateWins` and `.ModelBonesReachEveryMaterialIncludingTheBindPose`. Model materials default to normal blending, back-face culling and enabled depth test/write; explicit pass settings win, and image defaults are unchanged. Skeletal models share one existing `WPPuppetLayer` playback across material slots, attachments and runtime animation controls, including bind-pose uploads when no clip matches. No new render passes or texture allocations are introduced. |
+| Layer textures tiled across models | `LayerTextureReference.CompositeAddressingFollowsTheSourceLayersClampUvs` in `layer_texture_reference_test`. `_rt_imageLayerComposite_<id>` repeats when the source layer says `"clampuvs": false` and clamps when it is true or absent. A model whose UVs run far outside 0..1 otherwise smeared the composite's edge texels into solid bands. |
+| Alpha-to-coverage passes | `MetalBlend.*` in `metal_backend_test`; the compatibility backend sets the same state in `SetBlend`. Coverage decides what an `alphatocoverage` pass keeps and kept samples are written unblended, as in Direct3D. Blending as well multiplied partially covered texels by alpha a second time, which dimmed thin lines. Scenes stay single-sampled, so edges are thresholded rather than antialiased. |
+| Random sprite-sheet frames | `ParticleMouseControlpoint.SpawnedParticlesCarryAStableFrameValueSpreadOverTheSheet` in `particle_mouse_controlpoint_test`. A `randomframe` particle keeps one frame for its life, derived from its spawn state rather than drawn from the random source, so seeded particle layouts do not shift. The previous integral value always selected frame 0. |
 | Camera-object zoom in 2D scenes | `SceneSchema.CameraObjectZoomTightensTheOrthographicFrustum` and `.CameraObjectZoomThatIsNotPositiveFramesTheWholeCanvas` in `scene_schema_tests`, plus `MouseInput.HitTestingFollowsACameraObjectZoomAcrossAResize` in `mouse_input_test`. A shot that does not own the projection still frames it: `zoom` is applied when the ortho projection is built, not by writing camera width and height, because `ApplyCameraFillMode` rewrites those from the authored canvas whenever a fill mode is applied. Production applies one only after a `PROPERTY_FILLMODE` message, and the app sends none today; `metal_scene_draw_smoke` is the only caller. Pointer mapping reads `SceneCamera::VisibleWidth/VisibleHeight`, the same extent the projection uses — passing `Width()`/`Height()` leaves clicks and mouse-linked particles on the unzoomed image, right at the centre and wrong everywhere else. The authored extent the render targets are sized from must not move with it. |
 | Camera parallax | `ShaderValueUpdaterCompat.CameraParallaxFollowsTheCursorAndDepthNotThePosition`, `.ZeroParallaxDelayFollowsTheCursorAtOnce` and `.ParallaxLayersAreReportedAsFollowingTheCursor` in `script_runtime_compat_test`, and `SceneSchema.ParserCopiesImageParallaxDepthToPuppetMaterialSlots` in `scene_schema_tests`. In a 2D scene parallax moves a layer by the cursor's offset from the view centre times the layer's `parallaxDepth`, scaled by `cameraparallaxamount` and `cameraparallaxmouseinfluence`. Where the layer sits, nested in a group or not, plays no part, so with the cursor centred every layer rests where it was authored. Adding the layer's distance from the camera, as an earlier revision did, pushed a depth-0.5 planet near the top of a 4K canvas out of the frame (Workshop 3521337568). 3D scenes keep that distance term, since no 3D parallax scene has been checked. A pass parallax moves is reported as following the cursor (`kParallax`), judged for the camera the pass draws through: static reuse redraws its target, and an on-demand scene wakes for the pointer. A layer drawn into a composite through its layer-local camera is not moved, so that composite stays reusable (`LayerTextureReference.AReferencedLayerIsItsCardWhereverTheSceneShowsIt`). What that costs, and the easing on-demand rendering misses, are under Known limitations. A `cameraparallaxdelay` of zero means no easing: the cursor is followed at once. Dividing by it made the eased cursor NaN, which reached every parallax layer's model matrix, and the scene drew only its clear colour on both backends. |
 | User-chosen scene textures | `MediaThumbnailTextureSmoke.TextureProperty*`, `.UnsetTexturePropertyKeepsTheAuthoredTexture` and `.AnUnreadableUserFileKeepsTheAuthoredTexture` in `media_thumbnail_texture_smoke`; `TexSchema.AbsolutePath*`, `.PackagedLooseImageStillLoadsFromTheMount` and `.OnlyAReadableHostPictureCountsAsOne` in `tex_schema_tests`. A `usertextures` entry is either a cover slot the runtime supplies or the name of a `scenetexture` property. The property stores a path, not a copy, so a slot is only replaced when that file opens now; unset, moved and unreadable all keep the authored texture. Origin travels on `LooseAssetCandidate`, never re-derived from the path: a mounted `/assets/materials/foo.png` is absolute too, and deciding by `is_absolute()` sends every packaged loose picture and video to the host filesystem, where none of them exist. |
@@ -293,6 +298,32 @@ loop offscreen, so the host's half of the chain — polling the pointer and
 publishing the viewport — is still only covered by `mouse_input_test` at the
 unit level.
 
+### Parallax inheritance
+
+Parented layers take the outermost parent's `parallaxDepth`, including a zero or
+omitted depth, rather than adding or retaining their own stale child values.
+`ResolveLayerParallax` resolves this once during scene parsing, independent of
+declaration order, before image, puppet-slot, text and particle materials are
+built. The existing layer-local/effect-camera exclusions and cursor-driven reuse
+classification remain in force; there is no per-frame ancestor traversal, extra
+pass or texture. Missing/ambiguous parents do not supply a depth, and cycles are
+left unresolved. IDs and parent references must be integers within the signed
+32-bit range; wider signed/unsigned JSON numbers are ignored rather than
+truncated into another layer's identity. Wallpaper Engine's [release notes](https://steamcommunity.com/app/431960/allnews/)
+confirm that the parent controls parallax on child layers.
+
+`SceneSchema.ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationOrder`
+covers nesting, zero/default depth, missing/duplicate parents and cycles;
+`SceneSchema.ParallaxInheritanceRejectsOutOfRangeIdsWithoutAliasingValidLayers`
+and `.ParallaxInheritanceAcceptsSignedBoundariesAndUnsignedInRangeIds` cover
+range checks for both fields and preserve valid boundary values;
+`SceneSchema.ParentedPuppetSlotsFollowTheRootDepthAndKeepTheirLocalTransforms`
+checks both material slots and cursor reversal through the parsed scene.
+`MetalSceneDraw.ParentedCardsStayJoinedWhileParallaxMovesAndReverses` checks
+known pixels for direct and effect-chain cards across moving and repeated frames.
+The shared probe's `WE_TEST_INPUT_JSON` feeds both runtime cursor events and
+shader/particle pointer inputs, without reading or moving the desktop pointer.
+
 ### Camera layers in 2D scenes
 
 `orthogonalprojection` decides what a scene is. When it is present the scene is
@@ -379,6 +410,10 @@ name lookup selects the first declaration in authored order, including
 lookups made while a script module initializes; each layer's `thisLayer` still
 addresses its own key. `SceneSchema.DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBindings`
 in `scene_schema_tests` covers mixed image/group order and independent writes.
+The alias-registration pass skips non-object entries, non-string names and
+nonnumeric IDs while retaining defaults for missing fields;
+`SceneSchema.DuplicateLayerAliasesIgnoreMalformedEntriesAndKeepValidLookup`
+keeps valid aliases and their script updates working beside such entries.
 Dropping the public lookup altogether left a dwarf planet at its authored
 scale instead of the simulation's tiny scale, producing a large foreground
 surface. These two regressions require the named CMake test binaries in
@@ -485,6 +520,17 @@ exactly as before. The `generated-alpha` case composites a half-covered source
 over transparent, half-covered and opaque destinations inside a compose layer
 and samples the composed alpha back as RGB: expected readback is 128/191/255,
 and the pre-fix binary produces 64/96/191. It uses synthetic shaders only.
+
+Alpha-to-coverage writes surviving samples unblended **only on multisampled
+attachments**. On single-sample targets both backends disable coverage and use
+source-over blending instead; otherwise transparent or partially covered pixels
+can become opaque. `generated-alpha-single-sample` verifies composed coverage
+on Compatibility (128/191/255), and
+`MetalSceneDraw.SingleSampleAlphaCoveragePreservesTransparentAndPartialPixels`
+checks zero, half, and full coverage as RGB on Native Metal across repeated
+frames. The new Compatibility fixture fails against the prior renderer binary.
+CPU blend-state tests also retain the unblended multisample contract. This adds
+no MSAA targets, render passes, or allocations.
 
 ### Vector material constant timelines
 
@@ -674,6 +720,18 @@ desktop, or modify the imported wallpaper.
 
 ### HDR bloom, emissive masks and interactive scenes
 
+Material compilation sets `SCENE_ORTHO` from the authored scene projection on
+both backends, including effect passes. A 2D layer must use the shader's fixed
+view direction rather than a perspective eye on the layer's plane, which can
+reduce its lighting to ambient-only. Material overrides cannot change this
+scene-owned switch; the shader request/cache key includes it. This adds no
+passes, textures or per-frame CPU work. The original GPU regression
+`MetalSceneDraw.LightingViewDirectionFollowsTheAuthoredSceneThroughEffects`
+checks lit and unlit pixels for both projections, directly and through effects.
+This fixes projection selection, not the existing approximate
+`PerformLighting_V1` compatibility helper; full authored-light parity remains
+unverified.
+
 An authored `hdr` scene uses RGBA16F color intermediates on both backends.
 Masks and source media remain in their original formats; SDR scenes retain
 RGBA8. HDR shader combos are enabled before compilation, not approximated by
@@ -733,6 +791,31 @@ projection policies, hierarchy, depth and reflection.
   writer before an effect samples its empty input.
 
 ### Animation and puppets
+
+- Puppet layers with effects light their assembled geometry only in the final
+  skinned pass. The input texture-sheet pass is unlit, so lighting is not
+  multiplied twice or baked into the separate cut-out pieces. Unskinned layers,
+  effect-free puppets and unlit materials retain their lighting paths. This
+  removes shader work without adding passes or targets. The original pixel test
+  `PuppetEffectsApplyLightingOnceAfterAssembly` covers all eight combinations
+  of puppet/card, effects/direct and lit/unlit over repeated draws.
+- Legacy four-light shaders pack the fourth light's RGB into the `w` lanes of
+  three color uniforms. `FourLightColorsRoundTripThroughPackedUniforms` checks
+  zero through five lights, channel order, radius/intensity premultiplication,
+  the four-light limit and clearing after lights are removed.
+
+- Authored layer `origin.animation` uses one playback clock for its three curves.
+  Relative keys offset the authored origin, not the previous tick; unkeyed axes
+  retain their values. Scripts/user properties keep precedence, anchors and
+  effect-final cards follow the existing transform path, and orthographic shots
+  retain their shared origin/zoom clock. `SceneSchema.OriginTimeline*` covers
+  aligned images, text/groups, absolute/relative keys, loop duration, paused
+  playback, seek/replay and completed timelines releasing animation demand.
+  `MetalSceneDraw.AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen` reads pixels
+  before, during and after a reveal on direct and effect-chain layers; the
+  `generated-origin-animation` Compatibility case verifies both halves after
+  the intro, under pooled and isolated allocation. Static origins add no tick
+  binding; held animation frames do not re-evaluate curves.
 
 - Puppet attachments use the animated bone affine each frame while preserving
   the child layer's authored/script transform. Character-sheet reference poses
@@ -987,6 +1070,25 @@ sampler's dimensionality; and a parenthesized comparison used as an arithmetic
 operand is converted with `float(...)`. Known and not handled: logical-not
 applied to a float (`!someFloat`), which still rejects
 `workshop/2800594362/effects/clipping_mask`.
+
+Varying arrays sized by a numeric combo resolve the macro before generated
+interface declarations are emitted and reserve one location per element, just
+like literal-sized arrays. Location planning and emission use the same
+`interface_array_size` resolver, including ordered `#undef` and redefinition
+handling shared with the audit's leading-macro semantics. Bounds must be positive integer literals or
+leading object-like macros with positive integer values; expressions, missing
+or late definitions, zero and negative sizes produce an explicit diagnostic
+rather than silently reserving one location. The regression
+`pipeline_rejects_unresolved_interface_array_bounds_before_layout` covers both
+backends. Legacy builtin calls in `#define` replacements are
+rewritten inside function bodies too, not only in top-level directives. The
+original regressions `pipeline_compiles_macro_sized_varyings_without_overlapping_locations`
+and `pipeline_legalizes_nested_legacy_calls_in_macro_replacements` compile both
+SPIR-V and MSL; they cover annotation defaults, explicit counts, consecutive
+arrays and nested object/function macros. These are compile-time repairs for
+previously rejected shaders, not brightness adjustments. Restoring a dropped
+effect restores its authored GPU work and target allocation; no new per-frame
+CPU path or compensating render pass is introduced.
 
 One repair is a layout contract rather than a spelling: a scalar or
 narrow-vector array in the generated uniform block is declared `vec4 name[N]`

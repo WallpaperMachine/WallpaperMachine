@@ -480,9 +480,15 @@ void WPShaderValueUpdater::UpdateUniforms(SceneNode* pNode, uint32_t material_sl
             assert(l->node() != nullptr);
             const auto& trans = l->node()->Translate();
             std::copy(trans.begin(), trans.end(), lights.begin() + i * 4);
+            const auto color = l->premultipliedColor();
             if (i < 3) {
-                const auto& color = l->premultipliedColor();
                 std::copy(color.begin(), color.end(), lights_color.begin() + i * 4);
+            } else {
+                // Three vec4 uniforms hold four RGB lights: the last light's
+                // channels occupy the w component of each of the first three.
+                for (size_t channel = 0; channel < 3; ++channel) {
+                    lights_color[channel * 4 + 3] = color[channel];
+                }
             }
             i++;
         }

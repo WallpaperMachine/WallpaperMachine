@@ -71,6 +71,15 @@ struct ScalarAnimationPlayback
     [[nodiscard]] float Value() const;
 };
 
+// A layer origin's three curves share one clock. Relative keys are offsets
+// from the authored origin, not from the previous sample.
+struct NodeOriginAnimation
+{
+    std::shared_ptr<ScalarAnimationPlayback> playback;
+    std::array<ScalarAnimation, 3>           components;
+    std::array<float, 3>                     offset {};
+};
+
 // A vector shader constant animates one curve per component, and several
 // constants may be driven by one authored timeline. The components keep their
 // own curves and initial values while sharing that timeline's playback state.

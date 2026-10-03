@@ -4,6 +4,8 @@ mod context;
 pub mod declarations;
 pub mod declarators;
 mod emission;
+mod interface_arrays;
+pub(crate) use interface_arrays::interface_array_size;
 pub mod expressions;
 pub mod fixups;
 mod strategies;

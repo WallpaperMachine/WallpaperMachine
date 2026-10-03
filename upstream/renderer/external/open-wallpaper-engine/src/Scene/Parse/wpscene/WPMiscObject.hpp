@@ -177,12 +177,15 @@ struct WPModelObject : WPMiscObjectBase {
     std::string model;
     std::string attachment;
     bool        perspective { false };
+    std::vector<WPPuppetLayer::AnimationLayer> puppet_layers;
+    std::vector<nlohmann::json> puppet_layer_settings;
 
     bool FromJson(const nlohmann::json& json, fs::VFS&) {
         FromCommonJson(json);
         GET_JSON_NAME_VALUE_NOWARN(json, "model", model);
         GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
         GET_JSON_NAME_VALUE_NOWARN(json, "perspective", perspective);
+        ParsePuppetAnimationLayers(json, puppet_layers, puppet_layer_settings);
         return true;
     }
 };

@@ -111,7 +111,11 @@ inline VkRect2D ResolvePresentationScissor(const RenderingResources& rr, VkExten
     return VkRect2D { { 0, 0 }, extent };
 }
 
-inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state) {
+inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state,
+                     VkSampleCountFlagBits sample_count = VK_SAMPLE_COUNT_1_BIT) {
+    if (bm == BlendMode::AlphaToCoverage && sample_count == VK_SAMPLE_COUNT_1_BIT) {
+        bm = BlendMode::Translucent;
+    }
     state.blendEnable  = true;
     state.colorBlendOp = VK_BLEND_OP_ADD;
     state.alphaBlendOp = VK_BLEND_OP_ADD;
@@ -123,12 +127,10 @@ inline void SetBlend(BlendMode bm, VkPipelineColorBlendAttachmentState& state) {
         state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
         break;
-    case BlendMode::AlphaToCoverage:
-        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        state.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        break;
+    // Coverage, not blending, decides what an alpha-to-coverage pass keeps:
+    // surviving samples are written at full strength. Blending as well
+    // multiplied thin, minified texels by their alpha a second time.
+    case BlendMode::AlphaToCoverage: state.blendEnable = false; break;
     case BlendMode::Translucent:
         state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
         state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;

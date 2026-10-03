@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import WebKit
 import XCTest
 
 @testable import WallpaperMachine
@@ -54,6 +55,76 @@ final class ControlPanelWindowSizingTests: XCTestCase {
     await workshop.steamCMDSetup.shutdown()
   }
 
+  func testColorPickerAnchorMatchesItsControlAcrossWindowLayouts() async throws {
+    let configuration = WKWebViewConfiguration()
+    configuration.websiteDataStore = .nonPersistent()
+    let web = WKWebView(frame: .zero, configuration: configuration)
+    let controller = NSHostingController(rootView: ColorPickerHost(web: web).ignoresSafeArea())
+    controller.sizingOptions = []
+    let window = ControlPanelWindow.make(contentViewController: controller, delegate: nil)
+    defer { window.close() }
+
+    for size in [ControlPanelWindow.initialContentSize, ControlPanelWindow.minimumContentSize] {
+      window.setContentSize(size)
+      for fullScreen in [false, true, false] {
+        ControlPanelWindow.setFullScreenLayout(fullScreen, for: window)
+        window.layoutIfNeeded()
+        controller.view.layoutSubtreeIfNeeded()
+        // Wait for SwiftUI to size the representable without ordering a window.
+        let content = try XCTUnwrap(window.contentView)
+        let deadline = Date().addingTimeInterval(5)
+        while web.convert(web.bounds, to: content) != content.bounds && Date() < deadline {
+          try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(web.bounds.height, 400)
+        XCTAssertEqual(web.convert(web.bounds, to: content), content.bounds,
+          "The hosted panel must still fill the content area after resizing or changing chrome")
+
+        for y in [CGFloat(24), web.bounds.midY, web.bounds.maxY - 48] {
+          let control = NSRect(x: web.bounds.maxX - 100, y: y, width: 42, height: 24)
+          // WebKit places its native color well directly in the content view using a
+          // window-coordinate frame (WebKit bug 300025). That frame must land on the
+          // same control, not its vertically mirrored position. No picker is opened.
+          let pickerFrame = web.convert(control, to: nil)
+          let anchor = content.convert(pickerFrame, to: web)
+          XCTAssertEqual(anchor.minX, control.minX, accuracy: 0.5)
+          XCTAssertEqual(anchor.minY, control.minY, accuracy: 0.5)
+          XCTAssertEqual(anchor.size, control.size)
+        }
+        XCTAssertFalse(window.isVisible, "The window must stay offscreen")
+      }
+    }
+  }
+
+  func testHostedKeyViewLoopMovesForwardBackwardAndWrapsWithoutShowingWindow() async throws {
+    let first = NSTextField(string: "First")
+    let second = NSTextField(string: "Second")
+    let controller = NSHostingController(rootView: KeyLoopHost(fields: [first, second]))
+    controller.sizingOptions = []
+    let window = ControlPanelWindow.make(contentViewController: controller, delegate: nil)
+    defer { window.close() }
+    window.layoutIfNeeded()
+    let deadline = Date().addingTimeInterval(5)
+    while (first.window !== window || second.window !== window) && Date() < deadline {
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    guard first.window === window, second.window === window else {
+      XCTFail("Hosted fields did not attach to the test window before the deadline")
+      return
+    }
+    controller.view.layoutSubtreeIfNeeded()
+    window.recalculateKeyViewLoop()
+    XCTAssertTrue(window.makeFirstResponder(first))
+    XCTAssertTrue(window.firstResponder === first.currentEditor())
+    try XCTUnwrap(first.currentEditor()).insertTab(nil)
+    XCTAssertTrue(window.firstResponder === second.currentEditor(), "Tab must pass through the hosting wrapper")
+    try XCTUnwrap(second.currentEditor()).insertTab(nil)
+    XCTAssertTrue(window.firstResponder === first.currentEditor(), "The forward loop must wrap")
+    try XCTUnwrap(first.currentEditor()).insertBacktab(nil)
+    XCTAssertTrue(window.firstResponder === second.currentEditor(), "Shift-Tab must wrap backward")
+    XCTAssertFalse(window.isVisible, "No desktop focus or window ordering is needed")
+  }
+
   func testFullScreenLayoutKeepsNavigationReachableAndRestoresWindowedBounds() throws {
     let controller = NSViewController()
     controller.view = NSView(frame: NSRect(origin: .zero, size: ControlPanelWindow.initialContentSize))
@@ -102,6 +173,24 @@ final class ControlPanelWindowSizingTests: XCTestCase {
       XCTAssertFalse(window.isVisible, "The window must stay offscreen")
     }
   }
+}
+
+private struct KeyLoopHost: NSViewRepresentable {
+  let fields: [NSTextField]
+
+  func makeNSView(context: Context) -> NSStackView {
+    let stack = NSStackView(views: fields)
+    stack.orientation = .vertical
+    return stack
+  }
+  func updateNSView(_ nsView: NSStackView, context: Context) {}
+}
+
+private struct ColorPickerHost: NSViewRepresentable {
+  let web: WKWebView
+
+  func makeNSView(context: Context) -> WKWebView { web }
+  func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 
 private final class SizingDelegate: NSObject, NSWindowDelegate {}
