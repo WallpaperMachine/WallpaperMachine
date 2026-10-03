@@ -32,7 +32,7 @@ enum ControlPanelWindow {
         window.toolbar = titlebarSpacer
         window.delegate = delegate
         window.isReleasedWhenClosed = false
-        window.contentViewController = contentViewController
+        window.contentViewController = PanelContentController(hosted: contentViewController)
         window.contentMinSize = minimumContentSize
         return window
     }
@@ -86,4 +86,27 @@ enum ControlPanelWindow {
     private static func visibleFrame(for window: NSWindow) -> NSRect? {
         (window.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
     }
+}
+
+/// Keep the window's content coordinates unflipped while SwiftUI and WebKit retain
+/// their own coordinate systems. WebKit's native color popover uses a window-space
+/// rect as a content-view frame (https://bugs.webkit.org/show_bug.cgi?id=300025).
+@MainActor
+private final class PanelContentController: NSViewController {
+    init(hosted: NSViewController) {
+        super.init(nibName: nil, bundle: nil)
+        view = NSView(frame: NSRect(origin: .zero, size: ControlPanelWindow.initialContentSize))
+        addChild(hosted)
+        let hostedView = hosted.view
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hostedView)
+        NSLayoutConstraint.activate([
+            hostedView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostedView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hostedView.topAnchor.constraint(equalTo: view.topAnchor),
+            hostedView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }

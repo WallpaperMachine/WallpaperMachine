@@ -198,8 +198,10 @@ Swift tests cover, without starting the app:
   `ControlPanelWindowSizingTests` also exercises the native chrome offscreen at
   full-screen, half-screen and minimum panel sizes: navigation hit-testing below
   an opaque title bar, unobscured content bounds, and restoration of the windowed
-  title-bar layout without resizing the frame. It does not enter a full-screen
-  Space or verify the live Split View transition.
+  title-bar layout without resizing the frame. It also checks WebKit's native color
+  picker anchor-coordinate round trip at the top, middle and bottom of the hosted
+  panel after resizing and changing chrome. It does not open the picker, enter a
+  full-screen Space or verify the live Split View transition.
   `ControlPanelBackupFlowTests` drives real controls and isolated package writes,
   preserving the library-inclusion and replace-conflict choices and checking that
   staging/cancellation leave running files untouched. It opens no file panels.
