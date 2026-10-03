@@ -4786,6 +4786,23 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
     }
 
     InitContext(context, vfs, sc);
+    // Keep the unique keys used by bindings and thisLayer, while exposing
+    // duplicate authored names to cross-layer scripts in declaration order.
+    // Register before compiling scripts so module-level lookups work too.
+    if (context.scene->runtime != nullptr) {
+        for (const auto& object : *context.object_list) {
+            const auto name = object.value("name", std::string {});
+            const auto count = context.layer_name_counts.find(name);
+            if (count == context.layer_name_counts.end() || count->second <= 1u) continue;
+            const auto id = object.value("id", 0);
+            if (const auto key = context.object_runtime_names.find(id);
+                key != context.object_runtime_names.end()) {
+                context.scene->runtime->RegisterLayerAlias(name, key->second);
+            } else if (IsLayerObject(object) && id != 0) {
+                context.scene->runtime->RegisterLayerAlias(name, NodeRuntimeName(name, id, count->second));
+            }
+        }
+    }
     g_parse_layer_index = &layer_index;
     context.scene->layer_texture_error = ClassifyLayerTextureReferences(layer_refs, layer_index);
     context.scene->layer_texture_sources = context.referenced_layer_ids;

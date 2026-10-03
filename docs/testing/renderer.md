@@ -385,6 +385,24 @@ sample (`vulkan::FoldPassCameras`, shared by both backends).
 
 ### Property bindings and alignment anchors
 
+`createScriptProperties().addColor(...)` exposes a `Vec3` even when the
+author's saved `scriptproperties` stores RGB as a space-separated string.
+Conversion applies again when native property updates replace that value;
+`addText` values remain strings. The regression is
+`ScriptRuntimeCompat.AuthoredColorPropertiesStayVectorsAcrossTicksAndPropertyChanges`
+in `script_runtime_compat_test`. A missing conversion silently turned Live
+Solar System's sun tint black despite its nonzero brightness.
+
+Duplicate non-text layer names retain separate internal binding keys. SceneScript
+name lookup selects the first declaration in authored order, including
+lookups made while a script module initializes; each layer's `thisLayer` still
+addresses its own key. `SceneSchema.DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBindings`
+in `scene_schema_tests` covers mixed image/group order and independent writes.
+Dropping the public lookup altogether left a dwarf planet at its authored
+scale instead of the simulation's tiny scale, producing a large foreground
+surface. These two regressions require the named CMake test binaries in
+addition to `scripts/check_renderer.py`.
+
 A layer setting may carry `value`, `user` and `script` at once. `value` is the
 initial value the property script receives; it does not decide whether the
 script runs. The parser used to drop every dynamic binding of a layer whose

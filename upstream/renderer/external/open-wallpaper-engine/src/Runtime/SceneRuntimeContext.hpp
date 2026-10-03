@@ -125,6 +125,8 @@ public:
     DynamicValue* FindPropertyValue(std::string_view name) const;
     void          RegisterScriptedValue(ScriptedDynamicValue* value);
     void          RegisterNode(std::string name, SceneNode* node);
+    void          RegisterLayerAlias(std::string authored_name, std::string runtime_name);
+    std::string   ResolveLayerName(std::string_view name) const;
     void          UnregisterNode(std::string_view name);
     void          RollbackNodeRegistration(
                      std::string_view name,
@@ -473,6 +475,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<DynamicValue>> m_property_values;
     std::vector<std::unique_ptr<DynamicValue>>                     m_owned_values;
     std::unordered_map<std::string, SceneNode*>                    m_nodes;
+    std::unordered_map<std::string, std::string>                   m_layer_aliases;
     std::unordered_map<std::string, NodeVisibilityBinding>         m_node_visibility;
     std::unordered_map<std::string, NodeVec3Binding>               m_node_translate;
     std::unordered_map<std::string, NodeVec3Binding>               m_node_scale;

@@ -964,6 +964,19 @@ void SceneRuntimeContext::RegisterNode(std::string name, SceneNode* node) {
     RefreshNodeTransformBindings(key);
 }
 
+void SceneRuntimeContext::RegisterLayerAlias(std::string authored_name, std::string runtime_name) {
+    // The parser registers these in authored order. Duplicate names still
+    // have independent binding keys; name lookup selects the first layer.
+    m_layer_aliases.try_emplace(std::move(authored_name), std::move(runtime_name));
+}
+
+std::string SceneRuntimeContext::ResolveLayerName(std::string_view name) const {
+    const std::string key(name);
+    if (m_nodes.contains(key)) return key;
+    const auto alias = m_layer_aliases.find(key);
+    return alias != m_layer_aliases.end() ? alias->second : key;
+}
+
 void SceneRuntimeContext::UnregisterNode(std::string_view name) {
     const std::string key(name);
     m_node_visibility.erase(key);

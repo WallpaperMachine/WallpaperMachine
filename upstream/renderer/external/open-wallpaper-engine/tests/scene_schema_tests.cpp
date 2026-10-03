@@ -2757,6 +2757,47 @@ TEST(SceneSchema, ParserUsesStableRuntimeNamesForDuplicateImageLayerNames) {
     EXPECT_EQ(scene->runtime->NodeSize("__we_layer_21"), Eigen::Vector2f(64.0f, 32.0f));
 }
 
+TEST(SceneSchema, DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBindings) {
+    fs::VFS vfs;
+    MountSceneFiles(vfs);
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+    WPSceneParser parser;
+    const std::string source = R"JSON({
+      "camera": {"center":[0,0,0], "eye":[0,0,1], "up":[0,1,0]},
+      "general": {"ambientcolor":[0,0,0], "skylightcolor":[0,0,0],
+                  "clearcolor":[0,0,0], "cameraparallax":false,
+                  "orthogonalprojection":{"width":400,"height":300}},
+      "objects": [
+        {"id":30, "name":"driver", "origin": {"value":[0,0,0],
+          "script":"const image = thisScene.getLayer('image first'); const group = thisScene.getLayer('group first'); export function update(value) { image.scale = new Vec3(0.125); group.scale = new Vec3(0.25); return value; }"}},
+        {"id":10, "name":"image first", "image":"image.json", "size":[64,32]},
+        {"id":11, "name":"image first", "visible": {"value":true,
+          "script":"export function update(value) { thisLayer.scale = new Vec3(9); return value; }"}},
+        {"id":20, "name":"group first"},
+        {"id":21, "name":"group first", "image":"image.json", "size":[64,32],
+          "visible": {"value":true,
+          "script":"export function update(value) { thisLayer.scale = new Vec3(7); return value; }"}}
+      ]
+    })JSON";
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest {
+        .scene_id = "duplicate-name-lookup", .project_properties = &properties,
+    }, source, vfs, sound);
+    ASSERT_NE(scene, nullptr);
+    ASSERT_NE(scene->runtime, nullptr);
+    for (int frame = 0; frame < 3; ++frame) {
+        scene->runtime->Tick(1.0 / 60.0);
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_10"), Eigen::Vector3f::Constant(0.125f));
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_11"), Eigen::Vector3f::Constant(9.0f));
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_20"), Eigen::Vector3f::Constant(0.25f));
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_21"), Eigen::Vector3f::Constant(7.0f));
+    }
+    EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
+    auto without_scripts = parser.Parse("duplicate-name-no-runtime", source, vfs, sound);
+    ASSERT_NE(without_scripts, nullptr);
+    EXPECT_EQ(without_scripts->runtime, nullptr);
+}
+
 TEST(SceneSchema, CallbackOnlyDuplicateButtonsToggleNamedGroupsThroughParser) {
     fs::VFS vfs;
     MountSceneFiles(vfs);

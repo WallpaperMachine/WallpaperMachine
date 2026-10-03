@@ -942,8 +942,19 @@ void AppendScriptPropertiesBuilder(std::ostringstream& wrapper) {
             << "        }\n"
             << "        return builder;\n"
             << "      },\n"
-            << "      addColor: function(opts) { if (!(opts.name in __props)) __props[opts.name] = "
-               "opts.value; return builder; },\n"
+            << "      addColor: function(opts) {\n"
+            << "        function convert(value) {\n"
+            << "          if (typeof value === 'string') value = value.trim().split(/\\s+/).map(Number);\n"
+            << "          if (Array.isArray(value)) return new globalThis.__WEVec3(value[0], value[1], value[2]);\n"
+            << "          return value;\n"
+            << "        }\n"
+            << "        var color = convert(opts.name in __props ? __props[opts.name] : opts.value);\n"
+            << "        Object.defineProperty(__props, opts.name, { enumerable: true, configurable: true,\n"
+            << "          get: function() { return color; },\n"
+            << "          set: function(value) { color = convert(value); }\n"
+            << "        });\n"
+            << "        return builder;\n"
+            << "      },\n"
             << "      addText: function(opts) { if (!(opts.name in __props)) __props[opts.name] = "
                "opts.value; return builder; },\n"
             << "      finish: function() { return __props; }\n"
@@ -1360,6 +1371,7 @@ void AppendCommonHostBootstrap(std::ostringstream& wrapper) {
         << "      __registerCallback(globalThis.__callbacks, event, fn);\n"
         << "    },\n"
         << "    getLayer: function(name) {\n"
+        << "      name = __layerResolveName(String(name));\n"
         << "      if (!globalThis.__layerCache[name]) globalThis.__layerCache[name] = "
            "__createLayer(name);\n"
         << "      return globalThis.__layerCache[name];\n"
@@ -1873,6 +1885,17 @@ JSValue CallStoredExport(JSContext* context, const char* exports_object_name,
     JS_FreeValue(context, exports);
     JS_FreeValue(context, global_object);
     return result;
+}
+
+JSValue JsLayerResolveName(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_NewString(context, "");
+    auto* bridge = GetBridgeState(context);
+    if (bridge == nullptr || bridge->runtime == nullptr) return JS_DupValue(context, argv[0]);
+    const char* name = JS_ToCString(context, argv[0]);
+    if (name == nullptr) return JS_EXCEPTION;
+    const auto resolved = bridge->runtime->ResolveLayerName(name);
+    JS_FreeCString(context, name);
+    return JS_NewStringLen(context, resolved.data(), resolved.size());
 }
 
 JSValue JsLayerGetVisible(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
@@ -2699,6 +2722,10 @@ bool EnsureSharedHostBindings(JSContext* context, SceneRuntimeContext* runtime,
     const auto registration_started = std::chrono::steady_clock::now();
 
     if (! cache_state.shared_bindings_installed) {
+        JS_SetPropertyStr(context,
+                          global_object,
+                          "__layerResolveName",
+                          JS_NewCFunction(context, JsLayerResolveName, "__layerResolveName", 1));
         JS_SetPropertyStr(context,
                           global_object,
                           "__layerGetVisible",
