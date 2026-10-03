@@ -100,6 +100,23 @@ enum WebWallpaperProtocol {
         wrapStreaming("compileStreaming", bytes => compile.call(wasm, bytes));
         wrapStreaming("instantiateStreaming", (bytes, imports) => instantiate.call(wasm, bytes, imports));
       }
+      // Local XHR has the same status mismatch as fetch. WebKit exposes a
+      // responseURL only once a response exists and clears it on failure/abort;
+      // status 0 alone (or even a synchronous load event) is not proof of success.
+      // Read native metadata so synchronous loaders and ready-state callbacks
+      // both see 200 OK without buffering bodies or changing event delivery.
+      if (typeof XMLHttpRequest === "function") {
+        const prototype = XMLHttpRequest.prototype;
+        const status = Object.getOwnPropertyDescriptor(prototype, "status");
+        const statusText = Object.getOwnPropertyDescriptor(prototype, "statusText");
+        const responseURL = Object.getOwnPropertyDescriptor(prototype, "responseURL").get;
+        const isServedFile = xhr => status.get.call(xhr) === 0
+          && responseURL.call(xhr).startsWith("file:");
+        Object.defineProperties(prototype, {
+          status: { ...status, get() { return isServedFile(this) ? 200 : status.get.call(this); } },
+          statusText: { ...statusText, get() { return isServedFile(this) ? "OK" : statusText.get.call(this); } },
+        });
+      }
       const post = message => {
         try { window.webkit.messageHandlers.\(WebWallpaperProtocol.messageHandlerName).postMessage(message); }
         catch (error) { console.error("wallpaper host channel unavailable", error); }

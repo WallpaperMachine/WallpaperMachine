@@ -9,6 +9,17 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-03 — PR 24: retry eligibility and durable pixiv cancellation
+
+- Web host state now explicitly grants retry only to failures from the current live page; panel rendering, action dispatch and host retry all honor that capability.
+- Project validation and fingerprint failures remain visible without an ineffective retry action, including failures while an older surface still exists.
+- Pixiv cancellation is excluded from the durable queue immediately while the task retains its slot until cleanup finishes; pause/shutdown cannot revive cancellation, and a fresh request discards orphaned partial data.
+- python3 scripts/test.py --only WebWallpaperHostLifecycleTests --only ControlPanelHostStateTests: 9 passed, 0 failed/skipped. Initial test compile error in an error-pattern catch was corrected before this successful run.
+- python3 scripts/test.py --only PixivDownloadQueueTests: 9 passed, 0 failed/skipped; held cancellation cleanup covers queue restore, slot ownership, shutdown, paused checkpoints and fresh enqueue.
+- python3 scripts/test.py: 256 Python tests and 1148 native tests passed; 0 failures and 12 media/network opt-in skips. Full gate ran once after both changes were final.
+- git diff --check passed. No renderer/bridge changes, so renderer checks and binding generation were not repeated.
+- No Release app build, desktop automation, live pixiv/Steam access or real media-hardware validation. Panel assertions use offscreen fixtures.
+
 ## 2026-10-03 — PR 24 review follow-up
 
 - Addressed all 12 inline review threads: per-wallpaper purge isolation, resume consent, benchmark schema lookup, effective-cap reporting, artwork validation, dangling symlinks, BGRA admission, encoder skips, allocator scope, termination order, checkpoint recovery and empty playback notifications.

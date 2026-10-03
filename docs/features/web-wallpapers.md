@@ -43,7 +43,12 @@ so WebGL exports such as Unity and Emscripten, which check `ok` and stream `.was
 into `WebAssembly.instantiateStreaming`, start. Those served `.wasm` responses are
 compiled from their bytes rather than by WebKit's streaming compiler, which
 measured about 190 ms slower to boot a 22 MB Unity module; every other response
-keeps WebKit's native streaming and MIME check. XHR is untouched.
+keeps WebKit's native streaming and MIME check. Local XMLHttpRequest responses
+also expose `200 OK` once WebKit supplies a file response URL, including inside
+ready-state callbacks and immediately after a synchronous `send()`. Unopened,
+missing, failed and aborted requests retain native status 0; non-file responses,
+bodies, decoding and event delivery stay native. This only adapts metadata reads:
+there is no body copy, retry loop or per-frame work.
 A document-start script installs the host side:
 
 | Call into the page | When |
@@ -379,7 +384,9 @@ and audible handoff require an authorized desktop/audio run.
 late-listener replay, pause composition, top-frame navigation lockdown, and
 forwarded clicks and right clicks reaching page listeners with the native
 context menu suppressed. `WebWallpaperMouseRoutingTests.swift` pins the
-desktop-only routing policy.
+desktop-only routing policy. `WebWallpaperLocalRequestTests.swift` covers
+synchronous startup loaders, empty successful responses, async ready-state
+metadata, JSON/binary bodies, missing files, cancellation and request reuse.
 `Tests/Unit/Panel/WebPanelAssetPropertiesTests.swift` covers the inspector side:
 what `Choose…` and `Clear` send, the refusal of a `texture` property by the path
 editor, the folder measurement published to the page, and a chosen name carrying
