@@ -4791,9 +4791,12 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
     // Register before compiling scripts so module-level lookups work too.
     if (context.scene->runtime != nullptr) {
         for (const auto& object : *context.object_list) {
+            if (!object.is_object() || (object.contains("name") && !object.at("name").is_string()))
+                continue;
             const auto name = object.value("name", std::string {});
             const auto count = context.layer_name_counts.find(name);
             if (count == context.layer_name_counts.end() || count->second <= 1u) continue;
+            if (object.contains("id") && !object.at("id").is_number()) continue;
             const auto id = object.value("id", 0);
             if (const auto key = context.object_runtime_names.find(id);
                 key != context.object_runtime_names.end()) {

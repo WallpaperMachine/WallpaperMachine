@@ -25,6 +25,18 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-03 — PR 25 CodeRabbit input-validation follow-ups
+
+- Range-check parallax IDs and parent references before narrowing, handling unsigned JSON values before signed conversion; preserve valid int32 boundaries and declaration-order independence.
+- Skip non-object entries, non-string names and nonnumeric IDs during layer-alias registration; retain missing-field defaults and valid alias-driven script updates.
+- Hosted keyboard-loop test now waits for both fields to attach to its window and reports a setup failure immediately on timeout.
+- Rebuilt `scene_schema_tests`; `--gtest_filter="SceneSchema.*Parallax*:SceneSchema.*Parented*:SceneSchema.*Duplicate*"` — 11 passed, including three new boundary/type regressions.
+- `python3 scripts/test.py --only ControlPanelWindowSizingTests` — four passed; targeted iteration only.
+- `python3 scripts/check_renderer.py` — every recorded binary exited zero; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
+- `python3 scripts/test.py` — all Python suites passed; 1,072 native passed, zero failed, 12 skipped.
+- Renderer skips: two local text scenes and the environment-selected Metal project case. No desktop visuals/live keyboard check, authored-reference parity, app launch or Release rebuild.
+- Confirmed no configured/gated SwiftLint required_deinit rule; kept the controller unchanged. Current verification entries already satisfy newest-first ordering; no historical results rewritten.
+
 ## 2026-10-03 — PR 25 Claude review follow-ups
 
 - Unified stage-interface array bounds for location allocation and emission; unsupported expressions, late/missing definitions and nonpositive sizes now fail explicitly.
@@ -127,13 +139,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Offscreen private scene: duplicate dimming and eye-patch boundaries removed at startup and a six-second sample. Same three-frame workload retained 197 executed / 40 reused passes and 266389504 allocated GPU bytes; lighting shader work is removed, not replaced with additional passes.
 - Existing private scene init TypeError remains, unchanged from baseline. Native local-project probe reports Compatibility because of dynamic lighting; it did not render this scene natively.
 - No desktop control, windows, screenshots, wallpaper changes, audio hardware or live services. Desktop appearance/smoothness and power use remain unverified. Concurrent work preserved.
-
-## 2026-10-02 — Macro-sized shader interfaces and nested macro builtins
-
-- Original synthetic shader regressions reproduced unknown COUNT and CAST3 failures before their respective repairs; both now compile SPIR-V and MSL. Numeric combo defaults/overrides and consecutive arrays are covered.
-- WALLPAPER_MACHINE_ASSETS_ROOT=<local SceneAssets> cargo test -p shader -- --nocapture: exit 0; 506 reported successful tests, including two unavailable private-asset checks that returned early (504 exercised).
-- python3 scripts/test.py: exit 0; Python script suites passed; native verdict 1064 passed, 0 failed, 12 skipped of 1076.
-- python3 scripts/check_renderer.py --project <local project>: exit 1 in the shared working tree. All 11 synthetic pixel cases passed; local project pooled/isolated pixels matched and both reload cycles succeeded. The concurrently added MetalSceneDraw.PuppetEffectsApplyLightingOnceAfterAssembly failed; its source and the concurrent parser/updater changes were not modified by this task.
-- Surface-free local scene renders restore the sky, mountain and bridge gradients; four formerly rejected gradient effects now compile. Existing dock script errors and a missing layer-texture link remain. Native Metal still refuses the same missing effects/blend image as before, so this scene was verified through Compatibility, not native presentation.
-- Changes are shader-compilation-only, with no wallpaper IDs, asset edits or brightness compensation. Restored effects increase the sampled two-frame executed-pass total from 289 to 297 and allocated Vulkan target/image bytes from 244133504 to 278081152; this is authored work previously dropped, not a new correction pass. Desktop performance and exact reference parity are unverified.
-- No desktop control, live settings changes, app restart or installation. Eye-square report could not be identified in the bridge scene; screenshot requested. No commit or Release build while the shared renderer gate is failing.

@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <memory>
 #include <span>
@@ -2881,6 +2882,45 @@ TEST(SceneSchema, DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBin
     EXPECT_EQ(without_scripts->runtime, nullptr);
 }
 
+TEST(SceneSchema, DuplicateLayerAliasesIgnoreMalformedEntriesAndKeepValidLookup) {
+    for (const auto& entry : std::vector<nlohmann::json> {
+             nullptr, 7, nlohmann::json::array(),
+             {{"id", 30}, {"name", 7}}, {{"id", 30}, {"name", nullptr}},
+             {{"id", "invalid"}, {"name", "shared"}}, {{"id", nullptr}, {"name", "shared"}},
+             {{"name", "shared"}}, {{"id", 31}},
+         }) {
+        SCOPED_TRACE(entry.dump());
+        auto source = nlohmann::json::parse(R"({
+          "camera":{"center":[0,0,0],"eye":[0,0,1],"up":[0,1,0]},
+          "general":{"ambientcolor":[0,0,0],"skylightcolor":[0,0,0],
+            "clearcolor":[0,0,0],"cameraparallax":false,
+            "orthogonalprojection":{"width":400,"height":300}},
+          "objects":[
+            {"id":10,"name":"shared"}, {"id":11,"name":"shared"},
+            {"id":20,"name":"driver","origin":{"value":[0,0,0],
+              "script":"const target = thisScene.getLayer('shared'); export function update(value) { target.scale = new Vec3(0.125); return value; }"}}
+          ]
+        })");
+        source["objects"].insert(source["objects"].begin(), entry);
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+        ProjectProperties properties;
+        WPSceneParser parser;
+        std::shared_ptr<Scene> scene;
+        ASSERT_NO_THROW(scene = parser.Parse(SceneParseRequest {
+            .scene_id = "malformed-alias-entry", .project_properties = &properties,
+        }, source.dump(), vfs, sound));
+        ASSERT_NE(scene, nullptr);
+        ASSERT_NE(scene->runtime, nullptr);
+        EXPECT_EQ(scene->runtime->ResolveLayerName("shared"), "__we_layer_10");
+        scene->runtime->Tick(1.0 / 60.0);
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_10"), Eigen::Vector3f::Constant(0.125f));
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_11"), Eigen::Vector3f::Ones());
+        EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
+    }
+}
+
 TEST(SceneSchema, CallbackOnlyDuplicateButtonsToggleNamedGroupsThroughParser) {
     fs::VFS vfs;
     MountSceneFiles(vfs);
@@ -3736,6 +3776,51 @@ TEST(SceneSchema, ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationO
         EXPECT_EQ(objects[3]["parallaxDepth"], nlohmann::json::array({0, 0}));
         for (std::size_t i : {2u, 4u, 5u, 6u, 7u, 8u, 9u, 10u})
             EXPECT_EQ(objects[i], original[i]);
+    }
+}
+
+TEST(SceneSchema, ParallaxInheritanceRejectsOutOfRangeIdsWithoutAliasingValidLayers) {
+    const auto minimum = std::numeric_limits<int32_t>::min();
+    const auto maximum = std::numeric_limits<int32_t>::max();
+    const std::vector<std::pair<nlohmann::json, int32_t>> invalid_ids {
+        {int64_t(maximum) + 1, minimum}, {int64_t(minimum) - 1, maximum},
+        {uint64_t(maximum) + 1, minimum}, {std::numeric_limits<uint64_t>::max(), -1},
+        {(int64_t(1) << 32) + 1, 1},
+    };
+    for (const auto& [invalid, valid] : invalid_ids) {
+        SCOPED_TRACE(invalid.dump());
+        for (bool include_invalid_id : {false, true}) {
+            auto original = nlohmann::json::array({
+                {{"id", valid}, {"parallaxDepth", {0.75, -0.25}}},
+                {{"id", 2}, {"parent", valid}, {"parallaxDepth", {2, 3}}},
+                {{"id", 3}, {"parent", invalid}, {"parallaxDepth", {4, 5}}},
+            });
+            if (include_invalid_id) original.push_back({{"id", invalid}, {"parallaxDepth", {9, 9}}});
+            for (bool reversed : {false, true}) {
+                auto objects = original;
+                if (reversed) std::reverse(objects.begin(), objects.end());
+                ResolveLayerParallax(objects);
+                if (reversed) std::reverse(objects.begin(), objects.end());
+                EXPECT_EQ(objects[1]["parallaxDepth"], original[0]["parallaxDepth"]);
+                EXPECT_EQ(objects[2], original[2]);
+                EXPECT_EQ(objects[0], original[0]);
+                if (include_invalid_id) EXPECT_EQ(objects[3], original[3]);
+            }
+        }
+    }
+}
+
+TEST(SceneSchema, ParallaxInheritanceAcceptsSignedBoundariesAndUnsignedInRangeIds) {
+    for (const auto& id : std::vector<nlohmann::json> {
+             std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max(),
+             uint64_t(std::numeric_limits<int32_t>::max()),
+         }) {
+        auto objects = nlohmann::json::array({
+            {{"id", 1}, {"parent", id}, {"parallaxDepth", {9, 9}}},
+            {{"id", id}, {"parallaxDepth", {0.75, -0.25}}},
+        });
+        ResolveLayerParallax(objects);
+        EXPECT_EQ(objects[0]["parallaxDepth"], objects[1]["parallaxDepth"]);
     }
 }
 

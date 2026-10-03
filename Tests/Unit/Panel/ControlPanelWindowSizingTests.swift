@@ -105,8 +105,12 @@ final class ControlPanelWindowSizingTests: XCTestCase {
     defer { window.close() }
     window.layoutIfNeeded()
     let deadline = Date().addingTimeInterval(5)
-    while first.window == nil && Date() < deadline {
+    while (first.window !== window || second.window !== window) && Date() < deadline {
       try await Task.sleep(for: .milliseconds(20))
+    }
+    guard first.window === window, second.window === window else {
+      XCTFail("Hosted fields did not attach to the test window before the deadline")
+      return
     }
     controller.view.layoutSubtreeIfNeeded()
     window.recalculateKeyViewLoop()

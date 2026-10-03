@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -13,13 +15,26 @@ namespace wallpaper {
 inline void ResolveLayerParallax(nlohmann::json& objects) {
     if (!objects.is_array()) return;
     const auto none = objects.size();
+    const auto read_id = [](const nlohmann::json& object, const char* field) -> std::optional<int32_t> {
+        const auto value = object.find(field);
+        if (value == object.end() || !value->is_number_integer()) return std::nullopt;
+        // Unsigned JSON integers must be checked before any signed conversion.
+        if (value->is_number_unsigned()) {
+            if (value->get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
+                return std::nullopt;
+        } else {
+            const auto wide = value->get<int64_t>();
+            if (wide < std::numeric_limits<int32_t>::min() || wide > std::numeric_limits<int32_t>::max())
+                return std::nullopt;
+        }
+        return value->get<int32_t>();
+    };
     std::unordered_map<int32_t, std::size_t> by_id;
     for (std::size_t i = 0; i < objects.size(); ++i) {
         const auto& object = objects[i];
-        if (!object.contains("id") || !object["id"].is_number_integer()) continue;
-        const auto id = object["id"].get<int32_t>();
-        if (id == 0) continue;
-        auto [entry, inserted] = by_id.emplace(id, i);
+        const auto id = read_id(object, "id");
+        if (!id || *id == 0) continue;
+        auto [entry, inserted] = by_id.emplace(*id, i);
         if (!inserted) entry->second = none; // no unambiguous parent
     }
 
@@ -35,8 +50,7 @@ inline void ResolveLayerParallax(nlohmann::json& objects) {
             path.push_back(current);
             const auto& object = objects[current];
             auto parent = by_id.end();
-            if (object.contains("parent") && object["parent"].is_number_integer())
-                parent = by_id.find(object["parent"].get<int32_t>());
+            if (const auto id = read_id(object, "parent")) parent = by_id.find(*id);
             if (parent == by_id.end() || parent->second == none) {
                 root = current;
                 break;

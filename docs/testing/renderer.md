@@ -300,11 +300,16 @@ declaration order, before image, puppet-slot, text and particle materials are
 built. The existing layer-local/effect-camera exclusions and cursor-driven reuse
 classification remain in force; there is no per-frame ancestor traversal, extra
 pass or texture. Missing/ambiguous parents do not supply a depth, and cycles are
-left unresolved. Wallpaper Engine's [release notes](https://steamcommunity.com/app/431960/allnews/)
+left unresolved. IDs and parent references must be integers within the signed
+32-bit range; wider signed/unsigned JSON numbers are ignored rather than
+truncated into another layer's identity. Wallpaper Engine's [release notes](https://steamcommunity.com/app/431960/allnews/)
 confirm that the parent controls parallax on child layers.
 
 `SceneSchema.ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationOrder`
 covers nesting, zero/default depth, missing/duplicate parents and cycles;
+`SceneSchema.ParallaxInheritanceRejectsOutOfRangeIdsWithoutAliasingValidLayers`
+and `.ParallaxInheritanceAcceptsSignedBoundariesAndUnsignedInRangeIds` cover
+range checks for both fields and preserve valid boundary values;
 `SceneSchema.ParentedPuppetSlotsFollowTheRootDepthAndKeepTheirLocalTransforms`
 checks both material slots and cursor reversal through the parsed scene.
 `MetalSceneDraw.ParentedCardsStayJoinedWhileParallaxMovesAndReverses` checks
@@ -398,6 +403,10 @@ name lookup selects the first declaration in authored order, including
 lookups made while a script module initializes; each layer's `thisLayer` still
 addresses its own key. `SceneSchema.DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBindings`
 in `scene_schema_tests` covers mixed image/group order and independent writes.
+The alias-registration pass skips non-object entries, non-string names and
+nonnumeric IDs while retaining defaults for missing fields;
+`SceneSchema.DuplicateLayerAliasesIgnoreMalformedEntriesAndKeepValidLookup`
+keeps valid aliases and their script updates working beside such entries.
 Dropping the public lookup altogether left a dwarf planet at its authored
 scale instead of the simulation's tiny scale, producing a large foreground
 surface. These two regressions require the named CMake test binaries in
