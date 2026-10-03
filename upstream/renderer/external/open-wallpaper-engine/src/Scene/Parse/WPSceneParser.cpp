@@ -2467,8 +2467,9 @@ std::optional<NodeHitMask> BuildImageHitMask(ParseContext& context,
 
 // Binds each authored animation layer's visible/rate/blend to user properties
 // (and scripts) so the shared puppet state follows the wallpaper settings.
+template <typename Object>
 void BindPuppetAnimationLayerSettings(ParseContext& context, const std::string& runtime_name,
-                                      const wpscene::WPImageObject& wpimgobj,
+                                      const Object& wpimgobj,
                                       WPPuppetLayer layer) {
     auto& runtime = *context.scene->runtime;
     const auto count = std::min(wpimgobj.puppet_layer_settings.size(), layer.layerCount());
@@ -4305,10 +4306,25 @@ void ParseModelObj(ParseContext& context, wpscene::WPModelObject& obj) {
     WPMdlParser::GenPuppetMesh(*mesh, mdl, false);
 
     WPShaderValueData               svData;
+    if (has_bones) {
+        auto layer = WPPuppetLayer(mdl.puppet);
+        layer.prepared(obj.puppet_layers);
+        context.layer_puppets[obj.id] = mdl.puppet;
+        context.layer_puppet_animations.emplace(obj.id, layer);
+        svData.puppet_layer = layer;
+    }
     std::vector<LoadedMaterialSlot> slots;
     auto load_material = [&](const std::string& path) {
         if (path.empty()) return false;
         wpscene::WPMaterial source;
+        // Mesh materials omit the ordinary opaque 3D state. Image-layer
+        // defaults (alpha blending, no depth, double-sided) expose rear
+        // triangles through the front of a model. Explicit author state still
+        // wins when FromJson reads the pass below.
+        source.blending = "normal";
+        source.cullmode = "normal";
+        source.depthtest = "enabled";
+        source.depthwrite = "enabled";
         if (! LoadWPMaterialFromPath(*context.vfs, path, source)) return false;
         if (has_bones) WPMdlParser::AddPuppetMatInfo(source, mdl);
         WPShaderInfo shader_info;
@@ -4337,6 +4353,11 @@ void ParseModelObj(ParseContext& context, wpscene::WPModelObject& obj) {
     node->AddMesh(mesh);
 
     RegisterCommonNodeBindings(context, *node, runtime_name, obj, previous_runtime_name);
+    if (has_bones && context.scene->runtime != nullptr) {
+        const auto& layer = context.layer_puppet_animations.at(obj.id);
+        context.scene->runtime->RegisterPuppetLayer(runtime_name, layer);
+        BindPuppetAnimationLayerSettings(context, runtime_name, obj, layer);
+    }
     QueueSceneScriptIfNeeded(context, runtime_name, obj.visible_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.origin_setting);
     QueueSceneScriptIfNeeded(context, runtime_name, obj.scale_setting);
@@ -4408,44 +4429,23 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
     // fov 50 -- leaves a magnified sliver of one corner and nothing else. The
     // layer stays a node scripts can read and move; it just does not replace
     // the projection the canvas defines.
+    SceneCamera* perspective_camera = nullptr;
     if (! context.is_ortho) {
-        // Official scenes name the playing camera "default". That is this
-        // scene's perspective camera, not a second unused one. scene.camera
-        // eye/center is the editor preview pose and is often pointed at empty
-        // space; the object origin/angles are what the wallpaper actually uses.
-        std::string cam_name = obj.camera;
-        if (cam_name.empty() || cam_name == "default") {
-            cam_name = "global_perspective";
-        }
+        const std::string cam_name = obj.camera.empty() || obj.camera == "default"
+                                         ? "global_perspective" : obj.camera;
         auto existing = context.scene->cameras.find(cam_name);
-        if (existing != context.scene->cameras.end() && existing->second != nullptr) {
-            if (existing->second->IsPerspective() && obj.fov > 0.0f) {
-                existing->second->SetFov(obj.fov);
-                existing->second->LockFov(true);
-            }
-            existing->second->AttatchNode(node);
-            if (cam_name == "global_perspective") {
-                context.global_perspective_camera_node = node;
-                if (obj.visible) {
-                    context.scene->activeCamera = existing->second.get();
-                }
-            } else if (cam_name == "global") {
-                context.global_camera_node = node;
-            }
+        if (existing != context.scene->cameras.end()) {
+            perspective_camera = existing->second.get();
         } else if (context.scene->cameras.count("global_perspective") != 0) {
             const auto& source = context.scene->cameras.at("global_perspective");
             auto camera = std::make_shared<SceneCamera>(
-                static_cast<float>(source->Aspect()),
-                static_cast<float>(source->NearClip()),
-                static_cast<float>(source->FarClip()),
-                ResolvePerspectiveFov({}, obj.fov));
-            camera->LockFov(true);
-            camera->AttatchNode(node);
-            context.scene->cameras[cam_name] = camera;
-            if (obj.visible && camera->IsPerspective()) {
-                context.scene->activeCamera = camera.get();
-            }
+                static_cast<float>(source->Aspect()), static_cast<float>(source->NearClip()),
+                static_cast<float>(source->FarClip()), ResolvePerspectiveFov({}, obj.fov));
+            camera->AttatchNode(source->GetAttachedNode());
+            perspective_camera = camera.get();
+            context.scene->cameras[cam_name] = std::move(camera);
         }
+        if (perspective_camera) perspective_camera->LockFov(true);
     }
 
     // Orthographic shots already share an origin/zoom clock below.
@@ -4475,6 +4475,26 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
                                        std::move(timeline), obj.dynamic_origin);
         } else if (obj.visible) {
             context.scene->FrameCanvas(obj.zoom, Eigen::Vector2f(obj.origin[0], obj.origin[1]));
+        }
+    } else if (perspective_camera) {
+        std::vector<CameraPath> paths;
+        if (!obj.path.empty()) {
+            nlohmann::json json;
+            if (PARSE_JSON(fs::GetFileContent(*context.vfs, "/assets/" + obj.path), json)) {
+                paths = ParseCameraPaths(json);
+            }
+        }
+        // Visibility bindings are registered first. Merely parsing a hidden
+        // preset must never move the shared camera off the shot that is playing.
+        CameraPathPlayback path(std::move(paths), obj.queuemode);
+        if (context.scene->runtime) {
+            context.scene->runtime->RegisterPerspectiveCameraShot(
+                node, perspective_camera, ResolvePerspectiveFov({}, obj.fov), std::move(path));
+        } else if (obj.visible) {
+            perspective_camera->AttatchNode(node);
+            perspective_camera->SetFov(ResolvePerspectiveFov({}, obj.fov));
+            path.Apply(*node, *perspective_camera);
+            context.scene->activeCamera = perspective_camera;
         }
     }
 

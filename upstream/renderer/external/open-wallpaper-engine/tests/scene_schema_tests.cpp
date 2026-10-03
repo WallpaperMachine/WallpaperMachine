@@ -22,6 +22,7 @@
 #include "Project/ProjectProperties.hpp"
 #include "Runtime/DynamicValue.hpp"
 #include "Runtime/SceneRuntimeContext.hpp"
+#include "Runtime/SceneSettingResolver.hpp"
 #include "Runtime/ScriptedDynamicValue.hpp"
 
 #include <cmath>
@@ -1327,6 +1328,167 @@ TEST(SceneSchema, OrthogonalprojectionNullActivatesPerspective) {
     const auto* default_rt = parsed->FindRenderTarget(SpecTex_Default);
     ASSERT_NE(default_rt, nullptr);
     EXPECT_TRUE(default_rt->withDepth);
+}
+
+TEST(SceneSchema, ModelMaterialDefaultsAreOpaqueDepthTestedAndExplicitStateWins) {
+    std::map<std::string, std::string> files;
+    AddLeafModelSceneFiles(files);
+    files["/mat/head.json"] = R"({"passes":[{"shader":"genericimage","textures":["a.tex"]}]})";
+    files["/mat/eyes.json"] = R"({"passes":[{"shader":"genericimage","textures":["a.tex"],
+      "blending":"translucent","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    auto scene = parser.Parse("model-depth", PerspectiveSceneJson(R"([
+      {"id":1,"name":"model","model":"planet.mdl"}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    auto node = FindRootChildByName(*scene, "model");
+    ASSERT_NE(node, nullptr);
+    ASSERT_EQ(node->Mesh()->MaterialSlots().size(), 2u);
+    const auto& opaque = *node->Mesh()->MaterialSlotPtr(0);
+    EXPECT_TRUE(opaque.depth_test);
+    EXPECT_TRUE(opaque.depth_write);
+    EXPECT_EQ(opaque.cull_mode, CullMode::Back);
+    EXPECT_EQ(opaque.blenmode, BlendMode::Normal);
+    const auto& explicit_state = *node->Mesh()->MaterialSlotPtr(1);
+    EXPECT_FALSE(explicit_state.depth_test);
+    EXPECT_FALSE(explicit_state.depth_write);
+    EXPECT_EQ(explicit_state.cull_mode, CullMode::None);
+    EXPECT_EQ(explicit_state.blenmode, BlendMode::Translucent);
+}
+
+TEST(SceneSchema, ModelBonesReachEveryMaterialIncludingTheBindPose) {
+    std::map<std::string, std::string> files;
+    AddPuppetImageSceneFiles(files);
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "skinned-model", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"model","model":"puppet.mdl",
+       "animationlayers":[{"animation":99,"id":7,"name":"motion","blend":1,"rate":2}]}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    auto node = FindRootChildByName(*scene, "model");
+    ASSERT_NE(node, nullptr);
+    auto* layer = scene->runtime->FindPuppetLayer("model");
+    ASSERT_NE(layer, nullptr);
+    ASSERT_EQ(layer->findLayer("motion"), 0);
+    EXPECT_DOUBLE_EQ(layer->rate(0), 2.0);
+    // No matching animation clip: even a bind pose must upload identity bones,
+    // not leave a skinning shader's uniform array at zero and collapse the mesh.
+    sprite_map_t sprites;
+    for (uint32_t slot = 0; slot < node->Mesh()->MaterialSlots().size(); ++slot) {
+        scene->shaderValueUpdater->InitUniforms(node.get(), slot,
+            [](std::string_view name) { return name == "g_Bones"; });
+        int writes = 0;
+        scene->shaderValueUpdater->UpdateUniforms(node.get(), slot, sprites,
+            [&](std::string_view name, const ShaderValue& value) {
+                if (name != "g_Bones") return;
+                ASSERT_EQ(value.size(), 16u);
+                for (int i = 0; i < 16; ++i) EXPECT_FLOAT_EQ(value[i], i % 5 == 0 ? 1 : 0);
+                ++writes;
+            });
+        EXPECT_EQ(writes, 1);
+    }
+}
+
+TEST(SceneSchema, PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverrides) {
+    fs::VFS vfs;
+    MountSceneFiles(vfs);
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "camera-selection", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"first","camera":"default","origin":[0,0,12],"fov":45},
+      {"id":2,"name":"second","camera":"default","origin":[6,0,8],"fov":75,
+       "visible":{"user":"alternate","value":false}}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    const auto check = [&](Eigen::Vector3d eye, double fov) {
+        EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(eye, 1e-5));
+        EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), fov);
+    };
+    check({0,0,12}, 45);
+    scene->runtime->Tick(0.1);
+    check({0,0,12}, 45);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("second", true));
+    scene->runtime->Tick(0.1);
+    check({6,0,8}, 75);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("second", false));
+    scene->runtime->Tick(0.1);
+    check({0,0,12}, 45);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("first", false));
+    scene->runtime->Tick(0.1);
+    check({0,10,20}, 60); // editor pose when no shot is visible
+    EXPECT_EQ(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+}
+
+nlohmann::json CameraPathFixture(double x) {
+    const auto curve = [](double a, double b) {
+        return nlohmann::json::array({{{"frame",0},{"value",a}},{{"frame",30},{"value",b}}});
+    };
+    return {{"visible",true}, {"options",{{"fps",30},{"length",30},{"mode","single"}}},
+            {"eye",{{"c0",curve(x,x+2)},{"c1",curve(0,0)},{"c2",curve(10,10)}}},
+            {"center",{{"c0",curve(x,x+2)},{"c1",curve(0,0)},{"c2",curve(0,0)}}},
+            {"up",{{"c0",curve(0,0)},{"c1",curve(1,1)},{"c2",curve(0,0)}}},
+            {"fov",curve(40,60)}};
+}
+
+TEST(SceneSchema, PerspectiveCameraPathsSampleAndQueueAuthoredCurves) {
+    auto a = CameraPathFixture(0);
+    auto b = CameraPathFixture(20);
+    auto hidden = CameraPathFixture(100);
+    hidden["visible"] = false;
+    auto invalid = CameraPathFixture(200);
+    invalid["options"]["fps"] = 0;
+    std::map<std::string, std::string> files;
+    files["/paths.json"] = nlohmann::json({{"paths",{a,hidden,invalid,b}}}).dump();
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "camera-path", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"moving","camera":"default","path":"paths.json"},
+      {"id":2,"name":"hidden preset","camera":"default","origin":[99,99,99],
+       "visible":{"user":"alternate","value":false}}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,0,10), 1e-5));
+    scene->runtime->Tick(0.5);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(1,0,10), 1e-5));
+    EXPECT_TRUE(scene->activeCamera->GetDirection().isApprox(-Eigen::Vector3d::UnitZ(), 1e-5));
+    EXPECT_NEAR(scene->activeCamera->Fov(), 50, 1e-5);
+    EXPECT_NE(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+    scene->runtime->Tick(0.75); // overshoot is carried, not discarded at a cut
+    EXPECT_NEAR(scene->activeCamera->GetPosition().x(), 20.5, 1e-5);
+    scene->runtime->Tick(1.0);
+    EXPECT_NEAR(scene->activeCamera->GetPosition().x(), 0.5, 1e-5);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("moving", false));
+    scene->runtime->Tick(0.5);
+    EXPECT_EQ(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,10,20), 1e-5));
+}
+
+TEST(SceneSchema, RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup) {
+    const auto paths = ParseCameraPaths({{"paths", {CameraPathFixture(0), CameraPathFixture(20)}}});
+    CameraPathPlayback playback(paths, "random");
+    SceneNode node;
+    SceneCamera camera(1.0f, 0.1f, 1000.0f, 50.0f);
+    playback.Apply(node, camera);
+    const float first = node.Translate().x();
+    EXPECT_TRUE(first == 0 || first == 20);
+    playback.Advance(1.0);
+    playback.Apply(node, camera);
+    EXPECT_FLOAT_EQ(node.Translate().x(), first == 0 ? 20 : 0);
+    playback.Advance(1e9);
+    playback.Apply(node, camera);
+    EXPECT_TRUE(node.Translate().allFinite());
+    EXPECT_TRUE(node.Translate().x() >= 0 && node.Translate().x() <= 22);
 }
 
 TEST(SceneSchema, DefaultCameraObjectBecomesActivePerspective) {

@@ -9,6 +9,14 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-02 — Workshop presets download and import as self-contained wallpapers
+
+- Cause: Workshop presets (e.g. Purple Ink 1809081988, Ink 3356611918) have no project.json type, only dependency + preset values; validation rejected them.
+- Fix: downloader fetches the base in a second SteamCMD pass of the same job; importer assembles base + preset files + merged manifest under the preset id; manual import uses a sibling or installed base.
+- python3 scripts/test.py --only ImportTests --only DownloaderLifecycleTests: passed 53, failed 0.
+- python3 scripts/test.py: passed 1064, failed 0, skipped 12 (opt-in layers).
+- Not verified: a live SteamCMD download of the two real presets (needs Steam sign-in); no Release build.
+
 ## 2026-10-02 — Web wallpapers: Chromium-like file:// fetch responses (Unity/WASM)
 
 - Cause: WebKit file:// fetch → status 0/ok false/no Content-Type; Unity 2022.3 wasm streaming + fallback both rejected, canvas stayed dark (Workshop 3756621387).

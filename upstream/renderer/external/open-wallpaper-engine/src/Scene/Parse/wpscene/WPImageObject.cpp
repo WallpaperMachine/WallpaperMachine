@@ -8,6 +8,29 @@
 
 using namespace wallpaper::wpscene;
 
+void wallpaper::wpscene::ParsePuppetAnimationLayers(
+    const nlohmann::json& json, std::vector<WPPuppetLayer::AnimationLayer>& layers,
+    std::vector<nlohmann::json>& settings) {
+    const auto entries = json.find("animationlayers");
+    if (entries == json.end() || !entries->is_array()) return;
+    for (const auto& entry : *entries) {
+        if (!entry.is_object()) continue;
+        WPPuppetLayer::AnimationLayer layer;
+        GET_JSON_NAME_VALUE(entry, "animation", layer.id);
+        GET_JSON_NAME_VALUE(entry, "blend", layer.blend);
+        GET_JSON_NAME_VALUE(entry, "rate", layer.rate);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "visible", layer.visible);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "id", layer.layer_id);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "name", layer.name);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "additive", layer.additive);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "blendin", layer.blendin);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "blendout", layer.blendout);
+        GET_JSON_NAME_VALUE_NOWARN(entry, "blendtime", layer.blendtime);
+        layers.push_back(layer);
+        settings.push_back(entry);
+    }
+}
+
 namespace
 {
 
@@ -252,23 +275,7 @@ bool WPImageObject::FromJson(const nlohmann::json& json, fs::VFS& vfs) {
             effects.push_back(std::move(wpeff));
         }
     }
-    if(json.contains("animationlayers")) {
-        for(const auto& jLayer:json.at("animationlayers")) {
-             WPPuppetLayer::AnimationLayer layer;
-             GET_JSON_NAME_VALUE(jLayer, "animation", layer.id);
-             GET_JSON_NAME_VALUE(jLayer, "blend", layer.blend);
-             GET_JSON_NAME_VALUE(jLayer, "rate", layer.rate);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "visible", layer.visible);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "id", layer.layer_id);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "name", layer.name);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "additive", layer.additive);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendin", layer.blendin);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendout", layer.blendout);
-             GET_JSON_NAME_VALUE_NOWARN(jLayer, "blendtime", layer.blendtime);
-             puppet_layers.push_back(layer);
-             puppet_layer_settings.push_back(jLayer);
-        }
-    }
+    ParsePuppetAnimationLayers(json, puppet_layers, puppet_layer_settings);
     if(json.contains("config")) {
         const auto& jConf = json.at("config");
         GET_JSON_NAME_VALUE_NOWARN(jConf, "passthrough", config.passthrough);

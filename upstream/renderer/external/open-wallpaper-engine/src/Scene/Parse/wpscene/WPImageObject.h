@@ -19,6 +19,10 @@ class VFS;
 namespace wpscene
 {
 
+void ParsePuppetAnimationLayers(const nlohmann::json& json,
+                                std::vector<WPPuppetLayer::AnimationLayer>& layers,
+                                std::vector<nlohmann::json>& settings);
+
 class WPEffectCommand {
 public:
     bool        FromJson(const nlohmann::json&);

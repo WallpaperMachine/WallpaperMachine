@@ -546,6 +546,7 @@ void SceneRuntimeContext::Tick(double frame_time) {
     // tick gave it.
     for (auto& shot : m_camera_shots) shot.origin_pending = false;
     ApplyCameraShots();
+    ApplyPerspectiveCameraShots(frame_time);
     for (auto& binding : m_material_alpha) {
         auto material = binding.material.lock();
         if (material == nullptr) continue;
@@ -1402,6 +1403,44 @@ void SceneRuntimeContext::ApplyCameraShots() {
     m_scene->FrameCanvas(zoom, offset);
 }
 
+void SceneRuntimeContext::RegisterPerspectiveCameraShot(
+    std::shared_ptr<SceneNode> node, SceneCamera* camera, double fov, CameraPathPlayback path) {
+    if (!node || !camera || !m_scene) return;
+    if (m_perspective_camera_groups.empty()) m_fallback_active_camera = m_scene->activeCamera;
+    auto group = std::find_if(m_perspective_camera_groups.begin(), m_perspective_camera_groups.end(),
+                             [camera](const auto& value) { return value.camera == camera; });
+    if (group == m_perspective_camera_groups.end()) {
+        m_perspective_camera_groups.push_back(
+            { camera, camera->GetAttachedNode(), camera->Fov(), {} });
+        group = std::prev(m_perspective_camera_groups.end());
+    }
+    group->shots.push_back({ std::move(node), fov, std::move(path), ++m_perspective_shot_count });
+    ApplyPerspectiveCameraShots(0.0);
+}
+
+void SceneRuntimeContext::ApplyPerspectiveCameraShots(double seconds) {
+    if (!m_scene || m_perspective_camera_groups.empty()) return;
+    auto* active = m_fallback_active_camera;
+    std::size_t last_order = 0;
+    for (auto& group : m_perspective_camera_groups) {
+        PerspectiveCameraShot* selected = nullptr;
+        for (auto& shot : group.shots) {
+            if (shot.node->EffectiveVisible()) selected = &shot;
+        }
+        const auto& node = selected ? selected->node : group.fallback_node;
+        if (node && group.camera->GetAttachedNode() != node) group.camera->AttatchNode(node);
+        group.camera->SetFov(selected ? selected->fov : group.fallback_fov);
+        if (!selected) continue;
+        selected->path.Advance(seconds);
+        selected->path.Apply(*selected->node, *group.camera);
+        if (selected->order > last_order) {
+            last_order = selected->order;
+            active = group.camera;
+        }
+    }
+    m_scene->activeCamera = active;
+}
+
 void SceneRuntimeContext::RegisterSceneClearColor(std::unique_ptr<DynamicValue> value) {
     if (m_scene == nullptr || value == nullptr) return;
 
@@ -1565,6 +1604,14 @@ uint32_t SceneRuntimeContext::DescribeTimeAdvancingWork() const {
                         return advances(binding.animation);
                     })) {
         reasons |= SceneDemandReason::Animation;
+    }
+
+    for (const auto& group : m_perspective_camera_groups) {
+        const PerspectiveCameraShot* selected = nullptr;
+        for (const auto& shot : group.shots) {
+            if (shot.node->EffectiveVisible()) selected = &shot;
+        }
+        if (selected && !selected->path.empty()) reasons |= SceneDemandReason::Animation;
     }
 
     // Scripted values re-evaluate every tick and may read the clock, the
