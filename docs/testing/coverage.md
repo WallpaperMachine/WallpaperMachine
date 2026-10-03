@@ -241,7 +241,11 @@ Swift tests cover, without starting the app:
   synthetic H.264 Matroska clip through both Apply and Apply changes, with
   Compatibility and Native video preferred. Missing, empty and non-file video
   entries are rejected before application; injected decoder failures retain the
-  error and leave the library usable for retry. These tests use a fake renderer
+  error and leave the library usable for retry. Held-operation regressions cover
+  Apply and Apply changes overlapping display refresh, global/per-display
+  suspend/resume, unload/reload and audio suppression in both arrival orders;
+  automatic updates wait, failed updates release the queue, and explicit Pause
+  remains responsive and preserves the interrupted draft. These tests use a fake renderer
   bridge: they cover application preflight and recovery, not decoded frames or
   desktop playback of Workshop content.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power

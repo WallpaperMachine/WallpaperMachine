@@ -367,6 +367,10 @@ screen. Activation is explicit.
   [Workshop downloads](workshop-downloads.md#one-decision-per-download).
 - Apply is unavailable when the target display is disabled, is mirroring another
   display, or when the wallpaper kind cannot be rendered (Application or Unknown).
+- Background display refreshes and automatic presentation/audio-policy updates
+  wait for an in-flight Apply (and Apply waits for an update already running).
+  Switching wallpapers therefore does not invalidate itself when its windows
+  trigger a policy update. Explicit Play/Pause can still interrupt an Apply.
 - A successful apply leaves the window open; it stays until the user closes it
   (close button or Command-W). **Settings -> General -> Hide window after
   applying a wallpaper** (off by default) hides the app after each successful

@@ -25,6 +25,16 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-03 — Wallpaper apply and background presentation ordering
+
+- Reproduced the reported interruption with held fake-bridge operations: disabling the serialization fix makes both arrival-order regressions fail with the original interruption error; restored the fix afterwards.
+- `python3 scripts/test.py --only WallpaperActivationRecoveryTests` — exit 0; 18 passed, covering Apply/Apply changes versus display refresh, global/per-display suspension, unload/reload and audio suppression, both arrival orders, failure release, cancellation and explicit Pause.
+- `python3 scripts/test.py` — exit 0; Python suites passed; native 1070 passed, 12 skipped, 0 failed. Skips: nine real-player media tests, one live SteamCMD install and two live Workshop searches.
+- `python3 scripts/build.py --swift-only --configuration Release` — exit 0; built the Release app with existing renderer/bindings, per local build opt-in.
+- No desktop control, wallpaper changes, app launch/restart or UI run; visual behavior and private Workshop assets were not verified.
+- Existing concurrent renderer/provenance edits were left untouched and were not rebuilt or verified by this Swift-only task.
+- `git diff --check` — exit 0; existing documentation paths and commands retained.
+
 ## 2026-10-02 — Single-pass puppet lighting and complete four-light packing
 
 - python3 scripts/test.py: 1064 passed, 0 failed, 12 skipped; 229 Python tests passed. First native attempt was blocked by another build holding the shared Xcode database; retry after it finished passed.
@@ -113,13 +123,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/test.py --only ImportTests --only DownloaderLifecycleTests: passed 53, failed 0.
 - python3 scripts/test.py: passed 1064, failed 0, skipped 12 (opt-in layers).
 - Not verified: a live SteamCMD download of the two real presets (needs Steam sign-in); no Release build.
-
-## 2026-10-02 — Web wallpapers: Chromium-like file:// fetch responses (Unity/WASM)
-
-- Cause: WebKit file:// fetch → status 0/ok false/no Content-Type; Unity 2022.3 wasm streaming + fallback both rejected, canvas stayed dark (Workshop 3756621387).
-- Fix: host script serves found file:// GET/HEAD as 200 + extension MIME; served .wasm compiled from bytes (WebKit streaming compiler ~190 ms slower boot).
-- Offscreen headless WKWebView repro (no desktop window): before abort('both async and sync fetching of the wasm failed'); after Unity boots, Live2D renders, music loads.
-- Perf: 30 MB fetch+arrayBuffer native vs normalized ~68 ms both; Unity boot to first engine log 180 ms (vs 364 ms with native streaming).
-- python3 scripts/test.py --only WebWallpaperPageTests/ScreenSaverWebSurfaceTests/WebWallpaperAuthorAPITests: 25 passed.
-- python3 scripts/test.py: 1058 passed, 0 failed, 12 skipped.
-- Not run: Release build, desktop/visual check of the live wallpaper.
