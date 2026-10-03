@@ -432,6 +432,11 @@ gtest_discover_tests(
 pkg_check_modules(TEST_AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
 pkg_check_modules(TEST_AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
 pkg_check_modules(TEST_AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+if(APPLE)
+    target_sources(playback_gpu_test PRIVATE apple_video_frame_test.mm)
+    target_link_libraries(playback_gpu_test PRIVATE PkgConfig::TEST_AVUTIL)
+    wescene_prefer_ffmpeg_headers(playback_gpu_test "TEST_")
+endif()
 add_executable(video_source_input_test video_source_input_test.cpp)
 target_link_libraries(video_source_input_test PRIVATE ${PROJECT_NAME}
     PkgConfig::TEST_AVFORMAT PkgConfig::TEST_AVCODEC PkgConfig::TEST_AVUTIL GTest::gtest_main)

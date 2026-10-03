@@ -144,6 +144,7 @@ artifacts/renderer/bin/tests/offscreen_scene_probe
 | `WE_TEST_SCENE_OPTIMIZATION=0` | `metal_scene_draw_smoke` | Turns static-result reuse off around the local-project loop, which is how a scene that looks wrong under it is compared with the same scene drawn every frame. Process-global, so it is restored afterwards |
 | `WE_TEST_METAL_DUMP_TARGETS` | `metal_scene_draw_smoke` | Colon-separated render target names, or `*` for every target the scene declares. Each is reported with its size and mean luma and, with `WE_TEST_OUTPUT` set, written as a PPM. Target names carry a per-run suffix, so `*` is the only way to name one across two processes |
 | `WE_TEST_EXPECT_WARM=1` | `text_object_runtime_test` | Assert zero shader compilations on a second run |
+| `WE_TEST_VIDEO` | `playback_gpu_test --gtest_filter=AppleVideoFrame.LocalVideoImportsVisiblePixels` | Absolute local video path, opened read-only. Imports the first decoded frame into a private Metal texture and checks for visible pixels after releasing the decoder; select a clip with a non-black first frame. Unset skips this corpus diagnostic. No audio, window or desktop capture |
 | `WE_TEST_DUMP_POSES=1` | `wpdump` | Dump sampled bone transforms |
 
 Audio is submitted after GPU setup so shader compilation cannot expire its
@@ -973,6 +974,16 @@ four distinct corner colors through BGRA, converted NV12 and direct NV12
 sampling. They compare orientation, logical size and transparent uncovered
 corners for shear; converted and direct output may differ by at most two
 channel levels. No desktop surface is used.
+
+Software-decoded frames allocate the existing BGRA output buffer with IOSurface
+backing and Metal compatibility. A CPU-only Core Video buffer decodes correctly
+but cannot be imported as a GPU texture, leaving the video black. This changes
+the backing allocation, not hardware-decoder selection, color conversion or
+scheduling; import adds no second pixel copy, conversion destination or GPU wait.
+`DecodedFormats/SoftwareVideoFrame.*` in `playback_gpu_test` covers BGRA, NV12,
+YUV420P and YUVJ420P using generated strided color/alpha patterns, checks exact
+imported pixels after releasing the decoder buffers, and asserts direct-import
+work. `WE_TEST_VIDEO` optionally exercises an installed clip without editing it.
 
 Video frame imports are owned by a lease that retains the Core Video texture
 wrapper and the pixel buffer for as long as the frame can be sampled, not just
