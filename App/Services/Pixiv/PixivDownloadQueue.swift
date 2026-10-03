@@ -19,6 +19,7 @@ final class PixivDownload: Identifiable {
     fileprivate(set) var bytesExpected: Int64?
     @ObservationIgnored fileprivate var task: Task<Void, Never>?
     @ObservationIgnored fileprivate var pauseRequested = false
+    @ObservationIgnored fileprivate var cancelRequested = false
     @ObservationIgnored fileprivate var lastReport: ContinuousClock.Instant?
     /// Pages the store already fetched for this work, so the job need not ask pixiv again.
     @ObservationIgnored fileprivate var knownPages: [PixivPage]?
@@ -101,7 +102,7 @@ final class PixivDownloadQueue {
 
     @discardableResult
     private func persist() -> Bool {
-        let saved = downloads.filter { $0.status != .finished && $0.status != .cancelled }.map {
+        let saved = downloads.filter { !$0.cancelRequested && $0.status != .finished && $0.status != .cancelled }.map {
             SavedDownload(work: $0.work, page: $0.pageIndex, knownPages: $0.knownPages)
         }
         do {
@@ -131,13 +132,16 @@ final class PixivDownloadQueue {
     @discardableResult
     func enqueue(_ work: PixivWork, page: Int, knownPages: [PixivPage]? = nil) -> PixivDownload {
         let id = work.libraryID(page: page)
-        if let existing = download(for: id), existing.isPending { return existing }
+        let existing = download(for: id)
+        if let existing, existing.isPending { return existing }
         let job = PixivDownload(work: work, pageIndex: page, knownPages: knownPages)
         if let index = downloads.firstIndex(where: { $0.id == id }) {
             downloads[index] = job
         } else {
             downloads.append(job)
         }
+        // A crash during cancellation can leave bytes whose job was already forgotten.
+        if existing == nil { discardCheckpoint(for: job) }
         guard persist() else {
             job.status = .failed(persistenceError ?? String(localized: "Download could not finish"))
             return job
@@ -149,6 +153,8 @@ final class PixivDownloadQueue {
     func cancel(_ id: String) {
         guard let job = download(for: id), job.isPending || job.status == .paused else { return }
         job.pauseRequested = false
+        // Forget it durably now, but keep the active task's slot until cleanup finishes.
+        job.cancelRequested = true
         if let task = job.task {
             task.cancel()
         } else {
@@ -159,7 +165,7 @@ final class PixivDownloadQueue {
     }
 
     func pause(_ id: String) {
-        guard let job = download(for: id), job.isPending else { return }
+        guard let job = download(for: id), job.isPending, !job.cancelRequested else { return }
         job.pauseRequested = true
         if let task = job.task { task.cancel() }
         else { job.status = .paused }

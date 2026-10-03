@@ -9,6 +9,13 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-01 — Sync main download fixes with remote SteamCMD and lock-screen fixes
+
+- Merged origin/main without rewriting existing commits; regenerated the Xcode project with xcodegen generate and preserved both sides of verification history.
+- python3 scripts/test.py — passed; 1053 native tests passed, 0 failed, 12 skipped of 1065; all Python test suites passed.
+- Uncommitted frame-rate slider changes were stashed and excluded from this gate and merge.
+- No desktop run, live Steam sign-in/install, renderer corpus check, or Release build; this was a repository synchronization.
+
 ## 2026-10-01 — Steam and pixiv failure diagnosis
 
 - Fixed unknown SteamCMD failures being attributed to credentials; classify compact network/rate-limit result names and log only a safe category.

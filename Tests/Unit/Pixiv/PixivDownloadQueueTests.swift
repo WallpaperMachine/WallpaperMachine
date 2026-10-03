@@ -150,6 +150,66 @@ final class PixivDownloadQueueTests: XCTestCase {
         XCTAssertNil(queue.persistenceError)
     }
 
+    func testCancellationIsDurableWhileCleanupStillOwnsItsTransferSlot() async throws {
+        let gate = PixivGate(finishesOnCancellation: false)
+        defer { gate.open() }
+        let queue = queue(PixivGatedTransport(gate: gate))
+        let jobs = [25, 26, 27].map { queue.enqueue(work($0), page: 0) }
+        try await waitUntil { gate.waiting == 2 }
+        let cancelledCheckpoint = root.appendingPathComponent("Downloads/Pixiv/\(jobs[0].id)")
+        let pausedCheckpoint = root.appendingPathComponent("Downloads/Pixiv/\(jobs[1].id)")
+        for checkpoint in [cancelledCheckpoint, pausedCheckpoint] {
+            try FileManager.default.createDirectory(at: checkpoint, withIntermediateDirectories: true)
+            try Data("partial image".utf8).write(to: checkpoint.appendingPathComponent("image.partial"))
+        }
+
+        queue.cancel(jobs[0].id)
+        queue.pause(jobs[0].id)
+        queue.pause(jobs[1].id)
+        queue.clearFinished()
+
+        XCTAssertTrue(queue.enqueue(work(25), page: 0) === jobs[0], "cleanup still owns this page")
+        XCTAssertFalse(queue.retry(jobs[0].id))
+        XCTAssertEqual(jobs.map(\.status), [.downloading, .downloading, .waiting])
+        XCTAssertEqual(gate.waiting, 2, "a cancelled transfer retains its slot until it stops")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cancelledCheckpoint.path))
+        let restored = self.queue(PixivFixtureTransport { _ in PixivFixtures.imageBytes("jpg") })
+        XCTAssertEqual(restored.downloads.map(\.id), [jobs[1].id, jobs[2].id])
+        XCTAssertEqual(restored.downloads.map(\.status), [.paused, .paused])
+
+        var shutdownFinished = false
+        let shutdown = Task { await queue.shutdown(); shutdownFinished = true }
+        try await waitUntil { jobs[2].status == .paused }
+        XCTAssertFalse(shutdownFinished)
+        let restoredDuringShutdown = self.queue(PixivFixtureTransport { _ in PixivFixtures.imageBytes("jpg") })
+        XCTAssertEqual(restoredDuringShutdown.downloads.map(\.id), [jobs[1].id, jobs[2].id])
+
+        gate.open()
+        await shutdown.value
+        XCTAssertEqual(jobs.map(\.status), [.cancelled, .paused, .paused])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cancelledCheckpoint.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pausedCheckpoint.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: library.path))
+    }
+
+    func testStartingAForgottenDownloadDiscardsItsOrphanedCheckpoint() async throws {
+        let checkpoint = root.appendingPathComponent("Downloads/Pixiv/pixiv-28-p0")
+        try FileManager.default.createDirectory(at: checkpoint, withIntermediateDirectories: true)
+        try Data("partial image".utf8).write(to: checkpoint.appendingPathComponent("image.partial"))
+        try Data("[]".utf8).write(to: root.appendingPathComponent("Downloads/Pixiv/queue.json"))
+        let gate = PixivGate()
+        defer { gate.open() }
+        let queue = queue(PixivGatedTransport(gate: gate))
+        XCTAssertTrue(queue.downloads.isEmpty)
+
+        let job = queue.enqueue(work(28), page: 0)
+        try await waitUntil { gate.waiting == 1 }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: checkpoint.path), "a new request cannot resume a cancelled job's bytes")
+
+        gate.open()
+        try await waitUntil { job.status == .finished }
+    }
+
     func testShutdownPausesEveryDownloadAndRestoresQueueOrder() async throws {
         let gate = PixivGate()
         let queue = queue(PixivGatedTransport(gate: gate))
@@ -184,12 +244,17 @@ final class LockedFlag: @unchecked Sendable {
     }
 }
 
-/// Holds every image request until opened; cancelling a held request ends it at once.
+/// Holds every image request until opened, optionally retaining cancellation cleanup too.
 final class PixivGate: @unchecked Sendable {
     private let lock = NSLock()
+    private let finishesOnCancellation: Bool
     private var isOpen = false
     private var held: [UUID: CheckedContinuation<Void, Error>] = [:]
     var waiting: Int { lock.withLock { held.count } }
+
+    init(finishesOnCancellation: Bool = true) {
+        self.finishesOnCancellation = finishesOnCancellation
+    }
 
     func pass() async throws {
         let id = UUID()
@@ -203,6 +268,7 @@ final class PixivGate: @unchecked Sendable {
                 if resume { continuation.resume() }
             }
         } onCancel: {
+            guard finishesOnCancellation else { return }
             lock.withLock { held.removeValue(forKey: id) }?.resume(throwing: CancellationError())
         }
         try Task.checkCancellation()

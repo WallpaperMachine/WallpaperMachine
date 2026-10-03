@@ -82,8 +82,11 @@ explicit **Resume download**. No pixiv session cookie is stored with the queue.
 For a partial original with an ETag or Last-Modified validator, resuming sends
 HTTP Range and If-Range. A matching partial response continues at the saved byte
 offset; a full response replaces the old partial bytes. A server that supplies
-no usable validator starts that original again. Cancel discards its checkpoint;
-clearing finished jobs keeps paused work. The byte limit applies to the whole
+no usable validator starts that original again. Cancel immediately removes the
+job from the saved queue, then discards its checkpoint when the transfer stops;
+it cannot return as paused if the app exits during that cleanup. Starting that
+page again discards any partial bytes left by the interrupted cleanup. Clearing
+finished jobs keeps paused work. The byte limit applies to the whole
 original, including the bytes retained before pausing.
 
 A page is saved as a `web` project, since the renderer plays scene, video and web
