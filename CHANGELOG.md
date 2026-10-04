@@ -42,6 +42,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - Imported wallpaper files are no longer lost after a failed write, overlapping imports or a cancelled selection
 - Imports keep running when you cancel quitting the app
 - Cancelled pixiv downloads no longer come back as paused after a crash
+- Opening Your subscriptions in Discover without a Steam sign-in now offers Sign in to Steam instead of an old list with a Retry button that could never succeed
 
 ### 简体中文
 
@@ -75,6 +76,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - 写入失败、导入重叠或取消选择后，已导入的壁纸文件不再丢失
 - 取消退出应用时，导入会继续进行
 - 已取消的 pixiv 下载在崩溃后不再以暂停状态重新出现
+- 未登录 Steam 时在“发现”中打开“我的订阅”，现在会提供“登录 Steam”，而不是显示旧列表和一个永远无法成功的“重试”按钮
 
 **Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.3...v1.2.4
 
