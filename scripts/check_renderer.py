@@ -39,15 +39,23 @@ OFFSCREEN_PROBE = "offscreen_scene_probe"
 RELOAD_PROBE = "scene_reload_cycle_probe"
 
 
+def foreground_test_process():
+    """Clear inherited Darwin background policy in the forked test child only."""
+    os.setpriority(os.PRIO_DARWIN_PROCESS, 0, 0)
+    os.setpriority(os.PRIO_DARWIN_THREAD, 0, 0)
+
+
 def run(command, log, env, timeout=180, cwd=ROOT):
     command = list(map(str, command))
-    if Path(command[0]).name in (*REGRESSION_BINARIES, OFFSCREEN_PROBE, RELOAD_PROBE):
+    is_test = Path(command[0]).name in (*REGRESSION_BINARIES, OFFSCREEN_PROBE, RELOAD_PROBE)
+    if is_test:
         # Match application scheduling for real-time assertions, even when the
         # invoking CI agent inherited background/latency throttling.
         command = ["/usr/sbin/taskpolicy", "-a", "-l", "0", "-t", "0", *command]
     with log.open("w") as stream:
         return subprocess.run(command, cwd=cwd, env=env,
                               stdout=stream, stderr=subprocess.STDOUT,
+                              preexec_fn=foreground_test_process if is_test else None,
                               timeout=timeout, check=False).returncode
 
 

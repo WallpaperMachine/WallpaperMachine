@@ -6,6 +6,7 @@ import importlib.util
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -63,6 +64,33 @@ def quad_mask(corners):
         return PAGE if all(0.0 <= value <= 1.0 for value in square) else MARGIN
 
     return shade
+
+
+@unittest.skipUnless(sys.platform == "darwin", "Darwin process policy")
+class TestProcessPolicyTests(unittest.TestCase):
+    def test_background_driver_runs_foreground_tests_and_preserves_exit_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / "timer_tests"
+            probe.write_text(f"#!{sys.executable}\n"
+                             "import json, os\n"
+                             "print(json.dumps([os.getpriority(kind, 0) for kind in "
+                             "(os.PRIO_DARWIN_PROCESS, os.PRIO_DARWIN_THREAD)]))\n"
+                             "raise SystemExit(23)\n")
+            probe.chmod(0o755)
+            control = subprocess.run(["/usr/sbin/taskpolicy", "-b", str(probe)],
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(control.returncode, 23)
+            self.assertNotEqual(json.loads(control.stdout), [0, 0])
+            log = root / "probe.log"
+            driver = ("import os, sys; from pathlib import Path; "
+                      f"sys.path.insert(0, {str(SCRIPTS)!r}); import check_renderer; "
+                      f"raise SystemExit(check_renderer.run([{str(probe)!r}], "
+                      f"Path({str(log)!r}), os.environ.copy()))")
+            result = subprocess.run(["/usr/sbin/taskpolicy", "-b", sys.executable, "-c", driver],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 23, result.stderr)
+            self.assertEqual(json.loads(log.read_text()), [0, 0])
 
 
 class PerspectiveCornerPixelTests(unittest.TestCase):

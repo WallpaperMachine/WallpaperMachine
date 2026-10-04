@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-04 — v1.2.4 background runner regression
+
+- Reproduced the CI timer failure with taskpolicy -b; application scheduling alone did not clear inherited Darwin background policy.
+- Child-only process and main-thread priority reset preserves real-time assertions; 20 renderer harness Python tests passed, including background inheritance and exit-status propagation.
+- /usr/sbin/taskpolicy -b python3 scripts/check_renderer.py --skip-build: passed all required binaries, all 12 generated scene pixel comparisons and expected pixels with zero diagnostics, and eight reload projects twice.
+- python3 scripts/test.py: Python checks passed; native suite 1156 passed, 0 failed, 12 optional media/network tests skipped.
+- User commit 9a63ed3 and its bilingual release note remain included. Optional local wallpaper/video corpus tests were skipped; no desktop launch, install, audio hardware, or visual smoke test was performed.
+
 ## 2026-10-04 — Normalize complete puppet poses across animation layers
 
 - Original synthetic regressions: both NonAdditive tests fail against the original WPPuppet.cpp and pass with the correction.
@@ -130,14 +138,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - `python3 scripts/test.py` — all Python suites passed; 1,072 native passed, zero failed, 12 skipped. Existing cancellation/preview-error tests and new offscreen Tab/Shift-Tab wrapping passed.
 - Stable-sorted verification entries by date through the log helper functions, preserving every historical body and relative archive link; new evidence appended only via `scripts/log_verification.py`.
 - Asset gaps: three shader corpus cases, two local text scenes, and the environment-selected Metal project case skipped. No desktop visual/live WebKit keyboard check, authored-reference parity, app launch or Release rebuild.
-
-## 2026-10-03 — PR 25 merge conflict resolution
-
-- Merged `origin/main` into `fix/scene-playback-panel-shaders` without rebasing; retained both sides of renderer provenance and all 36 distinct historical verification entries.
-- `python3 scripts/test.py` — all Python suites passed; native results: 1,071 passed, zero failed, 12 skipped.
-- `python3 scripts/check_renderer.py` — exit 0; all 11 synthetic pooled/isolated comparisons matched with zero diagnostics; eight projects completed two reload cycles.
-- Built `scene_schema_tests` and `script_runtime_compat_test` with the project build environment; 26 targeted duplicate-name/parallax/camera/model tests and two color/composition tests passed.
-- Targeted coverage includes both incoming regressions: duplicate names retain independent bindings, and authored color properties remain vectors across updates.
-- Renderer asset gaps remain: two local text-scene tests and the environment-selected local-project Metal test skipped; no authored-reference parity claim.
-- Provenance JSON, historical-entry preservation, conflict-marker checks, and `git diff --check` validated before commit.
-- No desktop automation, visual validation, app launch, or Release app rebuild performed.

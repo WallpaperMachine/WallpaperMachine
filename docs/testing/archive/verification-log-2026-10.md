@@ -9,6 +9,17 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-03 — PR 25 merge conflict resolution
+
+- Merged `origin/main` into `fix/scene-playback-panel-shaders` without rebasing; retained both sides of renderer provenance and all 36 distinct historical verification entries.
+- `python3 scripts/test.py` — all Python suites passed; native results: 1,071 passed, zero failed, 12 skipped.
+- `python3 scripts/check_renderer.py` — exit 0; all 11 synthetic pooled/isolated comparisons matched with zero diagnostics; eight projects completed two reload cycles.
+- Built `scene_schema_tests` and `script_runtime_compat_test` with the project build environment; 26 targeted duplicate-name/parallax/camera/model tests and two color/composition tests passed.
+- Targeted coverage includes both incoming regressions: duplicate names retain independent bindings, and authored color properties remain vectors across updates.
+- Renderer asset gaps remain: two local text-scene tests and the environment-selected local-project Metal test skipped; no authored-reference parity claim.
+- Provenance JSON, historical-entry preservation, conflict-marker checks, and `git diff --check` validated before commit.
+- No desktop automation, visual validation, app launch, or Release app rebuild performed.
+
 ## 2026-10-03 — Shader macro fixes and pending scene/playback/panel PR
 
 - `python3 scripts/test.py` — passed: 1,071 native tests passed, 12 skipped; all Python script suites passed.

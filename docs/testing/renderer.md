@@ -88,9 +88,13 @@ they run on a clean checkout without an installed wallpaper library. `--assets`
 applies to additional `--project` inputs.
 
 Test binaries run through macOS `taskpolicy` with application scheduling and
-latency/throughput tiers of zero. This keeps inherited background scheduling
-from governing real-time assertions; it does not relax their thresholds or
-remove any tests. Contention can still affect wall-clock performance checks.
+latency/throughput tiers of zero. Before exec, the single-threaded Python driver
+clears inherited Darwin background policy on both the child process and its main
+thread using `os.setpriority`; `taskpolicy` alone leaves that policy in place.
+Only test children change priority, leaving the invoking agent and build tools
+untouched. This keeps inherited background scheduling from governing real-time
+assertions; it does not relax their thresholds or remove any tests. Contention
+can still affect wall-clock performance checks.
 
 ## Probes
 
