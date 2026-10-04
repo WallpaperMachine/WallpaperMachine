@@ -1161,6 +1161,11 @@ reasons. A nonzero command or missing tool fails the check. Full logs and the
 JSON verdict are under `artifacts/rust/`; CI uploads them on failure. This does
 not certify skipped corpus inputs or authorize a desktop run.
 
+Generated bindgen output can differ in formatting between machines; tests must
+exercise the FFI behavior instead of parsing a formatted declaration. Mouse
+monitor-gap tests wait for the fake engine's sample barrier before comparing
+call counts, so a busy CI worker is not mistaken for a dropped cursor update.
+
 Run from `upstream/renderer` with the Homebrew environment from
 `scripts/build.py`. The first `cargo test` after that environment changes fails
 in its CMake configure step and succeeds on an unchanged retry, so a single

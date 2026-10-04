@@ -269,8 +269,11 @@ fn mouse_polling_in_a_monitor_gap_checks_the_cursor_without_engine_work() {
         await_mouse_sample(&engine);
         // This app became active: motion over its own windows reaches no
         // monitor, so the poller has to look at the cursor itself.
+        let gap_sample = engine.block_next_mouse_poll();
         engine.set_pointer_monitor_gap(true);
-        std::thread::sleep(std::time::Duration::from_millis(40));
+        let reached = gap_sample.wait_until_blocked(std::time::Duration::from_secs(1));
+        gap_sample.release();
+        assert!(reached, "entering the monitor gap must sample the cursor");
 
         let calls = engine.mouse_poll_calls().len();
         let probes = engine.pointer_probe_count();
@@ -282,8 +285,11 @@ fn mouse_polling_in_a_monitor_gap_checks_the_cursor_without_engine_work() {
         );
         assert!(engine.pointer_probe_count() > probes, "the gap is checked");
 
+        let moved_sample = engine.block_next_mouse_poll();
         engine.set_pointer_probe(wallpaper_core::PointerProbe { x: 10.0, y: 20.0, buttons: 0 });
-        std::thread::sleep(std::time::Duration::from_millis(60));
+        let reached = moved_sample.wait_until_blocked(std::time::Duration::from_secs(1));
+        moved_sample.release();
+        assert!(reached, "a changed cursor must reach the engine");
         assert_eq!(engine.mouse_poll_calls().len(), calls + 1, "one change is one sample");
 
         // Closing the gap stops the checks.

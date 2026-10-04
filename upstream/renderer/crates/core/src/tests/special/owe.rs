@@ -30,26 +30,6 @@ pub fn case_ffi_declarations_use_c_unwind_abi() {
 }
 
 #[test]
-pub fn case_apply_config_carries_initial_shader_and_property_override_state() {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let backend_source = std::fs::read_to_string(manifest_dir.join("src/owe/backend.rs"))
-        .expect("OWE backend source should be readable");
-    let bindings = std::fs::read_to_string(concat!(env!("OUT_DIR"), "/owe_backend_bindings.rs"))
-        .expect("generated OWE bindings should be readable");
-    let apply_config_signature = bindings
-        .split("pub fn owe_scene_wallpaper_apply_config(")
-        .nth(1)
-        .and_then(|rest| rest.split(") ->").next())
-        .expect("apply_config binding should exist");
-
-    assert!(backend_source.contains("desc.force_shader_refresh"));
-    assert!(backend_source.contains("property_override_json"));
-    assert!(apply_config_signature.contains("force_shader_refresh"));
-    assert!(apply_config_signature.contains("project_property_override_json"));
-}
-
-
-#[test]
 pub fn case_no_duplicate_owe_runtime_descriptors() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
