@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-04 — Normalize complete puppet poses across animation layers
+
+- Original synthetic regressions: both NonAdditive tests fail against the original WPPuppet.cpp and pass with the correction.
+- CMake mdl_schema_tests and scene_schema_tests: exit 0; 57 model and 109 scene tests passed.
+- python3 scripts/test.py: exit 0; Python checks passed, native gate 1156 passed, 0 failed, 12 opt-in media/network skips.
+- python3 scripts/check_renderer.py --project <local-project>: exit 0; all 30 registered binaries succeeded; 12 generated scenes and one local scene had pooled/isolated pixel equality and zero diagnostics; local reload x2 passed.
+- Renderer gate skipped two optional private text scenes, a private video import and its unconfigured local Metal case; the affected local scene was separately rendered successfully by metal_scene_draw_smoke.
+- Private offline renders of Into The Abyss inspected at scene time 15 seconds on Compatibility and native Metal: hair and arm reassembled. Compatibility before/after both used 1024 passes across 16 samples and 276121600 allocated GPU bytes.
+- python3 scripts/build.py --configuration Release: exit 0; rebuilt renderer and Release app. No installation or launch.
+- git diff --check passed. Desktop presentation, live smoothness and energy use unverified; no desktop control, screen capture or audio hardware used.
+
 ## 2026-10-04 — PR 25 declaration-scoped arrays and camera FOV
 
 - Resolve stage-interface macro bounds at each declaration, including intervening and function-body directives; freeze literal bounds before hoisting/input-copy emission. Shader pipeline revision 10 -> 11 invalidates previously cached stale-sized programs.
@@ -129,15 +140,4 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Targeted coverage includes both incoming regressions: duplicate names retain independent bindings, and authored color properties remain vectors across updates.
 - Renderer asset gaps remain: two local text-scene tests and the environment-selected local-project Metal test skipped; no authored-reference parity claim.
 - Provenance JSON, historical-entry preservation, conflict-marker checks, and `git diff --check` validated before commit.
-- No desktop automation, visual validation, app launch, or Release app rebuild performed.
-
-## 2026-10-03 — Shader macro fixes and pending scene/playback/panel PR
-
-- `python3 scripts/test.py` — passed: 1,071 native tests passed, 12 skipped; all Python script suites passed.
-- `cargo test -p shader -- --nocapture` from `upstream/renderer`, using `scripts/build.py` cargo environment — exit 0; 506 reported passed, including three asset-dependent early-return skips.
-- Shader corpus gaps: two auto-sway/depth-parallax fixtures and the genericimage4 asset case were unavailable; those cases are skipped, not verified.
-- New macro-sized varying and nested legacy macro regressions passed for SPIR-V and MSL.
-- `python3 scripts/check_renderer.py` — exit 0; all 11 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
-- Renderer gaps: two local text-scene cases and the environment-selected local-project Metal case skipped; no authored-reference parity claim.
-- `git diff --check` — passed before commit.
 - No desktop automation, visual validation, app launch, or Release app rebuild performed.

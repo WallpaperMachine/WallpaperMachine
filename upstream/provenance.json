@@ -236,6 +236,14 @@
         "upstream/renderer/external/open-wallpaper-engine/tests/offscreen_scene_probe.cpp": "1993901f40061e18ad05f4f394cecc7d0c233c113da1580e72849658c0468664"
       },
       "reviewFollowup": "PR #24 review: reject transformed BGRA sources when the conversion pipeline is unavailable; consistently skip unavailable video encoders and restore the test allocator through RAII."
+    },
+    "puppetPoseBlendChanges": {
+      "date": "2026-10-04",
+      "changes": "Use effective non-additive layer weights for reference-pose deltas in translation, scale and rotation, matching the existing normalized base-pose budget. Prevent overlapping animations from stacking character-sheet assembly offsets. Additive weights, cached poses, passes and allocations are unchanged. Synthetic regressions cover normalized and partial weights, distinct motion, additive overlays, loop wrap, repeated samples and live blend/visibility changes.",
+      "sha256": {
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/Parse/WPPuppet.cpp": "bb177b2e380dbead7d2f045803e9e6b379c7c5bd02e66db6505796ca8c5f28b5",
+        "upstream/renderer/external/open-wallpaper-engine/tests/mdl_schema_tests.cpp": "af2dfaf46c2ba2beaa59090ac57ef4904b80c45d8119fe9a3490cf6614cb3c75"
+      }
     }
   },
   "applicationShell": {

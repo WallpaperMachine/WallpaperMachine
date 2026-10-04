@@ -1353,6 +1353,72 @@ TEST(MdlSchema, CharacterSheetReferencePoseSurvivesAdditiveMixingAndLoopWrap) {
     EXPECT_NEAR((mixed.genFrame(0)[0] * vertex).y(), 15, 1e-5);
 }
 
+TEST(MdlSchema, NonAdditiveLayersShareTheWholePoseWeight) {
+    auto puppet = BuildOneBonePuppet(WPPuppet::PlayMode::Loop, 12.0f, 16.0f);
+    auto& bone = puppet->bones[0];
+    bone.local_bind.translate(Eigen::Vector3f(0, 100, 0));
+    bone.local_reference.translate(Eigen::Vector3f(0, 10, 0));
+    bone.has_local_reference = true;
+    for (auto& frame : puppet->anims[0].bone_tracks[0].frames) {
+        frame.angle.z() = 0.6f;
+        frame.scale = Eigen::Vector3f(2, 3, 1);
+    }
+    puppet->prepared();
+    const Eigen::Vector3f vertex(2, 103, 0);
+    struct Case { double first, second, weight; };
+    for (const auto weights : { Case { 1, 1, 1 }, Case { 2, 1, 1 },
+                               Case { 0.5, 0.5, 0.75 }, Case { 0.25, 0.5, 0.625 },
+                               Case { 0, 1, 1 }, Case { 1, 0, 1 }, Case { 0, 0, 0 } }) {
+        SCOPED_TRACE(::testing::Message() << weights.first << ", " << weights.second);
+        WPPuppetLayer::AnimationLayer a;
+        a.id = 1;
+        a.blend = weights.first;
+        auto b = a;
+        b.blend = weights.second;
+        std::array settings { a, b };
+        WPPuppetLayer layer(puppet);
+        layer.prepared(settings);
+        for (const double time : { 0.0, 0.5, 1.0, 1.0 }) {
+            const float w = static_cast<float>(weights.weight);
+            const float delta_y = time == 0.5 ? 4.0f : 2.0f;
+            Eigen::Affine3f expected = Eigen::Affine3f::Identity();
+            expected.translate(Eigen::Vector3f(0, 10 + w * delta_y, 0));
+            expected.rotate(Eigen::AngleAxisf(0.6f * w, Eigen::Vector3f::UnitZ()));
+            expected.scale(Eigen::Vector3f(1 + w, 1 + 2 * w, 1));
+            EXPECT_TRUE((layer.genFrame(time)[0] * vertex).isApprox(
+                expected * Eigen::Vector3f(2, 3, 0), 1e-5));
+        }
+    }
+}
+
+TEST(MdlSchema, NonAdditivePoseMixRetainsDistinctMotionAndAdditiveOffsets) {
+    auto puppet = BuildOneBonePuppet(WPPuppet::PlayMode::Single, 20, 40);
+    auto other = puppet->anims[0];
+    other.id = 2;
+    for (auto& frame : other.bone_tracks[0].frames) frame.position.y() += 40;
+    puppet->anims.push_back(other);
+    puppet->prepared();
+    WPPuppetLayer::AnimationLayer a;
+    a.id = 1;
+    auto b = a;
+    b.id = 2;
+    b.blend = 3;
+    auto additive = a;
+    additive.additive = true;
+    additive.blend = 0.5;
+    std::array settings { a, b, additive };
+    WPPuppetLayer layer(puppet);
+    layer.prepared(settings);
+    EXPECT_FLOAT_EQ(RootTranslationY(layer, 0), 60); // 20/4 + 60*3/4 + 20/2
+    EXPECT_FLOAT_EQ(RootTranslationY(layer, 0.5), 75);
+    ASSERT_TRUE(layer.setVisible(1, false));
+    EXPECT_FLOAT_EQ(RootTranslationY(layer, 0.5), 45);
+    ASSERT_TRUE(layer.setVisible(1, true));
+    EXPECT_FLOAT_EQ(RootTranslationY(layer, 0.5), 75);
+    ASSERT_TRUE(layer.setBlend(1, 1));
+    EXPECT_FLOAT_EQ(RootTranslationY(layer, 0.5), 65);
+}
+
 TEST(MdlSchema, FullWeightAnimationReplacesRotatedReferencePose) {
     auto puppet = BuildOneBonePuppet(WPPuppet::PlayMode::Loop, 0.0f, 0.0f);
     auto& bone = puppet->bones[0];

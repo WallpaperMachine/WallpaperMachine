@@ -811,6 +811,16 @@ projection policies, hierarchy, depth and reflection.
 
 ### Animation and puppets
 
+- Non-additive puppet animation layers use their effective blend weights for
+  the entire pose (translation, scale and rotation), including offsets from the
+  reference pose. Otherwise overlapping layers double character-sheet assembly
+  offsets and separate attached pieces. Additive layers keep their authored
+  weights. `MdlSchema.NonAdditiveLayersShareTheWholePoseWeight` covers normalized
+  and partial weights, rotation, scale, loop wrap and repeated samples;
+  `NonAdditivePoseMixRetainsDistinctMotionAndAdditiveOffsets` covers distinct
+  animations, additive overlays and live blend/visibility changes. The correction
+  uses the existing prepared weights without adding per-frame work or GPU resources.
+
 - Puppet layers with effects light their assembled geometry only in the final
   skinned pass. The input texture-sheet pass is unlit, so lighting is not
   multiplied twice or baked into the separate cut-out pieces. Unskinned layers,

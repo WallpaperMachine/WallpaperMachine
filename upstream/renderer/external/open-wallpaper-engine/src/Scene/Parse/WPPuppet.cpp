@@ -126,16 +126,18 @@ void WPPuppet::evaluatePose(const WPPuppetLayer& puppet_layer,
             auto scale_a_delta = frame_a.scale - base_scale;
             auto scale_b_delta = frame_b.scale - base_scale;
 
+            // Absolute layers share a normalized pose budget; their deltas must
+            // use the same weight as the reference pose or assembly offsets stack.
             quat *= frame_a_quat_delta.slerp(t, frame_b_quat_delta)
-                        .slerp(1.0 - alayer.blend, ident);
+                        .slerp(1.0 - layer.blend, ident);
             if (alayer.additive) {
                 trans += alayer.blend * (pos_a_delta * one_t + pos_b_delta * t);
                 scale += alayer.blend * (scale_a_delta * one_t + scale_b_delta * t);
             } else {
                 trans += (layer.blend * base_position) +
-                         (alayer.blend * (pos_a_delta * one_t + pos_b_delta * t));
+                         (layer.blend * (pos_a_delta * one_t + pos_b_delta * t));
                 scale += (layer.blend * base_scale) +
-                         (alayer.blend * (scale_a_delta * one_t + scale_b_delta * t));
+                         (layer.blend * (scale_a_delta * one_t + scale_b_delta * t));
             }
         }
         if (bone.noBindParent() && world_anchored_bones) {
