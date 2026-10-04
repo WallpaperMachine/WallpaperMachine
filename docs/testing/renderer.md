@@ -82,7 +82,15 @@ failure is never converted into a missing-device skip. A default local renderer
 run remains necessary evidence for the GPU checks skipped by CI.
 
 The generated matrix is twelve original synthetic scenes; it contains no workshop
-identifiers and no workshop-specific rendering rules.
+identifiers and no workshop-specific rendering rules. Those scenes and their reload
+checks use private synthetic compose-layer assets plus the probes' virtual assets, so
+they run on a clean checkout without an installed wallpaper library. `--assets`
+applies to additional `--project` inputs.
+
+Test binaries run through macOS `taskpolicy` with application scheduling and
+latency/throughput tiers of zero. This keeps inherited background scheduling
+from governing real-time assertions; it does not relax their thresholds or
+remove any tests. Contention can still affect wall-clock performance checks.
 
 ## Probes
 

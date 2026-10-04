@@ -40,8 +40,13 @@ RELOAD_PROBE = "scene_reload_cycle_probe"
 
 
 def run(command, log, env, timeout=180, cwd=ROOT):
+    command = list(map(str, command))
+    if Path(command[0]).name in (*REGRESSION_BINARIES, OFFSCREEN_PROBE, RELOAD_PROBE):
+        # Match application scheduling for real-time assertions, even when the
+        # invoking CI agent inherited background/latency throttling.
+        command = ["/usr/sbin/taskpolicy", "-a", "-l", "0", "-t", "0", *command]
     with log.open("w") as stream:
-        return subprocess.run(list(map(str, command)), cwd=cwd, env=env,
+        return subprocess.run(command, cwd=cwd, env=env,
                               stdout=stream, stderr=subprocess.STDOUT,
                               timeout=timeout, check=False).returncode
 
@@ -75,6 +80,37 @@ def gpu_preflight(out, env):
         if key == "compile_exit" and result[key] != 0:
             break
     return result
+
+
+def fixture_assets(root):
+    """Minimal original compose-layer assets shared by the synthetic scenes."""
+    passthrough = {"blending": "translucent", "cullmode": "nocull", "depthtest": "disabled",
+                   "depthwrite": "disabled", "shader": "generated_copy"}
+    files = {
+        "models/util/composelayer.json": {"passthrough": True, "material": "materials/util/composelayer.json"},
+        "materials/util/composelayer.json": {"passes": [{**passthrough, "textures": ["_rt_FullFrameBuffer"]}]},
+        "materials/util/effectpassthrough.json": {"passes": [{**passthrough, "blending": "normal"}]},
+        "shaders/generated_copy.vert": """uniform mat4 g_ModelViewProjectionMatrix;
+attribute vec3 a_Position;
+attribute vec2 a_TexCoord;
+varying vec2 v_TexCoord;
+void main() {
+    gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1.0);
+    v_TexCoord = a_TexCoord;
+}
+""",
+        "shaders/generated_copy.frag": """uniform sampler2D g_Texture0;
+varying vec2 v_TexCoord;
+void main() {
+    gl_FragColor = texture(g_Texture0, v_TexCoord);
+}
+""",
+    }
+    for name, value in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(value if isinstance(value, str) else json.dumps(value))
+    return root
 
 
 def fixtures(root):
@@ -355,6 +391,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     out = RENDERER_ARTIFACTS / ("adaptive-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True)
+    # Generated scenes must not depend on an installed wallpaper library.
+    generated_assets = fixture_assets(out / "generated-assets")
     env = build_environment()
     build = RENDERER_ARTIFACTS / "bin"
     if not args.skip_build:
@@ -401,13 +439,14 @@ def main(argv=None):
             status = "timeout"
         report[binary] = status
         record_skips(report, binary, out / (binary + ".log"))
-    projects = ([*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
+    generated_projects = ([*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
                  perspective_animation_fixture(out / "fixtures"),
                  origin_animation_fixture(out / "fixtures"),
-                 alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True),
-                 *args.project] if gpu_available else [])
-    for project in projects:
+                 alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True)] if gpu_available else [])
+    projects = [*generated_projects, *args.project] if gpu_available else []
+    for index, project in enumerate(projects):
         project = project.resolve()
+        assets = generated_assets if index < len(generated_projects) else args.assets
         manifest_bytes = project.read_bytes()
         manifest = json.loads(manifest_bytes)
         package = project.parent / Path(manifest.get("file", "scene.json")).with_suffix(".pkg")
@@ -419,7 +458,7 @@ def main(argv=None):
         case_dir.mkdir()
         for mode in ["pooled", "isolated"]:
             mode_env = env.copy()
-            mode_env.update(WE_TEST_PROJECT=str(project), WE_TEST_ASSETS=str(args.assets.resolve()), WE_TEST_OUTPUT=str(case_dir / mode))
+            mode_env.update(WE_TEST_PROJECT=str(project), WE_TEST_ASSETS=str(assets.resolve()), WE_TEST_OUTPUT=str(case_dir / mode))
             for key in ["WE_TEST_NO_REUSE", "WE_TEST_DUMP_PASSES", "WE_DEBUG_SKIP_NODE", "WE_DEBUG_SKIP_MATERIAL", "WE_DEBUG_SKIP_PASSTHROUGH"]:
                 mode_env.pop(key, None)
             if mode == "isolated":
@@ -455,7 +494,7 @@ def main(argv=None):
     reload_env = env.copy()
     reload_env.update(
         WE_TEST_PROJECTS=";".join(str(p) for p in reload_projects),
-        WE_TEST_ASSETS=str(args.assets.resolve()),
+        WE_TEST_ASSETS=str((args.assets if args.project else generated_assets).resolve()),
         WE_TEST_OUTPUT=str(out / "reload-cycles"),
         WE_TEST_CYCLES="2",
     )

@@ -122,16 +122,20 @@ class GPUAvailabilityProbeTests(unittest.TestCase):
 
 
 class GateExitStatusTests(unittest.TestCase):
-    def gate(self, failed=None, timeout=False, skipped=None, gpu=None):
+    def gate(self, failed=None, timeout=False, skipped=None, gpu=None, extra_project=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             project = root / "project.json"
             project.write_text('{"file":"scene.json"}')
             calls = []
+            assets_used = []
 
             def run(command, log, env, *args):
                 name = Path(command[0]).name
                 calls.append(name)
+                if name in (check_renderer.OFFSCREEN_PROBE, check_renderer.RELOAD_PROBE):
+                    assets = Path(env["WE_TEST_ASSETS"])
+                    assets_used.append((name, assets == (root / "assets").resolve(), assets.is_dir()))
                 log.write_text("[  SKIPPED ] unavailable fixture codec\n" if name == skipped else "")
                 if name in ("xcrun", "gpu-availability"):
                     result = gpu[0 if name == "xcrun" else 1]
@@ -159,10 +163,13 @@ class GateExitStatusTests(unittest.TestCase):
                 output = io.StringIO()
                 stack.enter_context(contextlib.redirect_stdout(output))
                 arguments = ["--skip-build", "--assets", str(root / "assets")]
+                if extra_project:
+                    arguments.extend(["--project", str(project)])
                 if gpu is not None:
                     arguments.append("--allow-missing-gpu")
                 status = check_renderer.main(arguments)
                 self.last_output = output.getvalue()
+                self.assets_used = assets_used
             report = json.loads(next((root / "evidence").glob("*/report.json")).read_text())
             return status, report, calls
 
@@ -183,6 +190,21 @@ class GateExitStatusTests(unittest.TestCase):
         self.assertEqual(len(report["cases"]), 4)
         self.assertEqual(calls.count(check_renderer.OFFSCREEN_PROBE), 8)
         self.assertTrue(all(case["pixels_equal"] for case in report["cases"]))
+
+    def test_generated_scenes_and_reload_work_without_an_installed_asset_directory(self):
+        status, _, _ = self.gate()
+        self.assertEqual(status, 0)
+        self.assertTrue(self.assets_used)
+        self.assertTrue(all(not explicit and exists for _, explicit, exists in self.assets_used))
+
+    def test_optional_local_project_and_reload_keep_the_requested_assets(self):
+        self.gate(extra_project=True)
+        probes = [explicit for name, explicit, _ in self.assets_used
+                  if name == check_renderer.OFFSCREEN_PROBE]
+        self.assertEqual(probes, [False] * 8 + [True] * 2)
+        reloads = [explicit for name, explicit, _ in self.assets_used
+                   if name == check_renderer.RELOAD_PROBE]
+        self.assertEqual(reloads, [True])
 
     def test_skip_reason_is_reported_separately_from_successful_exit(self):
         binary = next(iter(check_renderer.REGRESSION_BINARIES))
