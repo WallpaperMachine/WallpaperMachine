@@ -148,25 +148,57 @@ class GPUAvailabilityProbeTests(unittest.TestCase):
         self.assertEqual(result["compile_exit"], 0, log)
         self.assertIn(result["probe_exit"], (0, 77))
 
+    def test_compiled_timer_probe_measures_short_waits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = check_renderer.timer_preflight(Path(directory), dict(check_renderer.os.environ))
+            compile_log = (Path(directory) / "timer-compile_exit.log").read_text()
+            probe_log = (Path(directory) / "timer-probe_exit.log").read_text()
+        self.assertEqual(result["compile_exit"], 0, compile_log)
+        self.assertIn(result["probe_exit"], (0, 77))
+        self.assertIn("median 10 ms wait", probe_log)
+
+
+class RealtimeRegistryTests(unittest.TestCase):
+    def test_every_named_cadence_test_exists_in_a_registered_binary(self):
+        sources = "\n".join(path.read_text(errors="replace") for path in
+                            (check_renderer.RENDERER / "external/open-wallpaper-engine/tests").rglob("*")
+                            if path.suffix in (".cpp", ".mm"))
+        for binary, names in check_renderer.REALTIME_TESTS.items():
+            self.assertIn(binary, check_renderer.REGRESSION_BINARIES)
+            for name in names:
+                suite, test = name.split(".")
+                with self.subTest(name=name):
+                    self.assertRegex(sources, rf"TEST(_F)?\(\s*{suite},\s*{test}\s*\)")
+
 
 class GateExitStatusTests(unittest.TestCase):
-    def gate(self, failed=None, timeout=False, skipped=None, gpu=None, extra_project=False):
+    def gate(self, failed=None, timeout=False, skipped=None, gpu=None, extra_project=False, timers=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             project = root / "project.json"
             project.write_text('{"file":"scene.json"}')
             calls = []
+            self.commands = {}
             assets_used = []
 
             def run(command, log, env, *args):
                 name = Path(command[0]).name
                 calls.append(name)
+                self.commands[name] = [str(part) for part in command]
                 if name in (check_renderer.OFFSCREEN_PROBE, check_renderer.RELOAD_PROBE):
                     assets = Path(env["WE_TEST_ASSETS"])
                     assets_used.append((name, assets == (root / "assets").resolve(), assets.is_dir()))
                 log.write_text("[  SKIPPED ] unavailable fixture codec\n" if name == skipped else "")
-                if name in ("xcrun", "gpu-availability"):
-                    result = gpu[0 if name == "xcrun" else 1]
+                if name == "xcrun":
+                    name = Path(command[command.index("-o") + 1]).name
+                    probe = timers if name == check_renderer.TIMER_PROBE else gpu
+                    if probe[0] == "timeout":
+                        raise check_renderer.subprocess.TimeoutExpired(command, 1)
+                    return probe[0]
+                if name in ("gpu-availability", check_renderer.TIMER_PROBE):
+                    if name == check_renderer.TIMER_PROBE:
+                        log.write_text("median 10 ms wait: 55.00 ms\n")
+                    result = (timers if name == check_renderer.TIMER_PROBE else gpu)[1]
                     if result == "timeout":
                         raise check_renderer.subprocess.TimeoutExpired(command, 1)
                     return result
@@ -195,6 +227,8 @@ class GateExitStatusTests(unittest.TestCase):
                     arguments.extend(["--project", str(project)])
                 if gpu is not None:
                     arguments.append("--allow-missing-gpu")
+                if timers is not None:
+                    arguments.append("--allow-imprecise-timers")
                 status = check_renderer.main(arguments)
                 self.last_output = output.getvalue()
                 self.assets_used = assets_used
@@ -285,6 +319,42 @@ class GateExitStatusTests(unittest.TestCase):
                 self.assertEqual(status, 1)
                 self.assertEqual(report[target], 1)
                 self.assertNotIn(target, report["skips"])
+
+    def test_precise_timers_run_every_cadence_test(self):
+        status, report, _ = self.gate(timers=(0, 0))
+        self.assertEqual(status, 0)
+        self.assertTrue(report["realtime_checks_executed"])
+        self.assertEqual(report["skips"], {})
+        self.assertFalse(any("--gtest_filter" in part for command in self.commands.values() for part in command))
+
+    def test_only_explicit_imprecise_timers_skip_exact_cadence_tests_and_warn(self):
+        status, report, calls = self.gate(timers=(0, 77))
+        self.assertEqual(status, 0)
+        self.assertFalse(report["realtime_checks_executed"])
+        self.assertTrue(set(check_renderer.REGRESSION_BINARIES).issubset(calls))
+        for binary in check_renderer.REGRESSION_BINARIES:
+            names = check_renderer.REALTIME_TESTS.get(binary, ())
+            filters = [part for part in self.commands[binary] if part.startswith("--gtest_filter")]
+            with self.subTest(binary=binary):
+                self.assertEqual(filters, ["--gtest_filter=-" + ":".join(names)] if names else [])
+                self.assertEqual([reason.split(":")[0] for reason in report["skips"].get(binary, [])], list(names))
+        self.assertIn("::warning::" if check_renderer.os.environ.get("GITHUB_ACTIONS") == "true" else "SKIP ",
+                      self.last_output)
+        self.assertIn("55.00 ms", self.last_output)
+
+    def test_timer_preflight_failure_is_a_failure_not_a_skip(self):
+        for probe in ((1, None), (0, 1), (0, "timeout"), ("timeout", None)):
+            with self.subTest(probe=probe):
+                status, report, calls = self.gate(timers=probe)
+                self.assertEqual(status, 1)
+                self.assertEqual(report["skips"], {})
+                self.assertTrue(set(check_renderer.REGRESSION_BINARIES).isdisjoint(calls))
+
+    def test_remaining_failures_in_a_filtered_binary_still_fail(self):
+        binary = next(iter(check_renderer.REALTIME_TESTS))
+        status, report, _ = self.gate(failed=binary, timers=(0, 77))
+        self.assertEqual(status, 1)
+        self.assertEqual(report[binary], 1)
 
     def test_image_probe_failure_or_timeout_is_not_a_missing_gpu_skip(self):
         for timeout in (False, True):

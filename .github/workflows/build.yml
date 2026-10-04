@@ -207,8 +207,10 @@ jobs:
       - name: Renderer regressions without a desktop
         # Standard hosted Macs may have no Metal device. Only the separate
         # capability probe's explicit exit 77 may skip GPU targets; started
-        # tests still fail on compile/parse/draw errors and timeouts.
-        run: python3 scripts/check_renderer.py --allow-missing-gpu
+        # tests still fail on compile/parse/draw errors and timeouts. Hosted
+        # VMs deliver 10 ms waits 50-100 ms late; only the timer probe's exit
+        # 77 may skip the named wall-clock cadence tests.
+        run: python3 scripts/check_renderer.py --allow-missing-gpu --allow-imprecise-timers
 
       - name: Test
         # One test class at a time. In parallel, offscreen control-panel suites failed here

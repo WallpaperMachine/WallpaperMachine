@@ -300,11 +300,14 @@ minimum macOS) while `test` runs on `macos-26`, 150-minute timeout each, so the
 test gate adds no time on top of the Release build. `publish` runs on
 `ubuntu-latest` only after both succeed, so a published binary has passed the same
 gate a change has to pass. The test job also runs `scripts/check_rust.py` and
-`scripts/check_renderer.py --allow-missing-gpu`; a failure in either prevents
-publication. These checks use isolated Rust state and private renderer images,
-with desktop/network opt-ins disabled. Only a compiled device probe's exact exit
-77 permits the renderer's named GPU checks to skip, with a CI warning; all other
-probe/test failures remain failures. Explicit exclusions and asset-dependent
+`scripts/check_renderer.py --allow-missing-gpu --allow-imprecise-timers`; a
+failure in either prevents publication. These checks use isolated Rust state and
+private renderer images, with desktop/network opt-ins disabled. Only a compiled
+device probe's exact exit 77 permits the renderer's named GPU checks to skip, and
+only a compiled timer probe's exact exit 77 permits its named wall-clock cadence
+tests to skip, which hosted VMs cannot hold
+([renderer testing](testing/renderer.md#scriptscheck_rendererpy)); each skip is a CI warning, and
+all other probe/test failures remain failures. Explicit exclusions and asset-dependent
 skips remain in their JSON reports and logs, rather than counting as verified
 asset or GPU coverage.
 

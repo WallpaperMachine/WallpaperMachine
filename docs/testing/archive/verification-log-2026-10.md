@@ -9,6 +9,18 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-03 — PR 25 Claude review follow-ups
+
+- Unified stage-interface array bounds for location allocation and emission; unsupported expressions, late/missing definitions and nonpositive sizes now fail explicitly.
+- Single-sample alpha-to-coverage uses source-over blending on Metal/Vulkan; multisampled state retains unblended coverage without adding targets or passes.
+- `cargo test -p shader -- --nocapture` using the project Cargo environment — exit 0; 507 reported passed, including three unavailable asset-dependent early-return skips.
+- `python3 scripts/check_renderer.py` — exit 0; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles. All recorded test binaries exited zero.
+- Negative control: the preceding renderer binary fails the new single-sample composed-coverage pixel assertion; the rebuilt renderer passes. Native Metal transparent/half/opaque pixel regression also passed.
+- `scene_schema_tests --gtest_filter="SceneSchema.*Camera*:SceneSchema.PerspectiveFallback*"` after rebuilding — 19 passed, including steep/rolled look-at, scaled/zero deltas and fallback registration.
+- `python3 scripts/test.py` — all Python suites passed; 1,072 native passed, zero failed, 12 skipped. Existing cancellation/preview-error tests and new offscreen Tab/Shift-Tab wrapping passed.
+- Stable-sorted verification entries by date through the log helper functions, preserving every historical body and relative archive link; new evidence appended only via `scripts/log_verification.py`.
+- Asset gaps: three shader corpus cases, two local text scenes, and the environment-selected Metal project case skipped. No desktop visual/live WebKit keyboard check, authored-reference parity, app launch or Release rebuild.
+
 ## 2026-10-03 — PR 25 merge conflict resolution
 
 - Merged `origin/main` into `fix/scene-playback-panel-shaders` without rebasing; retained both sides of renderer provenance and all 36 distinct historical verification entries.

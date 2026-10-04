@@ -37,6 +37,52 @@ REGRESSION_BINARIES = {
 }
 OFFSCREEN_PROBE = "offscreen_scene_probe"
 RELOAD_PROBE = "scene_reload_cycle_probe"
+TIMER_PROBE = "timer-precision"
+# Tests whose assertions count frames, ticks or expiries against short
+# wall-clock waits. Hosted macOS VMs deliver a 10 ms wait 50-100 ms late, so
+# these are skipped by name only when the timer probe proves that host.
+REALTIME_TESTS = {
+    "timer_tests": (
+        "FrameTimerTest.ABurstOfWakeOnceAtTheCeilingDoesNotAddCallbacks",
+        "FrameTimerTest.ADrawSlightlyLongerThanTheIntervalDoesNotHalveTheRate",
+        "ThreadTimerTest.CadenceKeepsItsPeriodDespiteWakeSlack",
+    ),
+    "unchanged_present_test": (
+        "UnchangedPresent.APlainVideoPresentsEveryNewFrameAndNothingElse",
+        "UnchangedPresent.TheSkipPresentsTheSameVideoFramesInTheSameOrder",
+        "UnchangedPresent.ARepeatedVideoFramePresentsAgainOnlyWhenSomethingChanges",
+        "UnchangedPresent.AStaticSceneStopsPresentingOnceEveryPassIsReused",
+        "UnchangedPresent.OutputChangesOnAHeldVideoFramePresentOnceEach",
+    ),
+    "audio_tests": (
+        "AudioResponseMonoTest.PartialSubmissionsExtendExpiryUntilACompleteBlockArrives",
+    ),
+}
+# The median of 31 condition-variable waits of 10 ms, the frame clock's own
+# primitive. More than one whole period late means cadence tests cannot hold.
+TIMER_PROBE_SOURCE = """#include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include <mutex>
+#include <vector>
+int main() {
+    using namespace std::chrono;
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::unique_lock lock(mutex);
+    std::vector<double> waits;
+    for (int index = 0; index < 31; ++index) {
+        const auto start = steady_clock::now();
+        const auto due = start + 10ms;
+        while (steady_clock::now() < due) condition.wait_until(lock, due);
+        waits.push_back(duration<double, std::milli>(steady_clock::now() - start).count());
+    }
+    std::nth_element(waits.begin(), waits.begin() + 15, waits.end());
+    std::printf("median 10 ms wait: %.2f ms\\n", waits[15]);
+    return waits[15] > 20.0 ? 77 : 0;
+}
+"""
 
 
 def foreground_test_process():
@@ -47,7 +93,7 @@ def foreground_test_process():
 
 def run(command, log, env, timeout=180, cwd=ROOT):
     command = list(map(str, command))
-    is_test = Path(command[0]).name in (*REGRESSION_BINARIES, OFFSCREEN_PROBE, RELOAD_PROBE)
+    is_test = Path(command[0]).name in (*REGRESSION_BINARIES, OFFSCREEN_PROBE, RELOAD_PROBE, TIMER_PROBE)
     if is_test:
         # Match application scheduling for real-time assertions, even when the
         # invoking CI agent inherited background/latency throttling.
@@ -61,8 +107,12 @@ def run(command, log, env, timeout=180, cwd=ROOT):
 
 def record_skips(report, name, log):
     reasons = skipped_test_lines(log.read_text(errors="replace").splitlines()) if log.exists() else []
+    report_skips(report, name, reasons)
+
+
+def report_skips(report, name, reasons):
     if reasons:
-        report["skips"][name] = reasons
+        report["skips"].setdefault(name, []).extend(reasons)
         for reason in reasons:
             prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "SKIP "
             print(f"{prefix}{name}: {reason}", flush=True)
@@ -71,13 +121,24 @@ def record_skips(report, name, log):
 def gpu_preflight(out, env):
     """Only a successfully built probe's exit 77 means no Metal device exists."""
     source = out / "gpu-availability.m"
-    binary = out / "gpu-availability"
     source.write_text('#import <Metal/Metal.h>\nint main(void) { @autoreleasepool { return MTLCreateSystemDefaultDevice() ? 0 : 77; } }\n')
+    return compiled_probe(out, env, "gpu", out / "gpu-availability",
+                          ["clang", "-fobjc-arc", source, "-framework", "Metal"])
+
+
+def timer_preflight(out, env):
+    """Only a successfully built probe's exit 77 means short waits overshoot a period."""
+    source = out / (TIMER_PROBE + ".cpp")
+    source.write_text(TIMER_PROBE_SOURCE)
+    return compiled_probe(out, env, "timer", out / TIMER_PROBE,
+                          ["clang++", "-std=c++20", "-O2", source])
+
+
+def compiled_probe(out, env, prefix, binary, compiler):
     result = {"compile_exit": None, "probe_exit": None}
-    steps = [(["xcrun", "clang", "-fobjc-arc", str(source), "-framework", "Metal", "-o", str(binary)], "compile_exit"),
-             ([binary], "probe_exit")]
+    steps = [(["xcrun", *compiler, "-o", binary], "compile_exit"), ([binary], "probe_exit")]
     for command, key in steps:
-        log = out / ("gpu-" + key + ".log")
+        log = out / (prefix + "-" + key + ".log")
         try:
             result[key] = run(command, log, env, 60)
         except subprocess.TimeoutExpired:
@@ -396,6 +457,8 @@ def main(argv=None):
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--allow-missing-gpu", action="store_true",
                         help="CI only: allow explicit GPU skips when a compiled Metal-device probe exits 77. Other failures still fail.")
+    parser.add_argument("--allow-imprecise-timers", action="store_true",
+                        help="CI only: skip the named wall-clock cadence tests when a compiled timer probe exits 77. Other failures still fail.")
     args = parser.parse_args(argv)
     out = RENDERER_ARTIFACTS / ("adaptive-" + datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True)
@@ -430,6 +493,20 @@ def main(argv=None):
             return 1
         gpu_available = probe["probe_exit"] == 0
     report["gpu_checks_executed"] = gpu_available
+    timers_precise = True
+    if args.allow_imprecise_timers:
+        report["timer_preflight"] = timer_preflight(out, env)
+        probe = report["timer_preflight"]
+        if probe["compile_exit"] != 0 or probe["probe_exit"] not in (0, 77):
+            (out / "report.json").write_text(json.dumps(report, indent=2))
+            print(f"Timer preflight failed: {probe}; see {out}")
+            return 1
+        timers_precise = probe["probe_exit"] == 0
+    report["realtime_checks_executed"] = timers_precise
+    timer_evidence = ""
+    if not timers_precise:
+        log = out / "timer-probe_exit.log"
+        timer_evidence = log.read_text(errors="replace").strip() if log.exists() else ""
     if not gpu_available:
         skipped = [name for name, needs_gpu in REGRESSION_BINARIES.items() if needs_gpu] + [OFFSCREEN_PROBE, RELOAD_PROBE]
         for name in skipped:
@@ -441,12 +518,18 @@ def main(argv=None):
     for binary, needs_gpu in REGRESSION_BINARIES.items():
         if needs_gpu and not gpu_available:
             continue
+        command = [build / "tests" / binary]
+        realtime = () if timers_precise else REALTIME_TESTS.get(binary, ())
+        if realtime:
+            command.append("--gtest_filter=-" + ":".join(realtime))
         try:
-            status = run([build / "tests" / binary], out / (binary + ".log"), env, 600)
+            status = run(command, out / (binary + ".log"), env, 600)
         except subprocess.TimeoutExpired:
             status = "timeout"
         report[binary] = status
         record_skips(report, binary, out / (binary + ".log"))
+        report_skips(report, binary, [f"{name}: timer probe exit 77, 10 ms waits overshoot a period ({timer_evidence})"
+                                      for name in realtime])
     generated_projects = ([*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
                  perspective_animation_fixture(out / "fixtures"),
                  origin_animation_fixture(out / "fixtures"),

@@ -63,6 +63,7 @@ It assembles the Homebrew environment from `scripts/build.py`, then:
 | `--project PATH` | Add a local scene `project.json`; repeatable |
 | `--assets PATH` | Shared assets directory (default `~/Library/Application Support/WallpaperMachine/SceneAssets`) |
 | `--allow-missing-gpu` | CI fallback only: compile a Metal-device probe; its exact exit 77 skips the named GPU targets. Compile errors, abnormal exits and timeouts still fail. Default local runs require GPU checks. |
+| `--allow-imprecise-timers` | CI fallback only: compile a timer probe that takes the median of 31 condition-variable waits of 10 ms; its exact exit 77 (median above 20 ms) skips the cadence tests named in `REALTIME_TESTS`. Compile errors, abnormal exits and timeouts still fail. Default local runs require every cadence test. |
 
 Reports, SHA-256 hashes, logs, the generated synthetic fixtures and private GPU
 output go under a fresh `artifacts/renderer/<run>/` directory, with
@@ -95,6 +96,19 @@ Only test children change priority, leaving the invoking agent and build tools
 untouched. This keeps inherited background scheduling from governing real-time
 assertions; it does not relax their thresholds or remove any tests. Contention
 can still affect wall-clock performance checks.
+
+Hosted macOS arm64 runners are virtual machines that deliver a 10 ms wait
+50-100 ms late regardless of process policy: v1.2.4's release builds measured 11
+ticks of a 10 ms cadence in 600 ms and about 10 frames a second at a 60 fps
+ceiling, while a 600 ms sleep stayed accurate. The frame-clock, unchanged-present
+and audio-expiry tests that count ticks against short waits cannot pass there.
+With `--allow-imprecise-timers` the probe runs under the same test-child policy,
+and only its exit 77 filters exactly those named tests out of their binaries with
+`--gtest_filter`; every other test in those binaries still runs. The report sets
+`realtime_checks_executed: false` and lists each filtered test with the measured
+median under `skips`, each with a CI warning. A default local renderer run remains
+necessary evidence for them. A new cadence test that fails only on hosted runners
+belongs in `REALTIME_TESTS`; the harness tests check every name still exists.
 
 ## Probes
 
