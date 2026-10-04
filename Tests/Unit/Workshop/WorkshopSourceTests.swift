@@ -242,6 +242,8 @@ final class WorkshopSourceTests: XCTestCase {
     try await finished(store)
     XCTAssertNil(store.steamWebSession)
     XCTAssertEqual(store.errorMessage, SteamSignInRequired().localizedDescription)
+    XCTAssertEqual(store.items, [])
+    XCTAssertFalse(store.hasLoaded)
 
     fixture.subscriptionPages = [1: profileHTML(ids: ["1"], name: "Me", total: "1")]
     try await store.signInToSteamWeb { "\(Self.author)||0123456789abcdef0123" }
@@ -249,6 +251,25 @@ final class WorkshopSourceTests: XCTestCase {
     store.signOutOfSteamWeb()
     XCTAssertNil(store.steamWebSession)
     XCTAssertEqual(store.items, [])
+    XCTAssertFalse(store.hasLoaded)
+  }
+
+  /// Issue #27: choosing subscriptions without a Steam Community session, while another list
+  /// is on show, must not leave that list's tiles behind; an empty grid is what offers sign-in.
+  func testSubscriptionsWithoutASessionDropTheListOnShow() async throws {
+    let store = fixture.store
+    fixture.collection = collectionJSON(children: [("12", 0)])
+    fixture.details = ["12": detailsRow("12", tags: ["Scene", "Everyone"])]
+    store.open(.collection(id: "77", title: "Night skies"))
+    try await finished(store)
+    XCTAssertEqual(store.items.map(\.id), ["12"])
+
+    store.open(.subscriptions)
+    try await finished(store)
+    XCTAssertNil(store.steamWebSession)
+    XCTAssertEqual(store.items, [])
+    XCTAssertEqual(store.totalCount, 0)
+    XCTAssertEqual(store.totalPages, 1)
     XCTAssertFalse(store.hasLoaded)
   }
 

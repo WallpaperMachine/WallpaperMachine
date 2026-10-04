@@ -560,13 +560,21 @@ final class WorkshopStore {
     steamWebSession = nil
     if (committedQuery?.source ?? source) == .subscriptions {
       cancelSearch()
-      items = []
-      totalCount = 0
-      totalPages = 1
-      reachableCount = 0
-      committedQuery = nil
-      hasLoaded = false
+      clearResults()
     }
+  }
+
+  /// Empties the grid, so nothing of an earlier list stays on show in place of one that
+  /// cannot be read; the panel then offers what the list needs, such as signing in.
+  private func clearResults() {
+    items = []
+    page = 1
+    totalCount = 0
+    totalPages = 1
+    reachableCount = 0
+    committedQuery = nil
+    sourceTitle = nil
+    hasLoaded = false
   }
 
   /// The ids of subscribed wallpapers not in `installed`, asking Steam for every page of
@@ -663,8 +671,13 @@ final class WorkshopStore {
         publish(result, for: request)
       } catch {
         guard generation == requestID, !Task.isCancelled else { return }
-        // Steam ended the session: forget it, so the panel offers to sign in again.
-        if error is SteamSignInRequired { steamWebSession = nil }
+        AppLog.warn("Workshop \(request.query.source.key) page \(request.page) failed: \(error.localizedDescription)")
+        // No session, or Steam ended it: forget it and drop whatever list was on show, so the
+        // panel offers to sign in instead of leaving another list's tiles behind a Retry.
+        if error is SteamSignInRequired {
+          steamWebSession = nil
+          clearResults()
+        }
         errorMessage = error.localizedDescription
         failedRequest = request
       }

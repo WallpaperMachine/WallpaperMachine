@@ -176,8 +176,10 @@ takes the `steamLoginSecure` cookie Steam sets. The cookie is kept in memory
 only (`WorkshopStore.steamWebSession`): it is never written to disk or the
 keychain, ends when the app quits or on **Sign out of Steam**, and is sent only to
 `steamcommunity.com`, to read the subscriptions list (the author page with
-`browsefilter=mysubscriptions`). When Steam answers with its sign-in page instead,
-the session is forgotten and the panel offers to sign in again.
+`browsefilter=mysubscriptions`). Without a session, or when Steam answers with its
+sign-in page instead, the session is forgotten and the grid is emptied (no tiles of
+the list shown before stay behind), so the panel offers **Sign in to Steam…** and
+says it is separate from SteamCMD's sign-in.
 
 **Download the ones not in your library** reads every page of subscriptions (at
 most 1,000 pages of 30), drops what is installed, collections and Application items, and

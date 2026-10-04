@@ -1056,6 +1056,7 @@ export default {
   'Forgets the Steam session this app read your subscriptions with': 'このAppがサブスクライブ中のアイテムの読み込みに使用したSteamセッションを消去します',
   'Sign in to see your subscriptions': 'サインインしてサブスクライブ中のアイテムを表示',
   'Steam shows the wallpapers you subscribe to only to you. You sign in on Steam’s own page; WallpaperMachine keeps the session only until it quits, and uses it only to read this list.': 'Steamでは、サブスクライブ中の壁紙は本人にのみ表示されます。サインインはSteam自身のページで行います。WallpaperMachineはセッションをAppの終了時までしか保持せず、このリストの読み込みにのみ使用します。',
+  'This is separate from the SteamCMD sign-in in Settings, which only downloads wallpapers.': 'これは、壁紙のダウンロードだけに使う「設定」のSteamCMDサインインとは別のサインインです。',
   'Sign in to Steam…': 'Steamにサインイン…',
   'Open collection': 'コレクションを開く',
   'A collection is a list of Workshop items put together by its author. Open it to see and download them.': 'コレクションは、作成者がまとめたワークショップアイテムのリストです。開くと、アイテムを表示してダウンロードできます。',

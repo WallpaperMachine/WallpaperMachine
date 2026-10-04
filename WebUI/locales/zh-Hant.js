@@ -1056,6 +1056,7 @@ export default {
   'Forgets the Steam session this app read your subscriptions with': '清除此 App 用來讀取你訂閱項目的 Steam 工作階段',
   'Sign in to see your subscriptions': '登入以查看你的訂閱',
   'Steam shows the wallpapers you subscribe to only to you. You sign in on Steam’s own page; WallpaperMachine keeps the session only until it quits, and uses it only to read this list.': 'Steam 只會向你本人顯示你訂閱的桌布。你會在 Steam 自己的網頁上登入；WallpaperMachine 只會保留該工作階段直到結束執行，且只用它來讀取這份列表。',
+  'This is separate from the SteamCMD sign-in in Settings, which only downloads wallpapers.': '這次登入與「設定」中用來下載桌布的 SteamCMD 登入彼此獨立。',
   'Sign in to Steam…': '登入 Steam…',
   'Open collection': '打開收藏集',
   'A collection is a list of Workshop items put together by its author. Open it to see and download them.': '收藏集是由作者整理的一組工作坊項目。打開即可查看並下載其中的項目。',
