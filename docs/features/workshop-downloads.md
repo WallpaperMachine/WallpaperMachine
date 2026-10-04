@@ -176,10 +176,15 @@ takes the `steamLoginSecure` cookie Steam sets. The cookie is kept in memory
 only (`WorkshopStore.steamWebSession`): it is never written to disk or the
 keychain, ends when the app quits or on **Sign out of Steam**, and is sent only to
 `steamcommunity.com`, to read the subscriptions list (the author page with
-`browsefilter=mysubscriptions`). Without a session, or when Steam answers with its
-sign-in page instead, the session is forgotten and the grid is emptied (no tiles of
-the list shown before stay behind), so the panel offers **Sign in to Steam…** and
-says it is separate from SteamCMD's sign-in.
+`browsefilter=mysubscriptions`). That page lists rows rather than an author's
+tiles, so `WorkshopService.decodeProfileListing` reads an item's id from either
+layout: an author tile's `data-publishedfileid`, or a subscription row's
+Unsubscribe link (`UnsubscribeItemBtn<id>`, `UnsubscribeItem( '<id>', … )`). A
+page whose paging line counts entries but none can be read is reported as
+unreadable instead of being shown as an empty list. Without a session, or when
+Steam answers with its sign-in page instead, the session is forgotten and the grid
+is emptied (no tiles of the list shown before stay behind), so the panel offers
+**Sign in to Steam…** and says it is separate from SteamCMD's sign-in.
 
 **Download the ones not in your library** reads every page of subscriptions (at
 most 1,000 pages of 30), drops what is installed, collections and Application items, and

@@ -48,6 +48,28 @@ final class WorkshopSourceTests: XCTestCase {
     XCTAssertEqual(listing.name, "Night & Day")
   }
 
+  /// Issue #29: Steam lists subscriptions as rows, not as an author's tiles, and every one of
+  /// them must be read.
+  func testSubscriptionsListingReadsItsRowsAndTotal() throws {
+    let listing = try WorkshopService.decodeProfileListing(String(
+      decoding: subscriptionsHTML(ids: ["300", "100", "200"], total: "127"), as: UTF8.self))
+    XCTAssertEqual(listing.ids, ["300", "100", "200"])
+    XCTAssertEqual(listing.total, 127)
+  }
+
+  /// A page that says it holds entries but shows none means Steam changed its markup; reading it
+  /// as an empty list would hide every wallpaper without a word.
+  func testAListingWhoseEntriesCannotBeReadIsAFailure() throws {
+    let unread = "<html><head><title>Steam Community :: Me :: Workshop Items</title></head>"
+      + "<div class=\"workshopBrowsePagingInfo\">Showing 1-30 of 127 entries</div><div class=\"row\">Item</div></html>"
+    XCTAssertThrowsError(try WorkshopService.decodeProfileListing(unread)) { XCTAssertTrue($0 is WorkshopFailure) }
+    // A page past the last entry is simply empty.
+    let past = try WorkshopService.decodeProfileListing(
+      "<html><head><title>Steam Community :: Me</title></head>Showing 151-180 of 127 entries</html>")
+    XCTAssertEqual(past.ids, [])
+    XCTAssertEqual(past.total, 127)
+  }
+
   /// Every Steam page links to the sign-in page from its header, so only a page titled so means
   /// the session is gone; an author with nothing published is simply empty.
   func testOnlySteamsSignInPageMeansSigningInAgain() throws {
@@ -168,8 +190,8 @@ final class WorkshopSourceTests: XCTestCase {
   func testSubscriptionsAreReadWithTheSessionAndEveryPageOfThem() async throws {
     let session = try XCTUnwrap(SteamWebSession(cookie: "\(Self.author)||0123456789abcdef0123"))
     fixture.subscriptionPages = [
-      1: profileHTML(ids: (1...30).map(String.init), name: "Me", total: "32"),
-      2: profileHTML(ids: ["31", "32"], name: "Me", total: "32"),
+      1: subscriptionsHTML(ids: (1...30).map(String.init), total: "32"),
+      2: subscriptionsHTML(ids: ["31", "32"], total: "32"),
     ]
     let ids = try await fixture.service.subscribedIDs(account: session)
     XCTAssertEqual(ids, (1...32).map(String.init))
@@ -226,7 +248,7 @@ final class WorkshopSourceTests: XCTestCase {
     } catch {}
     XCTAssertNil(store.steamWebSession)
 
-    fixture.subscriptionPages = [1: profileHTML(ids: ["1"], name: "Me", total: "1")]
+    fixture.subscriptionPages = [1: subscriptionsHTML(ids: ["1"], total: "1")]
     fixture.details = ["1": detailsRow("1", tags: ["Scene", "Everyone"])]
     try await store.signInToSteamWeb { "\(Self.author)||0123456789abcdef0123" }
     try await finished(store)
@@ -245,7 +267,7 @@ final class WorkshopSourceTests: XCTestCase {
     XCTAssertEqual(store.items, [])
     XCTAssertFalse(store.hasLoaded)
 
-    fixture.subscriptionPages = [1: profileHTML(ids: ["1"], name: "Me", total: "1")]
+    fixture.subscriptionPages = [1: subscriptionsHTML(ids: ["1"], total: "1")]
     try await store.signInToSteamWeb { "\(Self.author)||0123456789abcdef0123" }
     try await finished(store)
     store.signOutOfSteamWeb()
@@ -298,6 +320,25 @@ final class WorkshopSourceTests: XCTestCase {
       <a href="https://steamcommunity.com/login/home/?goto=">Sign in</a>
       <div class="workshopBrowsePagingInfo">Showing 1-\(ids.count) of \(total) entries</div>
       <div class="workshopBrowseItems">\(tiles)</div></html>
+      """.utf8)
+  }
+
+  /// Steam's subscriptions page: a row per item, named only by its links, without the
+  /// `data-publishedfileid` an author's tiles carry.
+  private func subscriptionsHTML(ids: [String], total: String) -> Data {
+    let rows = ids.map { id in
+      """
+      <div class="workshopItemSubscription " id="Subscription\(id)">
+        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)&searchtext="><div class="workshopItemTitle">Item \(id)</div></a>
+        <a id="UnsubscribeItemBtn\(id)" class="btn_grey_black btn_small_thin" href="javascript:UnsubscribeItem( '\(id)', '431960' );"><span>Unsubscribe</span></a>
+      </div>
+      """
+    }.joined()
+    return Data("""
+      <html><head><title>Steam Community :: Me :: Workshop Items</title></head>
+      <a href="https://steamcommunity.com/login/home/?goto=">Sign in</a>
+      <div class="workshopBrowsePagingInfo">Showing 1-\(ids.count) of \(total) entries</div>
+      <div class="workshopBrowseItems">\(rows)</div></html>
       """.utf8)
   }
 

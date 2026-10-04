@@ -74,9 +74,10 @@ Swift tests cover, without starting the app:
   out), a collection's order, collections marked on browse pages over a
   megabyte, the sidebar's rules on unfiltered pages, the age-rating sampling of
   collections, a collection's pages, every page of subscriptions sent with the
-  session, and the store's back history, sign-in, a session Steam ended,
-  dropping the list on show when subscriptions have no session, and sign-out,
-  all against a fixture protocol. `WebPanelWorkshopSourceTests`
+  session and read from Steam's subscription rows (issue #29), a page whose
+  entries cannot be read failing instead of passing for empty, and the store's
+  back history, sign-in, a session Steam ended, dropping the list on show when
+  subscriptions have no session, and sign-out, all against a fixture protocol. `WebPanelWorkshopSourceTests`
   covers the panel's source actions, their validation, sign-in through an
   injected window and refusing to download a collection. Steam's real sign-in
   window is not covered.

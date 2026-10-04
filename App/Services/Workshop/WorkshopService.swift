@@ -383,7 +383,11 @@ actor WorkshopService {
     /// account's name. Steam's sign-in page instead means the session is gone.
     static func decodeProfileListing(_ html: String) throws -> (ids: [String], total: Int, name: String?) {
         var ids: [String] = []
-        let idPattern = try NSRegularExpression(pattern: #"data-publishedfileid="(\d+)""#)
+        // An author's items are tiles carrying `data-publishedfileid`; subscriptions are rows
+        // whose Unsubscribe link, `<a id="UnsubscribeItemBtn<id>"
+        // href="javascript:UnsubscribeItem( '<id>', '<app>' );">`, is all that names the item.
+        let idPattern = try NSRegularExpression(
+            pattern: #"(?:data-publishedfileid="|id="UnsubscribeItemBtn|UnsubscribeItem\(\s*')(\d+)"#)
         for match in idPattern.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
             guard let range = Range(match.range(at: 1), in: html) else { continue }
             let id = String(html[range])
@@ -393,16 +397,24 @@ actor WorkshopService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         // Every page links to the sign-in page in its header; only the page itself is titled so.
         if ids.isEmpty, title == "Sign In" { throw SteamSignInRequired() }
-        let total = firstMatch(#"Showing\s+[\d,]+\s*-\s*[\d,]+\s+of\s+([\d,]+)\s+entries"#, in: html)
-            .flatMap { Int($0.replacingOccurrences(of: ",", with: "")) } ?? ids.count
+        let paging = #"Showing\s+([\d,]+)\s*-\s*[\d,]+\s+of\s+([\d,]+)\s+entries"#
+        let number = { (group: Int) in
+            firstMatch(paging, in: html, group: group).flatMap { Int($0.replacingOccurrences(of: ",", with: "")) }
+        }
+        let total = number(2) ?? ids.count
+        // Steam says this page holds entries yet none could be read: its markup has changed,
+        // which must not pass for an empty list.
+        if ids.isEmpty, total > 0, let first = number(1), first <= total {
+            throw WorkshopFailure(message: String(localized: "Steam returned an unreadable Workshop page. Try again or browse on Steam."))
+        }
         let name = firstMatch(#"^Steam Community :: (.+?)(?: :: [^:]*)?$"#, in: title).map(unescapeHTML)
         return (ids, max(total, ids.count), name)
     }
 
-    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+    private static func firstMatch(_ pattern: String, in text: String, group: Int = 1) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              let range = Range(match.range(at: 1), in: text) else { return nil }
+              let range = Range(match.range(at: group), in: text) else { return nil }
         return String(text[range])
     }
 
