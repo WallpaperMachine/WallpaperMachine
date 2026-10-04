@@ -4422,7 +4422,7 @@ SceneRuntimeContext::CameraShotTimeline ResolveCameraShotTimeline(
     return timeline;
 }
 
-void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
+void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj, float resolved_fov) {
     const auto runtime_name = LayerRuntimeName(context, obj);
     auto       node         = ReuseOrCreateLayerNode(context, obj.id);
     const auto previous_runtime_name = node->Name();
@@ -4453,7 +4453,7 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
             const auto& source = context.scene->cameras.at("global_perspective");
             auto camera = std::make_shared<SceneCamera>(
                 static_cast<float>(source->Aspect()), static_cast<float>(source->NearClip()),
-                static_cast<float>(source->FarClip()), ResolvePerspectiveFov({}, obj.fov));
+                static_cast<float>(source->FarClip()), resolved_fov);
             camera->AttatchNode(source->GetAttachedNode());
             perspective_camera = camera.get();
             context.scene->cameras[cam_name] = std::move(camera);
@@ -4502,10 +4502,10 @@ void ParseCameraObj(ParseContext& context, wpscene::WPCameraObject& obj) {
         CameraPathPlayback path(std::move(paths), obj.queuemode);
         if (context.scene->runtime) {
             context.scene->runtime->RegisterPerspectiveCameraShot(
-                node, perspective_camera, ResolvePerspectiveFov({}, obj.fov), std::move(path));
+                node, perspective_camera, resolved_fov, std::move(path));
         } else if (obj.visible) {
             perspective_camera->AttatchNode(node);
-            perspective_camera->SetFov(ResolvePerspectiveFov({}, obj.fov));
+            perspective_camera->SetFov(resolved_fov);
             path.Apply(*node, *perspective_camera);
             context.scene->activeCamera = perspective_camera;
         }
@@ -4900,8 +4900,10 @@ std::shared_ptr<Scene> WPSceneParser::Parse(const SceneParseRequest& request,
                        [&context](wpscene::WPModelObject& obj) {
                            ParseModelObj(context, obj);
                        },
-                       [&context](wpscene::WPCameraObject& obj) {
-                           ParseCameraObj(context, obj);
+                       [&context, &sc](wpscene::WPCameraObject& obj) {
+                           // Read the authored scene settings, not a shared camera whose FOV
+                           // an earlier visible shot may already have replaced.
+                           ParseCameraObj(context, obj, ResolvePerspectiveFov(sc.general, obj.fov));
                        },
                    },
                    obj);

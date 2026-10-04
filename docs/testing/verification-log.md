@@ -25,6 +25,18 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-04 — PR 25 declaration-scoped arrays and camera FOV
+
+- Resolve stage-interface macro bounds at each declaration, including intervening and function-body directives; freeze literal bounds before hoisting/input-copy emission. Shader pipeline revision 10 -> 11 invalidates previously cached stale-sized programs.
+- Omitted/nonpositive camera FOV inherits immutable authored scene settings; named camera creation, runtime shots and non-runtime playback share the resolved value. Positive object overrides remain authoritative.
+- `cargo test -p shader -- --nocapture` with the project Cargo environment — exit 0; 515 reported passed, including three unavailable asset-dependent early-return skips. SPIR-V/MSL per-declaration and undefined-macro regressions passed.
+- Camera-targeted scene-schema run — 20 passed. Rebuilt full scene_schema_tests with the current shader library — 109 passed, including named/default cameras, scene/shot overrides and visibility fallback in both playback paths.
+- `python3 scripts/build.py --renderer-only` — passed; generated bridge bindings unchanged. No Release app build.
+- `python3 scripts/check_renderer.py` — every recorded binary exited zero; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
+- `python3 scripts/test.py` — all Python suites passed; 1,156 native passed, zero failed, 12 skipped.
+- Corpus gaps: three shader cases, two renderer text scenes, the optional local video import case and environment-selected Metal projects skipped; these are not verified asset coverage.
+- `git diff --check`, provenance JSON and generated-binding consistency passed. No desktop visual/live keyboard validation, authored-reference parity claim or app launch.
+
 ## 2026-10-03 — Software-decoded video GPU import
 
 - Reproduced the initial GPU-import failure in the installed reported video, read-only, using playback_gpu_test --gtest_filter='DecodedFormats/*:AppleVideoFrame.LocalVideoImportsVisiblePixels' with WE_TEST_VIDEO. All five cases failed before the allocation fix and passed afterward.
@@ -129,13 +141,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Renderer gaps: two local text-scene cases and the environment-selected local-project Metal case skipped; no authored-reference parity claim.
 - `git diff --check` — passed before commit.
 - No desktop automation, visual validation, app launch, or Release app rebuild performed.
-
-## 2026-10-03 — Tile layer textures, unblended alpha-to-coverage, random sprite frames
-
-- Composite render targets follow the source layer clampuvs; alphatocoverage writes kept samples unblended on both backends; randomframe particles get a fixed hashed per-particle frame. No wallpaper-specific rules, MSAA, extra passes or allocations.
-- Targeted: layer_texture_reference_test 20, particle_mouse_controlpoint_test 42, metal_backend_test 35, scene_schema_tests 100 passed.
-- python3 scripts/check_renderer.py: passed; 509 renderer tests, 3 optional local-asset skips, 0 failures; 11 generated scenes pass pixel and pooled/isolated checks; 8 reload projects x2.
-- python3 scripts/test.py: passed; 1,071 native passed, 12 skipped.
-- Local packaged 3D scene, Compatibility offscreen, disposable package copies forcing single camera paths: the solid blue planes came from a 497x-tiled maze composite sampled with clamp; after the fix the maze tiles and sprite particles show varied frames.
-- Remaining against the supplied Windows screenshot: maze lines are thinner/dimmer (single-sample coverage threshold vs likely MSAA) and distant lines alias; not changed, to avoid MSAA memory/perf cost.
-- python3 scripts/build.py --configuration Release: passed. No desktop capture, Parallels inspection, wallpaper change or app launch.

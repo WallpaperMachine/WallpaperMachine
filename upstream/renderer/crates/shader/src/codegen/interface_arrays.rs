@@ -1,14 +1,17 @@
 //! Shared bounds for generated stage-interface arrays and their locations.
 
 use crate::{
-    ShaderError, ShaderResult,
-    syntax::{ShaderModule, SyntaxItem},
+    ShaderError, ShaderResult, SourceSpan,
+    syntax::{PreprocessorDirective, ShaderModule},
+    tokenizer::TypedToken,
 };
 
-/// Resolves a positive literal or a leading object-like macro to one array size.
-/// Unsupported expressions and late definitions must not silently reserve one
-/// location while emission allocates a larger array.
-pub(crate) fn interface_array_size(module: &ShaderModule<'_>, suffix: &str) -> ShaderResult<u32> {
+/// Resolves a positive literal or an object-like macro visible at the declaration.
+/// Active directives inside earlier function bodies also affect later declarations:
+/// preprocessor macros have no function scope. Later changes never resize this array.
+pub(crate) fn interface_array_size(
+    module: &ShaderModule<'_>, suffix: &str, declaration_span: SourceSpan,
+) -> ShaderResult<u32> {
     let bound = suffix
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
@@ -25,10 +28,11 @@ pub(crate) fn interface_array_size(module: &ShaderModule<'_>, suffix: &str) -> S
         return Ok(size);
     }
     let mut replacement = None;
-    for item in module.items() {
-        let SyntaxItem::Directive(directive) = item else {
-            break;
-        };
+    for token in module.token_stream().cursor().iter()
+        .take_while(|token| token.span().start() < declaration_span.start())
+    {
+        if !matches!(token.kind(), TypedToken::Directive(_)) { continue; }
+        let directive = PreprocessorDirective::from_token_text(module.slice(token.span()), token.span());
         if directive.name_text() == "undef" && directive.body_text() == bound {
             replacement = None;
         } else if let Some(parts) = directive
@@ -42,14 +46,14 @@ pub(crate) fn interface_array_size(module: &ShaderModule<'_>, suffix: &str) -> S
         }
     }
     replacement.and_then(positive_integer).ok_or_else(|| ShaderError::invalid_request(format!(
-        "unsupported stage-interface array bound `{suffix}`: expected a positive integer or a leading macro with a positive integer value"
+        "unsupported stage-interface array bound `{suffix}`: expected a positive integer or a visible macro with a positive integer value"
     )))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ShaderStageKind;
+    use crate::{ShaderStageKind, syntax::SyntaxItem};
 
     #[test]
     fn interface_bounds_follow_leading_macro_undefinitions_and_redefinitions() {
@@ -63,7 +67,11 @@ mod tests {
         ] {
             let source = format!("{directives}varying vec2 taps[COUNT];\n");
             let module = ShaderModule::parse(ShaderStageKind::Fragment, &source).unwrap();
-            assert_eq!(interface_array_size(&module, "[COUNT]").ok(), expected, "{directives}");
+            let declaration = module.items().iter().find_map(|item| match item {
+                SyntaxItem::Declaration(declaration) => Some(declaration.span()),
+                _ => None,
+            }).unwrap();
+            assert_eq!(interface_array_size(&module, "[COUNT]", declaration).ok(), expected, "{directives}");
         }
     }
 }

@@ -1430,6 +1430,60 @@ TEST(SceneSchema, PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverri
     EXPECT_EQ(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
 }
 
+TEST(SceneSchema, PerspectiveShotsInheritSceneFovUnlessExplicitlyOverridden) {
+    for (bool runtime_enabled : {false, true}) {
+        for (const auto* camera_name : {"named shot camera", "default"}) {
+            for (float scene_override : {0.0f, 75.0f}) {
+                for (const auto& object_fov : std::vector<nlohmann::json> {nullptr, 0, -1, 80}) {
+                    SCOPED_TRACE(object_fov.dump() + " " + camera_name +
+                                 (runtime_enabled ? " runtime" : " static"));
+                    auto source = nlohmann::json::parse(PerspectiveSceneJson(R"([
+                      {"id":1,"name":"earlier","camera":"default","origin":[0,0,12],"fov":45},
+                      {"id":2,"name":"target","camera":"default","origin":[6,0,8]}
+                    ])"));
+                    source["general"]["perspectiveoverridefov"] = scene_override;
+                    source["objects"][1]["camera"] = camera_name;
+                    if (!object_fov.is_null()) source["objects"][1]["fov"] = object_fov;
+                    const double scene_fov = scene_override > 0 ? scene_override : 60.0;
+                    const double expected = !object_fov.is_null() && object_fov.get<double>() > 0
+                                                ? object_fov.get<double>() : scene_fov;
+                    fs::VFS vfs;
+                    MountSceneFiles(vfs);
+                    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+                    ProjectProperties properties;
+                    auto scene = WPSceneParser().Parse(SceneParseRequest {
+                        .scene_id = "scene-fov-inheritance",
+                        .project_properties = runtime_enabled ? &properties : nullptr,
+                    }, source.dump(), vfs, sound);
+                    ASSERT_NE(scene, nullptr);
+                    const bool named = std::string_view(camera_name) != "default";
+                    auto* camera = scene->cameras.at(named ? camera_name : "global_perspective").get();
+                    ASSERT_EQ(scene->activeCamera, camera);
+                    EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    EXPECT_TRUE(camera->GetPosition().isApprox(Eigen::Vector3d(6,0,8), 1e-5));
+                    if (!runtime_enabled) {
+                        EXPECT_EQ(scene->runtime, nullptr);
+                        continue;
+                    }
+                    ASSERT_NE(scene->runtime, nullptr);
+                    scene->runtime->Tick(0.1);
+                    EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    ASSERT_TRUE(scene->runtime->SetNodeVisible("target", false));
+                    scene->runtime->Tick(0.1);
+                    EXPECT_EQ(scene->activeCamera, scene->cameras.at("global_perspective").get());
+                    EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), 45);
+                    if (named) EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    ASSERT_TRUE(scene->runtime->SetNodeVisible("earlier", false));
+                    scene->runtime->Tick(0.1);
+                    EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), scene_fov);
+                    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,10,20), 1e-5));
+                    if (named) EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                }
+            }
+        }
+    }
+}
+
 nlohmann::json CameraPathFixture(double x) {
     const auto curve = [](double a, double b) {
         return nlohmann::json::array({{{"frame",0},{"value",a}},{{"frame",30},{"value",b}}});

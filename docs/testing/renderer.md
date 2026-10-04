@@ -351,6 +351,16 @@ any other node — scripts can still read and move it — but it does not touch
 behaviour exactly, which is what `SceneSchema.DefaultCameraObjectBecomesActivePerspective`
 holds down.
 
+Perspective shots with an omitted or nonpositive `fov` inherit the scene's
+resolved FOV (`perspectiveoverridefov`, then `fov`, then 50). A positive shot
+FOV still overrides it. Resolve this from authored scene settings, not a shared
+camera whose FOV an earlier visible shot may already have changed. Newly named
+cameras, runtime shot selection and non-runtime playback use the same resolved
+value, including the named camera's saved fallback.
+`SceneSchema.PerspectiveShotsInheritSceneFovUnlessExplicitlyOverridden` covers
+named/default cameras, both playback paths, scene overrides and visibility
+fallback after an earlier shot used a different FOV.
+
 The shot still frames the canvas it does not own. `ParseCameraObj` registers
 every shot with `SceneRuntimeContext::RegisterCameraShot`. At the end of each
 tick, after scripts and every visibility and origin writer,
@@ -1061,7 +1071,8 @@ conditional helper headers, source-defined `log10`, legacy scalar/vector
 argument conversion, compound assignment narrowing, and scalar initializer
 conversion. The pipeline revision is part of the cache key and is bumped
 whenever codegen can produce different output for source that already
-compiled; it is 10 now, and each bump invalidates previously compiled programs.
+compiled; it is 11 now, and each bump invalidates previously compiled programs.
+Revision 11 invalidates arrays previously emitted with a stale leading macro size.
 
 Floating remainder uses a generated typed helper accepted by Naga, preserving
 truncating remainder and single evaluation of its operands. Active `#undef`
@@ -1085,12 +1096,16 @@ applied to a float (`!someFloat`), which still rejects
 Varying arrays sized by a numeric combo resolve the macro before generated
 interface declarations are emitted and reserve one location per element, just
 like literal-sized arrays. Location planning and emission use the same
-`interface_array_size` resolver, including ordered `#undef` and redefinition
-handling shared with the audit's leading-macro semantics. Bounds must be positive integer literals or
-leading object-like macros with positive integer values; expressions, missing
-or late definitions, zero and negative sizes produce an explicit diagnostic
-rather than silently reserving one location. The regression
-`pipeline_rejects_unresolved_interface_array_bounds_before_layout` covers both
+`interface_array_size` resolver at each original declaration's source position.
+All earlier active directives count, including macros changed between ordinary
+items or inside earlier function bodies; later changes do not resize an earlier
+array. Codegen stores literal bounds before hoisting declarations or generating
+local input copies. Bounds must be positive integer literals or visible
+object-like macros with positive integer values. Expressions, missing definitions
+(including those defined only after the declaration), zero and negative sizes
+produce an explicit diagnostic rather than silently reserving one location.
+`pipeline_resolves_macro_array_bounds_at_each_declaration` and
+`pipeline_rejects_unresolved_interface_array_bounds_before_layout` cover both
 backends. Legacy builtin calls in `#define` replacements are
 rewritten inside function bodies too, not only in top-level directives. The
 original regressions `pipeline_compiles_macro_sized_varyings_without_overlapping_locations`

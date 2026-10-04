@@ -363,7 +363,7 @@ impl StageInterfaceBinding {
                 let name = SmolStr::new(declaration.declaration_name()?.as_str());
                 let size = declaration
                     .array_suffix()
-                    .map(|suffix| interface_array_size(module, suffix.as_str()))
+                    .map(|suffix| interface_array_size(module, suffix.as_str(), declaration.span()))
                     .transpose();
                 Some(size.map(|size| Self {
                     location_count: size.unwrap_or(1),

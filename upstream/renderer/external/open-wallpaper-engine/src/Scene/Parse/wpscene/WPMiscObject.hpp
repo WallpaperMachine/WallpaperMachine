@@ -194,7 +194,7 @@ struct WPCameraObject : WPMiscObjectBase {
     std::string camera;
     std::string path;
     std::string queuemode;
-    float       fov { 50.0f };
+    float       fov { 0.0f }; // absent/nonpositive inherits the scene's resolved perspective FOV
     float       zoom { 1.0f };
     /// `zoom` as written. The unwrapped float above is the authored default;
     /// a slider the user drags arrives as `{"user": "<property>", "value": n}`

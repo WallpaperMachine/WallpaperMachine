@@ -3133,6 +3133,43 @@ fn pipeline_compiles_macro_sized_varyings_without_overlapping_locations() {
 }
 
 #[test]
+fn pipeline_resolves_macro_array_bounds_at_each_declaration() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for change in [
+            "#undef COUNT\n#define COUNT 4\n",
+            "float helper() {\n#undef COUNT\n#define COUNT 4\nreturn 0.0;\n}\n",
+        ] {
+            let interfaces = format!(
+                "#define COUNT 2\nvarying vec2 first[COUNT];\n{change}\
+                 varying vec2 second[COUNT];\nvarying vec2 uv;\n"
+            );
+            let request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/declaration_scoped_array_bounds").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, format!(
+                "{interfaces}attribute vec2 a_Position;\nvoid main() {{\
+                 first[0]=a_Position; first[1]=a_Position;\
+                 for(int i=0;i<COUNT;i++) second[i]=a_Position;\
+                 uv=a_Position; gl_Position=vec4(a_Position,0,1); }}"
+            )))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, format!(
+                "{interfaces}void main() {{ gl_FragColor=vec4(first[1]+second[3]+uv,0,1); }}"
+            )))
+            .build().unwrap();
+            let program = pipeline().compile(&request)
+                .expect("each array must use the definition visible at its own declaration");
+            for stage in [ShaderStageKind::Vertex, ShaderStageKind::Fragment] {
+                let source = legalized_stage_source(&program, stage);
+                assert!(source.contains("vec2 first[2];"), "{source}");
+                assert!(source.contains("vec2 second[4];"), "{source}");
+                assert!(source.contains("layout(location = 6)"), "{source}");
+            }
+        }
+    }
+}
+
+#[test]
 fn pipeline_rejects_unresolved_interface_array_bounds_before_layout() {
     for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
         for (prefix, suffix, late) in [
@@ -3140,6 +3177,8 @@ fn pipeline_rejects_unresolved_interface_array_bounds_before_layout() {
             ("#define COUNT (2+1)\n", "COUNT", ""),
             ("#define COUNT 0\n", "COUNT", ""),
             ("#define COUNT -1\n", "COUNT", ""),
+            ("#define COUNT 2\nuniform float preceding;\n#undef COUNT\n", "COUNT", ""),
+            ("#define COUNT 2\nuniform float preceding;\n#define COUNT(x) x\n", "COUNT", ""),
             ("", "COUNT", "#define COUNT 3\n"),
             ("", "COUNT", ""),
             ("", "2+1", ""),
