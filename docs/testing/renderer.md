@@ -531,7 +531,13 @@ Workshop `3588579284` reached its first frame in 25.1 seconds with a warm
 shader cache, and 24.4 seconds on the next launch after the driver pipeline
 cache had been written beside that scene's shader cache, so the cache does
 not remove the wait. The apply wait is 90 seconds. Rollback after the wait is
-unchanged.
+unchanged. It waits only on displays where the engine opens or replaces a
+scene, judged against the engine's live display snapshot: a display refresh
+moves and resizes scenes in place without the facade, and such a scene keeps
+its renderer, which announces its first frame once. Comparing against the
+descriptors the facade last handed over made the next Apply wait out the 90
+seconds and roll back a playing wallpaper (issue #30;
+`engine::facade::first_frame_tests`).
 
 Texture decode was the other serial startup cost. `CustomShaderPass::prepare`
 decoded an image again for every pass that bound it, only for `CreateTex` to

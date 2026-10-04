@@ -280,7 +280,8 @@ pub struct RealEngineFacade {
     audio_capture: AudioCaptureWorker,
     audio_mutation: Arc<tokio::sync::Mutex<()>>,
     ready_frames: Arc<std::sync::Mutex<std::collections::HashMap<SceneHandle, u64>>>,
-    rendered_scenes: Arc<tokio::sync::Mutex<Vec<SceneDesc>>>,
+    /// One reconcile at a time, so each waits only on the frames it caused.
+    reconcile_turn: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl RealEngineFacade {
@@ -290,10 +291,38 @@ impl RealEngineFacade {
             audio_capture: AudioCaptureWorker::spawn(engine.clone()),
             audio_mutation: Arc::default(),
             ready_frames: Arc::default(),
-            rendered_scenes: Arc::default(),
+            reconcile_turn: Arc::default(),
             engine,
         }
     }
+}
+
+/// The displays on which `scenes` open or replace a scene: the only ones
+/// that announce a first frame again.
+///
+/// The baseline is the engine's live state, not what this facade last asked
+/// for. A display refresh moves and resizes scenes in place without passing
+/// through here, and a scene that only gets new geometry keeps its renderer,
+/// which reports its first frame once. Waiting on such a display could only
+/// end in the 90-second timeout, which then rolled back a wallpaper that was
+/// playing.
+fn displays_awaiting_first_frame(live: &[DisplaySnapshotEntry], scenes: &[SceneDesc]) -> Vec<u32> {
+    scenes
+        .iter()
+        .filter(|scene| {
+            !live.iter().any(|entry| {
+                entry.desc.display_id == scene.display.display_id
+                    && entry.handle.is_some()
+                    && matches!(&entry.assignment, Some(WallpaperAssignment::Direct(template)) if {
+                        let mut running = template.for_display(scene.display.clone());
+                        // Opening a scene consumes its shader refresh.
+                        running.force_shader_refresh = false;
+                        running.same_wallpaper(scene)
+                    })
+            })
+        })
+        .map(|scene| scene.display.display_id)
+        .collect()
 }
 
 impl EngineFacade for RealEngineFacade {
@@ -304,23 +333,19 @@ impl EngineFacade for RealEngineFacade {
     fn reconcile_scenes(&self, scenes: Vec<SceneDesc>) -> EngineFuture<Vec<SceneResult>> {
         let engine = self.engine.clone();
         let ready_frames = self.ready_frames.clone();
-        let rendered_scenes = self.rendered_scenes.clone();
+        let reconcile_turn = self.reconcile_turn.clone();
         let audio_capture = self.audio_capture.clone();
         let audio_mutation = self.audio_mutation.clone();
         async move {
-            let mut previous = rendered_scenes.lock().await;
+            let _turn = reconcile_turn.lock().await;
             let before = ready_frames.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let changed: Vec<u32> = scenes.iter().filter(|scene| {
-                !previous.iter().any(|old| old.display.display_id == scene.display.display_id
-                    && old.same_wallpaper(scene) && old.display == scene.display)
-            }).map(|scene| scene.display.display_id).collect();
+            let changed = displays_awaiting_first_frame(&engine.display_snapshot(), &scenes);
             let results = {
                 let _audio_guard = audio_mutation.lock().await;
-                let results = engine.reconcile_scenes(scenes.clone()).await;
+                let results = engine.reconcile_scenes(scenes).await;
                 audio_capture.retain_scenes().await.map_err(EngineError::Platform)?;
                 results?
             };
-            *previous = scenes;
             // A cold MoltenVK pipeline compile for a large 3D or puppet scene
             // runs past 20s. The driver's cache makes the next launch short;
             // the first one still has to be allowed to finish.
@@ -1954,5 +1979,79 @@ impl EngineFacade for FakeEngineFacade {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod first_frame_tests {
+    use wallpaper_core::{
+        DisplayDesc, DisplayIdentity, DisplaySnapshotEntry, WallpaperAssignment,
+        project::{ScalingMode, SceneDesc, SceneHandle, SceneTemplate},
+    };
+
+    use super::displays_awaiting_first_frame;
+
+    fn forest(display: DisplayDesc) -> SceneDesc {
+        SceneDesc::new(display, "/library/forest/project.json", "/assets", 30, false)
+    }
+
+    fn live(scene: &SceneDesc) -> DisplaySnapshotEntry {
+        DisplaySnapshotEntry {
+            identity: DisplayIdentity::default(),
+            desc: scene.display.clone(),
+            handle: Some(SceneHandle::new(u64::from(scene.display.display_id))),
+            accepts_pointer_input: false,
+            paused: false,
+            window_active: true,
+            assignment: Some(WallpaperAssignment::Direct(SceneTemplate::from_scene_desc(scene))),
+        }
+    }
+
+    // Issue #30: a display refresh had moved a scene in place, and the next apply waited the
+    // full 90 seconds for a first frame its unchanged renderer never reports again.
+    #[test]
+    fn a_scene_that_only_gets_new_geometry_is_not_awaited() {
+        let shown = forest(DisplayDesc::new(3, 0, 0, 3840, 2160, 2.0));
+        let live = [live(&shown)];
+        let moved = forest(DisplayDesc::new(3, 1920, 0, 3840, 2160, 2.0));
+        let resized = forest(DisplayDesc::new(3, 0, 0, 2560, 1440, 1.0));
+        let faster = forest(DisplayDesc::new(3, 0, 0, 3840, 2160, 2.0).with_refresh_rate(120));
+        for scene in [shown.clone(), moved, resized, faster] {
+            assert!(displays_awaiting_first_frame(&live, &[scene]).is_empty());
+        }
+        // Pause is applied live and never reopens a scene.
+        let mut paused = shown;
+        paused.paused = true;
+        assert!(displays_awaiting_first_frame(&live, &[paused]).is_empty());
+    }
+
+    #[test]
+    fn a_scene_that_opens_or_changes_its_wallpaper_is_awaited() {
+        let shown = forest(DisplayDesc::new(4, 0, 0, 3840, 2160, 2.0));
+        let live = [live(&shown)];
+        let mut other = shown.clone();
+        other.scene_path = "/library/city/project.json".into();
+        let mut fitted = shown.clone();
+        fitted.scaling_mode = ScalingMode::Fit;
+        let mut refreshed = shown.clone();
+        refreshed.force_shader_refresh = true;
+        let elsewhere = forest(DisplayDesc::new(5, 3840, 0, 3840, 2160, 2.0));
+        for scene in [other, fitted, refreshed] {
+            assert_eq!(displays_awaiting_first_frame(&live, &[scene]), vec![4]);
+        }
+        assert_eq!(displays_awaiting_first_frame(&live, &[elsewhere]), vec![5]);
+
+        let mut closed = live[0].clone();
+        closed.handle = None;
+        assert_eq!(displays_awaiting_first_frame(&[closed], &[shown]), vec![4]);
+    }
+
+    #[test]
+    fn a_shader_refresh_the_open_scene_consumed_is_not_a_change() {
+        let mut requested = forest(DisplayDesc::new(6, 0, 0, 1920, 1080, 1.0));
+        requested.force_shader_refresh = true;
+        let mut settled = requested.clone();
+        settled.force_shader_refresh = false;
+        assert!(displays_awaiting_first_frame(&[live(&requested)], &[settled]).is_empty());
     }
 }
