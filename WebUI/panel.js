@@ -174,8 +174,12 @@ async function send(action, args = {}) {
     }
     return state;
   }
-  pending.add(key); localError = ''; render();
+  pending.add(key); localError = '';
+  // The busy render belongs inside the try: a render that threw here once left the key
+  // pending with nothing in flight, and the next send of a queued action awaited that
+  // missing request and re-sent itself in an endless microtask loop that froze the page.
   try {
+    render();
     const request = bridge.postMessage({ action, ...args });
     inFlight.set(key, request);
     const response = await request;

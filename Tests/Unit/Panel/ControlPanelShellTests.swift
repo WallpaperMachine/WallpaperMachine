@@ -1138,6 +1138,34 @@ final class ControlPanelShellTests: ControlPanelTestCase {
     }
   }
 
+  /// Issue #30: a tab click whose busy render threw once left its request marked pending with
+  /// nothing sent. Every later tab click then waited on it in an endless microtask loop, and
+  /// the whole page, Dismiss included, stopped responding.
+  func testTabsStayUsableAfterARenderThrowsWhileSending() async throws {
+    try await withPanel { panel in
+      try await panel.finishWelcome()
+      let before = panel.navigation.selection
+      XCTAssertNotEqual(before, .settings)
+      let failed = try await panel.js("""
+        const query = document.querySelectorAll;
+        let armed = true;
+        document.querySelectorAll = function (selector) {
+          if (armed && selector === '.tabs [data-page]') { armed = false; throw new Error('render failed'); }
+          return query.call(this, selector);
+        };
+        document.querySelector('.tabs [data-page="settings"]').click();
+        return !armed;
+        """) as? Bool
+      XCTAssertEqual(failed, true, "the first tab click must reach the failing render")
+      XCTAssertEqual(panel.navigation.selection, before)
+
+      _ = try await panel.js("document.querySelector('.tabs [data-page=\"settings\"]').click()")
+      try await panel.waitUntil { panel.navigation.selection == .settings }
+      try await panel.waitJS(
+        "document.querySelector('.tabs [aria-current=\"page\"]')?.dataset.page === 'settings'")
+    }
+  }
+
   func testUnavailableRendererSettingsKeepAppearanceUsableButBlockUnavailableLockScreen() async throws {
     try await withPanel { panel in
       try await panel.finishWelcome()

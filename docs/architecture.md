@@ -107,6 +107,12 @@ Protocol, both directions:
   `settings.js` `draw()`, i.e. while rendering a native push, and hung the offscreen
   `ControlPanelSyncTests`/`ControlPanelShellTests` panel suites until their time limit; the
   cause was not isolated.
+  `send()` marks an action pending under a key that covers every tab (and every value of one
+  property), and a repeated `navigate`, `property` or similar action waits on the one in flight.
+  Anything that can throw between marking it and posting it belongs inside the `try` that
+  releases the key: a busy render that threw there once left the key pending with nothing in
+  flight, and the next tab click re-sent itself in an endless microtask loop that froze the page
+  (issue #30).
 - **Theme.** `theme.js` reads `window.__appTheme`, injected as the panel's only `WKUserScript` at
   document start so the resolved appearance is correct before first paint;
   `window.appTheme.apply(theme)` is called on every snapshot.

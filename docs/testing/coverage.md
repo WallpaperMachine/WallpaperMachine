@@ -150,7 +150,8 @@ Swift tests cover, without starting the app:
   tests never contact GitHub, download a real release, or replace the running app.
 - **Panel** — the offscreen `WKWebView` suites share `ControlPanelTestCase`
   (`Tests/Unit/Panel/`) and split by page: `ControlPanelShellTests` (window,
-  language, appearance, About/update, top bar), `ControlPanelLibraryTests`
+  language, appearance, About/update, top bar, tabs that stay usable after a
+  render throws mid-send), `ControlPanelLibraryTests`
   (sorting, tile marks, filter sidebar, download setup, error dismissal),
   `ControlPanelDiscoverTests` (pagination, grid, download rings, previews) and
   `ControlPanelSyncTests` (hidden-panel pushes, option fetches, display titles).
