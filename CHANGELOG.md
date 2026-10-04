@@ -8,6 +8,74 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.4 — 2026-10-04
+
+### English
+
+This release fixes many scene rendering problems, stops the control panel from freezing in Discover and keeps paused downloads across restarts
+
+#### Improved
+
+- Paused Steam Workshop and pixiv downloads now resume after you restart the app
+- Wallpapers whose files change on disk now reload with the new content
+- The app stays responsive while preparing an update, and update installations no longer overlap
+- The Retry wallpaper button now appears only for web wallpapers whose page failed to load, while other errors stay visible
+- The library repeats less work when it updates, and JPEG images decode faster on Apple silicon
+
+#### Fixed
+
+- The control panel no longer freezes repeatedly while animated previews play in Discover
+- Switching wallpapers no longer needs repeated Apply clicks when background updates arrive during loading
+- Software-decoded videos now show their frames instead of a black screen
+- 3D scene characters no longer disappear, and scene cameras follow their intended shots, paths and field of view
+- Intro animations now finish instead of leaving part of the wallpaper permanently covered
+- Lit 2D scene artwork no longer loses its lighting and looks too dark
+- Animated characters no longer appear over-lit or show patches around their eyes
+- Nested cut-out layers such as heads and flowers now move together with their background during parallax
+- 3D scenes no longer show large solid bands or repeated sprites, and thin lines keep their full strength
+- Some scene effects that were previously missing now appear
+- Transparent areas and soft edges in scenes are now preserved
+- Live Solar System shows its bright sun again and no longer has an oversized dwarf planet covering the view
+- The color picker now opens next to its control instead of at a mirrored position
+- Some videos no longer play with the wrong orientation
+- Imported wallpaper files are no longer lost after a failed write, overlapping imports or a cancelled selection
+- Imports keep running when you cancel quitting the app
+- Cancelled pixiv downloads no longer come back as paused after a crash
+
+### 简体中文
+
+此版本修复了大量场景渲染问题，解决了控制面板在“发现”中卡住的情况，并在重启后保留已暂停的下载
+
+#### 改进
+
+- 已暂停的 Steam Workshop 和 pixiv 下载现在会在重启应用后继续
+- 磁盘上文件发生变化的壁纸现在会重新载入新内容
+- 准备更新时应用保持响应，更新安装也不会再重叠进行
+- “重试壁纸”按钮现在只在网页壁纸页面加载失败时显示，其他错误仍会保持可见
+- 壁纸库更新时减少了重复工作，JPEG 图片在 Apple 芯片上解码更快
+
+#### 修复
+
+- 在“发现”中播放动态预览时，控制面板不再反复卡住
+- 载入期间收到后台更新时，切换壁纸不再需要反复点击“应用”
+- 软件解码的视频现在会显示画面，而不是黑屏
+- 3D 场景中的角色不再消失，场景镜头也会按设定的机位、路径和视角播放
+- 开场动画现在会完整播放，不再让壁纸的一部分一直被遮住
+- 带光照的 2D 场景图像不再丢失光照而显得过暗
+- 动画角色不再出现过度打光或眼睛周围的色块
+- 头部、花朵等嵌套的剪贴图层在视差移动时现在会与背景一起移动
+- 3D 场景不再出现大片纯色条带或重复的精灵图，细线也保持原有清晰度
+- 一些之前缺失的场景特效现在会正常显示
+- 场景中的透明区域和柔和边缘现在会被保留
+- Live Solar System 重新显示明亮的太阳，也不再有过大的矮行星遮挡画面
+- 颜色选择器现在会在其控件旁打开，而不是出现在上下颠倒的位置
+- 部分视频不再以错误的方向播放
+- 写入失败、导入重叠或取消选择后，已导入的壁纸文件不再丢失
+- 取消退出应用时，导入会继续进行
+- 已取消的 pixiv 下载在崩溃后不再以暂停状态重新出现
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.3...v1.2.4
+
 ## 1.2.3 — 2026-10-02
 
 ### English
