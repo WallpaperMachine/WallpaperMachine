@@ -1072,6 +1072,20 @@ impl FakeEngineFacade {
         self.pointer_probe_count.load(std::sync::atomic::Ordering::Acquire)
     }
 
+    #[must_use]
+    pub fn wait_for_pointer_probes(&self, count: usize, timeout: Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if self.pointer_probe_count() >= count {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     /// Mirrors the engine: a scene's pause state is published with the
     /// snapshot, which is what stops or starts pointer sampling for it.
     fn publish_display_pause(&self, paused_for: impl Fn(u32) -> Option<bool>) {

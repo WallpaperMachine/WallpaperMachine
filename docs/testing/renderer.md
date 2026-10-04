@@ -1163,8 +1163,10 @@ not certify skipped corpus inputs or authorize a desktop run.
 
 Generated bindgen output can differ in formatting between machines; tests must
 exercise the FFI behavior instead of parsing a formatted declaration. Mouse
-monitor-gap tests wait for the fake engine's sample barrier before comparing
-call counts, so a busy CI worker is not mistaken for a dropped cursor update.
+monitor-gap tests wait for the fake engine's sample barrier and observed probe
+progress before comparing counts, so a busy CI worker is not mistaken for a
+dropped cursor update. Close the gap while the sample is blocked before checking
+that probes stop; otherwise an in-flight probe can race the final count.
 
 Run from `upstream/renderer` with the Homebrew environment from
 `scripts/build.py`. The first `cargo test` after that environment changes fails
