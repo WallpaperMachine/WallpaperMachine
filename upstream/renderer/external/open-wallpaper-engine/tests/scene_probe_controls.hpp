@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Interface/IShaderValueUpdater.h"
 #include "Presentation/WallpaperScaling.hpp"
 #include "Runtime/SceneRuntimeContext.hpp"
 #include "Scene/Scene.h"
@@ -86,6 +87,8 @@ public:
                 y_ = static_cast<float>(1.0 - (cy - mapping.origin_y) / mapping.size_y);
             }
         }
+        scene.pointerPosition = {x_, y_};
+        if (scene.shaderValueUpdater) scene.shaderValueUpdater->MouseInput(x_, y_);
         auto& runtime = *scene.runtime;
         runtime.SetCursorViewport(CursorViewport {
             .origin = Eigen::Vector2f(mapping.origin_x, mapping.origin_y),

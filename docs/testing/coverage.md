@@ -56,8 +56,11 @@ Swift tests cover, without starting the app:
   lane and refuses single-frame sources without a request; the scheme handler
   refuses thumbnail and animated ids it has not announced. An offscreen WebKit
   regression (`ControlPanelDiscoverTests`) checks that Discover tiles load the
-  still first, admit the animation beneath it, fade the still out only for a
-  bright animation and never for a black one, and skip single-frame previews.
+  still first, reveal loaded animations (including authored dark frames) with
+  canvas access unavailable, fall back to the still on animation failure, and
+  skip single-frame previews. It also checks offscreen/hidden source release,
+  cached resume, and returning to Installed without an animation layer. This
+  does not reproduce an actual GPU-process hang or prove on-screen smoothness.
   Updates: `WorkshopTests` decodes a recorded details answer (served item,
   withdrawn item, another app's) and checks the request form;
   `WorkshopUpdateStoreTests` covers what counts as outdated, recorded downloads
@@ -195,8 +198,10 @@ Swift tests cover, without starting the app:
   `ControlPanelWindowSizingTests` also exercises the native chrome offscreen at
   full-screen, half-screen and minimum panel sizes: navigation hit-testing below
   an opaque title bar, unobscured content bounds, and restoration of the windowed
-  title-bar layout without resizing the frame. It does not enter a full-screen
-  Space or verify the live Split View transition.
+  title-bar layout without resizing the frame. It also checks WebKit's native color
+  picker anchor-coordinate round trip at the top, middle and bottom of the hosted
+  panel after resizing and changing chrome. It does not open the picker, enter a
+  full-screen Space or verify the live Split View transition.
   `ControlPanelBackupFlowTests` drives real controls and isolated package writes,
   preserving the library-inclusion and replace-conflict choices and checking that
   staging/cancellation leave running files untouched. It opens no file panels.
@@ -238,7 +243,11 @@ Swift tests cover, without starting the app:
   synthetic H.264 Matroska clip through both Apply and Apply changes, with
   Compatibility and Native video preferred. Missing, empty and non-file video
   entries are rejected before application; injected decoder failures retain the
-  error and leave the library usable for retry. These tests use a fake renderer
+  error and leave the library usable for retry. Held-operation regressions cover
+  Apply and Apply changes overlapping display refresh, global/per-display
+  suspend/resume, unload/reload and audio suppression in both arrival orders;
+  automatic updates wait, failed updates release the queue, and explicit Pause
+  remains responsive and preserves the interrupted draft. These tests use a fake renderer
   bridge: they cover application preflight and recovery, not decoded frames or
   desktop playback of Workshop content.
 - **Playback conditions** — `SystemConditionMonitorTests` with injected Low Power

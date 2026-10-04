@@ -366,13 +366,24 @@ bool ExtractSoftwareVideoFrame(const AVFrame* frame,
     }
 
     CVPixelBufferRef pixel_buffer = nullptr;
-    const CVReturn create_result = CVPixelBufferCreate(
-        kCFAllocatorDefault,
-        static_cast<size_t>(frame->width),
-        static_cast<size_t>(frame->height),
-        pixel_format,
-        nullptr,
-        &pixel_buffer);
+    CVReturn create_result;
+    @autoreleasepool {
+        // Software output is sampled by the same GPU paths as VideoToolbox
+        // output. Allocate its backing here, rather than copying it again at
+        // import time: an ordinary CPU-only CVPixelBuffer cannot become a
+        // Metal texture.
+        NSDictionary* attributes = @{
+            (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey : @{},
+            (__bridge NSString*)kCVPixelBufferMetalCompatibilityKey : @YES,
+        };
+        create_result = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            static_cast<size_t>(frame->width),
+            static_cast<size_t>(frame->height),
+            pixel_format,
+            (__bridge CFDictionaryRef)attributes,
+            &pixel_buffer);
+    }
     if (create_result != kCVReturnSuccess || pixel_buffer == nullptr) {
         return SetError(
             error,

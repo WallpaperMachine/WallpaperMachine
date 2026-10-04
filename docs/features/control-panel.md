@@ -76,9 +76,13 @@ without shrinking or truncating the label.
 
 Wallpapers appear as square, image-first tiles with a transparent title overlay.
 Discover tiles show cached still thumbnails first and then, for tiles on
-screen, play Steam's animated preview beneath the still, which only fades out
-while the animation is bright (see
-[Workshop downloads](workshop-downloads.md#tile-thumbnails)). Animations stop
+screen, play Steam's animated preview once it loads, retaining the still as a
+loading/error fallback (see
+[Workshop downloads](workshop-downloads.md#tile-thumbnails)). Authored black or
+transparent animation frames are shown unchanged, even at the start; the panel
+never samples their pixels to substitute the still, because synchronous canvas
+readback can freeze WebKit. Failed animated images are removed, revealing the
+cached still. Animations stop
 when the grid leaves Discover, so an installed copy of the same wallpaper shows
 its library preview on Installed.
 Tiles keep their size on hover or visible keyboard focus; they rise above their
@@ -285,10 +289,11 @@ navigation section, using the existing library, playback and download stores.
 Page-local scrolling, filters, disclosures and uncommitted input start fresh.
 An active local import keeps the window hidden until its next close, so releasing
 the page cannot cancel the import. Workshop downloads live in the retained store.
-Discover's live-preview luminance sampler
-(`panel.js`, `sampleLivePreviews`) runs only while Discover is the visible page
-and a ready animated preview is on screen; leaving Discover, hiding the
-document, or running out of ready tiles stops it.
+Discover releases animated preview sources when their tiles scroll offscreen,
+the document hides, or the grid leaves Discover. Returning to a visible tile
+loads its cached animation again. Preview readiness follows image load/error
+events, not a polling timer or synchronous canvas pixel reads; an unresponsive
+WebKit graphics backend must not trap the panel in repeated readback waits.
 
 ### After an update
 
@@ -366,6 +371,10 @@ screen. Activation is explicit.
   [Workshop downloads](workshop-downloads.md#one-decision-per-download).
 - Apply is unavailable when the target display is disabled, is mirroring another
   display, or when the wallpaper kind cannot be rendered (Application or Unknown).
+- Background display refreshes and automatic presentation/audio-policy updates
+  wait for an in-flight Apply (and Apply waits for an update already running).
+  Switching wallpapers therefore does not invalidate itself when its windows
+  trigger a policy update. Explicit Play/Pause can still interrupt an Apply.
 - A successful apply leaves the window open; it stays until the user closes it
   (close button or Command-W). **Settings -> General -> Hide window after
   applying a wallpaper** (off by default) hides the app after each successful

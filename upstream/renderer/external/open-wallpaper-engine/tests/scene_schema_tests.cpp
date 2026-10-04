@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <memory>
 #include <span>
@@ -22,6 +23,7 @@
 #include "Project/ProjectProperties.hpp"
 #include "Runtime/DynamicValue.hpp"
 #include "Runtime/SceneRuntimeContext.hpp"
+#include "Runtime/SceneSettingResolver.hpp"
 #include "Runtime/RuntimeImageSource.hpp"
 #include "Runtime/ScriptedDynamicValue.hpp"
 
@@ -32,6 +34,7 @@
 #include "SpecTexs.hpp"
 #include "Type.hpp"
 #include "WPShaderValueUpdater.hpp"
+#include "Scene/Parse/LayerParallax.hpp"
 #include "Interface/IShaderValueUpdater.h"
 #include "WPSceneParser.hpp"
 #include "wpscene/WPImageObject.h"
@@ -1328,6 +1331,304 @@ TEST(SceneSchema, OrthogonalprojectionNullActivatesPerspective) {
     const auto* default_rt = parsed->FindRenderTarget(SpecTex_Default);
     ASSERT_NE(default_rt, nullptr);
     EXPECT_TRUE(default_rt->withDepth);
+}
+
+TEST(SceneSchema, ModelMaterialDefaultsAreOpaqueDepthTestedAndExplicitStateWins) {
+    std::map<std::string, std::string> files;
+    AddLeafModelSceneFiles(files);
+    files["/mat/head.json"] = R"({"passes":[{"shader":"genericimage","textures":["a.tex"]}]})";
+    files["/mat/eyes.json"] = R"({"passes":[{"shader":"genericimage","textures":["a.tex"],
+      "blending":"translucent","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    auto scene = parser.Parse("model-depth", PerspectiveSceneJson(R"([
+      {"id":1,"name":"model","model":"planet.mdl"}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    auto node = FindRootChildByName(*scene, "model");
+    ASSERT_NE(node, nullptr);
+    ASSERT_EQ(node->Mesh()->MaterialSlots().size(), 2u);
+    const auto& opaque = *node->Mesh()->MaterialSlotPtr(0);
+    EXPECT_TRUE(opaque.depth_test);
+    EXPECT_TRUE(opaque.depth_write);
+    EXPECT_EQ(opaque.cull_mode, CullMode::Back);
+    EXPECT_EQ(opaque.blenmode, BlendMode::Normal);
+    const auto& explicit_state = *node->Mesh()->MaterialSlotPtr(1);
+    EXPECT_FALSE(explicit_state.depth_test);
+    EXPECT_FALSE(explicit_state.depth_write);
+    EXPECT_EQ(explicit_state.cull_mode, CullMode::None);
+    EXPECT_EQ(explicit_state.blenmode, BlendMode::Translucent);
+}
+
+TEST(SceneSchema, ModelBonesReachEveryMaterialIncludingTheBindPose) {
+    std::map<std::string, std::string> files;
+    AddPuppetImageSceneFiles(files);
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "skinned-model", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"model","model":"puppet.mdl",
+       "animationlayers":[{"animation":99,"id":7,"name":"motion","blend":1,"rate":2}]}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    auto node = FindRootChildByName(*scene, "model");
+    ASSERT_NE(node, nullptr);
+    auto* layer = scene->runtime->FindPuppetLayer("model");
+    ASSERT_NE(layer, nullptr);
+    ASSERT_EQ(layer->findLayer("motion"), 0);
+    EXPECT_DOUBLE_EQ(layer->rate(0), 2.0);
+    // No matching animation clip: even a bind pose must upload identity bones,
+    // not leave a skinning shader's uniform array at zero and collapse the mesh.
+    sprite_map_t sprites;
+    for (uint32_t slot = 0; slot < node->Mesh()->MaterialSlots().size(); ++slot) {
+        scene->shaderValueUpdater->InitUniforms(node.get(), slot,
+            [](std::string_view name) { return name == "g_Bones"; });
+        int writes = 0;
+        scene->shaderValueUpdater->UpdateUniforms(node.get(), slot, sprites,
+            [&](std::string_view name, const ShaderValue& value) {
+                if (name != "g_Bones") return;
+                ASSERT_EQ(value.size(), 16u);
+                for (int i = 0; i < 16; ++i) EXPECT_FLOAT_EQ(value[i], i % 5 == 0 ? 1 : 0);
+                ++writes;
+            });
+        EXPECT_EQ(writes, 1);
+    }
+}
+
+TEST(SceneSchema, PerspectiveCameraSelectionFollowsVisibilityWithoutHiddenOverrides) {
+    fs::VFS vfs;
+    MountSceneFiles(vfs);
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "camera-selection", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"first","camera":"default","origin":[0,0,12],"fov":45},
+      {"id":2,"name":"second","camera":"default","origin":[6,0,8],"fov":75,
+       "visible":{"user":"alternate","value":false}}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    const auto check = [&](Eigen::Vector3d eye, double fov) {
+        EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(eye, 1e-5));
+        EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), fov);
+    };
+    check({0,0,12}, 45);
+    scene->runtime->Tick(0.1);
+    check({0,0,12}, 45);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("second", true));
+    scene->runtime->Tick(0.1);
+    check({6,0,8}, 75);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("second", false));
+    scene->runtime->Tick(0.1);
+    check({0,0,12}, 45);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("first", false));
+    scene->runtime->Tick(0.1);
+    check({0,10,20}, 60); // editor pose when no shot is visible
+    EXPECT_EQ(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+}
+
+TEST(SceneSchema, PerspectiveShotsInheritSceneFovUnlessExplicitlyOverridden) {
+    for (bool runtime_enabled : {false, true}) {
+        for (const auto* camera_name : {"named shot camera", "default"}) {
+            for (float scene_override : {0.0f, 75.0f}) {
+                for (const auto& object_fov : std::vector<nlohmann::json> {nullptr, 0, -1, 80}) {
+                    SCOPED_TRACE(object_fov.dump() + " " + camera_name +
+                                 (runtime_enabled ? " runtime" : " static"));
+                    auto source = nlohmann::json::parse(PerspectiveSceneJson(R"([
+                      {"id":1,"name":"earlier","camera":"default","origin":[0,0,12],"fov":45},
+                      {"id":2,"name":"target","camera":"default","origin":[6,0,8]}
+                    ])"));
+                    source["general"]["perspectiveoverridefov"] = scene_override;
+                    source["objects"][1]["camera"] = camera_name;
+                    if (!object_fov.is_null()) source["objects"][1]["fov"] = object_fov;
+                    const double scene_fov = scene_override > 0 ? scene_override : 60.0;
+                    const double expected = !object_fov.is_null() && object_fov.get<double>() > 0
+                                                ? object_fov.get<double>() : scene_fov;
+                    fs::VFS vfs;
+                    MountSceneFiles(vfs);
+                    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+                    ProjectProperties properties;
+                    auto scene = WPSceneParser().Parse(SceneParseRequest {
+                        .scene_id = "scene-fov-inheritance",
+                        .project_properties = runtime_enabled ? &properties : nullptr,
+                    }, source.dump(), vfs, sound);
+                    ASSERT_NE(scene, nullptr);
+                    const bool named = std::string_view(camera_name) != "default";
+                    auto* camera = scene->cameras.at(named ? camera_name : "global_perspective").get();
+                    ASSERT_EQ(scene->activeCamera, camera);
+                    EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    EXPECT_TRUE(camera->GetPosition().isApprox(Eigen::Vector3d(6,0,8), 1e-5));
+                    if (!runtime_enabled) {
+                        EXPECT_EQ(scene->runtime, nullptr);
+                        continue;
+                    }
+                    ASSERT_NE(scene->runtime, nullptr);
+                    scene->runtime->Tick(0.1);
+                    EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    ASSERT_TRUE(scene->runtime->SetNodeVisible("target", false));
+                    scene->runtime->Tick(0.1);
+                    EXPECT_EQ(scene->activeCamera, scene->cameras.at("global_perspective").get());
+                    EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), 45);
+                    if (named) EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                    ASSERT_TRUE(scene->runtime->SetNodeVisible("earlier", false));
+                    scene->runtime->Tick(0.1);
+                    EXPECT_DOUBLE_EQ(scene->activeCamera->Fov(), scene_fov);
+                    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,10,20), 1e-5));
+                    if (named) EXPECT_DOUBLE_EQ(camera->Fov(), expected);
+                }
+            }
+        }
+    }
+}
+
+nlohmann::json CameraPathFixture(double x) {
+    const auto curve = [](double a, double b) {
+        return nlohmann::json::array({{{"frame",0},{"value",a}},{{"frame",30},{"value",b}}});
+    };
+    return {{"visible",true}, {"options",{{"fps",30},{"length",30},{"mode","single"}}},
+            {"eye",{{"c0",curve(x,x+2)},{"c1",curve(0,0)},{"c2",curve(10,10)}}},
+            {"center",{{"c0",curve(x,x+2)},{"c1",curve(0,0)},{"c2",curve(0,0)}}},
+            {"up",{{"c0",curve(0,0)},{"c1",curve(1,1)},{"c2",curve(0,0)}}},
+            {"fov",curve(40,60)}};
+}
+
+TEST(SceneSchema, PerspectiveCameraPathsSampleAndQueueAuthoredCurves) {
+    auto a = CameraPathFixture(0);
+    auto b = CameraPathFixture(20);
+    auto hidden = CameraPathFixture(100);
+    hidden["visible"] = false;
+    auto invalid = CameraPathFixture(200);
+    invalid["options"]["fps"] = 0;
+    std::map<std::string, std::string> files;
+    files["/paths.json"] = nlohmann::json({{"paths",{a,hidden,invalid,b}}}).dump();
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound_manager;
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest { .scene_id = "camera-path", .project_properties = &properties }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"moving","camera":"default","path":"paths.json"},
+      {"id":2,"name":"hidden preset","camera":"default","origin":[99,99,99],
+       "visible":{"user":"alternate","value":false}}
+    ])"), vfs, sound_manager);
+    ASSERT_NE(scene, nullptr);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,0,10), 1e-5));
+    scene->runtime->Tick(0.5);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(1,0,10), 1e-5));
+    EXPECT_TRUE(scene->activeCamera->GetDirection().isApprox(-Eigen::Vector3d::UnitZ(), 1e-5));
+    EXPECT_NEAR(scene->activeCamera->Fov(), 50, 1e-5);
+    EXPECT_NE(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+    scene->runtime->Tick(0.75); // overshoot is carried, not discarded at a cut
+    EXPECT_NEAR(scene->activeCamera->GetPosition().x(), 20.5, 1e-5);
+    scene->runtime->Tick(1.0);
+    EXPECT_NEAR(scene->activeCamera->GetPosition().x(), 0.5, 1e-5);
+    ASSERT_TRUE(scene->runtime->SetNodeVisible("moving", false));
+    scene->runtime->Tick(0.5);
+    EXPECT_EQ(scene->runtime->DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+    EXPECT_TRUE(scene->activeCamera->GetPosition().isApprox(Eigen::Vector3d(0,10,20), 1e-5));
+}
+
+TEST(SceneSchema, CameraPathsPreserveSteepAndRolledLookAtOrientation) {
+    for (const auto& up : { Eigen::Vector3d(0, 1, 0), Eigen::Vector3d(0.2, 1, 0.3) }) {
+        for (const auto& eye : { Eigen::Vector3d(0.001, 10, 0.002),
+                                Eigen::Vector3d(10, 0.001, 0.002) }) {
+            auto path = CameraPathFixture(0);
+            for (int axis = 0; axis < 3; ++axis) {
+                const auto key = "c" + std::to_string(axis);
+                path["eye"][key] = {{{"frame",0},{"value",eye[axis]}},
+                                    {{"frame",30},{"value",axis == 2 ? -eye[axis] : eye[axis]}}};
+                path["center"][key] = {{{"frame",0},{"value",0}}};
+                path["up"][key] = {{{"frame",0},{"value",up[axis]}}};
+            }
+            CameraPathPlayback playback(ParseCameraPaths({{"paths",{path}}}), "sequence");
+            auto node = std::make_shared<SceneNode>();
+            SceneCamera camera(1, 0.1, 100, 50);
+            camera.AttatchNode(node);
+            for (int frame = 0; frame < 5; ++frame) {
+                playback.Apply(*node, camera);
+                const Eigen::Vector3d sampled(eye.x(), eye.y(), eye.z() * (1 - frame * 0.4));
+                const Eigen::Vector3d forward = -sampled.normalized();
+                const Eigen::Vector3d right = forward.cross(up).normalized();
+                EXPECT_TRUE(camera.GetDirection().isApprox(forward, 1e-5));
+                EXPECT_TRUE(camera.GetUp().isApprox(right.cross(forward), 1e-5));
+                EXPECT_TRUE(camera.GetViewMatrix().allFinite());
+                playback.Advance(0.2);
+            }
+        }
+    }
+}
+
+TEST(SceneSchema, CameraPathsAndLayerTimelinesShareScaledAndZeroDeltas) {
+    const auto path = CameraPathFixture(0);
+    std::map<std::string, std::string> files;
+    files["/paths.json"] = nlohmann::json({{"paths",{path}}}).dump();
+    fs::VFS vfs;
+    ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+    audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+    WPSceneParser parser;
+    ProjectProperties properties;
+    auto scene = parser.Parse(SceneParseRequest {
+        .scene_id = "shared-camera-clock", .project_properties = &properties,
+    }, PerspectiveSceneJson(R"([
+      {"id":1,"name":"moving","camera":"default","path":"paths.json"},
+      {"id":2,"name":"layer","origin":{"value":[0,0,0],"animation":{
+        "options":{"fps":30,"length":30,"mode":"loop"},
+        "c0":[{"frame":0,"value":0},{"frame":30,"value":2}]}}}
+    ])"), vfs, sound);
+    ASSERT_NE(scene, nullptr);
+    ASSERT_NE(scene->runtime, nullptr);
+    double elapsed = 0;
+    // SceneWallpaper supplies IdeaTime * scene speed to this single Tick.
+    // Zero scene speed supplies zero; a paused scene does not tick at all.
+    // Resumed/scaled ticks must keep both clocks aligned.
+    for (double delta : { 0.1 * 2, 0.0, 0.4 * 0.5, 0.0, 0.8, 0.1 }) {
+        elapsed += delta;
+        scene->runtime->Tick(delta);
+        EXPECT_NEAR(scene->activeCamera->GetPosition().x(), std::fmod(elapsed, 1.0) * 2, 1e-5);
+        EXPECT_NEAR(scene->runtime->NodeTranslate("layer").x(), scene->activeCamera->GetPosition().x(), 1e-5);
+    }
+}
+
+TEST(SceneSchema, PerspectiveFallbackCapturesTheCameraAtFirstRegistrationOnly) {
+    Scene scene;
+    SceneCamera initial(1, 0.1, 100, 50), editor(1, 0.1, 100, 60), shot_camera(1, 0.1, 100, 70);
+    scene.activeCamera = &initial;
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {});
+    runtime->AttachScene(&scene);
+    scene.activeCamera = &editor; // parser chooses the editor camera before registering shots
+    auto shot = std::make_shared<SceneNode>();
+    shot->SetVisible(false);
+    runtime->RegisterPerspectiveCameraShot(shot, &shot_camera, 45, {});
+    EXPECT_EQ(scene.activeCamera, &editor);
+    shot->SetVisible(true);
+    runtime->Tick(0);
+    EXPECT_EQ(scene.activeCamera, &shot_camera);
+    auto hidden = std::make_shared<SceneNode>();
+    hidden->SetVisible(false);
+    runtime->RegisterPerspectiveCameraShot(hidden, &shot_camera, 80, {});
+    shot->SetVisible(false);
+    runtime->Tick(0);
+    EXPECT_EQ(scene.activeCamera, &editor); // registration must not capture a selected shot
+}
+
+TEST(SceneSchema, RandomCameraPathsStayWithinAuthoredShotsAndBoundCatchup) {
+    const auto paths = ParseCameraPaths({{"paths", {CameraPathFixture(0), CameraPathFixture(20)}}});
+    CameraPathPlayback playback(paths, "random");
+    SceneNode node;
+    SceneCamera camera(1.0f, 0.1f, 1000.0f, 50.0f);
+    playback.Apply(node, camera);
+    const float first = node.Translate().x();
+    EXPECT_TRUE(first == 0 || first == 20);
+    playback.Advance(1.0);
+    playback.Apply(node, camera);
+    EXPECT_FLOAT_EQ(node.Translate().x(), first == 0 ? 20 : 0);
+    playback.Advance(1e9);
+    playback.Apply(node, camera);
+    EXPECT_TRUE(node.Translate().allFinite());
+    EXPECT_TRUE(node.Translate().x() >= 0 && node.Translate().x() <= 22);
 }
 
 TEST(SceneSchema, DefaultCameraObjectBecomesActivePerspective) {
@@ -2636,6 +2937,45 @@ TEST(SceneSchema, DuplicateNamesResolveInAuthoredOrderWithoutSharingThisLayerBin
     EXPECT_EQ(without_scripts->runtime, nullptr);
 }
 
+TEST(SceneSchema, DuplicateLayerAliasesIgnoreMalformedEntriesAndKeepValidLookup) {
+    for (const auto& entry : std::vector<nlohmann::json> {
+             nullptr, 7, nlohmann::json::array(),
+             {{"id", 30}, {"name", 7}}, {{"id", 30}, {"name", nullptr}},
+             {{"id", "invalid"}, {"name", "shared"}}, {{"id", nullptr}, {"name", "shared"}},
+             {{"name", "shared"}}, {{"id", 31}},
+         }) {
+        SCOPED_TRACE(entry.dump());
+        auto source = nlohmann::json::parse(R"({
+          "camera":{"center":[0,0,0],"eye":[0,0,1],"up":[0,1,0]},
+          "general":{"ambientcolor":[0,0,0],"skylightcolor":[0,0,0],
+            "clearcolor":[0,0,0],"cameraparallax":false,
+            "orthogonalprojection":{"width":400,"height":300}},
+          "objects":[
+            {"id":10,"name":"shared"}, {"id":11,"name":"shared"},
+            {"id":20,"name":"driver","origin":{"value":[0,0,0],
+              "script":"const target = thisScene.getLayer('shared'); export function update(value) { target.scale = new Vec3(0.125); return value; }"}}
+          ]
+        })");
+        source["objects"].insert(source["objects"].begin(), entry);
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+        ProjectProperties properties;
+        WPSceneParser parser;
+        std::shared_ptr<Scene> scene;
+        ASSERT_NO_THROW(scene = parser.Parse(SceneParseRequest {
+            .scene_id = "malformed-alias-entry", .project_properties = &properties,
+        }, source.dump(), vfs, sound));
+        ASSERT_NE(scene, nullptr);
+        ASSERT_NE(scene->runtime, nullptr);
+        EXPECT_EQ(scene->runtime->ResolveLayerName("shared"), "__we_layer_10");
+        scene->runtime->Tick(1.0 / 60.0);
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_10"), Eigen::Vector3f::Constant(0.125f));
+        EXPECT_EQ(scene->runtime->NodeScale("__we_layer_11"), Eigen::Vector3f::Ones());
+        EXPECT_EQ(scene->runtime->scriptErrorCount(), 0u);
+    }
+}
+
 TEST(SceneSchema, CallbackOnlyDuplicateButtonsToggleNamedGroupsThroughParser) {
     fs::VFS vfs;
     MountSceneFiles(vfs);
@@ -2752,6 +3092,164 @@ export function update() { return on; }
     ASSERT_NE(hidden, nullptr);
     EXPECT_FALSE(hidden->Visible());
     EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+}
+
+TEST(SceneSchema, OriginTimelineMovesAlignedLayersAndStopsRequestingFrames) {
+    for (bool relative : { false, true }) {
+        for (const auto* anchor : { "left", "right" }) {
+            SCOPED_TRACE(std::string(anchor) + (relative ? " relative" : " absolute"));
+            fs::VFS vfs;
+            MountSceneFiles(vfs);
+            audio::SoundManager sound;
+            nlohmann::json object = {
+                { "id", 21 }, { "name", "moving card" }, { "image", "image.json" },
+                { "alignment", anchor }, { "scale", { 2, 1, 1 } },
+                { "origin", {
+                    { "value", { 100, 70, 3 } },
+                    { "animation", {
+                        { "relative", relative },
+                        { "options", { { "fps", 20 }, { "length", 20 },
+                                         { "mode", "single" }, { "name", "slide" } } },
+                        { "c0", nlohmann::json::array({
+                            { { "frame", 0 }, { "value", 0 } },
+                            { { "frame", 20 }, { "value", 80 } } }) }
+                    } }
+                } }
+            };
+            auto scene = ParseOrthoShotScene(vfs, sound, object.dump());
+            ASSERT_NE(scene, nullptr);
+            auto& runtime = *scene->runtime;
+            auto node = FindRootChildByName(*scene, "moving card");
+            ASSERT_NE(node, nullptr);
+            const float base = relative ? 100.0f : 0.0f;
+            const float offset = runtime.NodeSize("moving card").x() *
+                                 (std::string_view(anchor) == "left" ? 1.0f : -1.0f);
+            const auto expect_origin = [&](float x) {
+                EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving card").x(), x);
+                EXPECT_FLOAT_EQ(node->Translate().x(), x + offset);
+                EXPECT_FLOAT_EQ(node->Translate().y(), 70.0f);
+                EXPECT_FLOAT_EQ(node->Translate().z(), 3.0f);
+            };
+            expect_origin(base);
+            EXPECT_NE(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+            runtime.Tick(0.5);
+            expect_origin(base + 40.0f);
+            runtime.Tick(0.5);
+            expect_origin(base + 80.0f);
+            EXPECT_EQ(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+            runtime.Tick(10.0);
+            expect_origin(base + 80.0f); // no accumulated relative displacement
+            auto* clock = runtime.FindScalarAnimation("moving card", "slide");
+            ASSERT_NE(clock, nullptr);
+            clock->Play();
+            runtime.Tick(0.25);
+            expect_origin(base + 20.0f);
+            clock->playing = false;
+            runtime.Tick(10.0);
+            expect_origin(base + 20.0f);
+            clock->SetFrame(15.0);
+            runtime.Tick(0.0);
+            expect_origin(base + 60.0f);
+        }
+    }
+}
+
+TEST(SceneSchema, OriginTimelineComponentsUseOneLoopAndPreserveUnkeyedAxes) {
+    fs::VFS vfs;
+    MountSceneFiles(vfs);
+    audio::SoundManager sound;
+    auto scene = ParseOrthoShotScene(vfs, sound, R"({
+        "id":21,"name":"looping card","image":"image.json",
+        "origin":{"value":[10,20,30],"animation":{
+            "relative":true,
+            "options":{"fps":10,"mode":"loop","name":"orbit","startpaused":true},
+            "c0":[{"frame":2,"value":4},{"frame":5,"value":10}],
+            "c1":[{"frame":0,"value":0},{"frame":20,"value":40}]
+        }}
+    })");
+    ASSERT_NE(scene, nullptr);
+    auto& runtime = *scene->runtime;
+    const auto expect_origin = [&](float x, float y) {
+        EXPECT_EQ(runtime.NodeTranslate("looping card"), Eigen::Vector3f(x, y, 30));
+    };
+    runtime.Tick(5.0);
+    expect_origin(10, 20); // before the first x key: zero relative offset
+    auto* clock = runtime.FindScalarAnimation("looping card", "orbit");
+    ASSERT_NE(clock, nullptr);
+    clock->Play();
+    runtime.Tick(0.5);
+    expect_origin(20, 30);
+    runtime.Tick(0.5);
+    expect_origin(20, 40); // the short x curve holds, it does not loop on its own
+    runtime.Tick(1.0);
+    expect_origin(10, 20); // the longest component defines the inferred clock length
+    EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+}
+
+TEST(SceneSchema, OriginTimelineMovesGroupsAndTextParentsOnOneClock) {
+    for (bool text : { false, true }) {
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound;
+        auto parent = nlohmann::json::parse(R"({
+            "id":21,"name":"moving parent",
+            "origin":{"value":[10,20,0],"animation":{
+                "relative":true,
+                "options":{"fps":10,"length":10,"mode":"single"},
+                "c0":[{"frame":0,"value":0},{"frame":10,"value":40}]
+            }}
+        })");
+        if (text) {
+            parent["text"] = "caption";
+            parent["font"] = "Arial";
+            parent["pointsize"] = 24;
+        }
+        auto scene = ParseOrthoShotScene(vfs, sound, parent.dump() + R"(,
+            {"id":22,"name":"child card","image":"image.json","parent":21,
+             "origin":[5,6,0]}
+        )");
+        ASSERT_NE(scene, nullptr);
+        auto& runtime = *scene->runtime;
+        runtime.Tick(0.5);
+        EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving parent").x(), 30.0f);
+        auto node = FindRootChildByName(*scene, "moving parent");
+        ASSERT_NE(node, nullptr);
+        ASSERT_EQ(node->GetChildren().size(), 1u);
+        node->GetChildren().front()->UpdateTrans();
+        EXPECT_NEAR(node->GetChildren().front()->ModelTrans()(0, 3),
+                    node->Translate().x() + 5.0f, 1e-4);
+        runtime.Tick(0.5);
+        EXPECT_FLOAT_EQ(runtime.NodeTranslate("moving parent").x(), 50.0f);
+        EXPECT_EQ(runtime.DescribeTimeAdvancingWork() & SceneDemandReason::Animation, 0u);
+        EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+    }
+}
+
+TEST(SceneSchema, OriginTimelineDoesNotOverrideAScriptOrUserProperty) {
+    for (bool scripted : { false, true }) {
+        fs::VFS vfs;
+        MountSceneFiles(vfs);
+        audio::SoundManager sound;
+        nlohmann::json object = nlohmann::json::parse(R"({
+            "id":21,"name":"bound card","image":"image.json",
+            "origin":{"value":[1,2,3],"animation":{
+                "options":{"fps":10,"length":10,"mode":"single","name":"unused"},
+                "c0":[{"frame":0,"value":999}]
+            }}
+        })");
+        if (scripted) object["origin"]["script"] =
+            "export function update() { return new Vec3(7, 8, 9); }";
+        else object["origin"]["user"] = "position";
+        auto scene = ParseOrthoShotScene(vfs, sound, object.dump(), {
+            { "position", RuntimeScalarValue::String("7 8 9") }
+        });
+        ASSERT_NE(scene, nullptr);
+        auto& runtime = *scene->runtime;
+        runtime.Tick(1.0);
+        EXPECT_EQ(runtime.NodeTranslate("bound card"), Eigen::Vector3f(7, 8, 9));
+        EXPECT_EQ(runtime.FindScalarAnimation("bound card", "unused"), nullptr);
+        EXPECT_EQ(runtime.scriptErrorCount(), 0u);
+    }
 }
 
 TEST(SceneSchema, ImageAlignmentAnchorSurvivesScriptedOriginAndScale) {
@@ -3306,6 +3804,132 @@ TEST(SceneSchema, ParserRegistersPuppetSlotShaderValueDataByMaterialSlot) {
     ASSERT_TRUE(updates.contains("g_Texture0Resolution"));
     EXPECT_FLOAT_EQ(updates.at("g_Texture0Resolution")[0], 160.0f);
     EXPECT_FLOAT_EQ(updates.at("g_Texture0Resolution")[1], 90.0f);
+}
+
+TEST(SceneSchema, ParallaxInheritanceResolvesRootsWithoutDependingOnDeclarationOrder) {
+    auto objects = nlohmann::json::parse(R"([
+        {"id":3,"parent":2,"parallaxDepth":[9,9]},
+        {"id":2,"parent":1,"parallaxDepth":[0,0]},
+        {"id":1,"parallaxDepth":[0.75,-0.25]},
+        {"id":4,"parent":5,"parallaxDepth":[1,1]},
+        {"id":5},
+        {"id":6,"parent":99,"parallaxDepth":[0.2,0.4]},
+        {"id":7,"parent":8,"parallaxDepth":[2,3]},
+        {"id":8,"parent":7,"parallaxDepth":[4,5]},
+        {"id":9,"parallaxDepth":[6,7]},
+        {"id":9,"parallaxDepth":[8,9]},
+        {"id":10,"parent":9,"parallaxDepth":[10,11]}
+    ])");
+    const auto original = objects;
+    for (bool reversed : {false, true}) {
+        objects = original;
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        ResolveLayerParallax(objects);
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        EXPECT_EQ(objects[0]["parallaxDepth"], original[2]["parallaxDepth"]);
+        EXPECT_EQ(objects[1]["parallaxDepth"], original[2]["parallaxDepth"]);
+        EXPECT_EQ(objects[3]["parallaxDepth"], nlohmann::json::array({0, 0}));
+        for (std::size_t i : {2u, 4u, 5u, 6u, 7u, 8u, 9u, 10u})
+            EXPECT_EQ(objects[i], original[i]);
+    }
+}
+
+TEST(SceneSchema, ParallaxInheritanceRejectsOutOfRangeIdsWithoutAliasingValidLayers) {
+    const auto minimum = std::numeric_limits<int32_t>::min();
+    const auto maximum = std::numeric_limits<int32_t>::max();
+    const std::vector<std::pair<nlohmann::json, int32_t>> invalid_ids {
+        {int64_t(maximum) + 1, minimum}, {int64_t(minimum) - 1, maximum},
+        {uint64_t(maximum) + 1, minimum}, {std::numeric_limits<uint64_t>::max(), -1},
+        {(int64_t(1) << 32) + 1, 1},
+    };
+    for (const auto& [invalid, valid] : invalid_ids) {
+        SCOPED_TRACE(invalid.dump());
+        for (bool include_invalid_id : {false, true}) {
+            auto original = nlohmann::json::array({
+                {{"id", valid}, {"parallaxDepth", {0.75, -0.25}}},
+                {{"id", 2}, {"parent", valid}, {"parallaxDepth", {2, 3}}},
+                {{"id", 3}, {"parent", invalid}, {"parallaxDepth", {4, 5}}},
+            });
+            if (include_invalid_id) original.push_back({{"id", invalid}, {"parallaxDepth", {9, 9}}});
+            for (bool reversed : {false, true}) {
+                auto objects = original;
+                if (reversed) std::reverse(objects.begin(), objects.end());
+                ResolveLayerParallax(objects);
+                if (reversed) std::reverse(objects.begin(), objects.end());
+                EXPECT_EQ(objects[1]["parallaxDepth"], original[0]["parallaxDepth"]);
+                EXPECT_EQ(objects[2], original[2]);
+                EXPECT_EQ(objects[0], original[0]);
+                if (include_invalid_id) EXPECT_EQ(objects[3], original[3]);
+            }
+        }
+    }
+}
+
+TEST(SceneSchema, ParallaxInheritanceAcceptsSignedBoundariesAndUnsignedInRangeIds) {
+    for (const auto& id : std::vector<nlohmann::json> {
+             std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max(),
+             uint64_t(std::numeric_limits<int32_t>::max()),
+         }) {
+        auto objects = nlohmann::json::array({
+            {{"id", 1}, {"parent", id}, {"parallaxDepth", {9, 9}}},
+            {{"id", id}, {"parallaxDepth", {0.75, -0.25}}},
+        });
+        ResolveLayerParallax(objects);
+        EXPECT_EQ(objects[0]["parallaxDepth"], objects[1]["parallaxDepth"]);
+    }
+}
+
+TEST(SceneSchema, ParentedPuppetSlotsFollowTheRootDepthAndKeepTheirLocalTransforms) {
+    for (bool reversed : {false, true}) {
+        auto files = std::map<std::string, std::string> {};
+        AddPuppetImageSceneFiles(files);
+        fs::VFS vfs;
+        ASSERT_TRUE(vfs.Mount("/assets", std::make_unique<MemoryFs>(std::move(files))));
+        audio::SoundManager sound(audio::SoundManager::OutputBackend::Null);
+        auto source = nlohmann::json::parse(PuppetParallaxSceneJson());
+        auto& objects = source["objects"];
+        objects[0]["parent"] = 20;
+        objects[0]["origin"] = {13, 17, 0};
+        objects.push_back({{"id", 20}, {"name", "inner group"}, {"parent", 10},
+                           {"parallaxDepth", {9, 9}}, {"origin", {30, 40, 0}}});
+        objects.push_back({{"id", 10}, {"name", "root group"},
+                           {"parallaxDepth", {0.75, -0.25}}, {"origin", {100, 80, 0}}});
+        if (reversed) std::reverse(objects.begin(), objects.end());
+        auto parsed = WPSceneParser().Parse("parent-parallax", source.dump(), vfs, sound);
+        ASSERT_NE(parsed, nullptr);
+        auto root = FindRootChildByName(*parsed, "root group");
+        ASSERT_NE(root, nullptr);
+        auto* inner = FindFirstChildByName(*root, "inner group");
+        ASSERT_NE(inner, nullptr);
+        auto* node = FindFirstChildByName(*inner, "puppet image");
+        ASSERT_NE(node, nullptr);
+        ASSERT_NE(node->Mesh(), nullptr);
+        ASSERT_EQ(node->Mesh()->MaterialSlots().size(), 2u);
+        auto& updater = *parsed->shaderValueUpdater;
+        for (uint32_t slot = 0; slot < 2; ++slot)
+            updater.InitUniforms(node, slot, [](std::string_view name) {
+                return name == "g_ModelMatrix";
+            });
+        for (float x : {0.5f, 1.0f, 0.0f, 0.5f}) {
+            updater.MouseInput(x, 1.0f - x);
+            parsed->frameTime = 0.25;
+            updater.FrameBegin();
+            node->UpdateTrans();
+            EXPECT_NEAR(node->ModelTrans()(0, 3), 143.0, 1e-5);
+            EXPECT_NEAR(node->ModelTrans()(1, 3), 137.0, 1e-5);
+            for (uint32_t slot = 0; slot < 2; ++slot) {
+                ShaderValue model;
+                sprite_map_t sprites;
+                updater.UpdateUniforms(node, slot, sprites,
+                    [&](std::string_view name, const ShaderValue& value) {
+                        if (name == "g_ModelMatrix") model = value;
+                    });
+                ASSERT_EQ(model.size(), 16u);
+                EXPECT_NEAR(model[12], 143.0f + (0.5f - x) * 640 * 2 * 0.75f, 1e-4);
+                EXPECT_NEAR(model[13], 137.0f + (0.5f - x) * 360 * 2 * -0.25f, 1e-4);
+            }
+        }
+    }
 }
 
 TEST(SceneSchema, ParserCopiesImageParallaxDepthToPuppetMaterialSlots) {

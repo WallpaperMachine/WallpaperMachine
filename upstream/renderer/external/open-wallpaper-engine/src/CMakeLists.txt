@@ -71,6 +71,7 @@ add_library(
   Scene/WPJson.cpp
   Scene/WPPkgFs.cpp
   Type.cpp
+  Runtime/CameraPath.cpp
   Runtime/DynamicValue.cpp
   Runtime/SceneRuntimeContext.cpp
   Runtime/SceneSettingResolver.cpp

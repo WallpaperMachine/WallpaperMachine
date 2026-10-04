@@ -88,6 +88,29 @@ class PerspectiveCornerPixelTests(unittest.TestCase):
                 self.assertFalse(check_renderer.check_generated_pixels(ppm(shade), 9))
 
 
+class CoveragePixelTests(unittest.TestCase):
+    def test_checks_source_over_and_single_sample_coverage_identically(self):
+        for index in (8, 11):
+            def coverage(u, v):
+                value = 128 if u < 0.375 else 191 if u < 0.625 else 255
+                return bytes((value,) * 3)
+            self.assertTrue(check_renderer.check_generated_pixels(ppm(coverage), index))
+            for wrong in (64, 128, 255):
+                self.assertFalse(check_renderer.check_generated_pixels(
+                    ppm(lambda u, v: bytes((wrong,) * 3)), index))
+
+
+class OriginCurtainPixelTests(unittest.TestCase):
+    def test_accepts_both_halves_revealed_after_the_intro(self):
+        self.assertTrue(check_renderer.check_generated_pixels(
+            ppm(lambda u, v: bytes((51, 102, 153))), 10))
+
+    def test_rejects_a_stuck_curtain_or_blank_frame(self):
+        for shade in [lambda u, v: bytes((51, 102, 153)) if u < 0.5 else bytes(3),
+                      lambda u, v: bytes(3)]:
+            self.assertFalse(check_renderer.check_generated_pixels(ppm(shade), 10))
+
+
 @unittest.skipUnless(sys.platform == "darwin", "Metal-device capability probe requires the macOS SDK")
 class GPUAvailabilityProbeTests(unittest.TestCase):
     def test_compiled_probe_distinguishes_device_presence_without_rendering(self):
@@ -130,7 +153,7 @@ class GateExitStatusTests(unittest.TestCase):
                 stack.enter_context(patch.object(check_renderer, "build_environment", return_value={}))
                 stack.enter_context(patch.object(check_renderer, "run", side_effect=run))
                 stack.enter_context(patch.object(check_renderer, "fixtures", return_value=[]))
-                for name in ("alpha_composite_fixture", "perspective_animation_fixture"):
+                for name in ("alpha_composite_fixture", "perspective_animation_fixture", "origin_animation_fixture"):
                     stack.enter_context(patch.object(check_renderer, name, return_value=project))
                 stack.enter_context(patch.object(check_renderer, "check_generated_pixels", return_value=True))
                 output = io.StringIO()
@@ -156,6 +179,9 @@ class GateExitStatusTests(unittest.TestCase):
         status, report, calls = self.gate()
         self.assertEqual(status, 0)
         self.assertTrue(all(report[name] == 0 for name in check_renderer.REGRESSION_BINARIES))
+        # Both parents' extra scenes remain: alpha, perspective, origin and single-sample alpha.
+        self.assertEqual(len(report["cases"]), 4)
+        self.assertEqual(calls.count(check_renderer.OFFSCREEN_PROBE), 8)
         self.assertTrue(all(case["pixels_equal"] for case in report["cases"]))
 
     def test_skip_reason_is_reported_separately_from_successful_exit(self):

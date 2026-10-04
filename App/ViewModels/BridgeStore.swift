@@ -50,6 +50,7 @@ final class BridgeStore {
     private(set) var activatingWallpaperID: String?
     private(set) var applyingWallpaperID: String?
     @ObservationIgnored private var activationWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var updatingPlaybackEnvironment = false
     private var activeWallpaperEdits: [String: Int] = [:]
     private var wallpaperAppliesNeedingSave = Set<String>()
     private(set) var activationNeedsRefresh = false
@@ -154,8 +155,10 @@ final class BridgeStore {
     }
 
     func refreshDisplaysAsync() async throws {
-        let bundle = try await bridge.refreshDisplays()
-        apply(bundle)
+        try await updatePlaybackEnvironment {
+            let bundle = try await bridge.refreshDisplays()
+            apply(bundle)
+        }
     }
 
     func receiveHostState(_ state: HostWallpaperState) {
@@ -300,9 +303,26 @@ final class BridgeStore {
     /// reach the store while a wallpaper is being applied; they wait for it, not fail.
     /// Each caller claims its own flag before its next suspension, so the loop re-checks.
     private func waitForIdleActivation() async {
-        while activatingWallpaperID != nil || applyingWallpaperID != nil {
+        while activatingWallpaperID != nil || applyingWallpaperID != nil || updatingPlaybackEnvironment {
             await withCheckedContinuation { activationWaiters.append($0) }
         }
+    }
+
+    /// Automatic presentation changes and display refreshes invalidate an in-flight
+    /// engine apply, even when triggered by that apply's own window changes. Reserve
+    /// the same lane in both directions, including the returned snapshot publication.
+    /// Explicit Play/Pause stays outside this lane so the user can still interrupt.
+    /// This lane is non-reentrant: an apply/activation or operation holding it must
+    /// never await another lane-taking method (including through a callback).
+    /// Suspend/unload deliberately wait too: they can invalidate engine apply even
+    /// without returning a snapshot. Cancelled waiters stay parked until release,
+    /// then fail the cancellation check without invoking their bridge operation.
+    private func updatePlaybackEnvironment(_ operation: () async throws -> Void) async throws {
+        await waitForIdleActivation()
+        try Task.checkCancellation()
+        updatingPlaybackEnvironment = true
+        defer { updatingPlaybackEnvironment = false; resumeActivationWaiters() }
+        try await operation()
     }
 
     private func resumeActivationWaiters() {
@@ -559,13 +579,17 @@ final class BridgeStore {
     }
 
     func setPresentationUnloadedAsync(_ unloaded: Bool) async throws {
-        let bundle = try await bridge.setPresentationUnloaded(unloaded: unloaded)
-        apply(bundle)
+        try await updatePlaybackEnvironment {
+            let bundle = try await bridge.setPresentationUnloaded(unloaded: unloaded)
+            apply(bundle)
+        }
     }
 
     func setAudioSuppressedAsync(_ suppressed: Bool) async throws {
-        let bundle = try await bridge.setAudioSuppressed(suppressed: suppressed)
-        apply(bundle)
+        try await updatePlaybackEnvironment {
+            let bundle = try await bridge.setAudioSuppressed(suppressed: suppressed)
+            apply(bundle)
+        }
     }
 
     func setContentPacingEnabledAsync(_ enabled: Bool) async throws {
@@ -718,12 +742,16 @@ final class BridgeStore {
     }
 
     func setPresentationSuspendedAsync(_ suspended: Bool) async throws {
-        try await bridge.setPresentationSuspended(suspended: suspended)
+        try await updatePlaybackEnvironment {
+            try await bridge.setPresentationSuspended(suspended: suspended)
+        }
     }
 
     func setDisplayPresentationSuspendedAsync(displayID: UInt32, suspended: Bool) async throws {
-        try await bridge.setDisplayPresentationSuspended(
-            displayId: String(displayID), suspended: suspended)
+        try await updatePlaybackEnvironment {
+            try await bridge.setDisplayPresentationSuspended(
+                displayId: String(displayID), suspended: suspended)
+        }
     }
 
     /// Turns renderer work counting on or off. Off by default; the renderer

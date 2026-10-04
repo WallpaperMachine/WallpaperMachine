@@ -9,8 +9,8 @@ use super::{
 use crate::{
     ShaderResult, SourceSpan,
     codegen::{ExpressionReplacement, Fixup},
-    syntax::{FunctionCall, FunctionCalls, SyntaxItem},
-    tokenizer::TokenCursor,
+    syntax::{FunctionCall, FunctionCalls, PreprocessorDirective},
+    tokenizer::{TokenCursor, TypedToken},
 };
 
 /// Rewrites legacy HLSL and Wallpaper Engine builtin calls.
@@ -31,12 +31,16 @@ impl Emitable for LegacyBuiltinsStrategy {
             Self::emit_call(context, tokens, call)?;
         }
 
-        for directive in context.context().module.items().iter().filter_map(|item| {
-            let SyntaxItem::Directive(directive) = item else {
-                return None;
-            };
-            Some(directive)
-        }) {
+        // Directives inside function bodies are tokens, not top-level items.
+        // Macro replacement rules are independent of their lexical nesting.
+        for token in tokens.iter() {
+            if !matches!(token.kind(), TypedToken::Directive(_)) {
+                continue;
+            }
+            let directive = PreprocessorDirective::from_token_text(
+                context.context().module.slice(token.span()),
+                token.span(),
+            );
             let Some(tokens) = directive.define_body_tokens_in(context.context().module)? else {
                 continue;
             };

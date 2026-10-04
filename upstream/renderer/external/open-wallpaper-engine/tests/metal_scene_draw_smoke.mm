@@ -846,6 +846,49 @@ TEST_F(MetalSceneDraw, TranslatedAuthorShaderCompilesAndDrawsTheScene)
     }
 }
 
+TEST_F(MetalSceneDraw, SingleSampleAlphaCoveragePreservesTransparentAndPartialPixels)
+{
+    const auto project = WriteFixture(root_ / "coverage");
+    std::ofstream(project.parent_path() / "materials/tile.json")
+        << R"({"passes":[{"shader":"metal_probe","blending":"alphatocoverage","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+    std::ofstream(project.parent_path() / "shaders/metal_probe.frag")
+        << "varying vec2 v_TexCoord;\nvoid main() {"
+        << "gl_FragColor=vec4(1,0,0,floor(v_TexCoord.x*3.0)*0.5); }\n";
+    LoadedScene loaded;
+    std::string error;
+    ASSERT_TRUE(LoadScene(project, root_ / "cache", loaded, error)) << error;
+    @autoreleasepool {
+        CAMetalLayer* layer = [CAMetalLayer layer];
+        layer.device = MTLCreateSystemDefaultDevice();
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake(384, 256);
+        MetalRender render;
+        ASSERT_TRUE(render.init({
+            .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+            .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+        })) << render.lastError();
+        auto graph = sceneToRenderGraph(*loaded.scene);
+        ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+        render.UpdateCameraFillMode(*loaded.scene, FillMode::ASPECTFIT);
+        for (int frame = 0; frame < 3; ++frame) {
+            ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+            std::vector<uint8_t> pixels;
+            uint32_t width = 0, height = 0;
+            ASSERT_TRUE(render.ReadRenderTargetForTests(
+                loaded.scene->ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+            ASSERT_EQ(width, 384u);
+            ASSERT_EQ(height, 256u);
+            for (const auto& [x, red] : { std::pair {100, 0}, {192, 128}, {284, 255} }) {
+                const auto offset = (128 * width + x) * 4;
+                EXPECT_NEAR(pixels[offset], red, 1);
+                EXPECT_EQ(pixels[offset + 1], 0);
+                EXPECT_EQ(pixels[offset + 2], 0);
+            }
+        }
+        render.destroy();
+    }
+}
+
 TEST_F(MetalSceneDraw, UnreferencedTargetsStayUnallocatedAcrossOptimizationChanges)
 {
     const auto project = WriteFixture(root_ / "project");
@@ -939,6 +982,428 @@ TEST_F(MetalSceneDraw, ACopySkippedByTheOptimisationGetsItsImageWhenItIsTurnedOf
             EXPECT_EQ(copied, drawn);
         }
         render.destroy();
+    }
+}
+
+TEST_F(MetalSceneDraw, LightingViewDirectionFollowsTheAuthoredSceneThroughEffects)
+{
+    // Original shaders reproduce the view-dependent lighting shape, without
+    // private assets or the compatibility lighting helper. A 2D eye on the
+    // layer's plane must not turn front-facing artwork into ambient-only RGB.
+    for (bool ortho : { true, false }) {
+        for (bool effect : { false, true }) {
+            SCOPED_TRACE(std::string(ortho ? "2D" : "perspective") +
+                         (effect ? " effect" : " direct"));
+            const auto directory = root_ / (std::string(ortho ? "ortho" : "perspective") +
+                                             (effect ? "-effect" : "-direct"));
+            const auto project = WriteFixture(directory);
+            const std::string vertex = R"(
+attribute vec3 a_Position;
+attribute vec2 a_TexCoord;
+varying vec2 v_TexCoord;
+varying vec3 v_ViewDir;
+void main() {
+    gl_Position = vec4(a_TexCoord * 2.0 - 1.0, 0.0, 1.0);
+    v_TexCoord = a_TexCoord;
+    v_ViewDir = vec3(1.0, 0.0, 0.0);
+}
+)";
+            const std::string lighting = R"(
+#if SCENE_ORTHO
+    vec3 view = vec3(0.0, 0.0, 1.0);
+#else
+    vec3 view = normalize(v_ViewDir);
+#endif
+    // The unlit half must retain its authored colour under either projection.
+    if (v_TexCoord.x > 0.5)
+        color.rgb *= 0.2 + 0.8 * max(dot(vec3(0.0, 0.0, 1.0), view), 0.0);
+    gl_FragColor = color;
+}
+)";
+            const std::string declarations =
+                "varying vec2 v_TexCoord;\nvarying vec3 v_ViewDir;\n";
+            std::ofstream(directory / "shaders/metal_probe.vert") << vertex;
+            std::ofstream(directory / "shaders/metal_probe.frag") << declarations <<
+                "void main() {\nvec4 color = vec4(0.25, 0.5, 0.75, 1.0);\n" <<
+                (effect ? "gl_FragColor = color;\n}\n" : lighting);
+            auto material = nlohmann::json::parse(
+                std::ifstream(directory / "materials/tile.json"));
+            // The scene owns this switch even if a stale material disagrees.
+            material["passes"][0]["combos"]["SCENE_ORTHO"] = ortho ? 0 : 1;
+            std::ofstream(directory / "materials/tile.json") << material;
+            auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+            if (! ortho) layout["general"]["orthogonalprojection"] = nullptr;
+            if (effect) {
+                std::filesystem::create_directories(directory / "effects");
+                std::ofstream(directory / "effects/view.json") <<
+                    R"({"name":"view lighting","passes":[{"material":"materials/view.json"}]})";
+                material["passes"][0]["shader"] = "view";
+                material["passes"][0]["textures"] = nlohmann::json::array({ nullptr });
+                std::ofstream(directory / "materials/view.json") << material;
+                std::ofstream(directory / "shaders/view.vert") << vertex;
+                std::ofstream(directory / "shaders/view.frag") <<
+                    "uniform sampler2D g_Texture0;\n" << declarations <<
+                    "void main() {\nvec4 color = texture(g_Texture0, v_TexCoord);\n" << lighting;
+                layout["objects"][0]["effects"] = nlohmann::json::array({
+                    { { "file", "effects/view.json" }, { "visible", true } }
+                });
+            }
+            std::ofstream(directory / "layout.json") << layout;
+            LoadedScene loaded;
+            std::string error;
+            ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+            auto& scene = *loaded.scene;
+            const auto graph = sceneToRenderGraph(scene);
+            ASSERT_NE(graph, nullptr);
+            @autoreleasepool {
+                CAMetalLayer* layer = [CAMetalLayer layer];
+                layer.device = MTLCreateSystemDefaultDevice();
+                layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+                layer.drawableSize = CGSizeMake(384, 256);
+                MetalRender render;
+                ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                    .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                    .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+                }));
+                ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_GT(width, 0u);
+                ASSERT_GT(height, 0u);
+                for (bool lit : { false, true }) {
+                    const auto offset = ((height / 2) * width + width * (lit ? 3 : 1) / 4) * 4;
+                    for (size_t channel = 0; channel < 3; ++channel) {
+                        const float albedo = 0.25f * (channel + 1);
+                        const float gain = lit && ! ortho ? 0.2f : 1.0f;
+                        EXPECT_NEAR(pixels[offset + channel], 255.0f * albedo * gain, 1.0f);
+                    }
+                    EXPECT_EQ(pixels[offset + 3], 255u);
+                }
+                render.destroy();
+            }
+        }
+    }
+}
+
+TEST_F(MetalSceneDraw, ParentedCardsStayJoinedWhileParallaxMovesAndReverses)
+{
+    for (bool effect : {false, true}) {
+        SCOPED_TRACE(effect ? "effect chain" : "direct cards");
+        const auto directory = root_ / (effect ? "parallax-effect" : "parallax-direct");
+        const auto project = WriteFixture(directory);
+        std::ofstream(directory / "models/tile.json") <<
+            R"({"width":64,"height":64,"material":"materials/tile.json"})";
+        std::ofstream(directory / "shaders/metal_probe.frag") <<
+            "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
+        auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+        layout["general"]["clearcolor"] = {0, 0, 0};
+        layout["general"]["cameraparallax"] = true;
+        layout["general"]["cameraparallaxamount"] = 1;
+        layout["general"]["cameraparallaxmouseinfluence"] = 1;
+        layout["general"]["cameraparallaxdelay"] = 0;
+        auto card = layout["objects"][0];
+        card["id"] = 1;
+        card["name"] = "left card";
+        card["parent"] = 3;
+        card["origin"] = {-32, 0, 0};
+        if (effect) {
+            std::filesystem::create_directories(directory / "effects");
+            std::ofstream(directory / "effects/copy.json") <<
+                R"({"name":"copy","passes":[{"material":"materials/copy.json"}]})";
+            std::ofstream(directory / "materials/copy.json") <<
+                R"({"passes":[{"shader":"copy","textures":[null],"blending":"normal","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+            std::filesystem::copy_file(directory / "shaders/metal_probe.vert",
+                                       directory / "shaders/copy.vert");
+            std::ofstream(directory / "shaders/copy.frag") <<
+                "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+                "void main() { gl_FragColor = texture(g_Texture0, v_TexCoord); }\n";
+            card["effects"] = nlohmann::json::array({{{"file", "effects/copy.json"}}});
+        }
+        auto right = card;
+        right["id"] = 2;
+        right["name"] = "right card";
+        right["origin"] = {32, 0, 0};
+        right["parallaxDepth"] = {9, -9}; // stale child values must not win
+        layout["objects"] = nlohmann::json::array({card, right,
+            {{"id", 3}, {"name", "inner"}, {"parent", 4}, {"parallaxDepth", {0, 0}}},
+            {{"id", 4}, {"name", "root"}, {"origin", {192, 128, 0}},
+             {"parallaxDepth", {0.5, 0.25}}}});
+        std::ofstream(directory / "layout.json") << layout;
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+        auto& scene = *loaded.scene;
+        const auto graph = sceneToRenderGraph(scene);
+        ASSERT_NE(graph, nullptr);
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+            // Include repeated frames: caching must not freeze inherited motion,
+            // and local effect targets must not receive parallax a second time.
+            for (float cursor : {0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 0.5f}) {
+                scene.shaderValueUpdater->MouseInput(cursor, 1.0f - cursor);
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_EQ(width, 384u);
+                ASSERT_EQ(height, 256u);
+                const float cx = 192 + (0.5f - cursor) * 192;
+                const float cy = 128 - (0.5f - cursor) * 64; // readback is top-down
+                for (unsigned y = 8; y < height; y += 16) {
+                    for (unsigned x = 8; x < width; x += 16) {
+                        const bool covered = std::abs(x - cx) < 64 && std::abs(y - cy) < 32;
+                        const auto offset = (y * width + x) * 4;
+                        ASSERT_EQ(pixels[offset], covered ? 255 : 0)
+                            << "cursor=" << cursor << " pixel=" << x << "," << y;
+                        ASSERT_EQ(pixels[offset + 1], 0);
+                        ASSERT_EQ(pixels[offset + 2], 0);
+                    }
+                }
+            }
+            render.destroy();
+        }
+    }
+}
+
+TEST_F(MetalSceneDraw, AnAnimatedCurtainRevealsTheWholeCanvasAndStaysOpen)
+{
+    for (bool effect : { false, true }) {
+        SCOPED_TRACE(effect ? "effect chain" : "direct layer");
+        const auto directory = root_ / (effect ? "effect-curtain" : "direct-curtain");
+        const auto project = WriteFixture(directory);
+        std::ofstream(directory / "models/tile.json") <<
+            R"({"width":192,"height":256,"material":"materials/tile.json"})";
+        std::ofstream(directory / "shaders/metal_probe.frag") <<
+            "void main() {\n gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n}\n";
+        auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+        layout["general"]["clearcolor"] = { 0.2, 0.4, 0.6 };
+        auto& card = layout["objects"][0];
+        card["alignment"] = "left";
+        card["origin"] = nlohmann::json::parse(R"({
+            "value":[192,128,0],"animation":{
+                "relative":true,"options":{"fps":60,"length":30,"mode":"single"},
+                "c0":[{"frame":0,"value":0},{"frame":30,"value":192}]
+            }
+        })");
+        if (effect) {
+            std::filesystem::create_directories(directory / "effects");
+            std::ofstream(directory / "effects/copy.json") <<
+                R"({"name":"copy","passes":[{"material":"materials/copy.json"}]})";
+            std::ofstream(directory / "materials/copy.json") <<
+                R"({"passes":[{"shader":"copy","textures":[null],"blending":"normal","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled"}]})";
+            std::filesystem::copy_file(directory / "shaders/metal_probe.vert",
+                                       directory / "shaders/copy.vert");
+            std::ofstream(directory / "shaders/copy.frag") <<
+                "uniform sampler2D g_Texture0;\nvarying vec2 v_TexCoord;\n"
+                "void main() {\n gl_FragColor = texture(g_Texture0, v_TexCoord);\n}\n";
+            card["effects"] = nlohmann::json::array({ { { "file", "effects/copy.json" } } });
+        }
+        std::ofstream(directory / "layout.json") << layout;
+        LoadedScene loaded;
+        std::string error;
+        ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+        auto& scene = *loaded.scene;
+        const auto graph = sceneToRenderGraph(scene);
+        ASSERT_NE(graph, nullptr);
+        @autoreleasepool {
+            CAMetalLayer* layer = [CAMetalLayer layer];
+            layer.device = MTLCreateSystemDefaultDevice();
+            layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+            layer.drawableSize = CGSizeMake(384, 256);
+            MetalRender render;
+            ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+            }));
+            ASSERT_TRUE(render.compileRenderGraph(scene, *graph)) << render.lastError();
+            double elapsed = 0.0;
+            for (double delta : { 0.0, 0.25, 0.25, 5.0 }) {
+                scene.runtime->Tick(delta);
+                elapsed += delta;
+                ASSERT_TRUE(render.drawFrame(scene)) << render.lastError();
+                std::vector<uint8_t> pixels;
+                uint32_t width = 0, height = 0;
+                ASSERT_TRUE(render.ReadRenderTargetForTests(
+                    scene.ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                ASSERT_EQ(width, 384u);
+                ASSERT_EQ(height, 256u);
+                for (unsigned x : { 48u, 224u, 336u }) {
+                    const bool covered = x >= 192.0 + 384.0 * std::min(elapsed, 0.5);
+                    const auto offset = ((height / 2) * width + x) * 4;
+                    for (unsigned channel = 0; channel < 3; ++channel) {
+                        EXPECT_NEAR(pixels[offset + channel],
+                                    covered ? 0u : 51u * (channel + 1), 1u);
+                    }
+                }
+            }
+            render.destroy();
+        }
+    }
+}
+
+TEST_F(MetalSceneDraw, PuppetEffectsApplyLightingOnceAfterAssembly)
+{
+    // Original one-bone card and shaders exercise the real model parser and
+    // effect-chain builder, not a hand-constructed approximation of the graph.
+    for (bool puppet : { false, true }) {
+        for (bool effect : { false, true }) {
+            for (bool lit : { false, true }) {
+                const std::string label = std::to_string(puppet) + std::to_string(effect) +
+                                          std::to_string(lit);
+                SCOPED_TRACE(label);
+                const auto directory = root_ / ("puppet-lighting-" + label);
+                const auto project = WriteFixture(directory);
+                if (puppet) {
+                    std::ofstream model(directory / "models/card.mdl", std::ios::binary);
+                    const auto put = [&model](auto value) {
+                        model.write(reinterpret_cast<const char*>(&value), sizeof(value));
+                    };
+                    const auto str = [&model](const char* value) {
+                        model.write(value, std::strlen(value) + 1);
+                    };
+                    const uint32_t flags = 0x00800000u | 0x01000000u | 0x00000008u;
+                    str("MDLV0021");
+                    put(flags); put(uint32_t(1)); put(uint32_t(1));
+                    str("materials/tile.json"); put(uint32_t(0));
+                    for (float v : { -128.f, -96.f, 0.f, 128.f, 96.f, 0.f }) put(v);
+                    put(flags); put(uint32_t(4 * 52));
+                    for (const auto& vertex : std::array<std::array<float, 4>, 4> {{
+                             { -128, -96, 0, 1 }, { 128, -96, 1, 1 },
+                             { 128, 96, 1, 0 }, { -128, 96, 0, 0 } }}) {
+                        put(vertex[0]); put(vertex[1]); put(0.f);
+                        for (int i = 0; i < 4; ++i) put(uint32_t(0));
+                        for (float weight : { 1.f, 0.f, 0.f, 0.f }) put(weight);
+                        put(vertex[2]); put(vertex[3]);
+                    }
+                    put(uint32_t(12));
+                    for (uint16_t index : { 0, 1, 2, 0, 2, 3 }) put(index);
+                    put(uint8_t(1)); put(uint8_t(1)); put(uint16_t(0)); put(uint8_t(0));
+                    put(uint32_t(4 * 12));
+                    for (int i = 0; i < 4; ++i) {
+                        put(0.f); put(0.f); put(uint32_t(0));
+                    }
+                    put(uint8_t(1)); put(uint32_t(16));
+                    for (uint32_t value : { 1u, 0u, 0u, 6u }) put(value);
+                    str("MDLS0001"); put(uint32_t(0)); put(uint16_t(1)); put(uint16_t(0));
+                    str("root"); put(int32_t(0)); put(uint32_t(0xFFFFFFFFu)); put(uint32_t(64));
+                    for (int col = 0; col < 4; ++col)
+                        for (int row = 0; row < 4; ++row) put(row == col ? 1.f : 0.f);
+                    str("{}"); str("MDLA0000"); put(uint8_t(0));
+                    std::ofstream(directory / "models/tile.json") <<
+                        R"({"width":256,"height":192,"material":"materials/tile.json","puppet":"models/card.mdl"})";
+                }
+                // A white texture keeps the material identical on its input and
+                // final pass: repeated lighting alone must account for any loss.
+                std::filesystem::create_directories(directory / "materials");
+                {
+                    std::ofstream texture(directory / "materials/white.tex", std::ios::binary);
+                    const auto put = [&texture](uint32_t value) {
+                        texture.write(reinterpret_cast<const char*>(&value), sizeof(value));
+                    };
+                    texture.write("TEXV0005", 9); texture.write("TEXI0001", 9);
+                    for (uint32_t value : { 0u, 0u, 1u, 1u, 1u, 1u, 0u }) put(value);
+                    texture.write("TEXB0001", 9);
+                    for (uint32_t value : { 1u, 1u, 1u, 1u, 4u, 0xFFFFFFFFu }) put(value);
+                }
+                const std::string vertex = R"(
+uniform mat4 g_ModelViewProjectionMatrix;
+attribute vec3 a_Position;
+attribute vec2 a_TexCoord;
+varying vec2 v_TexCoord;
+#if SKINNING
+uniform mat4x3 g_Bones[BONECOUNT];
+attribute uvec4 a_BlendIndices;
+#endif
+void main() {
+    vec3 position = a_Position;
+#if SKINNING
+    position = g_Bones[a_BlendIndices.x] * vec4(position, 1.0);
+#endif
+    gl_Position = g_ModelViewProjectionMatrix * vec4(position, 1.0);
+    v_TexCoord = a_TexCoord;
+}
+)";
+                const std::string fragment = R"(
+uniform sampler2D g_Texture0;
+varying vec2 v_TexCoord;
+void main() {
+    vec4 color = texture(g_Texture0, v_TexCoord);
+#if LIGHTING
+    color.rgb *= vec3(0.4, 0.6, 0.8);
+#endif
+    gl_FragColor = color;
+}
+)";
+                std::ofstream(directory / "shaders/metal_probe.vert") << vertex;
+                std::ofstream(directory / "shaders/metal_probe.frag") << fragment;
+                auto material = nlohmann::json::parse(
+                    std::ifstream(directory / "materials/tile.json"));
+                material["passes"][0]["textures"] = { "white" };
+                material["passes"][0]["combos"]["LIGHTING"] = lit ? 1 : 0;
+                std::ofstream(directory / "materials/tile.json") << material;
+                if (effect) {
+                    std::filesystem::create_directories(directory / "effects");
+                    std::ofstream(directory / "effects/identity.json") <<
+                        R"({"name":"identity","passes":[{"material":"materials/identity.json"}]})";
+                    material["passes"][0]["combos"]["LIGHTING"] = 0;
+                    material["passes"][0]["textures"] = nlohmann::json::array({ nullptr });
+                    std::ofstream(directory / "materials/identity.json") << material;
+                    auto layout = nlohmann::json::parse(std::ifstream(directory / "layout.json"));
+                    layout["objects"][0]["effects"] = nlohmann::json::array({
+                        { { "file", "effects/identity.json" }, { "visible", true } }
+                    });
+                    std::ofstream(directory / "layout.json") << layout;
+                }
+                LoadedScene loaded;
+                std::string error;
+                ASSERT_TRUE(LoadScene(project, directory / "cache", loaded, error)) << error;
+                const auto graph = sceneToRenderGraph(*loaded.scene);
+                ASSERT_NE(graph, nullptr);
+                @autoreleasepool {
+                    CAMetalLayer* layer = [CAMetalLayer layer];
+                    layer.device = MTLCreateSystemDefaultDevice();
+                    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+                    layer.drawableSize = CGSizeMake(384, 256);
+                    MetalRender render;
+                    ASSERT_TRUE(render.init(MetalRenderInitInfo {
+                        .metal_layer = (__bridge void*)layer, .width = 384, .height = 256,
+                        .render_width = 384, .render_height = 256, .display_scale_factor = 1.0,
+                    }));
+                    ASSERT_TRUE(render.compileRenderGraph(*loaded.scene, *graph)) << render.lastError();
+                    for (int frame = 0; frame < 3; ++frame) {
+                        ASSERT_TRUE(render.drawFrame(*loaded.scene)) << render.lastError();
+                        std::vector<uint8_t> pixels;
+                        uint32_t width = 0, height = 0;
+                        ASSERT_TRUE(render.ReadRenderTargetForTests(
+                            loaded.scene->ResolveRenderTargetName(SpecTex_Default), pixels, width, height));
+                        ASSERT_EQ(width, 384u);
+                        ASSERT_EQ(height, 256u);
+                        for (uint32_t x : { 128u, 192u, 256u }) {
+                            SCOPED_TRACE(x);
+                            const auto offset = (128 * width + x) * 4;
+                            for (size_t channel = 0; channel < 3; ++channel)
+                                EXPECT_NEAR(pixels[offset + channel],
+                                            255.f * (lit ? 0.4f + 0.2f * channel : 1.f), 1.f);
+                            EXPECT_EQ(pixels[offset + 3], 255u);
+                        }
+                    }
+                    render.destroy();
+                }
+            }
+        }
     }
 }
 

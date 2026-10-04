@@ -2,6 +2,7 @@
 
 #include "Project/ProjectProperties.hpp"
 #include "Audio/include/Audio/AudioResponseService.h"
+#include "Runtime/CameraPath.hpp"
 #include "Runtime/ScalarAnimation.hpp"
 #include "Scene/Parse/WPPuppet.hpp"
 #include "Scene/include/Scene/SceneShader.h"
@@ -152,7 +153,8 @@ public:
     void          RegisterNodeVisibility(std::string name, SceneNode* node,
                                          std::unique_ptr<DynamicValue> value);
     void          RegisterNodeTranslate(std::string name, SceneNode* node,
-                                        std::unique_ptr<DynamicValue> value);
+                                        std::unique_ptr<DynamicValue> value,
+                                        std::shared_ptr<const NodeOriginAnimation> animation = {});
     void RegisterNodeScale(std::string name, SceneNode* node, std::unique_ptr<DynamicValue> value);
     void RegisterNodeRotation(std::string name, SceneNode* node,
                               std::unique_ptr<DynamicValue> value);
@@ -184,6 +186,8 @@ public:
     /// canvas centre stands in for it.
     void RegisterCameraShot(SceneNode* node, std::unique_ptr<DynamicValue> zoom,
                             CameraShotTimeline timeline, bool origin_bound);
+    void RegisterPerspectiveCameraShot(std::shared_ptr<SceneNode> node, SceneCamera* camera,
+                                       double fov, CameraPathPlayback path);
     void RegisterDynamicValueListener(std::unique_ptr<DynamicValue> value,
                                       std::function<void(const DynamicValue&)> callback);
     void RegisterNodeEffectFinal(std::string name, SceneNode* node, SceneImageEffectLayer* layer,
@@ -359,7 +363,10 @@ private:
         SceneNode* transform_node { nullptr };
         NodeAlignmentBinding* alignment { nullptr };
         const Eigen::Vector2f* size { nullptr };
+        std::shared_ptr<const NodeOriginAnimation> animation;
+        double sampled_animation_frame { std::numeric_limits<double>::quiet_NaN() };
     };
+    static void ApplyNodeOriginAnimation(NodeVec3Binding& binding);
     struct NodeEffectFinalBinding {
         SceneNode*             node { nullptr };
         SceneImageEffectLayer* layer { nullptr };
@@ -451,6 +458,7 @@ private:
     void ApplyMaterialConstantBinding(MaterialConstantBinding& binding);
     void ApplySceneZoomAnimation();
     void ApplyCameraShots();
+    void ApplyPerspectiveCameraShots(double seconds);
     void DispatchPendingAnimationEvents();
     bool                           CursorInsidePresentedContent() const;
     bool CursorHitsLayer(std::string_view name) const;
@@ -506,6 +514,21 @@ private:
         bool               origin_pending { false };
     };
     std::vector<CameraShotBinding> m_camera_shots;
+    struct PerspectiveCameraShot {
+        std::shared_ptr<SceneNode> node;
+        double fov;
+        CameraPathPlayback path;
+        std::size_t order;
+    };
+    struct PerspectiveCameraGroup {
+        SceneCamera* camera;
+        std::shared_ptr<SceneNode> fallback_node;
+        double fallback_fov;
+        std::vector<PerspectiveCameraShot> shots;
+    };
+    std::vector<PerspectiveCameraGroup> m_perspective_camera_groups;
+    SceneCamera* m_fallback_active_camera { nullptr };
+    std::size_t m_perspective_shot_count { 0 };
     /// What the view was last framed with, so an unchanged shot costs nothing.
     std::optional<std::pair<double, Eigen::Vector2f>> m_framed_camera_shot;
     std::vector<MaterialConstantBinding>                           m_material_constants;

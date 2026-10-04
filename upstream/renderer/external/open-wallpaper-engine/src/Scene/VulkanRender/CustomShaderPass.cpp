@@ -611,9 +611,10 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
             color_blend.colorWriteMask = colorMask;
 
             auto blendmode = material->blenmode;
-            SetBlend(blendmode, color_blend);
+            SetBlend(blendmode, color_blend, m_desc.sample_count);
             m_desc.blending          = color_blend.blendEnable;
-            m_desc.alpha_to_coverage = blendmode == BlendMode::AlphaToCoverage;
+            m_desc.alpha_to_coverage = blendmode == BlendMode::AlphaToCoverage &&
+                                       m_desc.sample_count != VK_SAMPLE_COUNT_1_BIT;
 
             loadOp =
                 ResolveAttachmentLoadOp(m_desc.preserve_target_contents, m_desc.clear_on_first_use);
@@ -664,6 +665,10 @@ void CustomShaderPass::prepare(Scene& scene, const Device& device, RenderingReso
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_SAMPLE_COUNT_1_BIT);
             if (! presentation_pass.has_value()) return;
             pipeline.setSampleCount(VK_SAMPLE_COUNT_1_BIT);
+            // Presentation may be single-sample even when the offscreen pass is not.
+            SetBlend(material->blenmode, color_blend, VK_SAMPLE_COUNT_1_BIT);
+            pipeline.setColorBlendStates(spanone { color_blend });
+            pipeline.multisample.alphaToCoverageEnable = VK_FALSE;
             if (! pipeline.create(device, *presentation_pass, m_presentation_pipeline)) return;
             auto copy_source_pass = CreateRenderPass(
                 device.handle(), m_desc.presentation_format, VK_ATTACHMENT_LOAD_OP_CLEAR,

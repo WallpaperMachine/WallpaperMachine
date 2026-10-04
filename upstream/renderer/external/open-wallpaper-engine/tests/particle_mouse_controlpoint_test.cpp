@@ -233,6 +233,41 @@ TEST(ParticleMouseControlpoint, EmitterControlpointOffsetsBoxSpawnOrigin) {
     EXPECT_FLOAT_EQ(particle.position.z(), 37.0f);
 }
 
+// `randomframe` sprites read this value; an integral one always chose frame 0.
+TEST(ParticleMouseControlpoint, SpawnedParticlesCarryAStableFrameValueSpreadOverTheSheet) {
+    ParticleSphereEmitterArgs args {};
+    args.directions    = { 1.0f, 1.0f, 1.0f };
+    args.minDistance   = 3.0f;
+    args.maxDistance   = 18.0f;
+    args.emitSpeed     = 1.0f;
+    args.instantaneous = 256;
+    auto                        emitter = ParticleSphereEmitterArgs::MakeEmittOp(args);
+    std::vector<Particle>       particles;
+    std::vector<ParticleInitOp> initializers;
+    emitter(particles, initializers, 256, 0.0, {});
+    ASSERT_EQ(particles.size(), 256u);
+    std::array<int, 13> frames {};
+    for (const auto& particle : particles) {
+        ASSERT_GE(particle.init.frame, 0.0f);
+        ASSERT_LT(particle.init.frame, 1.0f);
+        ++frames[static_cast<std::size_t>(particle.init.frame * frames.size())];
+    }
+    for (const int count : frames) EXPECT_GT(count, 0);
+
+    // A value of the spawn state, not a draw from the random source: the same
+    // spawn gives the same frame, and seeded layouts are not shifted.
+    ParticleBoxEmitterArgs fixed {};
+    fixed.directions    = { 0.0f, 0.0f, 0.0f };
+    fixed.emitSpeed     = 1.0f;
+    fixed.orgin         = { 1.0f, 2.0f, 3.0f };
+    fixed.instantaneous = 1;
+    std::array<ParticleControlpoint, 8> controlpoints {};
+    auto first  = ParticleBoxEmitterArgs::MakeEmittOp(fixed);
+    auto second = ParticleBoxEmitterArgs::MakeEmittOp(fixed);
+    EXPECT_EQ(FirstSpawnedParticle(first, controlpoints).init.frame,
+              FirstSpawnedParticle(second, controlpoints).init.frame);
+}
+
 class ParticleEmitterAudio : public testing::TestWithParam<const char*> {
 protected:
     ParticleEmittOp MakeEmitter(nlohmann::json fields) {

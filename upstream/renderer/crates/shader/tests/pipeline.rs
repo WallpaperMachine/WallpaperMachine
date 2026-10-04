@@ -3095,6 +3095,143 @@ fn pipeline_compiles_array_varyings_followed_by_scalar_varyings() {
 }
 
 #[test]
+fn pipeline_compiles_macro_sized_varyings_without_overlapping_locations() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for count in [None, Some(2), Some(4), Some(8)] {
+            let mut request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/macro_array_interface").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(
+                ShaderStageKind::Vertex,
+                concat!(
+                    "// [COMBO] {\"combo\":\"COUNT\",\"default\":3}\n",
+                    "attribute vec2 a_Position;\n",
+                    "varying vec2 taps[COUNT];\nvarying vec2 extra[COUNT];\nvarying vec2 uv;\n",
+                    "void main() { for (int i=0;i<COUNT;i++) { taps[i]=a_Position; extra[i]=a_Position*2.0; }\n",
+                    "uv=a_Position; gl_Position=vec4(a_Position,0,1); }",
+                ),
+            ))
+            .stage(ShaderStageSource::new(
+                ShaderStageKind::Fragment,
+                concat!(
+                    "varying vec2 taps[COUNT];\nvarying vec2 extra[COUNT];\nvarying vec2 uv;\n",
+                    "void main() { gl_FragColor=vec4(taps[0]+taps[COUNT-1]+extra[COUNT-1]+uv,0,1); }",
+                ),
+            ));
+            if let Some(count) = count {
+                request = request.combo(ShaderComboValue::new(
+                    ComboName::new("COUNT").unwrap(),
+                    count.to_string(),
+                ));
+            }
+            let _ = pipeline()
+                .compile(&request.build().unwrap())
+                .expect("macro arrays must compile on both backends with disjoint locations");
+        }
+    }
+}
+
+#[test]
+fn pipeline_resolves_macro_array_bounds_at_each_declaration() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for change in [
+            "#undef COUNT\n#define COUNT 4\n",
+            "float helper() {\n#undef COUNT\n#define COUNT 4\nreturn 0.0;\n}\n",
+        ] {
+            let interfaces = format!(
+                "#define COUNT 2\nvarying vec2 first[COUNT];\n{change}\
+                 varying vec2 second[COUNT];\nvarying vec2 uv;\n"
+            );
+            let request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/declaration_scoped_array_bounds").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, format!(
+                "{interfaces}attribute vec2 a_Position;\nvoid main() {{\
+                 first[0]=a_Position; first[1]=a_Position;\
+                 for(int i=0;i<COUNT;i++) second[i]=a_Position;\
+                 uv=a_Position; gl_Position=vec4(a_Position,0,1); }}"
+            )))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, format!(
+                "{interfaces}void main() {{ gl_FragColor=vec4(first[1]+second[3]+uv,0,1); }}"
+            )))
+            .build().unwrap();
+            let program = pipeline().compile(&request)
+                .expect("each array must use the definition visible at its own declaration");
+            for stage in [ShaderStageKind::Vertex, ShaderStageKind::Fragment] {
+                let source = legalized_stage_source(&program, stage);
+                assert!(source.contains("vec2 first[2];"), "{source}");
+                assert!(source.contains("vec2 second[4];"), "{source}");
+                assert!(source.contains("layout(location = 6)"), "{source}");
+            }
+        }
+    }
+}
+
+#[test]
+fn pipeline_rejects_unresolved_interface_array_bounds_before_layout() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        for (prefix, suffix, late) in [
+            ("#define COUNT 4+1\n", "COUNT", ""),
+            ("#define COUNT (2+1)\n", "COUNT", ""),
+            ("#define COUNT 0\n", "COUNT", ""),
+            ("#define COUNT -1\n", "COUNT", ""),
+            ("#define COUNT 2\nuniform float preceding;\n#undef COUNT\n", "COUNT", ""),
+            ("#define COUNT 2\nuniform float preceding;\n#define COUNT(x) x\n", "COUNT", ""),
+            ("", "COUNT", "#define COUNT 3\n"),
+            ("", "COUNT", ""),
+            ("", "2+1", ""),
+        ] {
+            let request = ShaderProgramRequest::builder(
+                ShaderName::new("effects/unsupported_array_bound").unwrap(),
+            )
+            .target(target)
+            .stage(ShaderStageSource::new(ShaderStageKind::Vertex, format!(
+                "{prefix}varying vec2 taps[{suffix}];\n{late}varying vec2 uv;\n\
+                 void main() {{ taps[0]=vec2(0); uv=vec2(0); gl_Position=vec4(0); }}"
+            )))
+            .stage(ShaderStageSource::new(ShaderStageKind::Fragment, format!(
+                "{prefix}varying vec2 taps[{suffix}];\n{late}varying vec2 uv;\n\
+                 void main() {{ gl_FragColor=vec4(taps[0]+uv,0,1); }}"
+            )))
+            .build().unwrap();
+            let error = pipeline().compile(&request).expect_err("unsupported bounds must not reserve one location");
+            assert!(error.to_string().contains("unsupported stage-interface array bound"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn pipeline_legalizes_nested_legacy_calls_in_macro_replacements() {
+    for target in [ShaderTarget::VulkanSpirv, ShaderTarget::MetalMsl] {
+        let request = ShaderProgramRequest::builder(
+            ShaderName::new("effects/macro_builtins").unwrap(),
+        )
+        .target(target)
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Vertex,
+            "attribute vec2 a_Position;\nvoid main() { gl_Position=vec4(a_Position,0,1); }",
+        ))
+        .stage(ShaderStageSource::new(
+            ShaderStageKind::Fragment,
+            concat!(
+                "uniform vec3 tint;\n",
+                "void main() {\n",
+                "#define corrected pow(tint, CAST3(2.0))\n",
+                "#define blend(x) lerp(corrected, CAST3(x), saturate(x))\n",
+                "gl_FragColor=vec4(blend(0.5),1.0); }",
+            ),
+        ))
+        .build()
+        .unwrap();
+        let _ = pipeline()
+            .compile(&request)
+            .expect("nested macro builtins must reach GLSL and MSL");
+    }
+}
+
+#[test]
 fn pipeline_narrows_user_vector_arguments_to_declared_width() {
     let request = interface_request(
         "attribute vec2 a_Position;\nvoid main() { gl_Position=vec4(a_Position,0,1); }",

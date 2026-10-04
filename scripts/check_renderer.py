@@ -16,7 +16,7 @@ from build import build_environment, cargo_environment
 from lib.paths import RENDERER, RENDERER_ARTIFACTS, ROOT
 from lib.xcode import skipped_test_lines
 
-GENERATED_CASE_COUNT = 10
+GENERATED_CASE_COUNT = 12
 # One registry owns the build/run/verdict and the Metal-device prerequisite.
 # VideoToolbox codec prerequisites, if unavailable, are reported by those tests.
 REGRESSION_BINARIES = {
@@ -122,9 +122,9 @@ def fixtures(root):
         yield folder / "project.json"
 
 
-def alpha_composite_fixture(root):
+def alpha_composite_fixture(root, *, alpha_to_coverage=False):
     """Expose composed coverage as RGB, independent of source artwork or effects."""
-    folder = root / "generated-alpha"
+    folder = root / ("generated-alpha-single-sample" if alpha_to_coverage else "generated-alpha")
     vertex = """uniform mat4 g_ModelViewProjectionMatrix;
 attribute vec3 a_Position;
 attribute vec2 a_TexCoord;
@@ -157,7 +157,8 @@ void main() {
         "effects/coverage.json": {"name": "coverage readback", "passes": [{"material": "materials/coverage.json"}]},
     }
     for name, fragment in fragments.items():
-        files[f"materials/{name}.json"] = {"passes": [{"shader": name, "blending": "translucent", "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled", "textures": [None]}]}
+        blend = "alphatocoverage" if alpha_to_coverage and name != "coverage" else "translucent"
+        files[f"materials/{name}.json"] = {"passes": [{"shader": name, "blending": blend, "cullmode": "nocull", "depthtest": "disabled", "depthwrite": "disabled", "textures": [None]}]}
         files[f"models/{name}.json"] = {"width": 288, "height": 144, "material": f"materials/{name}.json"}
         files[f"shaders/{name}.vert"] = vertex
         files[f"shaders/{name}.frag"] = fragment
@@ -269,6 +270,42 @@ void main() {
     return folder / "project.json"
 
 
+def origin_animation_fixture(root):
+    """An opaque intro card must slide offscreen, not hide half the canvas forever."""
+    folder = root / "generated-origin-animation"
+    files = {
+        "project.json": {"title": "Origin curtain timeline", "type": "scene",
+                         "file": "layout.json", "general": {"properties": {}}},
+        "models/card.json": {"width": 192, "height": 256, "material": "materials/card.json"},
+        "materials/card.json": {"passes": [{"shader": "card", "blending": "normal",
+                                            "cullmode": "nocull", "depthtest": "disabled",
+                                            "depthwrite": "disabled"}]},
+        "shaders/card.vert": """uniform mat4 g_ModelViewProjectionMatrix;
+attribute vec3 a_Position;
+void main() {
+    gl_Position = g_ModelViewProjectionMatrix * vec4(a_Position, 1.0);
+}
+""",
+        "shaders/card.frag": "void main() {\n    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n}\n",
+        "layout.json": {
+            "camera": {"center": [0, 0, 0], "eye": [0, 0, 1], "up": [0, 1, 0]},
+            "general": {"clearcolor": [0.2, 0.4, 0.6], "cameraparallax": False,
+                        "orthogonalprojection": {"width": 384, "height": 256}},
+            "objects": [{"id": 1, "name": "curtain", "image": "models/card.json",
+                         "alignment": "left", "origin": {"value": [192, 128, 0], "animation": {
+                             "relative": True,
+                             "options": {"fps": 60, "length": 30, "mode": "single"},
+                             "c0": [{"frame": 0, "value": 0}, {"frame": 30, "value": 192}],
+                         }}}],
+        },
+    }
+    for name, contents in files.items():
+        path = folder / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents if isinstance(contents, str) else json.dumps(contents))
+    return folder / "project.json"
+
+
 def check_generated_pixels(data, index):
     """Independent assertions so two equally blank/corrupt outputs cannot pass."""
     magic, dimensions, maximum, pixels = data.split(b"\n", 3)
@@ -280,7 +317,7 @@ def check_generated_pixels(data, index):
     def pixel(x, y):
         offset = (y * width + x) * 3
         return pixels[offset:offset + 3]
-    if index == 8:
+    if index in (8, 11):
         # A half-covered source over transparent, half-covered and opaque targets:
         # Aout = As + Ad * (1 - As). RGB readback makes lost coverage observable.
         return all(abs(channel - expected) <= 1
@@ -293,6 +330,11 @@ def check_generated_pixels(data, index):
                 all(abs(channel - expected) <= 1
                     for x, y in [(48, 32), (48, 224)]
                     for channel, expected in zip(pixel(x, y), (26, 51, 77))))
+    if index == 10:
+        # Both halves must reveal the coloured canvas once the curtain finishes.
+        return all(abs(channel - expected) <= 1
+                   for x in (48, 192, 336)
+                   for channel, expected in zip(pixel(x, 128), (51, 102, 153)))
     background = pixel(0, 0)
     # First effect must really draw; empty/hidden nested layers must not leak
     # that earlier effect's pixels. Visible children must survive their clears.
@@ -360,7 +402,10 @@ def main(argv=None):
         report[binary] = status
         record_skips(report, binary, out / (binary + ".log"))
     projects = ([*fixtures(out / "fixtures"), alpha_composite_fixture(out / "fixtures"),
-                 perspective_animation_fixture(out / "fixtures"), *args.project] if gpu_available else [])
+                 perspective_animation_fixture(out / "fixtures"),
+                 origin_animation_fixture(out / "fixtures"),
+                 alpha_composite_fixture(out / "fixtures", alpha_to_coverage=True),
+                 *args.project] if gpu_available else [])
     for project in projects:
         project = project.resolve()
         manifest_bytes = project.read_bytes()

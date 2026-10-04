@@ -4,6 +4,8 @@ mod context;
 pub mod declarations;
 pub mod declarators;
 mod emission;
+mod interface_arrays;
+pub(crate) use interface_arrays::interface_array_size;
 pub mod expressions;
 pub mod fixups;
 mod strategies;
@@ -65,14 +67,15 @@ impl Codegen {
         for item in module.items() {
             match item {
                 SyntaxItem::Declaration(declaration) => {
-                    entries.push(DeclarationEntry {
-                        span: declaration.span(),
-                        kind: PlannedDeclarationSource {
-                            module,
-                            declaration,
-                        }
-                        .resolve(),
-                    });
+                    let mut kind = PlannedDeclarationSource { module, declaration }.resolve();
+                    if let declarations::PlannedDeclaration::Interface(interface) = &mut kind
+                        && let Some(suffix) = interface.array_suffix.as_deref()
+                    {
+                        // Resolve before hoisting declarations or producing local input copies.
+                        let size = interface_array_size(module, suffix, declaration.span())?;
+                        interface.array_suffix = Some(format!("[{size}]").into());
+                    }
+                    entries.push(DeclarationEntry { span: declaration.span(), kind });
                 }
                 SyntaxItem::Function(function) => {
                     functions.push(FunctionEntry {

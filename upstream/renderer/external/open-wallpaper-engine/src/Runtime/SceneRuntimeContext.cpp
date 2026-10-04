@@ -495,6 +495,7 @@ void SceneRuntimeContext::Tick(double frame_time) {
         (void)name;
         if (binding.node == nullptr || binding.value == nullptr ||
             binding.transform_node == nullptr || binding.alignment == nullptr) continue;
+        ApplyNodeOriginAnimation(binding);
         auto& alignment = *binding.alignment;
         const auto& value = binding.value->getVec3();
         if (! (alignment.origin.array() == value.array()).all()) {
@@ -545,6 +546,7 @@ void SceneRuntimeContext::Tick(double frame_time) {
     // tick gave it.
     for (auto& shot : m_camera_shots) shot.origin_pending = false;
     ApplyCameraShots();
+    ApplyPerspectiveCameraShots(frame_time);
     for (auto& binding : m_material_alpha) {
         auto material = binding.material.lock();
         if (material == nullptr) continue;
@@ -1228,18 +1230,36 @@ void SceneRuntimeContext::RegisterNodeVisibility(std::string name, SceneNode* no
     };
 }
 
+void SceneRuntimeContext::ApplyNodeOriginAnimation(NodeVec3Binding& binding) {
+    if (binding.animation == nullptr || binding.animation->playback == nullptr) return;
+    const auto& animation = *binding.animation;
+    const double frame = animation.playback->frame;
+    if (frame == binding.sampled_animation_frame) return;
+    Eigen::Vector3f origin;
+    for (std::size_t i = 0; i < animation.components.size(); ++i) {
+        const auto& curve = animation.components[i];
+        origin[i] = animation.offset[i] + curve.Evaluate(curve.fps > 0.0 ? frame / curve.fps : 0.0);
+    }
+    binding.value->update(origin);
+    binding.sampled_animation_frame = frame;
+}
+
 void SceneRuntimeContext::RegisterNodeTranslate(std::string name, SceneNode* node,
-                                                std::unique_ptr<DynamicValue> value) {
+                                                std::unique_ptr<DynamicValue> value,
+                                                std::shared_ptr<const NodeOriginAnimation> animation) {
     if (node == nullptr || value == nullptr) return;
 
     RegisterNode(name, node);
-    SetNodeTranslate(name, value->getVec3());
     auto* raw = value.get();
     m_owned_values.push_back(std::move(value));
-    m_node_translate[name] = NodeVec3Binding {
+    auto& binding = m_node_translate[name];
+    binding = NodeVec3Binding {
         .node  = node,
         .value = raw,
+        .animation = std::move(animation),
     };
+    ApplyNodeOriginAnimation(binding);
+    SetNodeTranslate(name, raw->getVec3());
     RefreshNodeTransformBindings(name);
 }
 
@@ -1394,6 +1414,44 @@ void SceneRuntimeContext::ApplyCameraShots() {
     }
     m_framed_camera_shot = std::make_pair(zoom, offset);
     m_scene->FrameCanvas(zoom, offset);
+}
+
+void SceneRuntimeContext::RegisterPerspectiveCameraShot(
+    std::shared_ptr<SceneNode> node, SceneCamera* camera, double fov, CameraPathPlayback path) {
+    if (!node || !camera || !m_scene) return;
+    if (m_perspective_camera_groups.empty()) m_fallback_active_camera = m_scene->activeCamera;
+    auto group = std::find_if(m_perspective_camera_groups.begin(), m_perspective_camera_groups.end(),
+                             [camera](const auto& value) { return value.camera == camera; });
+    if (group == m_perspective_camera_groups.end()) {
+        m_perspective_camera_groups.push_back(
+            { camera, camera->GetAttachedNode(), camera->Fov(), {} });
+        group = std::prev(m_perspective_camera_groups.end());
+    }
+    group->shots.push_back({ std::move(node), fov, std::move(path), ++m_perspective_shot_count });
+    ApplyPerspectiveCameraShots(0.0);
+}
+
+void SceneRuntimeContext::ApplyPerspectiveCameraShots(double seconds) {
+    if (!m_scene || m_perspective_camera_groups.empty()) return;
+    auto* active = m_fallback_active_camera;
+    std::size_t last_order = 0;
+    for (auto& group : m_perspective_camera_groups) {
+        PerspectiveCameraShot* selected = nullptr;
+        for (auto& shot : group.shots) {
+            if (shot.node->EffectiveVisible()) selected = &shot;
+        }
+        const auto& node = selected ? selected->node : group.fallback_node;
+        if (node && group.camera->GetAttachedNode() != node) group.camera->AttatchNode(node);
+        group.camera->SetFov(selected ? selected->fov : group.fallback_fov);
+        if (!selected) continue;
+        selected->path.Advance(seconds);
+        selected->path.Apply(*selected->node, *group.camera);
+        if (selected->order > last_order) {
+            last_order = selected->order;
+            active = group.camera;
+        }
+    }
+    m_scene->activeCamera = active;
 }
 
 void SceneRuntimeContext::RegisterSceneClearColor(std::unique_ptr<DynamicValue> value) {
@@ -1559,6 +1617,14 @@ uint32_t SceneRuntimeContext::DescribeTimeAdvancingWork() const {
                         return advances(binding.animation);
                     })) {
         reasons |= SceneDemandReason::Animation;
+    }
+
+    for (const auto& group : m_perspective_camera_groups) {
+        const PerspectiveCameraShot* selected = nullptr;
+        for (const auto& shot : group.shots) {
+            if (shot.node->EffectiveVisible()) selected = &shot;
+        }
+        if (selected && !selected->path.empty()) reasons |= SceneDemandReason::Animation;
     }
 
     // Scripted values re-evaluate every tick and may read the clock, the

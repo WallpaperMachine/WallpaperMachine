@@ -177,12 +177,15 @@ struct WPModelObject : WPMiscObjectBase {
     std::string model;
     std::string attachment;
     bool        perspective { false };
+    std::vector<WPPuppetLayer::AnimationLayer> puppet_layers;
+    std::vector<nlohmann::json> puppet_layer_settings;
 
     bool FromJson(const nlohmann::json& json, fs::VFS&) {
         FromCommonJson(json);
         GET_JSON_NAME_VALUE_NOWARN(json, "model", model);
         GET_JSON_NAME_VALUE_NOWARN(json, "attachment", attachment);
         GET_JSON_NAME_VALUE_NOWARN(json, "perspective", perspective);
+        ParsePuppetAnimationLayers(json, puppet_layers, puppet_layer_settings);
         return true;
     }
 };
@@ -191,7 +194,7 @@ struct WPCameraObject : WPMiscObjectBase {
     std::string camera;
     std::string path;
     std::string queuemode;
-    float       fov { 50.0f };
+    float       fov { 0.0f }; // absent/nonpositive inherits the scene's resolved perspective FOV
     float       zoom { 1.0f };
     /// `zoom` as written. The unwrapped float above is the authored default;
     /// a slider the user drags arrives as `{"user": "<property>", "value": n}`

@@ -10,6 +10,7 @@
 #include <array>
 #include <tuple>
 #include <cmath>
+#include <cstring>
 
 using namespace wallpaper;
 
@@ -83,9 +84,30 @@ inline u32 Emitt(std::vector<Particle>& particles, u32 num, u32 maxcount, bool s
     return i + 1;
 }
 
+// Derived from the spawn state rather than drawn from the random source, so
+// adding it leaves every seeded particle layout unchanged.
+inline float SpawnFrameValue(const Particle& p) noexcept {
+    uint64_t hash = 0x9e3779b97f4a7c15ull;
+    const auto mix = [&hash](float value) {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        hash ^= bits + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
+        hash ^= hash >> 31;
+        hash *= 0xbf58476d1ce4e5b9ull;
+    };
+    for (int i = 0; i < 3; ++i) {
+        mix(p.position[i]);
+        mix(p.velocity[i]);
+        mix(p.rotation[i]);
+    }
+    hash ^= hash >> 29;
+    return static_cast<float>(hash >> 40) * (1.0f / 16777216.0f);
+}
+
 inline Particle Spwan(GenParticleOp gen, std::vector<ParticleInitOp>& inis, double duration) {
     auto particle = gen();
     for (auto& el : inis) el(particle, duration);
+    particle.init.frame = SpawnFrameValue(particle);
     return particle;
 }
 

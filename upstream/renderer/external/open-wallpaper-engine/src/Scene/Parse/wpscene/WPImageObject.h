@@ -19,6 +19,10 @@ class VFS;
 namespace wpscene
 {
 
+void ParsePuppetAnimationLayers(const nlohmann::json& json,
+                                std::vector<WPPuppetLayer::AnimationLayer>& layers,
+                                std::vector<nlohmann::json>& settings);
+
 class WPEffectCommand {
 public:
     bool        FromJson(const nlohmann::json&);
@@ -76,6 +80,9 @@ public:
     float                      brightness { 1.0f };
     bool                       fullscreen { false };
     bool                       nopadding { false };
+    // How the layer's texture (`_rt_imageLayerComposite_<id>`) is addressed
+    // outside 0..1. Unspecified keeps the historical clamp.
+    bool                       clampuvs { true };
     bool                       visible { true };
     bool                       autosize { false };
     bool                       dynamic_origin { false };

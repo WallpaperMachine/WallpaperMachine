@@ -2643,6 +2643,58 @@ TEST(ShaderValuePacking, PackedValuesOwnTheirStorageAcrossInputChanges) {
     EXPECT_EQ(packed[2].size(), 0u);
 }
 
+TEST(ShaderValueUpdaterCompat, FourLightColorsRoundTripThroughPackedUniforms) {
+    Scene scene;
+    auto camera = std::make_shared<SceneCamera>(384, 256, -1.f, 1.f);
+    scene.activeCamera = camera.get();
+    auto node = std::make_shared<SceneNode>();
+    auto mesh = std::make_shared<SceneMesh>();
+    mesh->AddMaterial(SceneMaterial {});
+    node->AddMesh(mesh);
+    WPShaderValueUpdater updater(&scene);
+    updater.InitUniforms(node.get(), [](std::string_view name) {
+        return name == "g_LightsPosition" || name == "g_LightsColorPremultiplied";
+    });
+    // Different channels expose transposition as well as the lost fourth light;
+    // five lights must leave the shader's bounded four-light input unchanged.
+    for (size_t count = 0; count <= 5; ++count) {
+        SCOPED_TRACE(count);
+        if (count > 0) {
+            const float n = static_cast<float>(count);
+            auto light = std::make_unique<SceneLight>(Eigen::Vector3f(n, n + 1, n + 2), 2.f, 0.5f);
+            auto transform = std::make_shared<SceneNode>();
+            transform->SetTranslate(Eigen::Vector3f(n * 10, n * 20, n * 30));
+            light->setNode(transform);
+            scene.lights.push_back(std::move(light));
+        }
+        sprite_map_t sprites;
+        std::unordered_map<std::string, ShaderValue> values;
+        updater.UpdateUniforms(node.get(), sprites, [&](std::string_view name, const ShaderValue& value) {
+            values.emplace(std::string(name), value);
+        });
+        const auto& colors = values.at("g_LightsColorPremultiplied");
+        const auto& positions = values.at("g_LightsPosition");
+        ASSERT_EQ(colors.size(), 12u);
+        ASSERT_EQ(positions.size(), 16u);
+        for (size_t light = 0; light < 4; ++light) {
+            for (size_t channel = 0; channel < 3; ++channel) {
+                const size_t index = light < 3 ? light * 4 + channel : channel * 4 + 3;
+                EXPECT_FLOAT_EQ(colors[index], light < count ? 2.f * (light + 1 + channel) : 0.f);
+                EXPECT_FLOAT_EQ(positions[light * 4 + channel],
+                                light < count ? 10.f * (light + 1) * (channel + 1) : 0.f);
+            }
+        }
+    }
+    // Fewer lights on the next draw must clear the packed fourth-light lanes.
+    scene.lights.clear();
+    sprite_map_t sprites;
+    updater.UpdateUniforms(node.get(), sprites, [](std::string_view name, const ShaderValue& value) {
+        if (name == "g_LightsColorPremultiplied")
+            for (size_t i = 0; i < value.size(); ++i) EXPECT_FLOAT_EQ(value[i], 0.f);
+    });
+    scene.activeCamera = nullptr;
+}
+
 TEST(ShaderValueUpdaterCompat, UniformMetadataIsIsolatedPerMaterialSlot) {
     Scene scene;
     scene.runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {});

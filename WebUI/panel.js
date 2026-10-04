@@ -1425,25 +1425,12 @@ document.addEventListener('error', event => { if (event.target.tagName === 'IMG'
 document.addEventListener('load', event => { if (event.target.tagName !== 'IMG') return; event.target.classList.add('loaded'); if (event.target.classList.contains('tile-live')) settleLivePreview(event.target, true); else if (event.target.classList.contains('tile-still')) queueLivePreviews(); }, true);
 // Discover tiles show their cached still at once. The animated preview then loads through
 // mwe-ui://animated/<id> for tiles on screen whose still has arrived, six at a time in grid order
-// (the still pass already left its bytes on disk, so this is a local read, not a download),
-// and plays beneath the still. Steam GIFs often open on, and loop back through, black frames, so
-// the still only steps aside while the sampled animation is about as bright as the still itself.
-const live = new Map(); // id -> { status: 'queued' | 'loading' | 'ready' | 'failed', playing, still: luminance }
+// (the still pass already left its bytes on disk, so this is a local read, not a download).
+// Reveal on image load, never by drawing/reading pixels: WebKit's synchronous canvas IPC
+// can stall the entire panel for repeated 15-second waits when its graphics backend hangs.
+const live = new Map(); // id -> { status: 'queued' | 'loading' | 'ready' | 'failed', playing }
 const LIVE_CONCURRENCY = 6;
-let liveSampler = null;
 let liveScrollTimer = null;
-const liveCanvas = document.createElement('canvas'); liveCanvas.width = liveCanvas.height = 16;
-function imageLuminance(image) {
-  try {
-    const context = liveCanvas.getContext('2d', { willReadFrequently: true });
-    context.fillStyle = '#000'; context.fillRect(0, 0, 16, 16);
-    context.drawImage(image, 0, 0, 16, 16);
-    const pixels = context.getImageData(0, 0, 16, 16).data;
-    let total = 0;
-    for (let index = 0; index < pixels.length; index += 4) total += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
-    return total / (256 * 255);
-  } catch { return null; }
-}
 function tileOnScreen(tile) {
   const rect = tile.getBoundingClientRect(); const grid = $('wallpaper-grid').getBoundingClientRect();
   return rect.width > 0 && rect.bottom > grid.top && rect.top < grid.bottom;
@@ -1454,7 +1441,6 @@ function retireLivePreviews(ids) {
     image?.closest('.wallpaper-tile')?.classList.remove('playing');
     image?.removeAttribute('src'); image?.remove(); live.delete(id);
   }
-  syncLiveSampler();
 }
 // Animations wait for the whole page of stills: every tile shows its picture before any tile
 // spends bandwidth on motion, so a slow link reveals the page all at once rather than one
@@ -1481,10 +1467,9 @@ function queueLivePreviews() {
     const item = (state.workshop?.items || []).find(each => each.id === id);
     const still = tile.querySelector('img.tile-still');
     if (!item || !safeImage(item.animated) || !item.thumbnail || !still?.complete || !still.naturalWidth) continue;
-    live.set(id, { status: 'queued', playing: false, still: imageLuminance(still) ?? 0 });
+    live.set(id, { status: 'queued', playing: false });
   }
   pumpLivePreviews(changed);
-  syncLiveSampler();
 }
 function pumpLivePreviews(changed = false) {
   if (state?.page !== 'discover') return;
@@ -1502,37 +1487,13 @@ function pumpLivePreviews(changed = false) {
 function settleLivePreview(image, loaded) {
   const id = image.closest('.tile-select')?.dataset.id;
   const entry = id ? live.get(id) : undefined;
-  if (entry?.status === 'loading') entry.status = loaded ? 'ready' : 'failed';
-  if (entry && !loaded) renderGrid(true);
-  pumpLivePreviews();
-  syncLiveSampler();
-}
-function livePreviewsNeedSampling() {
-  return state?.page === 'discover' && !document.hidden && [...live.values()].some(entry => entry.status === 'ready');
-}
-// The 250 ms luminance pass exists only while a ready animation can be seen.
-// Leaving Discover, hiding the document, or running out of ready tiles stops
-// it; coming back re-arms the same cadence.
-function syncLiveSampler() {
-  if (!livePreviewsNeedSampling()) {
-    if (liveSampler !== null) { clearInterval(liveSampler); liveSampler = null; }
-    return;
-  }
-  liveSampler ??= setInterval(sampleLivePreviews, 250);
-}
-function sampleLivePreviews() {
-  if (!livePreviewsNeedSampling()) { syncLiveSampler(); return; }
-  for (const image of $('wallpaper-grid').querySelectorAll('img.tile-live')) {
-    const tile = image.closest('.wallpaper-tile'); const entry = live.get(tile?.dataset.key);
-    if (!entry || entry.status !== 'ready' || !image.complete || !image.naturalWidth || !tileOnScreen(tile)) continue;
-    const luminance = imageLuminance(image);
-    if (luminance === null) continue;
-    const playing = luminance >= entry.still * (entry.playing ? 0.4 : 0.6);
-    if (playing !== entry.playing) { entry.playing = playing; tile.classList.toggle('playing', playing); }
-  }
+  if (!entry || !['loading', 'ready'].includes(entry.status)) return;
+  entry.playing = loaded && image.complete && image.naturalWidth > 0;
+  entry.status = entry.playing ? 'ready' : 'failed';
+  pumpLivePreviews(true);
 }
 $('wallpaper-grid').addEventListener('scroll', () => { clearTimeout(liveScrollTimer); liveScrollTimer = setTimeout(queueLivePreviews, 120); }, { passive: true });
-document.addEventListener('visibilitychange', () => { queueLivePreviews(); syncLiveSampler(); });
+document.addEventListener('visibilitychange', queueLivePreviews);
 const welcomeInert = new Set();
 function setWelcomeBackgroundInert(open) {
   for (const node of $('app').children) {

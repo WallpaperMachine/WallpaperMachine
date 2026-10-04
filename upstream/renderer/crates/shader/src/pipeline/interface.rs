@@ -2,6 +2,7 @@ use smol_str::SmolStr;
 
 use crate::{
     ShaderDiagnostic, ShaderError, ShaderResult, ShaderStageKind, SourceSpan,
+    codegen::interface_array_size,
     legalize::{
         InterfaceDirection, LegacyTypeName, StageInterfaceInitializer, StageInterfaceLayout,
         StageInterfaceLayoutBinding, SynthesizedStageInterface,
@@ -111,15 +112,17 @@ impl ProgramInterface {
 
 impl ProgramInterface {
     /// Constructs cross-stage interface facts from parsed stage inputs.
+    ///
+    /// # Errors
+    /// Returns an error for array bounds that cannot be assigned exact locations.
     #[inline]
     #[allow(clippy::single_call_fn)]
-    #[must_use]
-    pub fn new(stages: &[ProgramStageInput<'_>]) -> Self {
+    pub fn new(stages: &[ProgramStageInput<'_>]) -> ShaderResult<Self> {
         let mut interface = Self::default();
         for stage in stages {
             match stage.stage.kind() {
                 ShaderStageKind::Vertex => {
-                    let outputs = StageInterfaceBinding::collect_from_module(&stage.module)
+                    let outputs = StageInterfaceBinding::collect_from_module(&stage.module)?
                         .into_iter()
                         .filter(|binding| {
                             matches!(
@@ -138,7 +141,7 @@ impl ProgramInterface {
                     interface.vertex_outputs.extend(outputs);
                 }
                 ShaderStageKind::Fragment => {
-                    let inputs = StageInterfaceBinding::collect_from_module(&stage.module)
+                    let inputs = StageInterfaceBinding::collect_from_module(&stage.module)?
                         .into_iter()
                         .filter(|binding| {
                             matches!(
@@ -158,7 +161,7 @@ impl ProgramInterface {
                 }
             }
         }
-        interface
+        Ok(interface)
     }
 }
 
@@ -339,7 +342,7 @@ struct StageInterfaceBinding {
 
 impl StageInterfaceBinding {
     /// Extracts top-level interface declarations from one parsed module.
-    fn collect_from_module(module: &ShaderModule<'_>) -> Vec<StageInterfaceBinding> {
+    fn collect_from_module(module: &ShaderModule<'_>) -> ShaderResult<Vec<StageInterfaceBinding>> {
         module
             .items()
             .iter()
@@ -347,20 +350,30 @@ impl StageInterfaceBinding {
                 let SyntaxItem::Declaration(declaration) = item else {
                     return None;
                 };
-                let suffix = declaration.array_suffix();
-                let array_suffix = suffix.as_ref().map(|suffix| SmolStr::new(suffix.as_str()));
-                Some(Self {
-                    location_count: match suffix.as_ref().and_then(|value| value.size()) {
-                        Some(crate::syntax::DeclarationArraySize::Numeric(size)) => size.max(1),
-                        _ => 1,
-                    },
+                let qualifier = declaration.qualifier()?;
+                if !matches!(
+                    (module.stage(), qualifier),
+                    (_, TopLevelQualifier::Varying)
+                        | (ShaderStageKind::Vertex, TopLevelQualifier::Out)
+                        | (ShaderStageKind::Fragment, TopLevelQualifier::In)
+                ) {
+                    return None;
+                }
+                let ty = SmolStr::new(declaration.declaration_type()?.as_str());
+                let name = SmolStr::new(declaration.declaration_name()?.as_str());
+                let size = declaration
+                    .array_suffix()
+                    .map(|suffix| interface_array_size(module, suffix.as_str(), declaration.span()))
+                    .transpose();
+                Some(size.map(|size| Self {
+                    location_count: size.unwrap_or(1),
                     stage: module.stage(),
-                    qualifier: declaration.qualifier()?,
-                    ty: SmolStr::new(declaration.declaration_type()?.as_str()),
-                    name: SmolStr::new(declaration.declaration_name()?.as_str()),
-                    array_suffix,
+                    qualifier,
+                    ty,
+                    name,
+                    array_suffix: size.map(|size| format!("[{size}]").into()),
                     span: declaration.span(),
-                })
+                }))
             })
             .collect()
     }

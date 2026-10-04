@@ -121,7 +121,7 @@ where
         let stage_inputs =
             ProgramStageInputs::new(preprocessed.stages(), metadata_sources.stages())?;
         let stage_global_names = StageGlobalNames::new(stage_inputs.stages());
-        let program_interface = ProgramInterface::new(stage_inputs.stages())
+        let program_interface = ProgramInterface::new(stage_inputs.stages())?
             .validate_with_names(&stage_global_names)?;
         let program_resources =
             ProgramResourceLayout::build_from_stage_inputs(&stage_inputs, request.textures())?;
