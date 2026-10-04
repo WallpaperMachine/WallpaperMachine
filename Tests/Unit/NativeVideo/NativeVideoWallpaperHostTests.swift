@@ -78,6 +78,7 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
                 onPreparationFailure?(generation, failureOnInstall)
             }
         }
+        var onAudioDropped: (@MainActor (String) -> Void)?
         /// The generation this surface was opened with, so a test can report a
         /// failure as either this surface's or a stale one's.
         let generation: UInt64
@@ -357,6 +358,27 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         XCTAssertTrue(
             recorder.rejected.first?.reason.contains("could not play") == true,
             "the reason must say playback failed, not that the metadata was refused")
+        host.shutdown()
+    }
+
+    func testAClipThatKeepsPlayingWithoutItsAudioStaysNative() async {
+        // An audio output that will not start fails the whole item, and the
+        // player answers by playing the picture alone. That is the player
+        // recovering, not failing: handing it back here would put the clip on
+        // the scene engine for the session, which is how issue 31 ended up
+        // with a black desktop.
+        let recorder = Recorder()
+        let host = makeHost(wallpapers: [], recorder: recorder)
+        await host.apply([wallpaper(admissionKey: 5)])
+        let surface = surfacesMade[7]
+
+        surface?.onAudioDropped?("audio output could not start")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(host.activeDisplayIDs, [7])
+        XCTAssertTrue(host.isPlaying(displayID: 7) == true)
+        XCTAssertEqual(recorder.stopped, 0)
+        XCTAssertTrue(recorder.rejected.isEmpty, "nothing is handed to the scene engine")
         host.shutdown()
     }
 

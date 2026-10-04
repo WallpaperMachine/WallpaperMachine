@@ -482,6 +482,16 @@ including H.264 in Matroska. This applies both to **Apply** and **Apply changes*
 with either backend preference. Missing or empty files fail before display
 settings change; decoder failures still go through the engine's apply recovery.
 
+When the clip's audio output cannot start (no output device, or one that will
+not start), AVFoundation fails the whole clip, muted or not, and reports only
+`AVErrorUnknown` ("The operation could not be completed"). Native playback then
+rebuilds the clip from its video track alone and keeps playing it natively
+without sound, logging the original failure against the wallpaper's load. A
+clip without audio, or one whose picture fails too, falls back to Compatibility
+for the session as before. Native fallback reasons include each error's domain
+and code, for example `AVFoundationErrorDomain -11800 < NSOSStatusErrorDomain
+-66681`, so a report shows which part of playback failed.
+
 An unrecognised backend name is refused rather than silently mapped to
 Compatibility, so a stale page cannot report a choice that was never applied.
 

@@ -7,8 +7,9 @@ import VideoToolbox
 /// Writes small real video files so the admission rule can be exercised
 /// against AVFoundation rather than against a hand-made probe value.
 ///
-/// Every clip is silent — no audio track is ever written, so nothing here can
-/// touch audio hardware — and tiny, so writing one costs milliseconds. The
+/// Every clip is silent — most carry no audio track at all, and `withAudio`
+/// adds one that holds linear PCM silence, written as file I/O, so nothing here
+/// can touch audio hardware — and tiny, so writing one costs milliseconds. The
 /// generator records the rate it was *asked* for; what a test reports is what
 /// `NativeVideoAdmission.probe` reads back from the finished file, because the
 /// two are not the same thing and conflating them would make the test assert
@@ -23,6 +24,9 @@ enum SyntheticVideoFixture {
         var frameDurations: [CMTimeValue]
         var width: Int = 64
         var height: Int = 36
+        /// Adds an audio track of silence covering the whole clip, for the
+        /// cases that are about a clip with sound.
+        var withAudio = false
 
         /// Constant frame rate expressed exactly: `numerator / denominator`
         /// fps. 24 is 24/1, NTSC 30 is 30000/1001.
@@ -121,10 +125,29 @@ enum SyntheticVideoFixture {
             ])
         guard writer.canAdd(input) else { throw FixtureError.noInput }
         writer.add(input)
+        let audio = request.withAudio ? AVAssetWriterInput(mediaType: .audio, outputSettings: nil) : nil
+        if let audio {
+            audio.expectsMediaDataInRealTime = false
+            guard writer.canAdd(audio) else { throw FixtureError.noInput }
+            writer.add(audio)
+        }
         guard writer.startWriting() else {
             throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "startWriting")
         }
         writer.startSession(atSourceTime: .zero)
+
+        // All of the audio goes in first and is finished, so the writer never
+        // holds the video back waiting for audio to interleave with it.
+        if let audio {
+            let seconds = Double(request.frameDurations.reduce(0, +)) / Double(request.timescale)
+            let sample = try silence(frames: Int(silenceSampleRate * seconds))
+            try await waitUntilReady(isReady: { audio.isReadyForMoreMediaData },
+                status: { writer.status }, failure: { writer.error?.localizedDescription })
+            guard audio.append(sample) else {
+                throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "append audio")
+            }
+            audio.markAsFinished()
+        }
 
         var elapsed: CMTimeValue = 0
         for (index, duration) in request.frameDurations.enumerated() {
@@ -167,9 +190,41 @@ enum SyntheticVideoFixture {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         defer { if writer.status == .writing { writer.cancelWriting() } }
-        let sampleRate = 44_100.0
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
+        input.expectsMediaDataInRealTime = false
+        guard writer.canAdd(input) else { throw FixtureError.noInput }
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "startWriting")
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        // A tenth of a second of silence is plenty to make a track exist.
+        let frames = Int(silenceSampleRate / 10)
+        let sample = try silence(frames: frames)
+        try await waitUntilReady(isReady: { input.isReadyForMoreMediaData },
+            status: { writer.status }, failure: { writer.error?.localizedDescription })
+        guard input.append(sample) else {
+            throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "append audio")
+        }
+        input.markAsFinished()
+        writer.endSession(
+            atSourceTime: CMTime(
+                value: CMTimeValue(frames), timescale: CMTimeScale(silenceSampleRate)))
+        await writer.finishWriting()
+        guard writer.status == .completed else {
+            throw FixtureError.writerFailed(
+                writer.error?.localizedDescription ?? "status \(writer.status.rawValue)")
+        }
+        return url
+    }
+
+    private static let silenceSampleRate = 44_100.0
+
+    /// `frames` of mono 16-bit linear PCM silence as one sample buffer.
+    private static func silence(frames: Int) throws -> CMSampleBuffer {
         var format = AudioStreamBasicDescription(
-            mSampleRate: sampleRate,
+            mSampleRate: silenceSampleRate,
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
             mBytesPerPacket: 2, mFramesPerPacket: 1, mBytesPerFrame: 2,
@@ -182,18 +237,7 @@ enum SyntheticVideoFixture {
             let formatDescription
         else { throw FixtureError.writerFailed("audio format description") }
 
-        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
-        input.expectsMediaDataInRealTime = false
-        guard writer.canAdd(input) else { throw FixtureError.noInput }
-        writer.add(input)
-        guard writer.startWriting() else {
-            throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "startWriting")
-        }
-        writer.startSession(atSourceTime: .zero)
-
-        // A tenth of a second of silence is plenty to make a track exist.
-        let frames = Int(sampleRate / 10)
-        var silence = [Int16](repeating: 0, count: frames)
+        var samples = [Int16](repeating: 0, count: frames)
         var block: CMBlockBuffer?
         let byteCount = frames * MemoryLayout<Int16>.size
         guard CMBlockBufferCreateWithMemoryBlock(
@@ -202,13 +246,13 @@ enum SyntheticVideoFixture {
             dataLength: byteCount, flags: 0, blockBufferOut: &block) == noErr,
             let block,
             CMBlockBufferReplaceDataBytes(
-                with: &silence, blockBuffer: block, offsetIntoDestination: 0,
+                with: &samples, blockBuffer: block, offsetIntoDestination: 0,
                 dataLength: byteCount) == noErr
         else { throw FixtureError.writerFailed("audio block buffer") }
 
         var sample: CMSampleBuffer?
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: CMTimeScale(sampleRate)),
+            duration: CMTime(value: 1, timescale: CMTimeScale(silenceSampleRate)),
             presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
         guard CMSampleBufferCreateReady(
             allocator: kCFAllocatorDefault, dataBuffer: block,
@@ -217,21 +261,7 @@ enum SyntheticVideoFixture {
             sampleSizeArray: [MemoryLayout<Int16>.size], sampleBufferOut: &sample) == noErr,
             let sample
         else { throw FixtureError.writerFailed("audio sample buffer") }
-
-        try await waitUntilReady(isReady: { input.isReadyForMoreMediaData },
-            status: { writer.status }, failure: { writer.error?.localizedDescription })
-        guard input.append(sample) else {
-            throw FixtureError.writerFailed(writer.error?.localizedDescription ?? "append audio")
-        }
-        input.markAsFinished()
-        writer.endSession(
-            atSourceTime: CMTime(value: CMTimeValue(frames), timescale: CMTimeScale(sampleRate)))
-        await writer.finishWriting()
-        guard writer.status == .completed else {
-            throw FixtureError.writerFailed(
-                writer.error?.localizedDescription ?? "status \(writer.status.rawValue)")
-        }
-        return url
+        return sample
     }
 
     /// Two silent H.264 frames in Matroska, which the compatibility demuxer can

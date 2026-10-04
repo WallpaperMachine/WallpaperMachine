@@ -109,9 +109,11 @@ invites a pointless re-run.
 
 - `WALLPAPER_MACHINE_MEDIA_TESTS=1` — `NativeVideoPlayerMediaTests` drives the
   real `AVQueuePlayer`, `AVPlayerLooper` and `AVPlayerLayer` against generated
-  silent clips, decoding real video. It still opens no window, changes no
-  wallpaper and configures no audio session; it is not a desktop test and not a
-  substitute for one.
+  silent clips, decoding real video. The clips that carry an audio track are
+  sent to an output device that does not exist, which is how a failed audio
+  output is reproduced. It still opens no window, changes no wallpaper, opens
+  no real audio output and configures no audio session; it is not a desktop
+  test and not a substitute for one.
 - `WALLPAPER_MACHINE_NETWORK_TESTS=1` — the two `testLive…` cases in
   `WorkshopTests` fetch Steam's real community pages. Steam's page *format*
   stays covered offline: `decodePage` runs against recorded markup in

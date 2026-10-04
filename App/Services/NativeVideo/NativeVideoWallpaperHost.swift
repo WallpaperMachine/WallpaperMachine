@@ -243,6 +243,13 @@ final class NativeVideoWallpaperHost {
             self?.handlePreparationFailure(
                 displayID: displayID, surface: surface, detail: detail)
         }
+        surface.onAudioDropped = { [weak self, weak surface] detail in
+            guard let self, let surface, self.surfaces[displayID] === surface else { return }
+            AppLog.warn(
+                "native video wallpaper \(wallpaper.wallpaperId): the platform player could not "
+                    + "play the clip with its audio (\(detail)); playing it without sound",
+                load: self.logLoads[displayID])
+        }
         surface.onReadyForDisplay = { [weak self, weak surface] in
             guard let self, let surface, self.surfaces[displayID] === surface,
                   let current = self.descriptors[displayID] else { return }

@@ -30,6 +30,9 @@ protocol NativeVideoSurface: AnyObject {
     /// surface's own generation, so a failure from a surface that has since
     /// been replaced cannot condemn its successor.
     var onPreparationFailure: (@MainActor (UInt64, String) -> Void)? { get set }
+    /// Called when the clip failed with its audio and keeps playing without
+    /// it, with the failure. Not a hand-off: the surface is still playing.
+    var onAudioDropped: (@MainActor (String) -> Void)? { get set }
     /// Puts the surface on the desktop. Separate from construction so the
     /// caller decides when a surface becomes visible.
     func present()
@@ -128,6 +131,10 @@ extension NativeVideoWallpaperWindow: NativeVideoSurface {
     var onPreparationFailure: (@MainActor (UInt64, String) -> Void)? {
         get { player.onPreparationFailure }
         set { player.onPreparationFailure = newValue }
+    }
+    var onAudioDropped: (@MainActor (String) -> Void)? {
+        get { player.onAudioDropped }
+        set { player.onAudioDropped = newValue }
     }
     func present() { orderFrontRegardless() }
     func stop() {

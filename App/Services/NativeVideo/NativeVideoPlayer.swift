@@ -48,6 +48,18 @@ final class NativeVideoPlayer {
     private var currentItemObservation: NSKeyValueObservation?
     private weak var observedItem: AVPlayerItem?
     private var failureReported = false
+    /// The file this player was loaded with. Once the audio has been dropped
+    /// the playing item's asset is a composition, so the poster fallback and
+    /// the silent rebuild open the file from here rather than from the item.
+    private var mediaURL: URL?
+    /// Set once the item carrying the clip's audio has failed and been
+    /// replaced by a video-only one. One attempt only: a failure of the
+    /// video-only item is about the picture and goes to the host.
+    private var audioDropped = false
+    private var rebuild: Task<Void, Never>?
+    /// Reported when the clip keeps playing without its audio, with the
+    /// failure that caused it, so the host can log it against its load.
+    var onAudioDropped: (@MainActor (String) -> Void)?
     /// A failure seen before anyone was listening. The host installs its
     /// callback after constructing the surface, and a synchronous failure at
     /// load would otherwise be dropped on the floor — which is the one case
@@ -93,7 +105,11 @@ final class NativeVideoPlayer {
     }
 
     func load(url: URL) {
-        let item = AVPlayerItem(url: url)
+        mediaURL = url
+        start(AVPlayerItem(url: url))
+    }
+
+    private func start(_ item: AVPlayerItem) {
         // AVPlayerLooper takes ownership of the queue, so it is created once
         // per item and replaced wholesale rather than mutated.
         let looper = AVPlayerLooper(player: player, templateItem: item)
@@ -101,6 +117,24 @@ final class NativeVideoPlayer {
         counters.record(.nativeVideoItemCreated, for: surface)
         observeFailures(looper: looper)
         applyPlaybackState()
+    }
+
+    /// Takes the looper and its queued copies down, leaving the player and
+    /// its layer in place for whatever is loaded next.
+    private func releaseItem() {
+        guard let looper else { return }
+        // Removing the queue makes the item fail on its way out; that is this
+        // teardown, not a fault worth reacting to.
+        statusObservations.removeAll()
+        currentItemObservation = nil
+        observedItem = nil
+        detachPosterOutput()
+        // The looper holds the queue; disabling it first stops it re-filling
+        // the queue while the items are being removed.
+        looper.disableLooping()
+        self.looper = nil
+        player.removeAllItems()
+        counters.record(.nativeVideoItemReleased, for: surface)
     }
 
     /// Watches for the asset turning out to be unplayable after admission
@@ -131,8 +165,8 @@ final class NativeVideoPlayer {
             // time this runs, and a `.new`-only subscription would miss it.
             looper.observe(\.status, options: [.initial, .new]) { [weak self] looper, _ in
                 guard looper.status == .failed else { return }
-                let detail = looper.error?.localizedDescription ?? "player looper failed"
-                MainActor.assumeIsolated { self?.reportPreparationFailure(detail) }
+                let detail = looper.error.map(Self.describe) ?? "player looper failed"
+                MainActor.assumeIsolated { self?.playbackFailed(detail) }
             },
             player.observe(\.currentItem, options: [.initial, .new]) { [weak self] player, _ in
                 MainActor.assumeIsolated { self?.followCurrentItem(player.currentItem) }
@@ -152,9 +186,80 @@ final class NativeVideoPlayer {
         currentItemObservation = item.observe(\.status, options: [.initial, .new]) {
             [weak self] item, _ in
             guard item.status == .failed else { return }
-            let detail = item.error?.localizedDescription ?? "player item failed"
-            MainActor.assumeIsolated { self?.reportPreparationFailure(detail) }
+            let detail = item.error.map(Self.describe) ?? "player item failed"
+            MainActor.assumeIsolated { self?.playbackFailed(detail) }
         }
+    }
+
+    /// The platform player failed. A clip with sound gets one more attempt
+    /// without it before the host is told.
+    ///
+    /// AVFoundation fails the whole item when its audio output cannot start —
+    /// no output device, or one that will not start (`kAudioQueueErr_CannotStart`)
+    /// — and reports it as the generic `AVErrorUnknown`, with nothing that
+    /// says which half of the clip failed. Muting does not help: the muted
+    /// player still starts the audio queue. Handing that to the scene engine
+    /// recorded the clip as unplayable for the session, although its picture
+    /// plays perfectly well. Which half failed is decided by evidence rather
+    /// than by error code: the clip is rebuilt with its video track alone, and
+    /// a fault in the picture fails that item too and reaches the host as
+    /// before. A clip with no audio has nothing to leave out and is reported
+    /// straight away.
+    private func playbackFailed(_ detail: String) {
+        guard !stopped, !failureReported, rebuild == nil else { return }
+        guard !audioDropped, let mediaURL else {
+            reportPreparationFailure(detail)
+            return
+        }
+        audioDropped = true
+        rebuild = Task { @MainActor [weak self] in
+            let silent = await Self.videoOnlyItem(url: mediaURL)
+            guard let self, !self.stopped else { return }
+            self.rebuild = nil
+            guard let silent else {
+                self.reportPreparationFailure(detail)
+                return
+            }
+            self.releaseItem()
+            self.onAudioDropped?(detail)
+            self.start(silent)
+        }
+    }
+
+    /// The clip with its audio left out, or `nil` when it has no audio track
+    /// to leave out or its video track cannot be read.
+    static func videoOnlyItem(url: URL) async -> AVPlayerItem? {
+        let asset = AVURLAsset(url: url)
+        do {
+            guard try await !asset.loadTracks(withMediaType: .audio).isEmpty,
+                let video = try await asset.loadTracks(withMediaType: .video).first
+            else { return nil }
+            let (range, transform) = try await video.load(.timeRange, .preferredTransform)
+            let composition = AVMutableComposition()
+            guard
+                let track = composition.addMutableTrack(
+                    withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+            else { return nil }
+            try track.insertTimeRange(range, of: video, at: .zero)
+            track.preferredTransform = transform
+            return AVPlayerItem(asset: composition)
+        } catch {
+            return nil
+        }
+    }
+
+    /// The error with its domain and code, and those of the errors beneath
+    /// it. AVFoundation's own description is often only "The operation could
+    /// not be completed", localized; the codes are what tell an audio device
+    /// that would not start from a decoder fault in a report.
+    nonisolated static func describe(_ error: Error) -> String {
+        var codes: [String] = []
+        var next: NSError? = error as NSError
+        while let current = next, codes.count < 4 {
+            codes.append("\(current.domain) \(current.code)")
+            next = current.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return "\(error.localizedDescription) (\(codes.joined(separator: " < ")))"
     }
 
     /// Reported once. Both observations can fire for one underlying fault, and
@@ -219,6 +324,12 @@ final class NativeVideoPlayer {
     /// reported separately and the second one is not observable here.
     var layerIsReadyForDisplayForTest: Bool { layer.isReadyForDisplay }
     var itemStatusForTest: AVPlayerItem.Status? { player.currentItem?.status }
+    var audioDroppedForTest: Bool { audioDropped }
+    /// Sends the audio to an output that does not exist: an audio path that
+    /// cannot start, reproduced without opening a real output device.
+    func setAudioOutputDeviceForTest(_ uniqueID: String) {
+        player.audioOutputDeviceUniqueID = uniqueID
+    }
 
     /// One frame for a poster request, from the item that is playing.
     ///
@@ -264,8 +375,8 @@ final class NativeVideoPlayer {
         // a second decode of a few frames, which is why it is counted: a
         // permanently retained generator would be a second decoder for the
         // whole session.
-        if let item = player.currentItem, let asset = item.asset as? AVURLAsset {
-            let generator = AVAssetImageGenerator(asset: asset)
+        if let item = player.currentItem, let mediaURL {
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: mediaURL))
             generator.appliesPreferredTrackTransform = true
             generator.requestedTimeToleranceBefore = .positiveInfinity
             generator.requestedTimeToleranceAfter = .positiveInfinity
@@ -318,25 +429,18 @@ final class NativeVideoPlayer {
         // next on the same display.
         posterRequest?.cancel()
         posterRequest = nil
+        rebuild?.cancel()
+        rebuild = nil
         detachPosterOutput()
         lastPoster = nil
-        // Tearing the queue down below makes the item fail on its way out;
-        // that is this stop, not a fault worth handing to another backend.
-        statusObservations.removeAll()
-        currentItemObservation = nil
-        observedItem = nil
         pendingFailure = nil
         onPreparationFailure = nil
         onReadyForDisplay = nil
+        onAudioDropped = nil
         player.pause()
-        // The looper holds the queue; disabling it first stops it re-filling
-        // the queue while the items are being removed.
-        looper?.disableLooping()
-        looper = nil
-        player.removeAllItems()
+        releaseItem()
         layer.player = nil
         layer.removeFromSuperlayer()
-        counters.record(.nativeVideoItemReleased, for: surface)
     }
 
     private func applyPlaybackState() {

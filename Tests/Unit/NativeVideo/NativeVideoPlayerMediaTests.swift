@@ -18,7 +18,8 @@ import XCTest
 ///
 /// They still open no window and touch no desktop: an `AVPlayerLayer` that is
 /// never added to a window's layer tree presents nothing. Nor is any audio
-/// session configured — every fixture is silent.
+/// session configured — every fixture is silent, and the one clip with an
+/// audio track is routed to an output device that does not exist.
 ///
 /// **Evidence discipline.** `readyForDisplay` means the layer has a frame it
 /// could show. It is not a presented frame. Each case below records which of
@@ -278,6 +279,78 @@ final class NativeVideoPlayerMediaTests: XCTestCase {
         let delivered = await wait(upTo: .seconds(10)) { reported != nil }
 
         XCTAssertTrue(delivered, "a failure seen before the callback existed must be held")
+    }
+
+    func testAClipWhoseAudioCannotStartKeepsPlayingItsPicture() async throws {
+        // Issue 31: an audio output that will not start fails the whole item
+        // with AVErrorUnknown, muted or not, and the wallpaper went to the
+        // scene engine for the session although its picture plays. A missing
+        // output device reproduces that without opening a real one.
+        var request = SyntheticVideoFixture.Request.constantRate(
+            name: "audio-cannot-start", numerator: 30, denominator: 1, frames: 30)
+        request.withAudio = true
+        let url = try await SyntheticVideoFixture.write(request, into: directory)
+
+        let player = NativeVideoPlayer(surface: surface, counters: counters, paused: false)
+        var failure: String?
+        var dropped: String?
+        player.onPreparationFailure = { _, detail in failure = detail }
+        player.onAudioDropped = { dropped = $0 }
+        player.setAudioOutputDeviceForTest("org.wallpapermachine.tests.missing-output")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 64, height: 36))
+        view.wantsLayer = true
+        player.attach(to: view)
+        player.load(url: url)
+        self.player = player
+
+        let recovered = await wait(upTo: .seconds(20)) { dropped != nil }
+        XCTAssertTrue(recovered, "the clip with its audio must fail and be rebuilt without it")
+        let ready = await wait { player.itemStatusForTest == .readyToPlay }
+        XCTAssertTrue(ready, "the video-only item never became readyToPlay")
+        let first = player.playbackTimeForTest
+        let advanced = await wait { CMTimeCompare(player.playbackTimeForTest, first) > 0 }
+        XCTAssertTrue(advanced, "the picture must keep playing")
+        XCTAssertNil(failure, "nothing is handed to the scene engine")
+        let current = try XCTUnwrap(player.currentItemForTest)
+        let audio = try await current.asset.loadTracks(withMediaType: .audio)
+        XCTAssertTrue(audio.isEmpty)
+
+        player.stop()
+        let snapshot = counters.snapshot()
+        XCTAssertEqual(snapshot.value(.nativeVideoItemCreated, for: surface), 2)
+        XCTAssertEqual(
+            snapshot.value(.nativeVideoItemReleased, for: surface), 2,
+            "the item that failed with its audio must be released, not leaked")
+        print("[media] audio cannot start -> \(dropped ?? "none")")
+    }
+
+    func testABrokenClipWithSoundStillReachesTheHostOnce() async throws {
+        // Leaving the audio out is one attempt, not a way to hide a clip whose
+        // picture cannot play either.
+        var request = SyntheticVideoFixture.Request.constantRate(
+            name: "broken-with-audio", numerator: 30, denominator: 1, frames: 30)
+        request.withAudio = true
+        let good = try await SyntheticVideoFixture.write(request, into: directory)
+        let broken = directory.appendingPathComponent("broken-with-audio-truncated.mov")
+        let bytes = try Data(contentsOf: good)
+        try bytes.prefix(bytes.count / 3).write(to: broken)
+
+        let player = NativeVideoPlayer(surface: surface, counters: counters, paused: false)
+        var failures: [String] = []
+        player.onPreparationFailure = { _, detail in failures.append(detail) }
+        player.setAudioOutputDeviceForTest("org.wallpapermachine.tests.missing-output")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 64, height: 36))
+        view.wantsLayer = true
+        player.attach(to: view)
+        player.load(url: broken)
+        self.player = player
+
+        let failed = await wait(upTo: .seconds(20)) { !failures.isEmpty }
+        try? await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertTrue(failed, "a clip that cannot play at all must still reach the host")
+        XCTAssertEqual(failures.count, 1)
+        print("[media] broken clip with sound -> \(failures.first ?? "none")")
     }
 
     func testAnAssetWithNoUsableRateNeverReachesThePlayer() async throws {
