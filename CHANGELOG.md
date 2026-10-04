@@ -31,6 +31,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - Intro animations now finish instead of leaving part of the wallpaper permanently covered
 - Lit 2D scene artwork no longer loses its lighting and looks too dark
 - Animated characters no longer appear over-lit or show patches around their eyes
+- Hair, limbs and other puppet parts stay attached when animation layers overlap
 - Nested cut-out layers such as heads and flowers now move together with their background during parallax
 - 3D scenes no longer show large solid bands or repeated sprites, and thin lines keep their full strength
 - Some scene effects that were previously missing now appear
@@ -63,6 +64,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - 开场动画现在会完整播放，不再让壁纸的一部分一直被遮住
 - 带光照的 2D 场景图像不再丢失光照而显得过暗
 - 动画角色不再出现过度打光或眼睛周围的色块
+- 多个动画层叠加时，头发、四肢等角色部件不再分离
 - 头部、花朵等嵌套的剪贴图层在视差移动时现在会与背景一起移动
 - 3D 场景不再出现大片纯色条带或重复的精灵图，细线也保持原有清晰度
 - 一些之前缺失的场景特效现在会正常显示
