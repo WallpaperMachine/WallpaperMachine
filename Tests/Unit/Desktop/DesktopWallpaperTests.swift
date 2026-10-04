@@ -13,6 +13,8 @@ private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
     var persistedPictures: Set<URL> = []
     var writes: [DesktopPictureTarget] = []
     var failures: Set<DesktopPictureTarget> = []
+    /// Writes to a desktop in `failures`, each one refused.
+    var refused: [DesktopPictureTarget] = []
     /// Listed by `targets()`, but their current picture cannot be read.
     var unreadable: Set<DesktopPictureTarget> = []
     var didWrite: (() -> Void)?
@@ -28,7 +30,10 @@ private final class MemoryDesktopWorkspace: DesktopPictureWorkspace {
         return unreadable.contains(target) ? nil : pictures[target]
     }
     func setPicture(_ picture: DesktopPicture, target: DesktopPictureTarget) throws {
-        if failures.contains(target) { throw CocoaError(.fileWriteNoPermission) }
+        if failures.contains(target) {
+            refused.append(target)
+            throw CocoaError(.fileWriteNoPermission)
+        }
         pictures[target] = picture
         writes.append(target)
         didWrite?()
@@ -737,6 +742,58 @@ final class DesktopWallpaperTests: XCTestCase {
         await fulfillment(of: [retry], timeout: 2)
         workspace.didWrite = nil
         XCTAssertEqual(Set(workspace.writes), [one, two])
+    }
+
+    /// Issue #30: two desktops macOS never accepted a poster on were rewritten, and the refusal
+    /// logged, on every snapshot for hours. After its retries such a desktop is left alone until
+    /// a Space change or wake, while its siblings keep getting every new frame.
+    @MainActor
+    func testDesktopThatKeepsRefusingPostersWaitsForTheNextSpaceChange() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        workspace.failures = [two]
+        let frames = NotificationCenter(), spaces = NotificationCenter(), layer = CAMetalLayer()
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [DesktopPosterSurface(layer: layer, display: "1")] },
+                                            frameCenter: frames, workspaceCenter: spaces,
+                                            encode: { $0.pixels })
+        sync.start()
+        defer { sync.stop() }
+        post(Data([1]), layer: layer, center: frames)
+        try await waitUntil { workspace.refused.count == DesktopWallpaperLedger.refusalsBeforePause }
+        // Past the last retry's delay, nothing tries the refusing desktop again.
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(workspace.refused.count, DesktopWallpaperLedger.refusalsBeforePause)
+
+        // New frames, as a playing video produces, still reach the desktop that accepts them.
+        for pixel in [UInt8(2), 3] {
+            let updated = expectation(description: "Accepting desktop updated")
+            workspace.didWrite = { updated.fulfill() }
+            post(Data([pixel]), layer: layer, center: frames)
+            await fulfillment(of: [updated], timeout: 2)
+            workspace.didWrite = nil
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(workspace.refused.count, DesktopWallpaperLedger.refusalsBeforePause)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([3]))
+
+        // A Space change tries it again, and it takes the current poster once macOS accepts it.
+        workspace.failures = []
+        let retried = expectation(description: "Refusing desktop retried")
+        workspace.didWrite = { if workspace.writes.last == self.two { retried.fulfill() } }
+        spaces.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        await fulfillment(of: [retried], timeout: 2)
+        workspace.didWrite = nil
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([3]))
+    }
+
+    @MainActor
+    private func waitUntil(timeout: TimeInterval = 3, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { throw CocoaError(.userCancelled) }
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     @MainActor

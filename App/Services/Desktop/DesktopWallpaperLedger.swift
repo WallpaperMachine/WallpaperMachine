@@ -62,6 +62,16 @@ final class DesktopWallpaperLedger {
     /// display stays incomplete.
     static let retainedPostersPerIncompleteDisplay = 4
 
+    /// Poster writes a desktop may refuse in a row before it is left alone.
+    ///
+    /// A refused write is retried for WallpaperAgent's asynchronous
+    /// acknowledgement, and every snapshot starts that again. Some desktops
+    /// never accept a poster; rewriting them on every snapshot logged the same
+    /// refusal over a thousand times in one session. They are tried again
+    /// after the next Space change or wake.
+    static let refusalsBeforePause = 4
+    private var refusals: [DesktopPictureTarget: Int] = [:]
+
     private struct Entry: Codable {
         var original: DesktopPicture
         // nil for the previous alternating-file journal, which remains readable.
@@ -115,6 +125,11 @@ final class DesktopWallpaperLedger {
         if let firstError { throw firstError }
     }
 
+    /// A Space change or wake can make a refusing desktop accept posters again.
+    func retryRefusedDesktops() {
+        refusals.removeAll()
+    }
+
     func restoreAll() throws {
         try synchronize(posters: [:], liveDisplays: [])
         let targets = try workspace.targets()
@@ -132,6 +147,7 @@ final class DesktopWallpaperLedger {
 
     private func apply(png: Data, digest: Data, target: DesktopPictureTarget,
                        comparisons: inout [URL: Bool], fallbacks: [String: DesktopPicture]) throws {
+        guard refusals[target, default: 0] < Self.refusalsBeforePause else { return }
         guard let current = try workspace.currentPicture(target: target) else {
             throw NSError(domain: "DesktopWallpaperSync", code: 2, userInfo: [
                 NSLocalizedDescriptionKey: "Cannot read the original wallpaper for display \(target.display), desktop \(target.space ?? "current"); poster synchronization was not applied."
@@ -156,8 +172,11 @@ final class DesktopWallpaperLedger {
                 matches = (try? Data(contentsOf: current.url)) == png
                 comparisons[current.url] = matches
             }
-            if matches { return }
-        } else if owned?.original == original, (try? Data(contentsOf: current.url)) == png { return }
+            if matches { refusals[target] = nil; return }
+        } else if owned?.original == original, (try? Data(contentsOf: current.url)) == png {
+            refusals[target] = nil
+            return
+        }
         // Never reuse a filename for different pixels: WallpaperAgent can cache
         // inactive-Space thumbnails by URL even after the file is overwritten.
         // Identical originals/frames may share an immutable file safely.
@@ -184,7 +203,17 @@ final class DesktopWallpaperLedger {
             }
         }
         comparisons[url] = true
-        try workspace.setPicture(.poster(url), target: target)
+        do {
+            try workspace.setPicture(.poster(url), target: target)
+            refusals[target] = nil
+        } catch {
+            let count = refusals[target, default: 0] + 1
+            refusals[target] = count
+            if count == Self.refusalsBeforePause {
+                AppLog.warn("macOS refused the wallpaper for display \(target.display), desktop \(target.space ?? "current") \(count) times in a row; its poster waits for the next Space change or wake")
+            }
+            throw error
+        }
     }
 
     /// Puts back the wallpaper a desktop showed before its first poster. A

@@ -171,8 +171,9 @@ final class DesktopWallpaperSync {
     /// the wallpaper itself did not change: the poster is applied again rather
     /// than read back from the GPU and encoded into a full-size PNG again. A
     /// surface that has no poster yet, such as a renderer replaced meanwhile,
-    /// still asks for one.
+    /// still asks for one. Desktops that kept refusing posters are tried again.
     private func refreshAfterDesktopChange() {
+        ledger.retryRefusedDesktops()
         let missing = surfaces().contains { posters[ObjectIdentifier($0.layer)] == nil }
         refresh(capture: missing)
     }

@@ -198,11 +198,13 @@ Swift keeps the *system* wallpaper consistent with that window:
 - `DesktopWallpaperSync` encodes real renderer output into a PNG poster
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
   matches the animated one; a Space change or wake re-applies the existing poster instead of
-  capturing another. It suspends itself while the native lock-screen provider owns the
-  desktop. On quit, the native service restores its selections before the poster service
-  restores originals. The latter checks image references in the native store read-only,
-  retains still-referenced posters and their journal entries across WallpaperAgent reloads,
-  and retries asynchronous restoration for about five seconds. Failure cancels quit before
+  capturing another. A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
+  writes in a row, the initial one plus the quick retries) is left alone until the next Space
+  change or wake rather than rewritten on every snapshot. It suspends itself while the native
+  lock-screen provider owns the desktop. On quit, the native service restores its selections
+  before the poster service restores originals. The latter checks image references in the
+  native store read-only, retains still-referenced posters and their journal entries across
+  WallpaperAgent reloads, and retries asynchronous restoration for about five seconds. Failure cancels quit before
   other services are torn down; provider callbacks cannot discard the restorer during quit.
   A cancelled quit immediately restarts poster synchronization if the native provider has
   released the desktop, without waiting for another wallpaper or settings change.
