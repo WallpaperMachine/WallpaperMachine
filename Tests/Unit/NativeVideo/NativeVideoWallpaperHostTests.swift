@@ -773,8 +773,8 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         let context = try XCTUnwrap(CGContext(data: nil, width: 8, height: 4, bitsPerComponent: 8,
             bytesPerRow: 32, space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        let colors = [[CGFloat](arrayLiteral: 1, 0, 0, 1), [0, 1, 0, 1], [0, 0, 1, 1], [1, 1, 1, 1]]
-            .map { CGColor(colorSpace: space, components: $0)! }
+        let colors = [CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1),
+                      CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)]
         for (index, color) in colors.enumerated() {
             context.setFillColor(color)
             context.fill(CGRect(x: index * 2, y: 0, width: 2, height: 4))
