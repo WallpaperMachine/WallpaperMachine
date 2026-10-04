@@ -36,4 +36,16 @@ bool ResolveSceneSourcePaths(
     SceneSourcePaths* resolved,
     std::string* error);
 
+namespace fs
+{
+class VFS;
+}
+
+/// Mounts a scene's own files at `/assets`, above whatever is already mounted
+/// there (the shared assets). The project folder goes in first and the package,
+/// when there is one, on top of it: anything packaged wins, and a file that only
+/// exists beside the package -- a Workshop preset's own picture or video under
+/// `files/`, which its `scenetexture` properties name -- is still found.
+bool MountSceneSource(fs::VFS& vfs, const SceneSourcePaths& paths, std::string* error);
+
 } // namespace wallpaper

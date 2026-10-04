@@ -50,7 +50,6 @@
 #include "Scene/Parse/WPShaderParser.hpp"
 #include "Shader/RustShaderBridge.hpp"
 #include "WPSceneParser.hpp"
-#include "WPPkgFs.hpp"
 #include "SceneSourceResolver.hpp"
 #include "synthetic_video.hpp"
 #include "scene_probe_controls.hpp"
@@ -4925,11 +4924,7 @@ TEST_F(MetalSceneDraw, LocalProjectsNamedByTheEnvironmentRunThroughTheNativeBack
 
         LoadedScene loaded;
         ASSERT_TRUE(loaded.vfs.Mount("/assets", fs::CreatePhysicalFs(assets.string()), "assets"));
-        if (std::filesystem::exists(paths.pkg_path)) {
-            ASSERT_TRUE(loaded.vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(paths.pkg_path)));
-        } else {
-            ASSERT_TRUE(loaded.vfs.Mount("/assets", fs::CreatePhysicalFs(paths.pkg_dir)));
-        }
+        ASSERT_TRUE(MountSceneSource(loaded.vfs, paths, &error)) << error;
         ASSERT_TRUE(loaded.vfs.Mount(
             "/cache", fs::CreatePhysicalFs((root_ / ("cache-" + label)).string(), true), "cache"));
         InstallVirtualAssets(loaded.vfs);

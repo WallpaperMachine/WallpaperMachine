@@ -3349,7 +3349,13 @@ void ParseImageObj(ParseContext& context, wpscene::WPImageObject& img_obj) {
         RegisterImageComposite(context, wpimgobj, *spImgNode);
     }
 
-    const bool skipComposeRender = isCompose && ! hasEffect;
+    // A compose layer that only copies the background behind it adds nothing on
+    // screen. Sampled by another layer, though, its card is that background --
+    // a mask over later layers paints it back -- so it is drawn there alone.
+    const bool composite_only =
+        isCompose && ! hasEffect && context.referenced_layer_ids.contains(wpimgobj.id);
+    spImgNode->SetCompositeOnly(composite_only);
+    const bool skipComposeRender = isCompose && ! hasEffect && ! composite_only;
     if (skipComposeRender) {
         registerImageNode();
         runtime_node_registration.Commit();

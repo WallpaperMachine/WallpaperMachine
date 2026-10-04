@@ -488,8 +488,13 @@ static void ToGraphPass(
                 }
             }
         };
-        add_draws(draw_output, composite_camera, imgeff != nullptr, capture_link);
-        if (draw_output != output && output == SpecTex_Default) {
+        // A composite-only layer covers its whole target with what is behind
+        // it: anywhere but its own composite, that is the wrong picture.
+        const bool composite_only = node->CompositeOnly();
+        if (! composite_only || sstart_with(draw_output, WE_IMAGE_LAYER_COMPOSITE_PREFIX)) {
+            add_draws(draw_output, composite_camera, imgeff != nullptr, capture_link);
+        }
+        if (draw_output != output && output == SpecTex_Default && ! composite_only) {
             auto* vis = visibility_node != nullptr ? visibility_node : node;
             if (vis == nullptr || vis->EffectiveVisible()) {
                 add_draws(output, camera_override, false, false);

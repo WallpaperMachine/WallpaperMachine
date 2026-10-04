@@ -29,7 +29,6 @@
 
 #include "Fs/VFS.h"
 #include "Fs/PhysicalFs.h"
-#include "WPPkgFs.hpp"
 
 #include "Audio/SoundManager.h"
 #include "Audio/FfmpegSoundStream.hpp"
@@ -2246,14 +2245,9 @@ void MainHandler::loadScene() {
     }
     const auto& source_paths = source_resolution.scene_source;
 
-    // load pkgfile
-    if (! vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(source_paths.pkg_path))) {
-        LOG_INFO("load pkg file %s failed, fallback to use dir", source_paths.pkg_path.c_str());
-        // load pkg dir
-        if (! vfs.Mount("/assets", fs::CreatePhysicalFs(source_paths.pkg_dir))) {
-            LOG_ERROR("can't load pkg directory: %s", source_paths.pkg_dir.c_str());
-            return;
-        }
+    if (! MountSceneSource(vfs, source_paths, &source_error)) {
+        LOG_ERROR("%s", source_error.c_str());
+        return;
     }
     if (! m_cache_path.empty()) {
         if (! vfs.Mount("/cache", fs::CreatePhysicalFs(m_cache_path, true), "cache")) {

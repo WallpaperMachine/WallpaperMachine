@@ -14,7 +14,6 @@
 #include "Scene/Scene.h"
 #include "Scene/SceneNode.h"
 #include "WPSceneParser.hpp"
-#include "WPPkgFs.hpp"
 #include "SceneSourceResolver.hpp"
 #include "scene_probe_controls.hpp"
 #include <charconv>
@@ -253,11 +252,7 @@ int main() {
         Check(ResolveSceneSourcePaths(project, &paths, &error), error.c_str());
         fs::VFS vfs;
         Check(vfs.Mount("/assets", fs::CreatePhysicalFs(assets), "assets"), "assets mount");
-        if (std::filesystem::exists(paths.pkg_path)) {
-            Check(vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(paths.pkg_path)), "package mount");
-        } else {
-            Check(vfs.Mount("/assets", fs::CreatePhysicalFs(paths.pkg_dir)), "scene directory mount");
-        }
+        Check(MountSceneSource(vfs, paths, &error), error.c_str());
         Check(vfs.Mount("/cache", fs::CreatePhysicalFs((out / "cache").string(), true), "cache"), "cache mount");
         InstallVirtualAssets(vfs);
         ProjectProperties properties;

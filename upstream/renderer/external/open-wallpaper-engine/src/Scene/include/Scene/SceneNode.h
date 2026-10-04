@@ -57,6 +57,11 @@ public:
     void SetTextureFrame(double frame) { m_textureFrame = frame; }
     bool        MustProduce() const { return m_must_produce; }
     void        SetMustProduce(bool produce) { m_must_produce = produce; }
+    /// Drawn only into its own composite, which another layer samples; never
+    /// onto the scene. A compose layer copying the background behind it is
+    /// this: on screen it would change nothing, but its card is that background.
+    bool        CompositeOnly() const { return m_composite_only; }
+    void        SetCompositeOnly(bool only) { m_composite_only = only; }
     bool        EffectiveVisible() const {
         return m_visible && (m_parent == nullptr || m_parent->EffectiveVisible());
     }
@@ -123,6 +128,7 @@ private:
     bool        m_visible { true };
     bool        m_skipRenderPass { false };
     bool        m_must_produce { false };
+    bool        m_composite_only { false };
     std::optional<double> m_textureFrame;
 
     bool            m_dirty;

@@ -645,6 +645,68 @@ TEST(LayerTextureReference, ComposeChildrenKeepTheirPlaceInsideTheLayer) {
     EXPECT_NEAR(corner.y(), (5.0 + 4.0) / 16.0, 1e-4);
 }
 
+// A compose layer that only copies the background behind it adds nothing on
+// screen and used to be skipped outright. A mask drawn after other layers can
+// still sample it to paint that background back -- a toggle's clouds clipped to
+// its pill -- and then found no texture at all: the layer has to be drawn into
+// its composite, and only there, since its card covers its whole target.
+TEST(LayerTextureReference, ABareComposeLayerAnotherSamplesIsDrawnOnlyIntoItsComposite) {
+    const auto compose_files = [] {
+        return std::map<std::string, std::string> {
+            { "/models/util/composelayer.json",
+              R"({"passthrough":true,"material":"materials/util/composelayer.json"})" },
+            { "/materials/util/composelayer.json",
+              R"({"passes":[{"blending":"translucent","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled","shader":"genericimage","textures":["_rt_FullFrameBuffer"]}]})" },
+            { "/linked_mat.json",
+              R"({"passes":[{"blending":"translucent","cullmode":"nocull","depthtest":"disabled","depthwrite":"disabled","shader":"genericimage","textures":["_rt_imageLayerComposite_89_a"]}]})" },
+        };
+    };
+    fs::VFS vfs;
+    auto    parsed = ParseScene(vfs, R"([
+        {"id":1,"name":"backdrop","image":"image.json"},
+        {"id":89,"name":"behind","image":"models/util/composelayer.json",
+         "size":[64,32],"origin":[32,16,0]},
+        {"id":2,"name":"clouds","image":"image.json"},
+        {"id":22,"name":"mask","image":"linked.json","dependencies":[89]}
+      ])", compose_files());
+    ASSERT_NE(parsed, nullptr);
+    AddScreenTarget(*parsed);
+    const auto graph = sceneToRenderGraph(*parsed);
+    ASSERT_NE(graph, nullptr);
+
+    std::vector<std::string> behind_outputs;
+    for (const auto id : graph->topologicalOrder()) {
+        auto* pass = dynamic_cast<const vulkan::CustomShaderPass*>(graph->getPass(id));
+        if (pass != nullptr && pass->desc().node != nullptr &&
+            pass->desc().node->Name() == "behind") {
+            behind_outputs.push_back(pass->desc().output);
+        }
+    }
+    EXPECT_EQ(behind_outputs, std::vector<std::string> { LayerCompositeTargetKey(89) });
+
+    const auto* mask = FindPassByNode(*graph, "mask");
+    ASSERT_NE(mask, nullptr);
+    ASSERT_FALSE(mask->desc().textures.empty());
+    EXPECT_EQ(mask->desc().textures[0], GenLinkTex(89));
+    const auto* link = FindLinkCopy(*graph, GenLinkTex(89));
+    ASSERT_NE(link, nullptr) << "the mask was given nothing to sample";
+    EXPECT_EQ(link->desc().src, LayerCompositeTargetKey(89));
+    EXPECT_LT(PassIndexByNode(*graph, "behind"), PassIndexByNode(*graph, "clouds"));
+
+    // Nobody samples it: it stays out of the graph, as before.
+    fs::VFS unused_vfs;
+    auto    unused = ParseScene(unused_vfs, R"([
+        {"id":1,"name":"backdrop","image":"image.json"},
+        {"id":89,"name":"behind","image":"models/util/composelayer.json",
+         "size":[64,32],"origin":[32,16,0]}
+      ])", compose_files());
+    ASSERT_NE(unused, nullptr);
+    AddScreenTarget(*unused);
+    const auto unused_graph = sceneToRenderGraph(*unused);
+    ASSERT_NE(unused_graph, nullptr);
+    EXPECT_EQ(FindPassByNode(*unused_graph, "behind"), nullptr);
+}
+
 // A fullscreen layer post-processes the screen, so its result has to land on
 // all of it. Drawn through the scene camera, a camera layer's zoom shrank it to
 // a window on the canvas with the unprocessed scene around it.

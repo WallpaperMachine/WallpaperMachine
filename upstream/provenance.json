@@ -244,6 +244,25 @@
         "upstream/renderer/external/open-wallpaper-engine/src/Scene/Parse/WPPuppet.cpp": "bb177b2e380dbead7d2f045803e9e6b379c7c5bd02e66db6505796ca8c5f28b5",
         "upstream/renderer/external/open-wallpaper-engine/tests/mdl_schema_tests.cpp": "af2dfaf46c2ba2beaa59090ac57ef4904b80c45d8119fe9a3490cf6614cb3c75"
       }
+    },
+    "presetAndSwitchLayerChanges": {
+      "date": "2026-10-04",
+      "changes": "Mount a scene's project folder under its package so a Workshop preset's own pictures and videos beside the base scene.pkg (files/...) resolve, with packaged files still winning; production and the probes share MountSceneSource. Draw a background-copying compose layer that another layer samples into its composite only, so masks that repaint it find their link texture instead of failing the native backend. Run property-script modules against their declared defaults and apply saved and user-bound scriptproperties before init, so top-level code sees the defaults as in Wallpaper Engine. Synthetic regressions cover each; no Workshop asset is committed.",
+      "sha256": {
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/Parse/WPSceneParser.cpp": "1ec55ff8aa4b0b30c7a6798177ea68b04973f9ef1098f35687e53be436595da4",
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/SceneWallpaper.cpp": "b1ad721038a6b2bec2435eadc7c5d8ab0ff6aa93ffd64dba233935157de154c6",
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/VulkanRender/SceneToRenderGraph.cpp": "9aaa84ec4cb9a87e6eb7d34e2104a2d66cf7bc6c4098d3cd6be1f97ca3babebd",
+        "upstream/renderer/external/open-wallpaper-engine/src/Scene/include/Scene/SceneNode.h": "45edab40df3d8f0246fdad97f8aebbbe662891d5a2569a8da0f46af79992acb1",
+        "upstream/renderer/external/open-wallpaper-engine/src/SceneSourceResolver.cpp": "cc355b95f621783a8e52bfed5a07d5bcd147d20e8022580c453a538c20eb0f66",
+        "upstream/renderer/external/open-wallpaper-engine/src/SceneSourceResolver.hpp": "a344c2234cad01dc90ecfb264d3d1892f7898d17238621e628655c433587fabb",
+        "upstream/renderer/external/open-wallpaper-engine/src/Scripting/ScriptEngine.cpp": "dc9c7251a7cdb6f99e1c508f36b1c860a5c06e3e59cec2624a1d07355fd28eb1",
+        "upstream/renderer/external/open-wallpaper-engine/tests/layer_texture_reference_test.cpp": "102b2bb5eb1d2af107e55681e02c6889e5f371d683a5e87b3ac31f542ba3ea79",
+        "upstream/renderer/external/open-wallpaper-engine/tests/metal_scene_draw_smoke.mm": "7d52b39197c1cc7573ea91226ac23bb1ac2ac027b78a9746b1b8a8f8f7b70462",
+        "upstream/renderer/external/open-wallpaper-engine/tests/offscreen_scene_probe.cpp": "9ba47126bec5b55eafc9b541a760f5363648d9c2a72bcd45e6dc9c7b8bdc04fa",
+        "upstream/renderer/external/open-wallpaper-engine/tests/scene_reload_cycle_probe.cpp": "5a4dcc0beb265097499be3c0cb2c67599b5b7b98cf4bf9b50ce2afd9a1d9c9c1",
+        "upstream/renderer/external/open-wallpaper-engine/tests/script_runtime_compat_test.cpp": "33f4b4a627ca15bcff7f8d63ae3c19f89a962a1e6e04d124fada376d7739142f",
+        "upstream/renderer/external/open-wallpaper-engine/tests/tex_schema_tests.cpp": "d73de480e88487552d115b688c8a8ed70d8f131732d98d44953856bb5ce96746"
+      }
     }
   },
   "applicationShell": {

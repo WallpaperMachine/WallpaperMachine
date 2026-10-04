@@ -9,6 +9,18 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-03 — PR 25 CodeRabbit input-validation follow-ups
+
+- Range-check parallax IDs and parent references before narrowing, handling unsigned JSON values before signed conversion; preserve valid int32 boundaries and declaration-order independence.
+- Skip non-object entries, non-string names and nonnumeric IDs during layer-alias registration; retain missing-field defaults and valid alias-driven script updates.
+- Hosted keyboard-loop test now waits for both fields to attach to its window and reports a setup failure immediately on timeout.
+- Rebuilt `scene_schema_tests`; `--gtest_filter="SceneSchema.*Parallax*:SceneSchema.*Parented*:SceneSchema.*Duplicate*"` — 11 passed, including three new boundary/type regressions.
+- `python3 scripts/test.py --only ControlPanelWindowSizingTests` — four passed; targeted iteration only.
+- `python3 scripts/check_renderer.py` — every recorded binary exited zero; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
+- `python3 scripts/test.py` — all Python suites passed; 1,072 native passed, zero failed, 12 skipped.
+- Renderer skips: two local text scenes and the environment-selected Metal project case. No desktop visuals/live keyboard check, authored-reference parity, app launch or Release rebuild.
+- Confirmed no configured/gated SwiftLint required_deinit rule; kept the controller unchanged. Current verification entries already satisfy newest-first ordering; no historical results rewritten.
+
 ## 2026-10-03 — PR 25 Claude review follow-ups
 
 - Unified stage-interface array bounds for location allocation and emission; unsupported expressions, late/missing definitions and nonpositive sizes now fail explicitly.

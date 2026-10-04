@@ -239,8 +239,6 @@ JSValue     CreateJsVec2(JSContext* context, double x, double y);
 JSValue     CreateJsVec3(JSContext* context, double x, double y, double z);
 JSValue     CreateJsVec4(JSContext* context, double x, double y, double z, double w);
 std::string QuoteJsString(const std::string& value);
-JSValue     BuildScriptPropertiesObject(JSContext*                                  context,
-                                        const std::map<std::string, DynamicValue*>& script_properties);
 void        UpdateScriptPropertiesObject(JSContext* context, JSValue target,
                                          const std::map<std::string, DynamicValue*>& script_properties);
 JSValue     CallStoredExport(JSContext* context, const char* exports_object_name,
@@ -1593,13 +1591,6 @@ JSValue JsEngineIsRunningInEditor(JSContext* context, JSValueConst, int, JSValue
 JSValue JsRegisterAsset(JSContext* context, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_NewString(context, "");
     return JS_DupValue(context, argv[0]);
-}
-
-JSValue BuildScriptPropertiesObject(JSContext*                                  context,
-                                    const std::map<std::string, DynamicValue*>& script_properties) {
-    JSValue object = JS_NewObject(context);
-    UpdateScriptPropertiesObject(context, object, script_properties);
-    return object;
 }
 
 void UpdateScriptPropertiesObject(JSContext* context, JSValue target,
@@ -3072,10 +3063,14 @@ PropertyScriptProgram::PropertyScriptProgram(
         return;
     }
 
-    JSValue global_object       = JS_GetGlobalObject(context_handle);
-    JSValue script_props_object = BuildScriptPropertiesObject(context_handle, m_script_properties);
+    // Wallpaper Engine evaluates the module before it gives the layer its saved
+    // values: code at the top level reads the defaults the script declares, and
+    // the saved or user-bound values arrive before init. A script that records
+    // where a property started there, and later moves by the difference, moves
+    // by nothing if it already sees the final value.
+    JSValue global_object = JS_GetGlobalObject(context_handle);
     JS_SetPropertyStr(
-        context_handle, global_object, m_script_properties_name.c_str(), script_props_object);
+        context_handle, global_object, m_script_properties_name.c_str(), JS_NewObject(context_handle));
 
     JSValue factory =
         AcquireScriptFactory(context_handle, script_source, ScriptProgramMode::Property);
@@ -3096,6 +3091,7 @@ PropertyScriptProgram::PropertyScriptProgram(
     }
     JS_FreeValue(context_handle, factory);
     JS_FreeValue(context_handle, global_object);
+    UpdateScriptProperties();
 
     m_capabilities = ReadCompiledCapabilities(context_handle, m_exports_object_name.c_str());
     m_valid = true;

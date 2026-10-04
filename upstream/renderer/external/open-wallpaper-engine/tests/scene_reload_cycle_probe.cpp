@@ -9,7 +9,6 @@
 #include "Runtime/VirtualAssetRegistry.hpp"
 #include "Scene/Scene.h"
 #include "SceneSourceResolver.hpp"
-#include "WPPkgFs.hpp"
 #include "WPSceneParser.hpp"
 
 #include <charconv>
@@ -68,11 +67,7 @@ void ParseOnce(const std::string& project, const std::string& assets,
     Check(ResolveSceneSourcePaths(project, &paths, &error), error.c_str());
     fs::VFS vfs;
     Check(vfs.Mount("/assets", fs::CreatePhysicalFs(assets), "assets"), "assets mount");
-    if (std::filesystem::exists(paths.pkg_path)) {
-        Check(vfs.Mount("/assets", fs::WPPkgFs::CreatePkgFs(paths.pkg_path)), "package mount");
-    } else {
-        Check(vfs.Mount("/assets", fs::CreatePhysicalFs(paths.pkg_dir)), "scene directory mount");
-    }
+    Check(MountSceneSource(vfs, paths, &error), error.c_str());
     Check(vfs.Mount("/cache", fs::CreatePhysicalFs(cache_root.string(), true), "cache"),
           "cache mount");
     InstallVirtualAssets(vfs);

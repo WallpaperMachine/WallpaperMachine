@@ -556,7 +556,10 @@ staging, or cloned from the library, which stays unchanged), the preset's files
 over it, and the base's manifest with the preset's title, description, tags,
 rating, preview and Workshop id, `dependency` recorded, and each preset value
 written into the base property of the same name (`null` headings and
-undeclared names are ignored). A base fetched for a preset is not added to the
+undeclared names are ignored). The renderer reads the preset's files where they
+land, beside the base's `scene.pkg`: a scene mounts its folder under its
+package, so a property naming `files/clip.mp4` finds the clip while packaged
+files still win. A base fetched for a preset is not added to the
 library. A preset of a preset, or one naming itself, is rejected without
 publishing anything. Updating a preset reassembles it on the current base; an
 update of the base alone does not reach presets already installed. Importing a

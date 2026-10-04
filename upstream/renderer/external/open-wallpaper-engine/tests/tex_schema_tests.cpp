@@ -19,6 +19,7 @@
 #include "Fs/Fs.h"
 #include "Fs/MemBinaryStream.h"
 #include "Fs/VFS.h"
+#include "SceneSourceResolver.hpp"
 #include "WPPkgFs.hpp"
 #include "WPTexImageParser.hpp"
 #include "Utils/Algorism.h"
@@ -830,4 +831,48 @@ TEST(PkgFs, ExactPathWinsWhenPackageContainsCaseFoldCollision) {
     EXPECT_EQ(ReadPkgFile(*pkg, "/Materials/Foo.TEX"), "upper");
     EXPECT_EQ(ReadPkgFile(*pkg, "/materials/foo.tex"), "lower");
     EXPECT_TRUE(pkg->Contains("/MATERIALS/FOO.TEX"));
+}
+
+// A Workshop preset is installed as its base's folder with the preset's own
+// files on top: the base's `scene.pkg`, and beside it the pictures and videos the
+// preset's `scenetexture` properties name, e.g. `files/clip.mp4`. Only the
+// package was mounted, so those resolved to nothing and the layers drew black.
+TEST(SceneSourceMount, APresetFileBesideThePackageLoadsAndThePackageStillWins) {
+    const auto directory = std::filesystem::temp_directory_path() / "wpe-scene-source-mount";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory / "files");
+    {
+        TempPkg pkg_file({ { "scene.json", "packaged" } });
+        std::filesystem::copy_file(pkg_file.path(), directory / "scene.pkg");
+    }
+    const auto write = [](const std::filesystem::path& path, std::span<const uint8_t> bytes) {
+        std::ofstream file { path, std::ios::binary };
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    };
+    const std::string loose_scene = "loose";
+    write(directory / "scene.json",
+          std::span(reinterpret_cast<const uint8_t*>(loose_scene.data()), loose_scene.size()));
+    write(directory / "files" / "picked.png", Png1x1());
+
+    SceneSourcePaths paths;
+    std::string      error;
+    ASSERT_TRUE(ResolveSceneSourcePaths((directory / "scene.json").string(), &paths, &error)) << error;
+    fs::VFS vfs;
+    ASSERT_TRUE(MountSceneSource(vfs, paths, &error)) << error;
+
+    EXPECT_EQ(fs::GetFileContent(vfs, "/assets/scene.json"), "packaged");
+    WPTexImageParser parser(&vfs);
+    const auto image = parser.Parse("files/picked.png");
+    ASSERT_NE(image, nullptr);
+    ASSERT_EQ(image->slots.size(), 1u);
+    EXPECT_EQ(image->slots[0].width, 1);
+
+    // A folder without a package is the scene on its own.
+    std::filesystem::remove(directory / "scene.pkg");
+    fs::VFS loose_vfs;
+    ASSERT_TRUE(MountSceneSource(loose_vfs, paths, &error)) << error;
+    EXPECT_EQ(fs::GetFileContent(loose_vfs, "/assets/scene.json"), "loose");
+
+    std::filesystem::remove_all(directory);
 }

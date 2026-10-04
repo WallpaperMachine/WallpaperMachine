@@ -2160,6 +2160,45 @@ export function update(value) {
     EXPECT_EQ(runtime->scriptErrorCount(), 0u);
 }
 
+// A layer's saved and user-bound values reach its script after the module has
+// run, as in Wallpaper Engine: top-level code reads the declared default, init
+// and update read the value. A switch whose position slider moves its layers by
+// the difference from the top-level reading stayed where it was authored when
+// the module already saw the final value.
+TEST(ScriptRuntimeCompat, ModuleCodeSeesDeclaredDefaultsAndInitSeesTheBoundValue) {
+    auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
+        .project_properties = {{"offset", RuntimeScalarValue::Float(1346.0f)}},
+    });
+    ASSERT_NE(runtime, nullptr);
+    auto material = std::make_shared<SceneMaterial>();
+    runtime->RegisterMaterialConstant(material, "g_Offset", ResolveVec3Setting(*runtime, {
+        {"value", {0.0f, 0.0f, 0.0f}},
+        {"scriptproperties", {{"offset", {{"value", 0}, {"user", "offset"}}}}},
+        {"script", R"JS(
+export var scriptProperties = createScriptProperties()
+    .addSlider({name: 'offset', value: 7, min: -4000, max: 4000}).finish();
+const atLoad = scriptProperties.offset;
+let atInit;
+export function init() { atInit = scriptProperties.offset; }
+export function update(value) {
+    return new Vec3(atLoad, atInit, scriptProperties.offset);
+}
+)JS"},
+    }));
+    const auto expect_offset = [&](float load, float init, float now) {
+        runtime->Tick(1.0 / 60.0);
+        const auto& offset = material->customShader.constValues.at("g_Offset");
+        ASSERT_EQ(offset.size(), 3u);
+        EXPECT_FLOAT_EQ(offset[0], load);
+        EXPECT_FLOAT_EQ(offset[1], init);
+        EXPECT_FLOAT_EQ(offset[2], now);
+    };
+    expect_offset(7.0f, 1346.0f, 1346.0f);
+    runtime->ApplyProjectPropertyOverride({{"offset", RuntimeScalarValue::Float(20.0f)}});
+    expect_offset(7.0f, 1346.0f, 20.0f);
+    EXPECT_EQ(runtime->scriptErrorCount(), 0u);
+}
+
 TEST(ScriptRuntimeCompat, MaterialConstantUserBindingUpdatesThroughRuntimeProperties) {
     auto runtime = CreateSceneRuntimeContext(SceneRuntimeBootstrap {
         .project_properties = {
