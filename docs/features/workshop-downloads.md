@@ -530,7 +530,14 @@ Password and Steam Guard prompts are read without waiting for a full terminal
 buffer, including prompts split across reads or arriving without a trailing
 newline. Login failures are processed before credential prompts, and output is
 drained before process exit is handled. The five-minute inactivity timeout is a
-safety limit, not a substitute for receiving a login prompt.
+safety limit, not a substitute for receiving a login prompt. Since SteamCMD prints
+nothing while it fetches an item, arriving bytes count as activity too: the
+process's network total, the content landed on disk and an asset installation's
+own counts each restart the five minutes when they grow. A pass is also stopped
+after 30 minutes, but only once its bytes have stopped arriving as well, so a slow
+transfer that keeps moving is never cut short. A run that stalls after sign-in
+says it stopped receiving the download; only a stall while signing in points to
+Steam Guard.
 
 After authentication is rejected or times out, **Try again** (or the failed
 tile's retry) starts a new private SteamCMD session for the selected wallpaper or asset installation

@@ -15,6 +15,9 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     /// full sentence. Bytes only move during `transferring`; `finishing` covers SteamCMD's
     /// close and the validation/import that follows it.
     enum Phase: String { case preparing, connecting, updating, signingIn, requesting, transferring, finishing }
+    /// The byte counters that show a transfer is alive: the process's network total, the content
+    /// landed on disk, and the counts SteamCMD prints for an asset installation.
+    private enum TransferMeter { case network, disk, steam }
     private(set) var isRunning = false
     private(set) var phase = Phase.preparing
     private(set) var wasCancelled = false
@@ -63,6 +66,14 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     nonisolated static let stagingPrefix = ".WallpaperMachine-workshop-"
     nonisolated private static let ownerName = "owner"
     @ObservationIgnored private var lastActivity = Date()
+    /// When a byte counter last grew in this run. SteamCMD prints nothing while it fetches a
+    /// Workshop item, so arriving bytes, not terminal output, are what show a transfer is alive.
+    @ObservationIgnored private var lastTransferProgress: Date?
+    @ObservationIgnored private var transferMarks: [TransferMeter: Int64] = [:]
+    /// How long a run may go without output or transfer progress before it is stopped.
+    @ObservationIgnored private let inactivityTimeout: TimeInterval
+    /// How long one pass may run before it is stopped, once it has also stopped transferring.
+    @ObservationIgnored private let passTimeout: TimeInterval
     @ObservationIgnored private var failure: String?
     @ObservationIgnored private var receivesNetwork = false
     @ObservationIgnored private var networkStarted = false
@@ -76,9 +87,12 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
 
     init(sessionDirectory: URL = ClientPaths.supportURL.appendingPathComponent("SteamSession", isDirectory: true),
          runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
-         networkMonitor: (any ProcessNetworkMonitoring)? = nil, checkpointDirectory: URL? = nil) {
+         networkMonitor: (any ProcessNetworkMonitoring)? = nil, checkpointDirectory: URL? = nil,
+         inactivityTimeout: TimeInterval = 300, passTimeout: TimeInterval = 1800) {
         self.sessionDirectory = sessionDirectory
         self.checkpointDirectory = checkpointDirectory
+        self.inactivityTimeout = inactivityTimeout
+        self.passTimeout = passTimeout
         self.runtimeProvider = runtimeProvider
         self.networkMonitor = networkMonitor ?? ProcessNetworkMonitor()
         savedAccount = Self.readSavedAccount(at: sessionDirectory)
@@ -255,14 +269,22 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                                     networkStarted = true
                                 }
                                 bytesPerSecond = networkMonitor.rate(at: ProcessInfo.processInfo.systemUptime)
+                                noteTransfer(networkMonitor.bytesReceived(), on: .network)
                                 sampleWorkshopDisk(in: staging)
                             } else {
                                 bytesPerSecond = nil
                             }
-                            if failure != nil || Date().timeIntervalSince(started) > 1800 || Date().timeIntervalSince(lastActivity) > 300 {
+                            let now = Date()
+                            let stalled = now.timeIntervalSince(lastActivity) > inactivityTimeout
+                            // A long pass is cut short only once its bytes have stopped arriving too.
+                            let overlong = now.timeIntervalSince(started) > passTimeout
+                                && now.timeIntervalSince(lastTransferProgress ?? started) > inactivityTimeout
+                            if failure != nil || stalled || overlong {
                                 if failure == nil {
                                     authenticationFailed = isAuthenticating
-                                    failure = String(localized: "SteamCMD timed out. If Steam Guard was not completed, retry signing in and approve the new request or enter a fresh code. Otherwise check your connection and available disk space.")
+                                    failure = isAuthenticating
+                                        ? String(localized: "SteamCMD timed out. If Steam Guard was not completed, retry signing in and approve the new request or enter a fresh code. Otherwise check your connection and available disk space.")
+                                        : String(localized: "SteamCMD stopped receiving the download. Check your connection and available disk space, then try again.")
                                 }
                                 await stopProcess()
                                 break
@@ -465,6 +487,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         receivesNetwork = false
         networkStarted = false
         lastActivity = Date()
+        lastTransferProgress = nil
+        transferMarks = [:]
         do {
             process = try SteamCMDTerminalProcess(executable: executable, arguments: arguments,
                                                   workingDirectory: staging, environment: environment,
@@ -679,6 +703,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                let received = Int64(output[receivedRange]), let total = Int64(output[totalRange]),
                total > 0, received >= 0, received <= total {
                 progress = Double(received) / Double(total)
+                noteTransfer(received, on: .steam)
                 if receivesNetwork {
                     bytesReceived = received
                     bytesExpected = total
@@ -703,6 +728,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             let onDisk = await Task.detached(priority: .utility) { Self.bytesOnDisk(under: root) }.value
             diskSampleTask = nil
             guard isRunning, receivesNetwork, failure == nil else { return }
+            noteTransfer(onDisk, on: .disk)
             // Without a working network meter the tree alone is still better than nothing.
             let arrived = networkMonitor.bytesReceived().map { min($0, onDisk) } ?? onDisk
             let received = min(arrived, expected)
@@ -711,6 +737,14 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             // Only Steam's own success line claims completion; bytes alone stop at 99%.
             progress = min(0.99, Double(received) / Double(expected))
         }
+    }
+
+    /// Counts a byte counter that grew as activity, each counter against its own last reading.
+    private func noteTransfer(_ bytes: Int64?, on meter: TransferMeter) {
+        guard let bytes, bytes > (transferMarks[meter] ?? 0) else { return }
+        transferMarks[meter] = bytes
+        lastActivity = Date()
+        lastTransferProgress = lastActivity
     }
 
     /// Saves the sign-in Steam just accepted while the download goes on. Whatever Steam has not

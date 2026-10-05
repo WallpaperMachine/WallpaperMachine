@@ -418,4 +418,39 @@ final class DownloadTelemetryTests: DownloaderTestCase {
       XCTAssertNil(monitor.rate(at: ProcessInfo.processInfo.systemUptime))
     } catch { await monitor.stop(); throw error }
   }
+
+  /// SteamCMD prints nothing while it fetches an item, so a transfer whose bytes keep arriving
+  /// outlives both time limits, and one whose bytes stop is ended as a stalled download rather
+  /// than as an unfinished sign-in.
+  func testSilentTransferRunsWhileBytesArriveAndStopsWhenTheyStop() async throws {
+    let root = try makeRuntime("""
+      printf 'Waiting for user info...OK\\nDownloading item 123456 ...\\n'
+      IFS= read -r finish
+      """)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let monitor = FixtureNetworkMonitor()
+    monitor.received = 0
+    let downloader = WorkshopDownloader(
+      sessionDirectory: root.appendingPathComponent("SteamSession"),
+      runtimeProvider: ShellRuntimeProvider(), networkMonitor: monitor,
+      inactivityTimeout: 1, passTimeout: 1.5)
+    downloader.start(
+      item: item, username: "localtest", executable: root.appendingPathComponent("runtime/steamcmd"),
+      library: root.appendingPathComponent("Library"), rememberSession: false, onImported: {})
+    do {
+      try await waitUntil { monitor.startedPIDs.count == 1 }
+      // Wide margins: a hosted runner can wake a short sleep 100 ms late or more.
+      let silentUntil = Date().addingTimeInterval(3)
+      while Date() < silentUntil {
+        monitor.received = (monitor.received ?? 0) + 1024
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      XCTAssertTrue(downloader.isRunning, downloader.errorMessage ?? "")
+      XCTAssertNil(downloader.errorMessage)
+      try await waitUntil { !downloader.isRunning }
+      XCTAssertNotNil(downloader.errorMessage)
+      XCTAssertFalse(downloader.canRetryAuthentication)
+      await downloader.shutdown()
+    } catch { await downloader.shutdown(); throw error }
+  }
 }
