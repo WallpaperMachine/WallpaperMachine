@@ -88,6 +88,10 @@ final class DesktopWallpaperSync {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var posters: [ObjectIdentifier: Data] = [:]
     private var revisions: [ObjectIdentifier: UInt64] = [:]
+    /// When each layer's poster arrived, so a display that briefly has two wallpaper windows
+    /// (one replacing the other) shows the newer poster, never neither.
+    private var arrivals: [ObjectIdentifier: UInt64] = [:]
+    private var arrivalCount: UInt64 = 0
     private let surfaces: @MainActor () -> [DesktopPosterSurface]
     private let frameCenter: NotificationCenter
     private let workspaceCenter: NotificationCenter?
@@ -213,6 +217,7 @@ final class DesktopWallpaperSync {
         workspaceObservers.removeAll()
         posters.removeAll()
         revisions.removeAll()
+        arrivals.removeAll()
     }
 
     func stopAndRestore() throws {
@@ -257,6 +262,8 @@ final class DesktopWallpaperSync {
                       self.revisions[key] == revision,
                       self.surfaces().contains(where: { $0.layer === layer }) else { return }
                 self.posters[key] = png
+                self.arrivalCount &+= 1
+                self.arrivals[key] = self.arrivalCount
                 self.synchronizeAllSpaces()
             } catch { self?.report(error) }
         }
@@ -267,8 +274,17 @@ final class DesktopWallpaperSync {
         let keys = Set(surfaces.map { ObjectIdentifier($0.layer) })
         posters = posters.filter { keys.contains($0.key) }
         revisions = revisions.filter { keys.contains($0.key) }
+        arrivals = arrivals.filter { keys.contains($0.key) }
         var byDisplay: [String: Data] = [:]
-        for surface in surfaces { byDisplay[surface.display] = posters[ObjectIdentifier(surface.layer)] }
+        var newest: [String: UInt64] = [:]
+        for surface in surfaces {
+            // A window with no poster yet must not take away the one its sibling has.
+            let key = ObjectIdentifier(surface.layer)
+            guard let poster = posters[key], let arrival = arrivals[key],
+                  arrival >= newest[surface.display] ?? 0 else { continue }
+            byDisplay[surface.display] = poster
+            newest[surface.display] = arrival
+        }
         retry?.cancel()
         do {
             try ledger.synchronize(posters: byDisplay, liveDisplays: Set(surfaces.map(\.display)))

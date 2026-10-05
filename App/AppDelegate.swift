@@ -222,7 +222,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 self.playlistScheduler?.evaluate()
                 if let lockScreen, lockScreen.canRefreshAutomatically {
                     lockScreen.refresh()
-                } else if lockScreen?.ownsDesktopProvider != true {
+                }
+                // Posters keep the desktop unless the native provider has it or an animated lock
+                // screen is on its way to taking it; a screen saver chosen on its own leaves it here.
+                let nativeDesktop = lockScreen.map {
+                    $0.ownsDesktopProvider || ($0.isRequested && $0.canRefreshAutomatically && $0.errorMessage == nil)
+                } ?? false
+                if !nativeDesktop {
                     // A suspended poster sync must never outlive the native provider.
                     do { try self.startDesktopWallpaperSync() } catch {
                         self.lastError = error
