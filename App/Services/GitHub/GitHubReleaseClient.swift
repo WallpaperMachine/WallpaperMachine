@@ -206,6 +206,10 @@ final class GitHubReleaseDownload: NSObject, URLSessionDataDelegate, @unchecked 
                     guard Self.isAllowed(source) else {
                         throw AppUpdateIssue(code: .network, detail: String(localized: "The update download redirected outside GitHub."))
                     }
+                    // An image nothing could verify is not worth downloading.
+                    guard digest.flatMap(Self.parseSHA256Hex) != nil else {
+                        throw AppUpdateIssue(code: .verification, detail: String(localized: "The update couldn't be verified, so it wasn't installed."))
+                    }
                     let descriptor = open(destination.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
                     guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
                     file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
