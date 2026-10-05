@@ -24,7 +24,9 @@ only an enabled display showing its own wallpaper can be switched. Switches shar
 the display's command slot with the panel, so the latest request for a display
 wins. A command that arrives while the app is still starting (the system may
 launch it to run one) waits up to 15 seconds for the library to load, then fails
-with a message saying so. A failure from a link or a keyboard shortcut shows at
+with a message saying so. If the renderer could not start at all, opening the
+panel still works, since Settings is where a failed start is put right; every
+other command fails at once instead of waiting. A failure from a link or a keyboard shortcut shows at
 the foot of the menu bar menu; the Shortcuts app shows its own.
 
 ## Keyboard shortcuts

@@ -198,7 +198,8 @@ password: **Sign in to Steam…** opens Steam's own sign-in page in a window
 takes the `steamLoginSecure` cookie Steam sets. The cookie is kept in memory
 only (`WorkshopStore.steamWebSession`): it is never written to disk or the
 keychain, ends when the app quits or on **Sign out of Steam**, and is sent only to
-`steamcommunity.com`, to read the subscriptions list (the author page with
+`steamcommunity.com` over HTTPS (a redirect anywhere else goes without it,
+`WorkshopService.redirected`), to read the subscriptions list (the author page with
 `browsefilter=mysubscriptions`). That page lists rows rather than an author's
 tiles, so `WorkshopService.decodeProfileListing` reads an item's id from either
 layout: an author tile's `data-publishedfileid`, or a subscription row's own

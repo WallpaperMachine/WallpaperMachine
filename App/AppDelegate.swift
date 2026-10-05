@@ -422,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         } catch {
             lastError = error
             rebuildMenu()
-            NSAlert(error: error).runModal()
+            presentErrorAlert(error)
         }
     }
 
@@ -989,6 +989,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    /// An error alert, shown from the main run loop for the reason `promptUpdate` gives; the
+    /// callers run inside main-actor tasks and main-queue jobs.
+    private func presentErrorAlert(_ error: Error) {
+        AppUpdateStore.performOnMainRunLoop { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.shutdownInProgress, !self.shutdownComplete else { return }
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
     /// "Later" leaves the update one click away in the status menu.
     private func updateMenuItem() -> NSMenuItem? {
         switch appUpdater.state {
@@ -1115,7 +1126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 lastError = error
                 playbackSnapshotCurrent = false
                 rebuildMenu()
-                NSAlert(error: error).runModal()
+                presentErrorAlert(error)
             }
         }
     }
@@ -1267,6 +1278,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 AppLog.error("startup: bootstrapAsync FAILED: \(error.localizedDescription)")
                 lastError = error
                 playbackSnapshotCurrent = false
+                // The panel opens without a started library, and Settings is where a failed start
+                // is put right; every other command answers at once instead of waiting it out.
+                AppAutomation.shared.handler = { [weak self] command in
+                    guard let self, case .open = command else { throw AutomationError.notReady }
+                    try await self.performAutomation(command)
+                }
             }
             rebuildMenu()
             // Also after a failed start: the update may be the fix.
