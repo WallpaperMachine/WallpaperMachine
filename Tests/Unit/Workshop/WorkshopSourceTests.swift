@@ -49,12 +49,19 @@ final class WorkshopSourceTests: XCTestCase {
   }
 
   /// Issue #29: Steam lists subscriptions as rows, not as an author's tiles, and every one of
-  /// them must be read.
+  /// them must be read, whether or not the served row holds its Unsubscribe control yet.
   func testSubscriptionsListingReadsItsRowsAndTotal() throws {
-    let listing = try WorkshopService.decodeProfileListing(String(
-      decoding: subscriptionsHTML(ids: ["300", "100", "200"], total: "127"), as: UTF8.self))
-    XCTAssertEqual(listing.ids, ["300", "100", "200"])
-    XCTAssertEqual(listing.total, 127)
+    for controls in [false, true] {
+      let listing = try WorkshopService.decodeProfileListing(String(
+        decoding: subscriptionsHTML(ids: ["300", "100", "200"], total: "127", controls: controls), as: UTF8.self))
+      XCTAssertEqual(listing.ids, ["300", "100", "200"])
+      XCTAssertEqual(listing.total, 127)
+    }
+    // Without the row's own id, its Unsubscribe call still names the item.
+    let calls = try WorkshopService.decodeProfileListing(
+      "<html>Showing 1-2 of 2 entries<span onclick=\"UnsubscribeItem( '7', '431960' );\"></span>"
+        + "<span onclick=\"UnsubscribeItem('8', '431960');\"></span></html>")
+    XCTAssertEqual(calls.ids, ["7", "8"])
   }
 
   /// A page that says it holds entries but shows none means Steam changed its markup; reading it
@@ -323,14 +330,21 @@ final class WorkshopSourceTests: XCTestCase {
       """.utf8)
   }
 
-  /// Steam's subscriptions page: a row per item, named only by its links, without the
-  /// `data-publishedfileid` an author's tiles carry.
-  private func subscriptionsHTML(ids: [String], total: String) -> Data {
+  /// Steam's subscriptions page: a row per item, `id="Subscription<id>"`, without the
+  /// `data-publishedfileid` an author's tiles carry. The served page may leave out the row's
+  /// Unsubscribe control, which its scripts add later.
+  private func subscriptionsHTML(ids: [String], total: String, controls: Bool = false) -> Data {
     let rows = ids.map { id in
-      """
+      let unsubscribe = controls
+        ? "<span id=\"UnsubscribeItemBtn\(id)\" class=\"general_btn subscribe toggled\" onclick=\"UnsubscribeItem( '\(id)', '431960' );\"></span>"
+        : ""
+      return """
       <div class="workshopItemSubscription " id="Subscription\(id)">
-        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)&searchtext="><div class="workshopItemTitle">Item \(id)</div></a>
-        <a id="UnsubscribeItemBtn\(id)" class="btn_grey_black btn_small_thin" href="javascript:UnsubscribeItem( '\(id)', '431960' );"><span>Unsubscribe</span></a>
+        <div class="workshopItemSubscriptionDetails">
+          <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)&searchtext="><div class="workshopItemTitle">Item \(id)</div></a>
+          <div class="workshopItemDate">Subscribed on 4 Oct @ 11:10pm</div>
+        </div>
+        <div class="workshopItemSubscriptionControls">\(unsubscribe)</div>
       </div>
       """
     }.joined()

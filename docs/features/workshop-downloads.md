@@ -178,8 +178,9 @@ keychain, ends when the app quits or on **Sign out of Steam**, and is sent only 
 `steamcommunity.com`, to read the subscriptions list (the author page with
 `browsefilter=mysubscriptions`). That page lists rows rather than an author's
 tiles, so `WorkshopService.decodeProfileListing` reads an item's id from either
-layout: an author tile's `data-publishedfileid`, or a subscription row's
-Unsubscribe link (`UnsubscribeItemBtn<id>`, `UnsubscribeItem( '<id>', … )`). A
+layout: an author tile's `data-publishedfileid`, or a subscription row's own
+id (`<div class="workshopItemSubscription" id="Subscription<id>">`; Steam may fill
+the row's details and Unsubscribe control in later, so they are only a fallback). A
 page whose paging line counts entries but none can be read is reported as
 unreadable instead of being shown as an empty list. Without a session, or when
 Steam answers with its sign-in page instead, the session is forgotten and the grid

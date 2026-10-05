@@ -383,11 +383,12 @@ actor WorkshopService {
     /// account's name. Steam's sign-in page instead means the session is gone.
     static func decodeProfileListing(_ html: String) throws -> (ids: [String], total: Int, name: String?) {
         var ids: [String] = []
-        // An author's items are tiles carrying `data-publishedfileid`; subscriptions are rows
-        // whose Unsubscribe link, `<a id="UnsubscribeItemBtn<id>"
-        // href="javascript:UnsubscribeItem( '<id>', '<app>' );">`, is all that names the item.
+        // An author's items are tiles carrying `data-publishedfileid`; subscriptions are rows,
+        // `<div class="workshopItemSubscription " id="Subscription<id>">`, whose details and
+        // Unsubscribe control (`UnsubscribeItem( '<id>', '<app>' )`) are not always in the
+        // served page, so the row's own id is what names the item.
         let idPattern = try NSRegularExpression(
-            pattern: #"(?:data-publishedfileid="|id="UnsubscribeItemBtn|UnsubscribeItem\(\s*')(\d+)"#)
+            pattern: #"(?:data-publishedfileid="|id="(?:Subscription|UnsubscribeItemBtn)|UnsubscribeItem\(\s*')(\d+)["']"#)
         for match in idPattern.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
             guard let range = Range(match.range(at: 1), in: html) else { continue }
             let id = String(html[range])
