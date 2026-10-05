@@ -2,6 +2,9 @@
    and data-i18n in WebUI/; see docs/localization.md for how a catalog is maintained. */
 
 export default {
+  'The age rating filters hide every collection found for this page.': '年齢区分のフィルタによって、このページで見つかったコレクションがすべて非表示になっています。',
+  'Open on Steam': 'Steamで開く',
+  'The age rating and type filters hide every wallpaper on this page.': '年齢区分と種類のフィルタによって、このページの壁紙がすべて非表示になっています。',
   'pixiv downloads run two at a time; paused downloads stay in the queue.': 'pixivのダウンロードは同時に2件まで実行され、一時停止した項目はキューに残ります。',
   'On. Waiting for an audio frame.': 'オン。音声フレームを待っています。',
   'On. Connecting to audio…': 'オン。音声に接続中…',

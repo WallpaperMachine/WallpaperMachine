@@ -201,15 +201,18 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
         show({ key: 'subscriptions' }, { steamSignedIn: false });
         const signIn = document.querySelector('#browser-empty [data-action="steamWebSignIn"]');
         const signedOut = { current: current(), signIn: Boolean(signIn && !document.getElementById('browser-empty').hidden) };
-        show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 48 });
+        show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 48, totalPages: 2 });
         const summary = document.getElementById('browser-summary');
         const download = summary.querySelector('[data-action="workshopDownloadSubscribed"]');
         const signedIn = { text: summary.textContent, primary: Boolean(download && download.classList.contains('primary')),
           signOut: Boolean(summary.querySelector('[data-action="steamWebSignOut"]')),
+          steamPage: Boolean(summary.querySelector('[data-action="openExternal"]')),
+          screened: Boolean(document.querySelector('#browser-empty [data-action="workshopPage"][data-workshop-page="2"]')),
           browse: Boolean(document.querySelector('#browser-empty [data-action="workshopSource"][data-source="browse"]')) };
         const downloadEnabled = !download.disabled;
         show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 0 });
         const nothingToDownload = summary.querySelector('[data-action="workshopDownloadSubscribed"]').disabled;
+        const browseWhenEmpty = Boolean(document.querySelector('#browser-empty [data-action="workshopSource"][data-source="browse"]'));
         show({ key: 'browse', searchable: true });
         tabs()[0].focus();
         tabs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -220,7 +223,7 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
         tabs().find(tab => tab.dataset.source === 'subscriptions').click();
         await new Promise(resolve => setTimeout(resolve, 50));
         const request = sent.find(message => message.action === 'workshopSource');
-        return { labels, oneRow, browsing, signedOut, signedIn, downloadEnabled, nothingToDownload, arrowed, opened, requested: request ? request.source : null };
+        return { labels, oneRow, browsing, signedOut, signedIn, downloadEnabled, nothingToDownload, browseWhenEmpty, arrowed, opened, requested: request ? request.source : null };
         """, arguments: [:], in: nil, contentWorld: .page) as? [String: Any]
     XCTAssertEqual(result?["labels"] as? [String], ["Wallpapers", "Collections", "Your subscriptions"])
     XCTAssertEqual(result?["oneRow"] as? Bool, true, "The tabs must fit one row at the window minimum")
@@ -232,9 +235,14 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     XCTAssertTrue((signedIn?["text"] as? String)?.contains("48") == true, "Signed in, the list says how many")
     XCTAssertEqual(signedIn?["primary"] as? Bool, true, "Downloading what is missing is the list's main action")
     XCTAssertEqual(signedIn?["signOut"] as? Bool, true)
-    XCTAssertEqual(signedIn?["browse"] as? Bool, true, "An empty list leads back to browsing")
+    XCTAssertEqual(signedIn?["steamPage"] as? Bool, true, "The list links to its Steam page")
+    XCTAssertEqual(
+      signedIn?["screened"] as? Bool, true,
+      "Subscriptions the default filters hide from this page lead on to the next page")
+    XCTAssertEqual(signedIn?["browse"] as? Bool, false, "48 subscriptions are not an empty list")
     XCTAssertEqual(result?["downloadEnabled"] as? Bool, true)
     XCTAssertEqual(result?["nothingToDownload"] as? Bool, true, "With no subscriptions there is nothing to download")
+    XCTAssertEqual(result?["browseWhenEmpty"] as? Bool, true, "No subscriptions lead back to browsing")
     XCTAssertEqual(result?["arrowed"] as? String, "collections", "Arrow keys move between the list tabs")
     let opened = result?["opened"] as? [String: Any]
     XCTAssertEqual(opened?["current"] as? [String], [], "An opened author is none of the lists")
