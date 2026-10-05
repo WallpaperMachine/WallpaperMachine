@@ -29,7 +29,9 @@ single still illustration. pixiv answers a popularity order with the newest work
 unless the account has Premium, so no popularity order is offered. Manga,
 animations (ugoira), ranking slots pixiv withholds from the visitor
 (`mask_reason`) and entries that are not illustrations are dropped as they are
-read; a malformed entry is dropped instead of failing its page.
+read; a malformed entry is dropped instead of failing its page. A ranking or
+search that fails to open empties the grid instead of leaving the listing before
+it on show, where Next would page the one that failed; **Retry** asks for it again.
 
 The filter sidebar (the toolbar's **Filter** button, see
 [control-panel](control-panel.md#filtering)) holds the pixiv account and these

@@ -356,6 +356,41 @@ final class WorkshopSourceTests: XCTestCase {
     XCTAssertNil(store.errorMessage)
   }
 
+  /// A panel page whose read limit runs out before any collection passes is empty but leaves
+  /// Next to read on, and the count on the last page adds up what each page really showed.
+  func testAPageEmptiedByTheReadLimitLeadsOnAndTheLastPageCountsWhatWasShown() async throws {
+    var kept: [String] = []
+    var details: [String: [String: Any]] = [:]
+    let steamPages = WorkshopStore.maxSteamPagesPerPage + 2
+    for page in 1...steamPages {
+      let rows = (0..<30).map { index -> [String: Any] in
+        let id = String(page * 1000 + index)
+        let child = String(page * 1000 + 500 + index)
+        let rating = page > WorkshopStore.maxSteamPagesPerPage ? "Everyone" : "Mature"
+        details[child] = detailsRow(child, tags: ["Scene", rating])
+        if rating == "Everyone" { kept.append(id) }
+        return collectionRow(id, children: [(child, 0, 0)])
+      }
+      fixture.browsePages[page] = browseHTML(rows: rows, page: page, pages: steamPages, count: steamPages * 30)
+    }
+    fixture.details = details
+    let store = fixture.store
+
+    store.open(.collections)
+    try await finished(store)
+    XCTAssertEqual(store.items, [])
+    XCTAssertGreaterThan(store.totalPages, 1, "Next reads on past the limit")
+    XCTAssertGreaterThan(store.totalCount, 0)
+    var page = 1
+    while page < store.totalPages {
+      page += 1
+      store.loadPage(page)
+      try await finished(store)
+    }
+    XCTAssertEqual(store.items.map(\.id), Array(kept[30...]))
+    XCTAssertEqual(store.totalCount, kept.count)
+  }
+
   // MARK: Fixtures
 
   private func finished(_ store: WorkshopStore) async throws {

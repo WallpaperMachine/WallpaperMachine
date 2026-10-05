@@ -545,6 +545,8 @@ extension WebPanelController {
       "loading": workshop.isLoading, "loaded": workshop.hasLoaded,
       "error": workshop.errorMessage as Any? ?? null,
       "source": workshopSource,
+      // The Steam page listing what is on show, for Open on Steam.
+      "steamURL": workshop.browseURL.absoluteString,
       "steamSignedIn": workshop.steamWebSession != nil, "steamSigningIn": workshop.isSigningInToSteamWeb,
     ]
     // Every configured display's playlist, with when it next changes on its own.

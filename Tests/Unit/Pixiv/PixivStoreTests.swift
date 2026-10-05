@@ -105,6 +105,29 @@ final class PixivStoreTests: XCTestCase {
                 .queryItems?.first { $0.name == "mode" }?.value, "weekly")
     }
 
+    /// A search that fails to open does not leave the ranking's works on show under it, where
+    /// Next would page the failed search; Retry still asks for that search.
+    func testAFailedNewListingClearsTheWorksOfTheOneBefore() async throws {
+        let transport = PixivFixtureTransport { url in
+            if url.path.hasPrefix("/ajax/search/") { throw PixivFailure(code: .status(429)) }
+            return Self.ranking(url)
+        }
+        let store = store(transport)
+        store.apply(PixivQuery())
+        try await waitUntil { store.hasLoaded }
+        XCTAssertFalse(store.works.isEmpty)
+
+        store.apply(PixivQuery(text: "sky"))
+        try await waitUntil { store.errorMessage != nil }
+        XCTAssertFalse(store.hasLoaded)
+        XCTAssertTrue(store.works.isEmpty)
+        XCTAssertEqual(store.totalCount, 0)
+        XCTAssertEqual(store.totalPages, 1)
+        store.retry()
+        try await waitUntil { !store.isLoading }
+        XCTAssertEqual(transport.requests.last?.path, "/ajax/search/illustrations/sky")
+    }
+
     func testRefreshAsksPixivAgainForTheSameListing() async throws {
         let transport = PixivFixtureTransport { Self.ranking($0) }
         let store = store(transport)

@@ -360,6 +360,9 @@ final class PixivStore {
                 self.publish(result, for: self.query.listing == listing ? self.query : query)
             } catch {
                 guard self.generation == requestID, !Task.isCancelled else { return }
+                // Another listing failed to open: the works on show answer the one it was to
+                // replace, so they go too, rather than showing under it and paging it on Next.
+                if self.committedQuery?.listing != listing { self.clearResults() }
                 self.errorMessage = error.localizedDescription
                 self.failedPage = number
                 self.committedQuery = query
@@ -368,6 +371,15 @@ final class PixivStore {
             }
             if self.generation == requestID { self.isLoading = false }
         }
+    }
+
+    private func clearResults() {
+        works = []
+        hiddenCount = 0
+        page = 1
+        totalPages = 1
+        totalCount = 0
+        hasLoaded = false
     }
 
     private func publish(_ result: PixivResultPage, for query: PixivQuery) {

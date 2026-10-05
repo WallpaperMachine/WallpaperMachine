@@ -486,6 +486,8 @@ final class WorkshopStore {
   @ObservationIgnored private var screenedPages: [Int: WorkshopPage] = [:]
   @ObservationIgnored private var screenedFetches: [Int: Task<WorkshopPage, Error>] = [:]
   @ObservationIgnored private var pageStarts: [Int: SteamPosition] = [1: .start]
+  /// How many collections each filled panel page showed, for the count once the last is reached.
+  @ObservationIgnored private var pageCounts: [Int: Int] = [:]
   /// How many Steam pages a panel page may read before it is shown with what it found, so a
   /// search whose collections are nearly all screened out does not read Steam to its end.
   static let maxSteamPagesPerPage = 10
@@ -622,6 +624,7 @@ final class WorkshopStore {
       steamPages = [:]
       screenedPages = [:]
       pageStarts = [1: .start]
+      pageCounts = [:]
       cacheQuery = query
     }
   }
@@ -670,11 +673,13 @@ final class WorkshopStore {
     var steamCount = 0
     var read = 0
     while let current = position, items.count < Self.pageSize, read < Self.maxSteamPagesPerPage {
+      // A search, refresh or another list replaced this cache: read no more of Steam for it.
+      guard self.cacheID == cacheID, !Task.isCancelled else { throw CancellationError() }
       // The next Steam page is likely needed too; asking for it now overlaps the two fetches.
       if let known = screenedPages.values.first?.totalPages, current.page < min(Self.maxPages, known) {
-        _ = fetchScreenedPage(current.page + 1, query: query)
+        _ = fetchScreenedPage(current.page + 1, query: query, cacheID: cacheID)
       }
-      let steam = try await fetchScreenedPage(current.page, query: query).value
+      let steam = try await fetchScreenedPage(current.page, query: query, cacheID: cacheID).value
       read += 1
       steamPageCount = min(Self.maxPages, max(1, steam.totalPages))
       steamCount = steam.totalCount
@@ -689,10 +694,11 @@ final class WorkshopStore {
     }
     guard self.cacheID == cacheID else { throw CancellationError() }
     if pageStarts[number] == nil { pageStarts[number] = start }
+    pageCounts[number] = items.count
     guard let next = position else {
-      return WorkshopPage(
-        items: items, page: number, totalPages: number,
-        totalCount: (number - 1) * Self.pageSize + items.count)
+      // A page cut short by the read limit holds fewer than 30, so count what each one showed.
+      let before = (1..<number).reduce(0) { $0 + (pageCounts[$1] ?? Self.pageSize) }
+      return WorkshopPage(items: items, page: number, totalPages: number, totalCount: before + items.count)
     }
     if pageStarts[number + 1] == nil { pageStarts[number + 1] = next }
     let steamPagesPerPage = max(1, next.progress / Double(number))
@@ -713,11 +719,12 @@ final class WorkshopStore {
     return SteamPosition(page: min(page, last), offset: 0)
   }
 
-  /// Starts, or joins, the fetch of one screened Steam page of collections for the current cache.
-  private func fetchScreenedPage(_ number: Int, query: WorkshopQuery) -> Task<WorkshopPage, Error> {
+  /// Starts, or joins, the fetch of one screened Steam page of collections for the cache that
+  /// asks, `cacheID`. A cache that was replaced gets nothing, so its query never reaches the new one.
+  private func fetchScreenedPage(_ number: Int, query: WorkshopQuery, cacheID: UUID) -> Task<WorkshopPage, Error> {
+    guard cacheID == self.cacheID else { return Task { throw CancellationError() } }
     if let page = screenedPages[number] { return Task { page } }
     if let task = screenedFetches[number] { return task }
-    let cacheID = cacheID
     let service = service
     let task = Task { [weak self] in
       defer { if let self, self.cacheID == cacheID { self.screenedFetches[number] = nil } }
@@ -774,6 +781,10 @@ final class WorkshopStore {
         // panel offers to sign in instead of leaving another list's tiles behind a Retry.
         if error is SteamSignInRequired {
           steamWebSession = nil
+          clearResults()
+        } else if committedQuery?.source != request.query.source {
+          // Another list failed to open: the tiles on show belong to the list it was to replace,
+          // so they go too, rather than standing in for it and paging that list on Next.
           clearResults()
         }
         errorMessage = error.localizedDescription

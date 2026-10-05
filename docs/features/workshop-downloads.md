@@ -135,12 +135,17 @@ wrapping. An author's wallpapers and a collection's items are opened from a tile
 instead: no tab is current, and the search field gives way to a back button and
 what is on show; back returns to the list, page 1, they were opened from
 (`WorkshopStore.open`, `back` and `sourceHistory`). Choosing a tab starts a new
-history. Only Wallpapers and
+history. A list that fails to open empties the grid rather than leaving the list
+it was to replace on show under its tab, where Next would page that other list;
+its error offers **Try again** for the list that failed. Only Wallpapers and
 Collections are searched and sorted by Steam; the others come in their own order,
 so the panel hides the search field and the sort menu for them. The filter sidebar
 applies everywhere: Steam applies it to the two lists, and `WorkshopService.matching`
 applies the same rules to the other sources' pages, which can therefore show fewer
-than 30 tiles. The sources are `WorkshopSource` in
+than 30 tiles, or none while Steam's count says more exist: such a page says the
+filters hide everything on it and offers the next page. The line above the grid
+links **Open on Steam** to the Steam page listing what is on show
+(`WorkshopStore.browseURL`, the snapshot's `steamURL`). The sources are `WorkshopSource` in
 `App/Services/Workshop/WorkshopSource.swift`.
 
 ### Collections
@@ -169,7 +174,11 @@ each kept collection once, and each Steam page is read once per search. The page
 count and result count are estimates from the rate at which pages so far consumed
 Steam's, and refine while paging. A page jumped to before the one ahead of it was
 shown starts at an estimated Steam page, so it can repeat or skip collections near
-its edges. **Open on Steam** goes to the Steam page the panel page starts on.
+its edges. A page whose read limit runs out before any collection passes is empty
+but offers Next to read on, and once the last page is reached the count adds up what
+each page really showed. A search, refresh or other list ends a fill in progress
+before it reads further, so a superseded query's pages never reach the new one's
+cache. **Open on Steam** goes to the Steam page the panel page starts on.
 
 ### Authors
 
@@ -203,7 +212,7 @@ is emptied (no tiles of the list shown before stay behind), so the panel offers
 
 Signed in, the line above the grid says so, counts the subscriptions, and leads
 with **Download the ones not in your library** as the list's main action beside
-**Sign out of Steam**; an empty list offers **Browse Workshop**.
+**Sign out of Steam**; a list with no subscriptions offers **Browse Workshop**.
 
 **Download the ones not in your library** reads every page of subscriptions (at
 most 1,000 pages of 30), drops what is installed, collections and Application items, and

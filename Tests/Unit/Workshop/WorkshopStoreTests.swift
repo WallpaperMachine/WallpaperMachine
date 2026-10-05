@@ -179,6 +179,34 @@ final class WorkshopStoreTests: XCTestCase {
     XCTAssertEqual(store.tags, [])
   }
 
+  /// A list that fails to open does not leave the list before it on show under its tab, where
+  /// Next would page that other list; Retry still asks for the one that failed.
+  func testFailedSourceSwitchClearsTheListBeforeIt() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let store = fixture.store
+    store.sort = .popular
+    store.search()
+    try await fixture.reply(
+      text: "", kind: .all, sort: .popular, page: 1,
+      body: pageHTML(id: "101", page: 1, pages: 3, count: 65))
+    try await finished(store)
+    assertPage(store, id: "101", page: 1, pages: 3, count: 65)
+
+    store.open(.creator(id: "76561198000000001", name: "Fixture author"))
+    try await Self.waitUntil { fixture.inbox.hasRequest }
+    fixture.inbox.take().fail(URLError(.timedOut))
+    try await finished(store)
+    XCTAssertNotNil(store.errorMessage)
+    XCTAssertFalse(store.hasLoaded)
+    XCTAssertTrue(store.items.isEmpty)
+    XCTAssertEqual(store.totalCount, 0)
+    XCTAssertNil(store.committedQuery)
+    XCTAssertEqual(store.failedRequest?.query.source, .creator(id: "76561198000000001", name: "Fixture author"))
+    store.loadPage(2)
+    XCTAssertFalse(store.isLoading, "nothing is on show to page")
+  }
+
   func testSupersededSuccessCannotPublishOverNewSearch() async throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
