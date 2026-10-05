@@ -155,6 +155,7 @@ final class AppUpdateTests: XCTestCase {
     func testUpdateDownloadNeedsAMatchingSHA256Digest() async throws {
         let path = "/fixture/\(UUID().uuidString)/WallpaperMachine.dmg"
         let body = Data("disk image".utf8)
+        UpdateHTTPProtocol.remove("github.com")
         UpdateHTTPProtocol.register("github.com", routes: [path: .init(status: 200, body: body)])
         defer { UpdateHTTPProtocol.remove("github.com") }
         let configuration = URLSessionConfiguration.ephemeral
@@ -178,6 +179,8 @@ final class AppUpdateTests: XCTestCase {
                 XCTAssertEqual(issue.code, .verification, digest ?? "no digest")
             }
         }
+        // Only the matching and the mismatching digests were worth fetching.
+        XCTAssertEqual(UpdateHTTPProtocol.requests("github.com").count, 2)
     }
 
     func testInstallableLocationsAreApplicationsFolders() {
