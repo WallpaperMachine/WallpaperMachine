@@ -186,6 +186,36 @@ final class PlaylistSchedulerTests: XCTestCase {
         XCTAssertEqual(applied, ["b"], "the timer's own change waits while the display is paused")
     }
 
+    /// Change now asked for while the timer's own change still waits its turn, with the display
+    /// paused meanwhile, is not lost: that change runs as asked for.
+    func testRequestedSkipDuringATimerChangeStillMovesAPausedDisplay() async {
+        store.update("primary") {
+            $0.mode = .rotate
+            $0.source = .list
+            $0.wallpaperIDs = ["a", "b", "c"]
+            $0.interval = 30
+        }
+        var release: CheckedContinuation<Void, Never>?
+        let scheduler = makeScheduler(activate: { display, choose in
+            await withCheckedContinuation { release = $0 }
+            guard let id = choose() else { return nil }
+            self.shown[display] = id
+            self.applied.append(id)
+            return id
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        clock.addTimeInterval(30 * 60)
+        scheduler.evaluate()
+        await settle()
+        XCTAssertNotNil(release, "the timer's change is waiting its turn")
+        running = false
+        XCTAssertTrue(scheduler.skip("primary"))
+        release?.resume()
+        await settle()
+        XCTAssertEqual(applied, ["b"])
+    }
+
     func testNothingPlayableLeavesTheDisplayAsItIs() async {
         store.update("primary") {
             $0.mode = .rotate

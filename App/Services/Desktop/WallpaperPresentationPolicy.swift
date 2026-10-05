@@ -284,6 +284,8 @@ final class WallpaperPresentationPolicy {
         {
             if hidden.contains(displayID) {
                 suspendedDisplayIDs.insert(displayID)
+                // A suspension that never landed is sent again; an acknowledged one stands.
+                if failedDisplays.contains(displayID) { pendingDisplays.insert(displayID) }
             } else {
                 pendingDisplays.insert(displayID)
             }

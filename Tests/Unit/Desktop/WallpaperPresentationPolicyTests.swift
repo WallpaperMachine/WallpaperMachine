@@ -447,6 +447,44 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
         XCTAssertFalse(rendererSuspended, "the display came back visible, so it is resumed")
     }
 
+    /// A failed suspension leaves the renderer running. If the display disconnects before the
+    /// retry and comes back still hidden, the suspension is sent again.
+    func testFailedSuspensionIsRetriedWhenTheDisplayReturnsHidden() {
+        let probe = PolicyProbe()
+        var rendererSuspended = false
+        var failSuspend = true
+        let policy = WallpaperPresentationPolicy(
+            workspaceCenter: workspaceCenter,
+            lockCenter: lockCenter,
+            windowCenter: windowCenter,
+            surfaces: { probe.surfaces },
+            isSessionLocked: { probe.sessionLocked },
+            occlusionSettleDelay: .zero,
+            applyGlobal: { _, completion in completion(.success(())) },
+            applyDisplay: { _, suspended, completion in
+                if suspended, failSuspend {
+                    completion(.failure(NSError(domain: "Renderer", code: 1)))
+                    return
+                }
+                rendererSuspended = suspended
+                completion(.success(()))
+            }
+        )
+        policy.start()
+        defer { policy.stop() }
+        probe.setVisible(false)
+        policy.evaluate()
+        XCTAssertFalse(rendererSuspended, "the suspension failed")
+
+        failSuspend = false
+        let connected = probe.surfaces
+        probe.surfaces = []
+        policy.evaluate()
+        probe.surfaces = connected
+        policy.evaluate()
+        XCTAssertTrue(rendererSuspended, "the display came back hidden, so it is suspended")
+    }
+
     func testFailedResumeRetriesWithUnchangedVisibility() {
         let probe = PolicyProbe()
         var rendererSuspended = false
