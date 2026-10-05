@@ -129,6 +129,7 @@
 		59793324846414B6F5536CD6 /* LockScreenExtensionStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A913E2D0D95E266A50FCBD /* LockScreenExtensionStatus.swift */; };
 		598FDC3D3D9556811A34D293 /* keys.h in Headers */ = {isa = PBXBuildFile; fileRef = 950C6E82A3CFA807985C9A78 /* keys.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		5AF0C610DCB9169597CEA861 /* WebWallpaperMediaRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9F2A78D0B0B6A1C6674A67A /* WebWallpaperMediaRelay.swift */; };
+		5BBF90BD4F7C1FAD8532C121 /* WebPanelExternalLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83EDACAF81EC4C439B3F497A /* WebPanelExternalLinkTests.swift */; };
 		5BC5CE07A629C56B7946C837 /* AppUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCCD62DA86DAE9395CF36A49 /* AppUpdateTests.swift */; };
 		5BC904B626BEB96BFDBD870E /* NativeVideoPlaybackFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA6B2B21F8AAEE83C660623 /* NativeVideoPlaybackFailureTests.swift */; };
 		5C6A6E6EF3E2C8CA67827B67 /* PixivDownloadQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9808C65180583AF3DB662D /* PixivDownloadQueueTests.swift */; };
@@ -566,6 +567,7 @@
 		80826F4A235FD5E6D91FCB26 /* ControlPanelShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelShellTests.swift; sourceTree = "<group>"; };
 		814C095F5C6167C0ED45896A /* WallpaperExtensionBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WallpaperExtensionBridge.h; sourceTree = "<group>"; };
 		81E8900808C3FBFCA975A433 /* NativeVideoAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVideoAdmissionTests.swift; sourceTree = "<group>"; };
+		83EDACAF81EC4C439B3F497A /* WebPanelExternalLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPanelExternalLinkTests.swift; sourceTree = "<group>"; };
 		842D5FE50CAC8B8746522A88 /* WallpaperExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperExtension.swift; sourceTree = "<group>"; };
 		8504195AB3C8302D95265F40 /* WallpaperEnergyRatingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperEnergyRatingsTests.swift; sourceTree = "<group>"; };
 		8526BD3CA32500C06E5B584C /* NativeVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVideoPlayer.swift; sourceTree = "<group>"; };
@@ -1272,6 +1274,7 @@
 				389C4BC71797EBB5B9D5731A /* WebPanelCompatibilityTests.swift */,
 				2085313B1C051B73FA3DE734 /* WebPanelDeliveryStatusTests.swift */,
 				8CE8BE79643355FDEA5F9C5C /* WebPanelEnergyUsageTests.swift */,
+				83EDACAF81EC4C439B3F497A /* WebPanelExternalLinkTests.swift */,
 				CB0B30A6B6F44174942ACC6B /* WebPanelGeneralSettingsTests.swift */,
 				ED9EB61CFDBC9CB93930658B /* WebPanelImagePlacementRaceTests.swift */,
 				8ABD7405B247ED810AFF3E31 /* WebPanelPerformanceSettingsTests.swift */,
@@ -1921,6 +1924,7 @@
 				34899289BE989E6029537261 /* WebPanelCompatibilityTests.swift in Sources */,
 				4B10D6BD656F1D4F920354F1 /* WebPanelDeliveryStatusTests.swift in Sources */,
 				DBA8EADFD19CB7B9CDED12FC /* WebPanelEnergyUsageTests.swift in Sources */,
+				5BBF90BD4F7C1FAD8532C121 /* WebPanelExternalLinkTests.swift in Sources */,
 				09B5F605523E684E9F972B36 /* WebPanelGeneralSettingsTests.swift in Sources */,
 				ADDDE76CBEFFB2BA8A3899DF /* WebPanelImagePlacementRaceTests.swift in Sources */,
 				EB7D1C6C2086E245841B58DF /* WebPanelPerformanceSettingsTests.swift in Sources */,
