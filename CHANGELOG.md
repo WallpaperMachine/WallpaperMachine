@@ -46,6 +46,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - Steam Workshop presets now show the pictures and videos they include instead of a black background, and scene parts such as a day/night switch appear where the wallpaper's settings place them, clipped to their shape
 - Your subscriptions in Discover now shows your subscribed wallpapers after you sign in to Steam, instead of a result count over an empty grid
 - With Native video preferred, video wallpapers keep playing without sound when the Mac's audio output cannot start, instead of switching to Compatibility playback
+- Web wallpapers that load their settings or data from their own files now start instead of staying on their loading screen
 
 ### 简体中文
 
@@ -83,6 +84,7 @@ This release fixes many scene rendering problems, stops the control panel from f
 - Steam Workshop 预设现在会显示其附带的图片和视频，而不是黑色背景；昼夜开关等场景元素也会出现在壁纸设置指定的位置，并按其形状正确裁剪
 - 登录 Steam 后，“发现”中的“我的订阅”现在会显示你订阅的壁纸，而不是只显示结果数量和空白列表
 - 选择“优先原生视频”时，如果 Mac 的音频输出无法启动，视频壁纸现在会继续无声播放，而不是切换到兼容模式播放
+- 从自身文件读取设置或数据的网页壁纸现在可以正常启动，不再停留在加载画面
 
 **Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.3...v1.2.4
 
