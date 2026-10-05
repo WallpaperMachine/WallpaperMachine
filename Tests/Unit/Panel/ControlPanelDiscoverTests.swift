@@ -207,13 +207,20 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
         const signedIn = { text: summary.textContent, primary: Boolean(download && download.classList.contains('primary')),
           signOut: Boolean(summary.querySelector('[data-action="steamWebSignOut"]')),
           browse: Boolean(document.querySelector('#browser-empty [data-action="workshopSource"][data-source="browse"]')) };
+        const downloadEnabled = !download.disabled;
+        show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 0 });
+        const nothingToDownload = summary.querySelector('[data-action="workshopDownloadSubscribed"]').disabled;
+        show({ key: 'browse', searchable: true });
+        tabs()[0].focus();
+        tabs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const arrowed = document.activeElement.dataset.source;
         show({ key: 'creator', id: '76561198000000001', name: 'Fixture Author', canGoBack: true });
         const opened = { current: current(), back: Boolean(document.querySelector('#browser-toolbar [data-action="workshopBack"]')) };
         show({ key: 'browse', searchable: true });
         tabs().find(tab => tab.dataset.source === 'subscriptions').click();
         await new Promise(resolve => setTimeout(resolve, 50));
         const request = sent.find(message => message.action === 'workshopSource');
-        return { labels, oneRow, browsing, signedOut, signedIn, opened, requested: request ? request.source : null };
+        return { labels, oneRow, browsing, signedOut, signedIn, downloadEnabled, nothingToDownload, arrowed, opened, requested: request ? request.source : null };
         """, arguments: [:], in: nil, contentWorld: .page) as? [String: Any]
     XCTAssertEqual(result?["labels"] as? [String], ["Wallpapers", "Collections", "Your subscriptions"])
     XCTAssertEqual(result?["oneRow"] as? Bool, true, "The tabs must fit one row at the window minimum")
@@ -226,6 +233,9 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     XCTAssertEqual(signedIn?["primary"] as? Bool, true, "Downloading what is missing is the list's main action")
     XCTAssertEqual(signedIn?["signOut"] as? Bool, true)
     XCTAssertEqual(signedIn?["browse"] as? Bool, true, "An empty list leads back to browsing")
+    XCTAssertEqual(result?["downloadEnabled"] as? Bool, true)
+    XCTAssertEqual(result?["nothingToDownload"] as? Bool, true, "With no subscriptions there is nothing to download")
+    XCTAssertEqual(result?["arrowed"] as? String, "collections", "Arrow keys move between the list tabs")
     let opened = result?["opened"] as? [String: Any]
     XCTAssertEqual(opened?["current"] as? [String], [], "An opened author is none of the lists")
     XCTAssertEqual(opened?["back"] as? Bool, true)
