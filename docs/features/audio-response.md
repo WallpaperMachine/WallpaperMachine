@@ -22,7 +22,8 @@ Activation errors are reported rather than silently ignored.
 A subscribed web page owns capture independently of renderer scene handles, so
 web-only sessions work and scene cleanup does not stop their audio. Both kinds
 of wallpaper share one capture tap; pause and the saved Audio response setting
-still gate delivery. Enabling media integration alone does not enable audio response.
+still gate delivery. A web page the user paused stops asking for audio, so the
+shared poller stops reading as well until it plays again. Enabling media integration alone does not enable audio response.
 
 ## Permission
 

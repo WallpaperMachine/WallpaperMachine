@@ -97,6 +97,54 @@ final class WebWallpaperPageTests: XCTestCase {
     XCTAssertEqual(page.webView.url?.standardizedFileURL, page.entryURL.standardizedFileURL)
   }
 
+  /// A navigation the policy refuses, or a load another load replaces, leaves the page on show:
+  /// the wallpaper is neither reported failed nor forgotten as unloaded.
+  func testRefusedOrReplacedNavigationDoesNotFailTheWallpaper() async throws {
+    try """
+      <!doctype html><html><body><a id="away" href="other.html">away</a><script>
+      setTimeout(() => { location.href = "https://example.invalid/"; }, 150);
+      setTimeout(() => { document.getElementById("away").click(); }, 250);
+      </script></body></html>
+      """.write(to: project.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+    try "<!doctype html><p>other</p>".write(
+      to: project.appendingPathComponent("other.html"), atomically: true, encoding: .utf8)
+    let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
+    var failures: [String] = []
+    page.onFailure = { failures.append($0) }
+    // The second load replaces the first while it is still provisional.
+    page.load()
+    try await Task.sleep(for: .milliseconds(3))
+    page.load()
+    let deadline = Date().addingTimeInterval(10)
+    while !page.isLoaded && Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertTrue(page.isLoaded)
+    try await Task.sleep(for: .milliseconds(600))
+    XCTAssertEqual(failures, [])
+    XCTAssertTrue(page.isLoaded)
+    XCTAssertEqual(page.webView.url?.standardizedFileURL, page.entryURL.standardizedFileURL)
+  }
+
+  /// Hash routing changes only the fragment, which keeps the page on its entry file.
+  func testHashRoutingStaysOnTheEntryPage() async throws {
+    try """
+      <!doctype html><html><body><script>
+      setTimeout(() => { location.hash = "#route"; }, 100);
+      </script></body></html>
+      """.write(to: project.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+    let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
+    var failures: [String] = []
+    page.onFailure = { failures.append($0) }
+    page.load()
+    let deadline = Date().addingTimeInterval(10)
+    while !page.isLoaded && Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+    try await Task.sleep(for: .milliseconds(400))
+    let hash = try await page.webView.callAsyncJavaScript(
+      "return location.hash", arguments: [:], in: nil, contentWorld: .page) as? String
+    XCTAssertEqual(hash, "#route")
+    XCTAssertEqual(failures, [])
+    XCTAssertTrue(page.isLoaded)
+  }
+
   /// WebKit answers a `file://` fetch with status 0 and no headers; Wallpaper
   /// Engine's Chromium host answers 200 with a type from the extension. WebGL
   /// exports (Unity, Emscripten) check `ok` and stream `.wasm` files, so without
