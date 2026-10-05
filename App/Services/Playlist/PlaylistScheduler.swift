@@ -32,6 +32,9 @@ final class PlaylistScheduler {
     private var timer: Task<Void, Never>?
     private var armedFor: Date?
     private var inFlight = Set<String>()
+    /// Displays someone asked to move along while the timer's own change was waiting its turn:
+    /// that change then runs as asked for, even if the display paused meanwhile.
+    private var requestedWhileInFlight = Set<String>()
     /// The day or night period each display was last brought into line with, and the playlist
     /// it was brought into line under: a wallpaper the user applies by hand stays until the next
     /// period, and choosing a different day or night wallpaper applies at once.
@@ -154,7 +157,11 @@ final class PlaylistScheduler {
     func skip(_ display: String) -> Bool {
         let playlist = store.playlist(for: display)
         guard playlist.mode == .rotate, displays().contains(display) else { return false }
-        if !inFlight.contains(display) { rotate(display, playlist: playlist, requested: true) }
+        if inFlight.contains(display) {
+            requestedWhileInFlight.insert(display)
+        } else {
+            rotate(display, playlist: playlist, requested: true)
+        }
         return true
     }
 
@@ -166,6 +173,7 @@ final class PlaylistScheduler {
             var attempted = false
             defer {
                 inFlight.remove(display)
+                requestedWhileInFlight.remove(display)
                 if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
                     store.schedule(display, at: now().addingTimeInterval(Self.seconds(playlist.interval)))
                 } else {
@@ -176,7 +184,9 @@ final class PlaylistScheduler {
             do {
                 let applied = try await activate(display) { [self] in
                     guard (store.revisions[display] ?? 0) == revision,
-                        displays().contains(display), requested || isRunning(display) else { return nil }
+                        displays().contains(display),
+                        requested || requestedWhileInFlight.contains(display) || isRunning(display)
+                    else { return nil }
                     attempted = true
                     // Resolve membership when the command runs, not when its timer fired.
                     let latest = store.playlist(for: display)
@@ -208,6 +218,7 @@ final class PlaylistScheduler {
             var attempted = false
             defer {
                 inFlight.remove(display)
+                requestedWhileInFlight.remove(display)
                 if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
                     settledPeriods[display] = (period, revision)
                 }
