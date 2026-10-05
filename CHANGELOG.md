@@ -43,10 +43,6 @@ This release fixes many scene rendering problems, stops the control panel from f
 - Imports keep running when you cancel quitting the app
 - Cancelled pixiv downloads no longer come back as paused after a crash
 - Opening Your subscriptions in Discover without a Steam sign-in now offers Sign in to Steam instead of an old list with a Retry button that could never succeed
-- Steam Workshop presets now show the pictures and videos they include instead of a black background, and scene parts such as a day/night switch appear where the wallpaper's settings place them, clipped to their shape
-- Your subscriptions in Discover now shows your subscribed wallpapers after you sign in to Steam, instead of a result count over an empty grid
-- With Native video preferred, video wallpapers keep playing without sound when the Mac's audio output cannot start, instead of switching to Compatibility playback
-- Web wallpapers that load their settings or data from their own files now start instead of staying on their loading screen
 
 ### 简体中文
 
@@ -81,10 +77,6 @@ This release fixes many scene rendering problems, stops the control panel from f
 - 取消退出应用时，导入会继续进行
 - 已取消的 pixiv 下载在崩溃后不再以暂停状态重新出现
 - 未登录 Steam 时在“发现”中打开“我的订阅”，现在会提供“登录 Steam”，而不是显示旧列表和一个永远无法成功的“重试”按钮
-- Steam Workshop 预设现在会显示其附带的图片和视频，而不是黑色背景；昼夜开关等场景元素也会出现在壁纸设置指定的位置，并按其形状正确裁剪
-- 登录 Steam 后，“发现”中的“我的订阅”现在会显示你订阅的壁纸，而不是只显示结果数量和空白列表
-- 选择“优先原生视频”时，如果 Mac 的音频输出无法启动，视频壁纸现在会继续无声播放，而不是切换到兼容模式播放
-- 从自身文件读取设置或数据的网页壁纸现在可以正常启动，不再停留在加载画面
 
 **Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.3...v1.2.4
 
