@@ -718,6 +718,37 @@ final class DesktopWallpaperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([2]))
     }
 
+    /// Two windows on a display both answer a poster request; the newer frame wins even when the
+    /// older one takes longer to encode.
+    @MainActor
+    func testTheNewerFrameWinsWhateverOrderTheEncodesFinishIn() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one")]
+        let center = NotificationCenter(), outgoing = CAMetalLayer(), incoming = CAMetalLayer()
+        let encoder = ControlledPosterEncoder()
+        let sync = try DesktopWallpaperSync(
+            folder: root, workspace: workspace,
+            surfaces: {
+                [DesktopPosterSurface(layer: outgoing, display: "1"), DesktopPosterSurface(layer: incoming, display: "1")]
+            }, frameCenter: center, encode: { await encoder.encode($0) })
+        sync.start()
+        defer { sync.stop() }
+        let old = Data([1]), new = Data([2])
+        post(old, layer: outgoing, center: center)
+        try await waitFor(encoder, data: old)
+        post(new, layer: incoming, center: center)
+        try await waitFor(encoder, data: new)
+        let installed = expectation(description: "The newer poster is installed")
+        workspace.didWrite = { installed.fulfill() }
+        await encoder.finish(new)
+        await fulfillment(of: [installed], timeout: 2)
+        workspace.didWrite = nil
+        await encoder.finish(old)
+        for _ in 0..<20 { await Task.yield() }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), new)
+    }
+
     @MainActor
     func testDelayedOldLayerFrameCannotOverwriteNewWallpaper() async throws {
         let workspace = MemoryDesktopWorkspace()
