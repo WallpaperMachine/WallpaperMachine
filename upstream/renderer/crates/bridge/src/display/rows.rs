@@ -81,6 +81,8 @@ impl AppConfig {
 
     pub fn sync_known_monitors(&mut self, displays: &[DisplaySnapshotEntry]) -> bool {
         let before = self.monitors.clone();
+        let settings_before = self.monitor_settings.clone();
+        self.merge_display_aliases(displays);
         let mut primary = self
             .monitor_index(&SerializedSelector::Primary)
             .map_or_else(
@@ -163,7 +165,84 @@ impl AppConfig {
             }
         }
 
-        self.monitors != before
+        self.monitors != before || self.monitor_settings != settings_before
+    }
+
+    /// macOS renumbers displays and renames identical models ("Name (1)",
+    /// "Name (2)") across reboots and reconnects, so a connected display's
+    /// selector changes while the display does not. Blocks are looked up by
+    /// exact selector, so each change used to append a block and leave the
+    /// old one behind, still holding a wallpaper that could win for that
+    /// display. Each display now keeps one block, renamed to its current
+    /// selector: the first one, which is the block the renderer was showing.
+    /// Its settings entry and mirror references follow the rename.
+    fn merge_display_aliases(&mut self, displays: &[DisplaySnapshotEntry]) {
+        let primary = displays.first();
+        for (index, display) in displays.iter().enumerate() {
+            if index > 0 && primary.is_some_and(|primary| display.matches_primary(primary)) {
+                continue;
+            }
+            let Some(current) = display.stable_identity_selector() else {
+                continue;
+            };
+            let names_display = |selector: &SerializedSelector| {
+                matches!(
+                    selector.to_selector(),
+                    DisplaySelector::Identity(identity)
+                        if identity.has_stable_match(&display.identity)
+                )
+            };
+
+            if let Some(keep) = self
+                .monitors
+                .iter()
+                .position(|monitor| names_display(&monitor.selector))
+            {
+                collapse_aliases(
+                    &mut self.monitors,
+                    keep,
+                    &current,
+                    |monitor| &mut monitor.selector,
+                    names_display,
+                );
+            }
+            // The settings panel edits the entry under the current selector.
+            if let Some(keep) = self
+                .monitor_settings
+                .iter()
+                .position(|settings| settings.selector == current)
+                .or_else(|| {
+                    self.monitor_settings
+                        .iter()
+                        .position(|settings| names_display(&settings.selector))
+                })
+            {
+                collapse_aliases(
+                    &mut self.monitor_settings,
+                    keep,
+                    &current,
+                    |settings| &mut settings.selector,
+                    names_display,
+                );
+            }
+            for target in self
+                .monitors
+                .iter_mut()
+                .filter_map(|monitor| monitor.mirror_target.as_mut())
+                .filter(|target| names_display(target))
+            {
+                target.clone_from(&current);
+            }
+        }
+
+        // A disconnected display cannot be renamed yet, but it still keeps
+        // only its first block.
+        let mut seen = Vec::new();
+        self.monitors
+            .retain(|monitor| first_for_identity(&monitor.selector, &mut seen));
+        seen.clear();
+        self.monitor_settings
+            .retain(|settings| first_for_identity(&settings.selector, &mut seen));
     }
 
     pub fn ensure_monitor(&mut self, selector: SerializedSelector) -> &mut MonitorCfg {
@@ -191,6 +270,46 @@ impl AppConfig {
             .find(|monitor| monitor.selector == SerializedSelector::Primary)
             .and_then(|monitor| monitor.wallpaper.as_deref())
     }
+}
+
+/// Renames the entry at `keep` to `current` and drops every other entry whose
+/// selector `names_display` matches.
+fn collapse_aliases<T>(
+    entries: &mut Vec<T>,
+    keep: usize,
+    current: &SerializedSelector,
+    selector: impl Fn(&mut T) -> &mut SerializedSelector,
+    names_display: impl Fn(&SerializedSelector) -> bool,
+) {
+    let mut index = 0;
+    entries.retain_mut(|entry| {
+        let selector = selector(entry);
+        let retained = if index == keep {
+            selector.clone_from(current);
+            true
+        } else {
+            !names_display(selector)
+        };
+        index += 1;
+        retained
+    });
+}
+
+/// False for an identity selector naming the same display as one already in
+/// `seen` by UUID or serial; any other selector passes and identities are
+/// recorded.
+fn first_for_identity(selector: &SerializedSelector, seen: &mut Vec<DisplayIdentity>) -> bool {
+    let DisplaySelector::Identity(identity) = selector.to_selector() else {
+        return true;
+    };
+    if seen
+        .iter()
+        .any(|earlier| earlier.has_stable_match(&identity))
+    {
+        return false;
+    }
+    seen.push(identity);
+    true
 }
 
 impl SerializedSelector {
@@ -294,31 +413,7 @@ impl DisplayIdentityExt for DisplayIdentity {
     }
 
     fn same_physical_identity(&self, other: &Self) -> bool {
-        if let (Some(left_uuid), Some(right_uuid)) = (self.uuid.as_deref(), other.uuid.as_deref()) {
-            return !left_uuid.is_empty() && left_uuid == right_uuid;
-        }
-
-        if self.vendor_id.is_some()
-            && self.model_id.is_some()
-            && self.serial_number.is_some()
-            && self.vendor_id == other.vendor_id
-            && self.model_id == other.model_id
-            && self.serial_number == other.serial_number
-        {
-            return true;
-        }
-
-        if self.vendor_id.is_some()
-            && self.model_id.is_some()
-            && self.unit_number.is_some()
-            && self.vendor_id == other.vendor_id
-            && self.model_id == other.model_id
-            && self.unit_number == other.unit_number
-        {
-            return true;
-        }
-
-        false
+        self.match_score(other).is_some()
     }
 }
 

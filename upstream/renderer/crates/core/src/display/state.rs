@@ -294,33 +294,12 @@ impl DisplayStateModel {
         connected.push((primary_key, primary));
 
         for display in displays {
-            let primary_identity = &primary_for_dedupe.identity;
-            let display_identity = &display.identity;
-            let same_physical_identity = !primary_identity.is_empty()
-                && !display_identity.is_empty()
-                && if let (Some(left_uuid), Some(right_uuid)) = (
-                    primary_identity.uuid.as_deref(),
-                    display_identity.uuid.as_deref(),
-                ) {
-                    !left_uuid.is_empty() && left_uuid == right_uuid
-                } else if primary_identity.vendor_id.is_some()
-                    && primary_identity.model_id.is_some()
-                    && primary_identity.serial_number.is_some()
-                    && primary_identity.vendor_id == display_identity.vendor_id
-                    && primary_identity.model_id == display_identity.model_id
-                    && primary_identity.serial_number == display_identity.serial_number
-                {
-                    true
-                } else {
-                    primary_identity.vendor_id.is_some()
-                        && primary_identity.model_id.is_some()
-                        && primary_identity.unit_number.is_some()
-                        && primary_identity.vendor_id == display_identity.vendor_id
-                        && primary_identity.model_id == display_identity.model_id
-                        && primary_identity.unit_number == display_identity.unit_number
-                };
-
-            if display.display_id == primary_id || same_physical_identity {
+            if display.display_id == primary_id
+                || primary_for_dedupe
+                    .identity
+                    .match_score(&display.identity)
+                    .is_some()
+            {
                 continue;
             }
             let key = self.key_for_connected_display(primary_id, &display)?;

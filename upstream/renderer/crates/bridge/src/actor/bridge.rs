@@ -1684,12 +1684,16 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
                 BridgeError::invalid_input(format!("invalid display identity selector: {error}"))
             })?;
             let selector = SerializedSelector::from_selector(&DisplaySelector::Identity(identity));
-            if displays.is_empty()
-                || displays
-                    .iter()
-                    .any(|display| selector.to_selector().matches_display(display))
-            {
+            if displays.is_empty() {
                 return Ok(selector);
+            }
+            // The panel's id can predate a renumbering; edits belong to the
+            // block saved under the display's current selector.
+            if let Some(display) = displays
+                .iter()
+                .find(|display| selector.to_selector().matches_display(display))
+            {
+                return Ok(display.connected_selector());
             }
             return Err(BridgeError::invalid_input(format!(
                 "unknown display id {display_id}"

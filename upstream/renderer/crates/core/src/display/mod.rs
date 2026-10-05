@@ -63,30 +63,42 @@ impl DisplayIdentity {
         }
     }
 
+    /// How strongly `self` names the same physical display as `other`, or
+    /// `None` when it names a different one: 4 for the UUID, 3 for vendor,
+    /// model and serial, 2 for vendor, model and unit number.
+    ///
+    /// A key both sides carry decides on its own instead of falling through
+    /// to a weaker one. macOS renumbers displays across reboots and
+    /// reconnects, so two monitors of the same model regularly trade unit
+    /// numbers; a unit match must never pair displays whose UUIDs or serials
+    /// say they differ.
     #[must_use]
     pub fn match_score(&self, other: &Self) -> Option<u8> {
-        if self.uuid.is_some() && self.uuid == other.uuid {
-            return Some(4);
+        if let (Some(left), Some(right)) = (
+            self.uuid.as_deref().filter(|uuid| !uuid.is_empty()),
+            other.uuid.as_deref().filter(|uuid| !uuid.is_empty()),
+        ) {
+            return (left == right).then_some(4);
         }
-        if self.vendor_id.is_some()
-            && self.model_id.is_some()
-            && self.serial_number.is_some()
-            && self.vendor_id == other.vendor_id
-            && self.model_id == other.model_id
-            && self.serial_number == other.serial_number
+        if self.vendor_id.is_none()
+            || self.model_id.is_none()
+            || self.vendor_id != other.vendor_id
+            || self.model_id != other.model_id
         {
-            return Some(3);
+            return None;
         }
-        if self.vendor_id.is_some()
-            && self.model_id.is_some()
-            && self.unit_number.is_some()
-            && self.vendor_id == other.vendor_id
-            && self.model_id == other.model_id
-            && self.unit_number == other.unit_number
-        {
-            return Some(2);
+        if let (Some(left), Some(right)) = (self.serial_number, other.serial_number) {
+            return (left == right).then_some(3);
         }
-        None
+        (self.unit_number.is_some() && self.unit_number == other.unit_number).then_some(2)
+    }
+
+    /// Whether both identities name the same display by a key that survives
+    /// reconnects: the UUID, or vendor, model and serial. Unit numbers alone
+    /// do not qualify.
+    #[must_use]
+    pub fn has_stable_match(&self, other: &Self) -> bool {
+        self.match_score(other).is_some_and(|score| score >= 3)
     }
 }
 
@@ -208,37 +220,7 @@ impl DisplayDesc {
 
     #[must_use]
     pub fn is_same_physical_display_as(&self, other: &DisplayDesc) -> bool {
-        if self.display_id == other.display_id {
-            return true;
-        }
-
-        let left = &self.identity;
-        let right = &other.identity;
-        if let (Some(left_uuid), Some(right_uuid)) = (left.uuid.as_deref(), right.uuid.as_deref())
-            && !left_uuid.is_empty()
-            && left_uuid == right_uuid
-        {
-            return true;
-        }
-
-        if left.vendor_id.is_some()
-            && left.model_id.is_some()
-            && left.serial_number.is_some()
-            && left.vendor_id == right.vendor_id
-            && left.model_id == right.model_id
-            && left.serial_number == right.serial_number
-        {
-            return true;
-        }
-
-        left.uuid.is_none()
-            && right.uuid.is_none()
-            && left.vendor_id.is_some()
-            && left.model_id.is_some()
-            && left.unit_number.is_some()
-            && left.vendor_id == right.vendor_id
-            && left.model_id == right.model_id
-            && left.unit_number == right.unit_number
+        self.display_id == other.display_id || self.identity.match_score(&other.identity).is_some()
     }
 
     /// Builds a `CAMetalLayer` matching this display's geometry and the
@@ -739,6 +721,77 @@ mod tests {
         };
 
         assert_eq!(left.match_score(&right), None);
+    }
+
+    /// Two monitors of the same model trade unit numbers when macOS
+    /// renumbers displays; their UUIDs and serials still tell them apart.
+    #[test]
+    fn identical_models_sharing_a_unit_number_do_not_match() {
+        let left = DisplayIdentity {
+            uuid: Some("LEFT".to_string()),
+            vendor_id: Some(16652),
+            model_id: Some(50182),
+            serial_number: Some(1),
+            unit_number: Some(3),
+            name: Some("27M2N3200NF (1)".to_string()),
+        };
+        let right = DisplayIdentity {
+            uuid: Some("RIGHT".to_string()),
+            serial_number: Some(2),
+            name: Some("27M2N3200NF (2)".to_string()),
+            ..left.clone()
+        };
+        let without_uuids = |identity: &DisplayIdentity| DisplayIdentity {
+            uuid: None,
+            ..identity.clone()
+        };
+        let without_serials = |identity: &DisplayIdentity| DisplayIdentity {
+            serial_number: None,
+            ..identity.clone()
+        };
+
+        assert_eq!(left.match_score(&right), None);
+        assert_eq!(
+            without_uuids(&left).match_score(&without_uuids(&right)),
+            None
+        );
+        assert_eq!(
+            without_serials(&left).match_score(&without_serials(&right)),
+            None
+        );
+        assert!(
+            !DisplayDesc::with_identity(4, left.clone(), 0, 0, 3840, 2160, 2.0)
+                .is_same_physical_display_as(&DisplayDesc::with_identity(
+                    5, right, 0, 0, 3840, 2160, 2.0
+                ))
+        );
+
+        let renumbered = DisplayIdentity {
+            unit_number: Some(4),
+            name: Some("27M2N3200NF (2)".to_string()),
+            ..left.clone()
+        };
+        assert_eq!(left.match_score(&renumbered), Some(4));
+        assert!(left.has_stable_match(&renumbered));
+        assert_eq!(
+            without_uuids(&left).match_score(&without_uuids(&renumbered)),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn a_unit_number_match_is_not_stable() {
+        let left = DisplayIdentity {
+            uuid: None,
+            vendor_id: Some(1),
+            model_id: Some(2),
+            serial_number: None,
+            unit_number: Some(7),
+            name: None,
+        };
+
+        assert_eq!(left.match_score(&left), Some(2));
+        assert!(!left.has_stable_match(&left));
     }
 
     #[test]

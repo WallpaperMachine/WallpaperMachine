@@ -4,6 +4,7 @@ mod apply_options;
 mod bridge_intents;
 mod display_presentation;
 mod renderer_counters;
+mod display_identity;
 mod display_validation;
 mod file_properties;
 mod filter_snapshot;

@@ -280,6 +280,15 @@ and `BUILD_TESTS` off and `RUST_SHADER_FFI` on, and emits the
 static link flags. Open Wallpaper Engine stays a statically linked renderer backend: its Rust
 wrapper module (`core/src/owe/`) must not own scene registries or display maps.
 
+Per-display configuration (`[[monitors]]` and `[[monitor_settings]]` in `config.toml`) is keyed
+by a selector: the primary display, a live display id, or an identity (UUID, vendor, model,
+serial, unit number, name). `DisplayIdentity::match_score` in core is the one rule for whether an
+identity names a display. A UUID both sides carry decides on its own, then vendor, model and
+serial; the unit number is a last resort that never overrides a UUID or serial that disagrees.
+macOS renumbers displays and renames identical models ("Name (1)", "Name (2)") across reboots and
+reconnects, so display sync (`AppConfig::sync_known_monitors`) keeps one block per display,
+renamed to its current selector, and settings entries and mirror targets follow.
+
 Pointer polling follows committed native scene capability, not a manifest or a
 first-frame notification. Pure video projects publish no pointer consumer;
 ordinary and not-yet-committed scenes remain conservative, and a paused scene
