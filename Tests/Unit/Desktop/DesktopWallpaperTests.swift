@@ -690,6 +690,34 @@ final class DesktopWallpaperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([1]))
     }
 
+    /// While one wallpaper window replaces another, a display lists both for a moment. The one
+    /// without a poster yet must not take away the other's, and the newer poster then wins.
+    @MainActor
+    func testTwoWindowsOnADisplayInstallTheNewerPosterAndNeverNone() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one")]
+        let center = NotificationCenter(), outgoing = CAMetalLayer(), incoming = CAMetalLayer()
+        // The window that has no poster yet is listed last, as the window order may have it.
+        let sync = try DesktopWallpaperSync(
+            folder: root, workspace: workspace,
+            surfaces: {
+                [DesktopPosterSurface(layer: outgoing, display: "1"), DesktopPosterSurface(layer: incoming, display: "1")]
+            }, frameCenter: center, encode: { $0.pixels })
+        sync.start()
+        defer { sync.stop() }
+        let first = expectation(description: "The ready poster is installed")
+        workspace.didWrite = { first.fulfill() }
+        post(Data([1]), layer: outgoing, center: center)
+        await fulfillment(of: [first], timeout: 2)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([1]))
+        let second = expectation(description: "The newer poster replaces it")
+        workspace.didWrite = { second.fulfill() }
+        post(Data([2]), layer: incoming, center: center)
+        await fulfillment(of: [second], timeout: 2)
+        workspace.didWrite = nil
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([2]))
+    }
+
     @MainActor
     func testDelayedOldLayerFrameCannotOverwriteNewWallpaper() async throws {
         let workspace = MemoryDesktopWorkspace()
