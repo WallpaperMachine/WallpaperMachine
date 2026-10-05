@@ -147,17 +147,19 @@ final class PlaylistScheduler {
     }
 
     /// Changes `display` to its playlist's next wallpaper now, whatever the timer says, and
-    /// starts a fresh interval. Returns false when the display does not rotate, so the caller
-    /// can fall back to the library order.
+    /// starts a fresh interval. Someone asked for it, so it happens while the display is paused
+    /// or covered too, and a change already under way counts as the answer. Returns false when
+    /// the display does not rotate, so the caller can fall back to the library order.
     @discardableResult
     func skip(_ display: String) -> Bool {
         let playlist = store.playlist(for: display)
-        guard playlist.mode == .rotate, !inFlight.contains(display), displays().contains(display), isRunning(display) else { return false }
-        rotate(display, playlist: playlist)
+        guard playlist.mode == .rotate, displays().contains(display) else { return false }
+        if !inFlight.contains(display) { rotate(display, playlist: playlist, requested: true) }
         return true
     }
 
-    private func rotate(_ display: String, playlist: DisplayPlaylist) {
+    /// A change the timer brings waits while the display cannot play; a `requested` one does not.
+    private func rotate(_ display: String, playlist: DisplayPlaylist, requested: Bool = false) {
         let revision = store.revisions[display] ?? 0
         inFlight.insert(display)
         Task {
@@ -174,7 +176,7 @@ final class PlaylistScheduler {
             do {
                 let applied = try await activate(display) { [self] in
                     guard (store.revisions[display] ?? 0) == revision,
-                        displays().contains(display), isRunning(display) else { return nil }
+                        displays().contains(display), requested || isRunning(display) else { return nil }
                     attempted = true
                     // Resolve membership when the command runs, not when its timer fired.
                     let latest = store.playlist(for: display)

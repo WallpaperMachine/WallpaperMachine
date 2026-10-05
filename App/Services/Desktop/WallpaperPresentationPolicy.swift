@@ -79,6 +79,9 @@ final class WallpaperPresentationPolicy {
     /// Displays whose decision still has to reach the renderer, including one
     /// whose delivery failed; a later evaluation retries it.
     private var pendingDisplays: Set<UInt32> = []
+    /// Displays whose last delivery failed, so the renderer's state for them is unknown. Kept
+    /// across a disconnect, as an acknowledged suspension is.
+    private var failedDisplays: Set<UInt32> = []
     private var deliveryInFlight = false
     /// Conditions under which no display at all can present, and how hard.
     private(set) var globalPresentation: GlobalPresentation = .running
@@ -276,7 +279,7 @@ final class WallpaperPresentationPolicy {
         // resumed; when it returns hidden it is still suspended and stays so.
         pendingDisplays.formIntersection(known)
         suspendedDisplayIDs.formIntersection(known)
-        for displayID in known where appliedDisplays[displayID] == true
+        for displayID in known where (appliedDisplays[displayID] == true || failedDisplays.contains(displayID))
             && !suspendedDisplayIDs.contains(displayID)
         {
             if hidden.contains(displayID) {
@@ -424,9 +427,11 @@ final class WallpaperPresentationPolicy {
                     // Leave it pending. Retrying here would spin on a renderer
                     // that keeps rejecting the transition.
                     appliedDisplays[displayID] = nil
+                    failedDisplays.insert(displayID)
                     return
                 }
                 appliedDisplays[displayID] = target
+                failedDisplays.remove(displayID)
                 record(target, for: RuntimeSurfaceKey(kind: .desktopScene, displayID: displayID))
                 // The decision may have changed while this one was in flight,
                 // in which case the display stays pending and is sent again.
