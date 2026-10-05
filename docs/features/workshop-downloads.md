@@ -160,6 +160,17 @@ own list of each collection's children, and one details request covers the whole
 page. A collection inside a collection is dropped for the same reason, as nothing
 vouches for what it holds. Ticking both ratings shows every collection unsampled.
 
+Screening often drops most of a Steam page (two thirds of the popular ones under
+the default Everyone-only rating), so while it is on, a panel page is not one
+Steam page: `WorkshopStore.filledPage` fills it to 30 from as many screened Steam
+pages as it takes (at most `maxSteamPagesPerPage`), on from where the previous
+panel page stopped, and fetches the next Steam page alongside. Next and Back show
+each kept collection once, and each Steam page is read once per search. The page
+count and result count are estimates from the rate at which pages so far consumed
+Steam's, and refine while paging. A page jumped to before the one ahead of it was
+shown starts at an estimated Steam page, so it can repeat or skip collections near
+its edges. **Open on Steam** goes to the Steam page the panel page starts on.
+
 ### Authors
 
 A Discover tile's details offer **More by this author** when Steam named the
