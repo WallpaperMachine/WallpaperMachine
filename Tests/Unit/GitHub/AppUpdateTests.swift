@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import WallpaperMachine
 
@@ -147,6 +148,36 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(GitHubReleaseDownload.isAllowed(URL(string: "https://evil.example/file")!))
         XCTAssertEqual(GitHubReleaseDownload.parseSHA256Hex("SHA256:" + String(repeating: "AA", count: 32)), String(repeating: "aa", count: 32))
         XCTAssertNil(GitHubReleaseDownload.parseSHA256Hex("sha256:deadbeef"))
+    }
+
+    /// A disk image is kept only when its SHA-256 matches the digest the manifest or GitHub gave;
+    /// one that comes without a usable digest cannot be verified, so it is refused too.
+    func testUpdateDownloadNeedsAMatchingSHA256Digest() async throws {
+        let path = "/fixture/\(UUID().uuidString)/WallpaperMachine.dmg"
+        let body = Data("disk image".utf8)
+        UpdateHTTPProtocol.register("github.com", routes: [path: .init(status: 200, body: body)])
+        defer { UpdateHTTPProtocol.remove("github.com") }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UpdateHTTPProtocol.self]
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mwe-update-digest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func download(digest: String?) async throws {
+            try await GitHubReleaseDownload(
+                source: URL(string: "https://github.com\(path)")!, destination: folder.appendingPathComponent(UUID().uuidString),
+                expectedSize: Int64(body.count), digest: digest, configuration: configuration, progress: { _, _, _ in }
+            ).start()
+        }
+        let hash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+        try await download(digest: "sha256:" + hash)
+        for digest in [nil, "sha512:" + hash, "sha256:" + String(repeating: "0", count: 64)] {
+            do {
+                try await download(digest: digest)
+                XCTFail("\(digest ?? "no digest") must not pass")
+            } catch let issue as AppUpdateIssue {
+                XCTAssertEqual(issue.code, .verification, digest ?? "no digest")
+            }
+        }
     }
 
     func testInstallableLocationsAreApplicationsFolders() {
