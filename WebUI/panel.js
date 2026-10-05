@@ -169,7 +169,8 @@ async function send(action, args = {}) {
   const key = actionKey(action, args);
   if (pending.has(key)) {
     if (['property', 'wallpaperSetting', 'displayConfig', 'workshopSearch', 'pixivSearch', 'navigate', 'target'].includes(action)) {
-      await inFlight.get(key);
+      // The earlier request reported its own failure; this newer value is still sent.
+      await inFlight.get(key)?.catch(() => {});
       return send(action, args);
     }
     return state;
@@ -250,7 +251,7 @@ function render() {
   const settings = state.page === 'settings';
   const pixivPage = state.page === 'pixiv';
   if (!discover) retireLivePreviews(new Set());
-  document.querySelectorAll('.tabs [data-page]').forEach(tab => { if (tab.dataset.page === state.page) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); tab.disabled = busy('navigate', { page: tab.dataset.page }); });
+  document.querySelectorAll('.tabs [data-page]').forEach(tab => { if (tab.dataset.page === state.page) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current'); });
   document.documentElement.style.setProperty('--window-controls-inset', `${Math.max(0, Number(state.windowControlsInset) || 0)}px`);
   morph($('app-identity'), `<span class="app-brand-mark">${icon('wallpaperMachine', 22)}</span><span class="app-title"><span class="app-name">WallpaperMachine</span></span>`);
   morph($('top-actions'), `<label class="sr-only" for="target-display">${escapeHTML(t('Target display'))}</label><select id="target-display" data-change="target" aria-label="${escapeHTML(t('Target display'))}"${disabled(state.busy)}>${(state.displays || []).map(display => `<option value="${escapeHTML(display.id)}"${display.id === state.targetDisplayID ? ' selected' : ''}${disabled(!display.enabled || display.mode === 'mirror')}>${escapeHTML(display.title)}${display.mode === 'mirror' ? escapeHTML(t(' (mirrored)')) : !display.enabled ? escapeHTML(t(' (disabled)')) : ''}</option>`).join('')}</select>${queueButton()}`);
@@ -287,7 +288,7 @@ const filterCountPill = (count) => count ? `<span class="filter-count" title="${
 // leads the toolbar so it sits right beside the sidebar it controls.
 function filterButton(count) {
   const open = !filtersCollapsed();
-  return `<button type="button" data-action="toggleFilters" class="filter-button" aria-expanded="${open}" aria-controls="filter-sidebar" title="${escapeHTML(open ? t('Hide filters') : t('Show filters'))}"${disabled(busy('toggleFilters'))}>${icon('filter')}<span class="button-label">${escapeHTML(t('Filter'))}</span>${filterCountPill(count)}</button>`;
+  return `<button type="button" data-action="toggleFilters" class="filter-button" aria-expanded="${open}" aria-controls="filter-sidebar" title="${escapeHTML(open ? t('Hide filters') : t('Show filters'))}"${disabled(busy('filters'))}>${icon('filter')}<span class="button-label">${escapeHTML(t('Filter'))}</span>${filterCountPill(count)}</button>`;
 }
 // Discover's source: one of Steam's lists, chosen from tabs above the toolbar so each reads as a
 // place to go (subscriptions went unnoticed as the last entry of a menu), or the author or

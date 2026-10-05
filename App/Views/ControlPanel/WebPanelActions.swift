@@ -1227,7 +1227,7 @@ extension WebPanelController {
       return false
     }
     return [
-      "steamcommunity.com", "store.steampowered.com", "github.com", "www.gnu.org",
+      "steamcommunity.com", "store.steampowered.com", "help.steampowered.com", "github.com", "www.gnu.org",
       "support.apple.com", "space.bilibili.com", "www.bilibili.com", "www.pixiv.net",
     ].contains(url.host ?? "")
   }

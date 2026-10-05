@@ -1166,6 +1166,34 @@ final class ControlPanelShellTests: ControlPanelTestCase {
     }
   }
 
+  /// A request queued behind one that fails is still sent: the newer value is what the user
+  /// chose last. The other tabs also stay clickable while a page is opening.
+  func testQueuedRequestIsSentAfterTheOneBeforeItFails() async throws {
+    try await withPanel { panel in
+      try await panel.finishWelcome()
+      XCTAssertNotEqual(panel.navigation.selection, .settings)
+      let queued = try await panel.js("""
+        const bridge = window.webkit.messageHandlers.native;
+        const original = bridge.postMessage.bind(bridge);
+        let first = true;
+        bridge.postMessage = message => {
+          if (first && message.action === 'navigate') {
+            first = false;
+            return new Promise((_, reject) => setTimeout(() => reject(new Error('fixture rejection')), 100));
+          }
+          return original(message);
+        };
+        document.querySelector('.tabs [data-page="pixiv"]').click();
+        const settings = document.querySelector('.tabs [data-page="settings"]');
+        const clickable = !settings.disabled;
+        settings.click();
+        return clickable;
+        """) as? Bool
+      XCTAssertEqual(queued, true, "another tab stays clickable while a page is opening")
+      try await panel.waitUntil { panel.navigation.selection == .settings }
+    }
+  }
+
   func testUnavailableRendererSettingsKeepAppearanceUsableButBlockUnavailableLockScreen() async throws {
     try await withPanel { panel in
       try await panel.finishWelcome()
