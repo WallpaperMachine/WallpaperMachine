@@ -322,12 +322,11 @@ final class GitHubReleaseDownload: NSObject, URLSessionDataDelegate, @unchecked 
             completion?.resume(throwing: AppUpdateIssue(code: .verification, detail: String(localized: "The update download is empty or truncated.")))
             return
         }
-        if let digest, let expectedHash = Self.parseSHA256Hex(digest) {
-            let actual = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-            guard actual == expectedHash else {
-                completion?.resume(throwing: AppUpdateIssue(code: .verification, detail: String(localized: "The update couldn't be verified, so it wasn't installed.")))
-                return
-            }
+        // Without a SHA-256 digest to compare against, nothing vouches for the image.
+        let actual = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        guard let digest, let expectedHash = Self.parseSHA256Hex(digest), actual == expectedHash else {
+            completion?.resume(throwing: AppUpdateIssue(code: .verification, detail: String(localized: "The update couldn't be verified, so it wasn't installed.")))
+            return
         }
         completion?.resume()
     }

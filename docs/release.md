@@ -536,7 +536,8 @@ The contract it relies on:
   `objects`, `release-assets` and `github-releases` hosts under
   `githubusercontent.com` (GitHub now redirects assets to `release-assets`), for the
   manifest as for the image, and the image's `sha256:` digest (from the manifest,
-  or from GitHub when the API is asked) is verified;
+  or from GitHub when the API is asked) is verified; an image that comes without
+  a usable `sha256:` digest is refused as unverifiable, never installed unchecked;
 - the image is attached read-only and out of sight (`hdiutil attach -nobrowse
   -readonly -noautoopen`) at a private mount point, its single
   `WallpaperMachine.app` is copied out with `ditto` without following the
