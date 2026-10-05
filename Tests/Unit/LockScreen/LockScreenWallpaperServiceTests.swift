@@ -209,6 +209,38 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     XCTAssertNotNil(service.errorMessage)
   }
 
+  /// Any snapshot refreshes the service, so refreshes arrive while the first frame is awaited.
+  /// They must not report the lock screen enabled before the extension renders, nor publish
+  /// the activation again; once a frame arrives it is enabled and the choice is saved.
+  @MainActor
+  func testRefreshWhileAwaitingTheFirstFrameNeitherClaimsEnabledNorRepublishes() async throws {
+    try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
+    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+    exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
+    service.beforeActivation = {}
+    service.afterDeactivation = {}
+    let file = exchange.appendingPathComponent(LockScreenConfiguration.fileName)
+    func publishedRevision() throws -> String {
+      try JSONDecoder().decode(LockScreenConfiguration.self, from: Data(contentsOf: file)).revision
+    }
+    service.setEnabled(true)
+    await waitFor("the activation to be published") { FileManager.default.fileExists(atPath: file.path) }
+    let revision = try publishedRevision()
+    service.refresh()
+    try await Task.sleep(for: .milliseconds(200))
+    service.refresh()
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertFalse(service.isEnabled, "nothing has rendered yet")
+    XCTAssertTrue(service.isBusy)
+    XCTAssertEqual(try publishedRevision(), revision, "the activation a refresh interrupted is not published again")
+    XCTAssertFalse(defaults.bool(forKey: preference))
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    await waitFor("the lock screen to enable") { service.isEnabled && !service.isBusy }
+    XCTAssertTrue(defaults.bool(forKey: preference))
+  }
+
   @MainActor
   func testNoAppliedWallpaperReleasesDesktopProvider() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")

@@ -67,7 +67,11 @@ after `apply_config`, so a desktop Scene that uses now-playing does not keep
 that feed on the lock screen.
 
 "Enabled" is not claimed optimistically: it requires the system extension to
-acknowledge a rendered frame. The extension answers macOS only once that frame
+acknowledge a rendered frame. Every snapshot refreshes the service, so refreshes
+arrive while that frame is awaited; one that interrupts the wait neither claims
+Enabled nor publishes the activation again, but waits on for the same revision
+until the original deadline, and only a confirmed activation saves the setting
+for the next launch. The extension answers macOS only once that frame
 exists, and WallpaperAgent abandons an extension that has not answered after
 about 31 seconds (observed on macOS 27.2), so a scene must reach its first frame
 well inside that; see
