@@ -328,6 +328,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                         do {
                             try await store.setDisplayPresentationSuspendedAsync(
                                 displayID: displayID, suspended: suspended)
+                            // As on the global path, a change that fell due while this
+                            // display was covered happens now that it shows again.
+                            self.playlistScheduler?.evaluate()
                             // Same reason as the global path: a display going
                             // dark changes the effective consumer set and
                             // produces no snapshot of its own.
@@ -1167,7 +1170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             // The playlist's own next, with a fresh interval after it; a switch it is already
             // making counts as the answer rather than falling back to the library order.
             if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
-                playlistScheduler?.skip(displayId)
+                guard playlistScheduler?.skip(displayId) == true else {
+                    throw AutomationError(
+                        message: String(localized: "This display has no rotating playlist to move along."))
+                }
                 return
             }
             // "Next" is measured from whatever the display shows when this one gets its turn.

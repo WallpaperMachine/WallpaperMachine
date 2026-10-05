@@ -27,7 +27,11 @@ clock times, so a daylight-saving day still switches at the time on the clock.
 **Change now** moves a rotating display along at once and starts a fresh
 interval; the row's note says roughly when the next change is due. The menu bar's
 **Next Wallpaper** does the same for the panel's target display when that display
-rotates, and otherwise takes the next wallpaper in library order.
+rotates, and otherwise takes the next wallpaper in library order. Both are asked
+for, so they also change a display that is paused or covered; only the timer's own
+changes wait (see below). A link, keyboard shortcut or Shortcuts action that asks
+for the next wallpaper on a display that cannot rotate reports so instead of
+succeeding without a change.
 
 This display's list is edited from Installed: the list button in a wallpaper's
 details adds it to, or removes it from, the list of the target display, and a
@@ -58,13 +62,14 @@ next-change stores remain the source of active playback state.
 
 ## When a change happens
 
-A change only happens while its display is playing and presenting. One that falls
-due while the user paused playback, that display is covered, the screen is locked
+A change the timer brings only happens while its display is playing and
+presenting. One that falls due while the user paused playback, that display is covered, the screen is locked
 or the displays sleep waits, and happens once when it can play again; missed intervals are not caught up
 one by one. The timer sleeps on the continuous clock, so a change that fell due
 while the Mac slept happens on wake. Nothing is polled: `PlaylistScheduler` arms
-one timer for the earliest change and re-evaluates when playback, presentation,
-the library, the playlists, the clock or the time zone change.
+one timer for the earliest change and re-evaluates when playback, presentation
+(of every display together or of one display alone), the library, the playlists,
+the clock or the time zone change.
 
 Every switch runs through the display's command slot, the same one the panel's
 Apply and the menu bar use, so the latest request for a display wins, and the

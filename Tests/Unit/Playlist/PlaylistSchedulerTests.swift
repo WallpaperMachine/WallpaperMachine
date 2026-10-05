@@ -162,6 +162,30 @@ final class PlaylistSchedulerTests: XCTestCase {
         XCTAssertFalse(scheduler.canSkip("primary"), "the only wallpaper on the list is already showing")
     }
 
+    /// Change now and Next Wallpaper are asked for, so they move a paused or covered display
+    /// along at once, while a change that falls due on its own still waits for it to play.
+    func testRequestedSkipChangesAPausedDisplayButItsTimerWaits() async {
+        running = false
+        store.update("primary") {
+            $0.mode = .rotate
+            $0.source = .list
+            $0.wallpaperIDs = ["a", "b", "c"]
+            $0.interval = 30
+        }
+        let scheduler = makeScheduler()
+        scheduler.start()
+        defer { scheduler.stop() }
+        XCTAssertTrue(scheduler.skip("primary"))
+        await settle()
+        XCTAssertEqual(applied, ["b"])
+        XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(30 * 60))
+
+        clock.addTimeInterval(30 * 60)
+        scheduler.evaluate()
+        await settle()
+        XCTAssertEqual(applied, ["b"], "the timer's own change waits while the display is paused")
+    }
+
     func testNothingPlayableLeavesTheDisplayAsItIs() async {
         store.update("primary") {
             $0.mode = .rotate
@@ -301,7 +325,6 @@ final class PlaylistSchedulerTests: XCTestCase {
         await settle()
         XCTAssertEqual(applied, ["primary"])
         XCTAssertEqual(shown["second"], "a")
-        XCTAssertFalse(scheduler.skip("second"))
         running = true
         scheduler.evaluate()
         await settle()

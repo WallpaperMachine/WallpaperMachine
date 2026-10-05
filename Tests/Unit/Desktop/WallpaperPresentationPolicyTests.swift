@@ -407,6 +407,46 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
         XCTAssertEqual(rendererSuspended[1], false, "Canceling shutdown must deliver the withheld resume")
     }
 
+    /// A failed resume leaves the renderer suspended. If the display disconnects before the retry,
+    /// it is still resumed when it comes back visible, like one whose suspension was acknowledged.
+    func testFailedResumeIsRetriedWhenTheDisplayReturnsVisible() {
+        let probe = PolicyProbe()
+        var rendererSuspended = false
+        var failResume = true
+        let policy = WallpaperPresentationPolicy(
+            workspaceCenter: workspaceCenter,
+            lockCenter: lockCenter,
+            windowCenter: windowCenter,
+            surfaces: { probe.surfaces },
+            isSessionLocked: { probe.sessionLocked },
+            occlusionSettleDelay: .zero,
+            applyGlobal: { _, completion in completion(.success(())) },
+            applyDisplay: { _, suspended, completion in
+                if !suspended, failResume {
+                    completion(.failure(NSError(domain: "AudioCapture", code: 1)))
+                    return
+                }
+                rendererSuspended = suspended
+                completion(.success(()))
+            }
+        )
+        policy.start()
+        defer { policy.stop() }
+        probe.setVisible(false)
+        policy.evaluate()
+        probe.setVisible(true)
+        policy.evaluate()
+        XCTAssertTrue(rendererSuspended, "the resume failed")
+
+        failResume = false
+        let connected = probe.surfaces
+        probe.surfaces = []
+        policy.evaluate()
+        probe.surfaces = connected
+        policy.evaluate()
+        XCTAssertFalse(rendererSuspended, "the display came back visible, so it is resumed")
+    }
+
     func testFailedResumeRetriesWithUnchangedVisibility() {
         let probe = PolicyProbe()
         var rendererSuspended = false
