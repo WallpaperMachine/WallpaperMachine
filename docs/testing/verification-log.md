@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-05 — Code audit fixes: downloads, playlists, Discover, lock screen, updater, panel
+
+- Scope: 16 fixes and Open on Steam from a read-only audit of aa47389 (Swift app, WebUI, bridge to panel); no renderer change.
+- python3 scripts/test.py: Python suites OK; native 1186 passed, 0 failed, 14 skipped of 1200 (opt-in media and network tests).
+- New tests that failed before their fix: silent Workshop transfer outliving the timeouts (mutation-checked), lock-screen refresh during readiness wait, failed resume across display reconnect.
+- Also covered: failed source switch clears Discover and pixiv, requested playlist skip while paused, allowlisted panel links, queued panel request after a failure, screened subscriptions empty state, collections read-limit count, update digest required, newest poster per display, Steam cookie redirect stripping, paused web audio demand.
+- Web navigation: refused top-frame navigation, replaced loads and hash routing never fail the page even without filtering; the suspected -999 report was not reproducible, so no code change.
+- Not unit-testable, not run on a desktop: per-display uncover re-evaluating playlists, error alerts from the main run loop, poster sync in screen-saver-only mode, Open after a failed start.
+- Not done: update code-signature pinning (self-signed release certificate, planned Developer ID move); setenv race in BridgeStore not reproducible.
+- No Release build, no desktop, Steam sign-in or lock-screen run.
+
 ## 2026-10-05 — Discover Collections fill screened pages to 30
 
 - Cause: under the default Everyone-only rating, WorkshopService.collections drops collections whose sampled wallpapers are Questionable/Mature; live Steam page 1 (trend, 365 days) kept 9 of 30.
@@ -116,15 +127,3 @@ Issue #28: preset 3610485014 (base 2983846453, a day/night switch template) drew
 - Private offline renders of Into The Abyss inspected at scene time 15 seconds on Compatibility and native Metal: hair and arm reassembled. Compatibility before/after both used 1024 passes across 16 samples and 276121600 allocated GPU bytes.
 - python3 scripts/build.py --configuration Release: exit 0; rebuilt renderer and Release app. No installation or launch.
 - git diff --check passed. Desktop presentation, live smoothness and energy use unverified; no desktop control, screen capture or audio hardware used.
-
-## 2026-10-04 — PR 25 declaration-scoped arrays and camera FOV
-
-- Resolve stage-interface macro bounds at each declaration, including intervening and function-body directives; freeze literal bounds before hoisting/input-copy emission. Shader pipeline revision 10 -> 11 invalidates previously cached stale-sized programs.
-- Omitted/nonpositive camera FOV inherits immutable authored scene settings; named camera creation, runtime shots and non-runtime playback share the resolved value. Positive object overrides remain authoritative.
-- `cargo test -p shader -- --nocapture` with the project Cargo environment — exit 0; 515 reported passed, including three unavailable asset-dependent early-return skips. SPIR-V/MSL per-declaration and undefined-macro regressions passed.
-- Camera-targeted scene-schema run — 20 passed. Rebuilt full scene_schema_tests with the current shader library — 109 passed, including named/default cameras, scene/shot overrides and visibility fallback in both playback paths.
-- `python3 scripts/build.py --renderer-only` — passed; generated bridge bindings unchanged. No Release app build.
-- `python3 scripts/check_renderer.py` — every recorded binary exited zero; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
-- `python3 scripts/test.py` — all Python suites passed; 1,156 native passed, zero failed, 12 skipped.
-- Corpus gaps: three shader cases, two renderer text scenes, the optional local video import case and environment-selected Metal projects skipped; these are not verified asset coverage.
-- `git diff --check`, provenance JSON and generated-binding consistency passed. No desktop visual/live keyboard validation, authored-reference parity claim or app launch.

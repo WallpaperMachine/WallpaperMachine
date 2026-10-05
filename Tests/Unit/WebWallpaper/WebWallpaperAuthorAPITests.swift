@@ -87,6 +87,24 @@ final class WebWallpaperAuthorAPITests: XCTestCase {
     XCTAssertEqual((resumed["audio"] as? [Double])?.first, 0.75)
   }
 
+  /// The renderer captures nothing for a wallpaper the user paused, so the page stops asking
+  /// for audio and the shared pump stops polling until it plays again.
+  func testUserPauseDropsAudioDemandUntilPlaybackResumes() async throws {
+    let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
+    var demands: [Bool] = []
+    page.onAudioDemandChanged = { demands.append($0) }
+    page.setAudioResponseEnabled(true)
+    page.load()
+    try await waitUntilLoaded(page)
+    try await eval(page, "window.wallpaperRegisterAudioListener(b => window.__received.audio.push(b[0]));")
+    try await poll { demands == [true] }
+
+    page.setPaused(true)
+    XCTAssertEqual(demands, [true, false])
+    page.setPaused(false)
+    XCTAssertEqual(demands, [true, false, true])
+  }
+
   func testAudioIsNotDeliveredWhileTheUserSettingIsOff() async throws {
     let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
     var demands: [Bool] = []

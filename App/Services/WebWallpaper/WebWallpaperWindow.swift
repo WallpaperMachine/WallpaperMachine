@@ -331,6 +331,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     func setPaused(_ paused: Bool) {
         committed.userPaused = paused
         deliverPaused()
+        refreshDemand()
     }
 
     /// The user's per-wallpaper audio-response setting. Audio only reaches the
@@ -576,7 +577,8 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     /// re-add a consumer to the media provider.
     private func refreshDemand() {
         let live = isLoaded && !hostSuspended
-        let audio = live && audioListenerRegistered && audioResponseEnabled
+        // The renderer stops capturing for a wallpaper the user paused, so nothing is polled for it.
+        let audio = live && !committed.userPaused && audioListenerRegistered && audioResponseEnabled
         if audio != audioDemand {
             audioDemand = audio
             onAudioDemandChanged?(audio)
