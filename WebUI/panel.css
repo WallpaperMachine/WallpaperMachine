@@ -290,8 +290,27 @@ small, .muted { color: var(--muted); }
    between any two characters, so a shrinkable button ends up one glyph wide and two lines tall. */
 .search-form button { margin-left: 6px; flex: none; white-space: nowrap; }
 .browser-toolbar select { max-width: 180px; }
-/* An opened author or collection replaces the source picker and search with the way back and
-   what is on show; the title gives up width first. */
+/* Discover's lists as tabs heading the toolbar: quieter than the window's own tabs, so they read
+   as places within Discover; the current one is underlined in the accent. The weight never
+   changes, so choosing a tab does not shift its neighbours. */
+.browser-toolbar:has(.source-tabs) { padding-top: 4px; }
+.source-tabs { flex: 1 0 100%; display: flex; flex-wrap: wrap; column-gap: 22px; margin-bottom: 4px; border-bottom: 1px solid var(--divider); }
+.browser-toolbar .source-tabs button { position: relative; min-height: 36px; padding: 0 1px; gap: 7px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.browser-toolbar .source-tabs button:hover:not(:disabled) { background: transparent; color: var(--text); }
+.source-tabs button svg { color: var(--faint); transition: color 120ms ease; }
+.source-tabs button:hover svg { color: var(--muted); }
+.source-tabs button[aria-current="page"] { color: var(--text); }
+.source-tabs button[aria-current="page"] svg { color: var(--accent); }
+.source-tabs button[aria-current="page"]::after { content: ""; position: absolute; inset: auto 0 -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+.source-tabs button:focus-visible { outline-offset: -2px; border-radius: var(--radius); }
+/* A narrow column, as at the window minimum with the filters open, drops the glyphs before any
+   tab would wrap onto a second row. */
+@container (max-width: 480px) { .source-tabs { column-gap: 14px; } .source-tabs button svg { display: none; } }
+/* Signed in, subscriptions name the session and lead with downloading what the library lacks. */
+.subscription-bar .steam-session { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.subscription-bar .steam-session svg { color: var(--approved); }
+/* An opened author or collection replaces the search with the way back and what is on show;
+   the title gives up width first. */
 .source-bar { flex: 1 1 200px; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .source-title { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-creator .inspector-author { margin-left: 8px; }

@@ -1044,7 +1044,9 @@ export default {
   // Discover sources: collections, authors and subscriptions
   'Collections': '合集',
   'Your subscriptions': '我的订阅',
-  'Show': '显示',
+  'Workshop lists': '创意工坊列表',
+  '{count} subscribed': '已订阅 {count} 项',
+  'Wallpapers you subscribe to on the Steam Workshop appear here.': '你在 Steam 创意工坊订阅的壁纸会显示在这里。',
   'Go back': '返回',
   'Wallpapers by {name}': '{name} 的壁纸',
   'This author’s wallpapers': '该作者的壁纸',

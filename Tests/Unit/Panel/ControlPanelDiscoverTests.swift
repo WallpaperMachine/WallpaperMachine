@@ -148,6 +148,102 @@ final class ControlPanelDiscoverTests: ControlPanelTestCase {
     await workshop.steamCMDSetup.shutdown()
   }
 
+  /// Discover's lists are tabs, so subscriptions can be found without opening a menu, even at
+  /// the 760px window minimum; signed in, downloading what the library lacks leads the list.
+  func testDiscoverListsAreTabsAndSubscriptionsLeadWithTheirDownload() async throws {
+    let fixture = makeStore()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "web-source-tabs-\(UUID().uuidString)")
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: root.lastPathComponent))
+    defer {
+      defaults.removePersistentDomain(forName: root.lastPathComponent)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let workshop = WorkshopStore(
+      downloader: WorkshopDownloadManager(sessionDirectory: root), supportDirectory: root,
+      defaults: defaults)
+    let controller = WebPanelController(
+      store: fixture.store, navigation: ControlPanelNavigation(), workshop: workshop,
+      defaults: defaults, appLanguage: .english())
+    let web = controller.makeWebView()
+    defer { controller.stop() }
+    web.setFrameSize(NSSize(width: 760, height: 640))
+    let deadline = Date().addingTimeInterval(15)
+    while !controller.isReady && Date() < deadline {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertTrue(controller.isReady)
+    guard controller.isReady else { return }
+    _ = try await web.callAsyncJavaScript("""
+      document.querySelector('#welcome [data-action="go"][data-step="5"]').click();
+      document.querySelector('#welcome [data-action="finish"]').click();
+      """, arguments: [:], in: nil, contentWorld: .page)
+    let result =
+      try await web.callAsyncJavaScript(
+        """
+        const snapshot = await window.webkit.messageHandlers.native.postMessage({action:'ready'});
+        const sent = [];
+        const original = window.webkit.messageHandlers.native.postMessage.bind(window.webkit.messageHandlers.native);
+        window.webkit.messageHandlers.native.postMessage = message => { sent.push(message); return original(message); };
+        const show = (source, workshop = {}) => window.wallpaperUI.receive(Object.assign({}, snapshot, {
+          page: 'discover',
+          workshop: Object.assign({}, snapshot.workshop, {
+            page: 1, totalPages: 1, totalCount: 0, loaded: true, loading: false, items: [], error: null,
+            source: Object.assign({ id: null, name: null, searchable: false, canGoBack: false }, source)
+          }, workshop)
+        }));
+        const tabs = () => [...document.querySelectorAll('#browser-toolbar .source-tabs button')];
+        const current = () => tabs().filter(tab => tab.getAttribute('aria-current') === 'page').map(tab => tab.dataset.source);
+        show({ key: 'browse', searchable: true });
+        const labels = tabs().map(tab => tab.textContent.trim());
+        const oneRow = new Set(tabs().map(tab => tab.getBoundingClientRect().top)).size === 1;
+        const browsing = current();
+        show({ key: 'subscriptions' }, { steamSignedIn: false });
+        const signIn = document.querySelector('#browser-empty [data-action="steamWebSignIn"]');
+        const signedOut = { current: current(), signIn: Boolean(signIn && !document.getElementById('browser-empty').hidden) };
+        show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 48 });
+        const summary = document.getElementById('browser-summary');
+        const download = summary.querySelector('[data-action="workshopDownloadSubscribed"]');
+        const signedIn = { text: summary.textContent, primary: Boolean(download && download.classList.contains('primary')),
+          signOut: Boolean(summary.querySelector('[data-action="steamWebSignOut"]')),
+          browse: Boolean(document.querySelector('#browser-empty [data-action="workshopSource"][data-source="browse"]')) };
+        const downloadEnabled = !download.disabled;
+        show({ key: 'subscriptions' }, { steamSignedIn: true, totalCount: 0 });
+        const nothingToDownload = summary.querySelector('[data-action="workshopDownloadSubscribed"]').disabled;
+        show({ key: 'browse', searchable: true });
+        tabs()[0].focus();
+        tabs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const arrowed = document.activeElement.dataset.source;
+        show({ key: 'creator', id: '76561198000000001', name: 'Fixture Author', canGoBack: true });
+        const opened = { current: current(), back: Boolean(document.querySelector('#browser-toolbar [data-action="workshopBack"]')) };
+        show({ key: 'browse', searchable: true });
+        tabs().find(tab => tab.dataset.source === 'subscriptions').click();
+        await new Promise(resolve => setTimeout(resolve, 50));
+        const request = sent.find(message => message.action === 'workshopSource');
+        return { labels, oneRow, browsing, signedOut, signedIn, downloadEnabled, nothingToDownload, arrowed, opened, requested: request ? request.source : null };
+        """, arguments: [:], in: nil, contentWorld: .page) as? [String: Any]
+    XCTAssertEqual(result?["labels"] as? [String], ["Wallpapers", "Collections", "Your subscriptions"])
+    XCTAssertEqual(result?["oneRow"] as? Bool, true, "The tabs must fit one row at the window minimum")
+    XCTAssertEqual(result?["browsing"] as? [String], ["browse"])
+    let signedOut = result?["signedOut"] as? [String: Any]
+    XCTAssertEqual(signedOut?["current"] as? [String], ["subscriptions"])
+    XCTAssertEqual(signedOut?["signIn"] as? Bool, true, "Signed out, subscriptions offer the sign-in")
+    let signedIn = result?["signedIn"] as? [String: Any]
+    XCTAssertTrue((signedIn?["text"] as? String)?.contains("48") == true, "Signed in, the list says how many")
+    XCTAssertEqual(signedIn?["primary"] as? Bool, true, "Downloading what is missing is the list's main action")
+    XCTAssertEqual(signedIn?["signOut"] as? Bool, true)
+    XCTAssertEqual(signedIn?["browse"] as? Bool, true, "An empty list leads back to browsing")
+    XCTAssertEqual(result?["downloadEnabled"] as? Bool, true)
+    XCTAssertEqual(result?["nothingToDownload"] as? Bool, true, "With no subscriptions there is nothing to download")
+    XCTAssertEqual(result?["arrowed"] as? String, "collections", "Arrow keys move between the list tabs")
+    let opened = result?["opened"] as? [String: Any]
+    XCTAssertEqual(opened?["current"] as? [String], [], "An opened author is none of the lists")
+    XCTAssertEqual(opened?["back"] as? Bool, true)
+    XCTAssertEqual(result?["requested"] as? String, "subscriptions")
+    XCTAssertNil(controller.actionError)
+    await workshop.steamCMDSetup.shutdown()
+  }
+
   /// Discover tiles are exactly square, never fewer than three to a row (even at the 760px
   /// window minimum with the filter sidebar open), and gain columns as the window widens.
   /// A page is a fixed 30 tiles that scroll, so the panel never reports a page size, and the

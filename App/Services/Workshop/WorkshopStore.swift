@@ -77,9 +77,10 @@ final class WorkshopStore {
   /// Results Steam can actually serve for the committed query: its result count capped by
   /// its 1,000 pages of 30, so the last page never asks for an unreachable item.
   private(set) var reachableCount = 0
-  /// A panel page is exactly one Steam page: 30 tiles, and never more than 1,000 pages. The
-  /// grid lays those tiles out in as many columns as its width holds and scrolls the rest,
-  /// so a window resize only reflows the tiles and never changes what a page holds.
+  /// A panel page is one Steam page: 30 tiles, and never more than 1,000 pages. The grid lays
+  /// those tiles out in as many columns as its width holds and scrolls the rest, so a window
+  /// resize only reflows the tiles and never changes what a page holds. Collections screened
+  /// for a hidden age rating are the exception: see `filledPage`.
   static let pageSize = WorkshopService.pageSize
   static let maxPages = WorkshopService.maxPages
   private(set) var isLoading = false
@@ -473,13 +474,21 @@ final class WorkshopStore {
   @ObservationIgnored private var generation = UUID()
   private(set) var committedQuery: WorkshopQuery?
   private(set) var failedRequest: WorkshopRequest?
-  /// Steam pages fetched for `cacheQuery`, keyed by page number, plus fetches still in
+  /// Panel pages fetched for `cacheQuery`, keyed by page number, plus fetches still in
   /// flight, so paging back never touches the network. A search always starts a fresh
   /// cache, even for the same query.
   @ObservationIgnored private var cacheQuery: WorkshopQuery?
   @ObservationIgnored private var cacheID = UUID()
   @ObservationIgnored private var steamPages: [Int: WorkshopPage] = [:]
   @ObservationIgnored private var steamFetches: [Int: Task<WorkshopPage, Error>] = [:]
+  /// For panel pages filled from several Steam pages: the screened Steam pages, keyed by
+  /// Steam's page number, with their fetches in flight, and where each panel page starts.
+  @ObservationIgnored private var screenedPages: [Int: WorkshopPage] = [:]
+  @ObservationIgnored private var screenedFetches: [Int: Task<WorkshopPage, Error>] = [:]
+  @ObservationIgnored private var pageStarts: [Int: SteamPosition] = [1: .start]
+  /// How many Steam pages a panel page may read before it is shown with what it found, so a
+  /// search whose collections are nearly all screened out does not read Steam to its end.
+  static let maxSteamPagesPerPage = 10
   /// Fetches the page after the one on show in the background, so paging forward is served
   /// from the cache like paging back. Off unless the owner opts in.
   @ObservationIgnored var prefetchesNextPage = false
@@ -498,9 +507,10 @@ final class WorkshopStore {
     let query = committedQuery ?? draftQuery
     switch query.source {
     case .browse, .collections:
+      let steamPage = Self.fillsPages(query) ? pageStarts[page]?.page ?? page : page
       return WorkshopService.browseURL(
         search: query.text, kind: query.source == .browse ? query.kind : .all, sort: query.sort,
-        page: page, tags: query.tags, excludedTags: query.excludedTags,
+        page: steamPage, tags: query.tags, excludedTags: query.excludedTags,
         section: query.source == .browse ? "readytouseitems" : "collections")
     case .collection(let id, _):
       return URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
@@ -604,22 +614,31 @@ final class WorkshopStore {
   /// asked for fresh results; the new cache id keeps late completions of old fetches out.
   private func resetCache(for query: WorkshopQuery?) {
     for task in steamFetches.values { task.cancel() }
+    for task in screenedFetches.values { task.cancel() }
     steamFetches = [:]
+    screenedFetches = [:]
     cacheID = UUID()
     if let query {
       steamPages = [:]
+      screenedPages = [:]
+      pageStarts = [1: .start]
       cacheQuery = query
     }
   }
 
-  /// Starts, or joins, the fetch of one Steam page for the current cache.
+  /// Starts, or joins, the fetch of one panel page for the current cache.
   private func fetchSteamPage(_ number: Int, query: WorkshopQuery) -> Task<WorkshopPage, Error> {
     if let task = steamFetches[number] { return task }
     let cacheID = cacheID
     let service = service
     let task = Task { [weak self] in
       defer { if let self, self.cacheID == cacheID { self.steamFetches[number] = nil } }
-      let result = try await service.page(for: query, page: number, account: self?.steamWebSession)
+      let result: WorkshopPage
+      if Self.fillsPages(query), let self {
+        result = try await self.filledPage(number, query: query, cacheID: cacheID)
+      } else {
+        result = try await service.page(for: query, page: number, account: self?.steamWebSession)
+      }
       try Task.checkCancellation()
       // Only the cache that asked keeps the page; a superseded fetch is simply dropped.
       if let self, self.cacheID == cacheID {
@@ -629,6 +648,85 @@ final class WorkshopStore {
       return result
     }
     steamFetches[number] = task
+    return task
+  }
+
+  /// Whether a panel page is filled from several Steam pages: collections while an age rating
+  /// is hidden, which Steam cannot apply to them, so its pages come back with gaps.
+  private static func fillsPages(_ query: WorkshopQuery) -> Bool {
+    query.source == .collections
+      && WorkshopService.screensRatings(tags: query.tags, excludedTags: query.excludedTags)
+  }
+
+  /// A panel page of screened collections, filled from as many Steam pages as it takes, on from
+  /// where the page before it stopped, so paging forward and back shows each collection once.
+  /// A page jumped to before the one ahead of it was shown starts where the pages read so far
+  /// suggest; that start, the page count and the result count are estimates.
+  private func filledPage(_ number: Int, query: WorkshopQuery, cacheID: UUID) async throws -> WorkshopPage {
+    let start = pageStarts[number] ?? estimatedStart(of: number)
+    var position: SteamPosition? = start
+    var items: [WorkshopItem] = []
+    var steamPageCount = 1
+    var steamCount = 0
+    var read = 0
+    while let current = position, items.count < Self.pageSize, read < Self.maxSteamPagesPerPage {
+      // The next Steam page is likely needed too; asking for it now overlaps the two fetches.
+      if let known = screenedPages.values.first?.totalPages, current.page < min(Self.maxPages, known) {
+        _ = fetchScreenedPage(current.page + 1, query: query)
+      }
+      let steam = try await fetchScreenedPage(current.page, query: query).value
+      read += 1
+      steamPageCount = min(Self.maxPages, max(1, steam.totalPages))
+      steamCount = steam.totalCount
+      let kept = steam.items.dropFirst(current.offset)
+      let taken = kept.prefix(Self.pageSize - items.count)
+      items += taken
+      if taken.count < kept.count {
+        position = SteamPosition(page: current.page, offset: current.offset + taken.count)
+      } else {
+        position = current.page < steamPageCount ? SteamPosition(page: current.page + 1, offset: 0) : nil
+      }
+    }
+    guard self.cacheID == cacheID else { throw CancellationError() }
+    if pageStarts[number] == nil { pageStarts[number] = start }
+    guard let next = position else {
+      return WorkshopPage(
+        items: items, page: number, totalPages: number,
+        totalCount: (number - 1) * Self.pageSize + items.count)
+    }
+    if pageStarts[number + 1] == nil { pageStarts[number + 1] = next }
+    let steamPagesPerPage = max(1, next.progress / Double(number))
+    let remaining = Int(((Double(steamPageCount) - next.progress) / steamPagesPerPage).rounded())
+    return WorkshopPage(
+      items: items, page: number, totalPages: min(Self.maxPages, number + max(1, remaining)),
+      totalCount: max(number * Self.pageSize, Int(Double(steamCount) / steamPagesPerPage)))
+  }
+
+  /// Where a panel page not reached from the one before it most likely starts: on from the
+  /// nearest known start before it, at the rate the pages read so far consumed Steam's.
+  private func estimatedStart(of number: Int) -> SteamPosition {
+    let before = pageStarts.filter { $0.key < number }.max { $0.key < $1.key } ?? (key: 1, value: .start)
+    let furthest = pageStarts.max { $0.key < $1.key } ?? (key: 1, value: .start)
+    let rate = furthest.key > 1 ? max(1, furthest.value.progress / Double(furthest.key - 1)) : 1
+    let page = Int(before.value.progress + Double(number - before.key) * rate) + 1
+    let last = screenedPages.values.first.map { min(Self.maxPages, max(1, $0.totalPages)) } ?? page
+    return SteamPosition(page: min(page, last), offset: 0)
+  }
+
+  /// Starts, or joins, the fetch of one screened Steam page of collections for the current cache.
+  private func fetchScreenedPage(_ number: Int, query: WorkshopQuery) -> Task<WorkshopPage, Error> {
+    if let page = screenedPages[number] { return Task { page } }
+    if let task = screenedFetches[number] { return task }
+    let cacheID = cacheID
+    let service = service
+    let task = Task { [weak self] in
+      defer { if let self, self.cacheID == cacheID { self.screenedFetches[number] = nil } }
+      let result = try await service.page(for: query, page: number, account: nil)
+      try Task.checkCancellation()
+      if let self, self.cacheID == cacheID { self.screenedPages[number] = result }
+      return result
+    }
+    screenedFetches[number] = task
     return task
   }
 
@@ -694,4 +792,14 @@ final class WorkshopStore {
     isLoading = false
   }
 
+}
+
+/// A place among Steam's screened pages: the page, and how many of the tiles it kept come before.
+private struct SteamPosition: Equatable {
+  static let start = SteamPosition(page: 1, offset: 0)
+  var page: Int
+  var offset: Int
+
+  /// How many Steam pages lie before this place, a partly read one by the share read.
+  var progress: Double { Double(page - 1) + Double(offset) / Double(WorkshopService.pageSize) }
 }

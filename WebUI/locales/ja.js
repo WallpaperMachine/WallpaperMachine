@@ -1044,7 +1044,9 @@ export default {
   // Discover sources: collections, authors and subscriptions
   'Collections': 'コレクション',
   'Your subscriptions': 'サブスクライブ中のアイテム',
-  'Show': '表示',
+  'Workshop lists': 'ワークショップのリスト',
+  '{count} subscribed': '{count}件をサブスクライブ中',
+  'Wallpapers you subscribe to on the Steam Workshop appear here.': 'Steamワークショップでサブスクライブした壁紙がここに表示されます。',
   'Go back': '戻る',
   'Wallpapers by {name}': '{name}の壁紙',
   'This author’s wallpapers': 'この作成者の壁紙',

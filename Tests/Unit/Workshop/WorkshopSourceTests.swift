@@ -49,12 +49,19 @@ final class WorkshopSourceTests: XCTestCase {
   }
 
   /// Issue #29: Steam lists subscriptions as rows, not as an author's tiles, and every one of
-  /// them must be read.
+  /// them must be read, whether or not the served row holds its Unsubscribe control yet.
   func testSubscriptionsListingReadsItsRowsAndTotal() throws {
-    let listing = try WorkshopService.decodeProfileListing(String(
-      decoding: subscriptionsHTML(ids: ["300", "100", "200"], total: "127"), as: UTF8.self))
-    XCTAssertEqual(listing.ids, ["300", "100", "200"])
-    XCTAssertEqual(listing.total, 127)
+    for controls in [false, true] {
+      let listing = try WorkshopService.decodeProfileListing(String(
+        decoding: subscriptionsHTML(ids: ["300", "100", "200"], total: "127", controls: controls), as: UTF8.self))
+      XCTAssertEqual(listing.ids, ["300", "100", "200"])
+      XCTAssertEqual(listing.total, 127)
+    }
+    // Without the row's own id, its Unsubscribe call still names the item.
+    let calls = try WorkshopService.decodeProfileListing(
+      "<html>Showing 1-2 of 2 entries<span onclick=\"UnsubscribeItem( '7', '431960' );\"></span>"
+        + "<span onclick=\"UnsubscribeItem('8', '431960');\"></span></html>")
+    XCTAssertEqual(calls.ids, ["7", "8"])
   }
 
   /// A page that says it holds entries but shows none means Steam changed its markup; reading it
@@ -295,6 +302,60 @@ final class WorkshopSourceTests: XCTestCase {
     XCTAssertFalse(store.hasLoaded)
   }
 
+  /// Screening leaves gaps in Steam's pages of collections, so a panel page is filled from as
+  /// many of them as it takes: paging on shows every kept collection once, in Steam's order,
+  /// each Steam page is read once, and paging back needs no request.
+  func testScreenedCollectionsFillEachPageFromTheSteamPagesAfterIt() async throws {
+    // Four Steam pages of 30; every third collection holds a Mature wallpaper, so 20 a page stay.
+    var kept: [String] = []
+    var details: [String: [String: Any]] = [:]
+    for page in 1...4 {
+      let rows = (0..<30).map { index -> [String: Any] in
+        let id = String(page * 1000 + index)
+        let child = String(page * 1000 + 500 + index)
+        let rating = index % 3 == 0 ? "Mature" : "Everyone"
+        details[child] = detailsRow(child, tags: ["Scene", rating])
+        if rating == "Everyone" { kept.append(id) }
+        return collectionRow(id, children: [(child, 0, 0)])
+      }
+      fixture.browsePages[page] = browseHTML(rows: rows, page: page, pages: 4, count: 120)
+    }
+    fixture.details = details
+    let store = fixture.store
+
+    store.open(.collections)
+    try await finished(store)
+    XCTAssertEqual(store.items.map(\.id), Array(kept[0..<30]))
+    XCTAssertEqual(store.totalPages, 3)
+    store.loadPage(2)
+    try await finished(store)
+    XCTAssertEqual(store.items.map(\.id), Array(kept[30..<60]))
+    store.loadPage(3)
+    try await finished(store)
+    XCTAssertEqual(store.items.map(\.id), Array(kept[60...]))
+    XCTAssertEqual(store.totalPages, 3)
+    XCTAssertEqual(store.totalCount, kept.count)
+    let steamPage = URLComponents(url: store.browseURL, resolvingAgainstBaseURL: false)?.queryItems?
+      .first { $0.name == "p" }?.value
+    XCTAssertEqual(steamPage, "4", "Open on Steam goes to the Steam page the panel page starts on")
+    XCTAssertEqual(fixture.browsePagesRequested.sorted(), [1, 2, 3, 4])
+
+    store.loadPage(1)
+    XCTAssertFalse(store.isLoading)
+    XCTAssertEqual(store.items.map(\.id), Array(kept[0..<30]))
+    XCTAssertEqual(fixture.browsePagesRequested.count, 4)
+
+    // A page jumped to is still full, and starts past what the first page showed.
+    store.search()
+    try await finished(store)
+    store.loadPage(3)
+    try await finished(store)
+    XCTAssertEqual(store.page, 3)
+    XCTAssertEqual(store.items.count, 30)
+    XCTAssertTrue(Set(store.items.map(\.id)).isDisjoint(with: kept[0..<30]))
+    XCTAssertNil(store.errorMessage)
+  }
+
   // MARK: Fixtures
 
   private func finished(_ store: WorkshopStore) async throws {
@@ -323,14 +384,21 @@ final class WorkshopSourceTests: XCTestCase {
       """.utf8)
   }
 
-  /// Steam's subscriptions page: a row per item, named only by its links, without the
-  /// `data-publishedfileid` an author's tiles carry.
-  private func subscriptionsHTML(ids: [String], total: String) -> Data {
+  /// Steam's subscriptions page: a row per item, `id="Subscription<id>"`, without the
+  /// `data-publishedfileid` an author's tiles carry. The served page may leave out the row's
+  /// Unsubscribe control, which its scripts add later.
+  private func subscriptionsHTML(ids: [String], total: String, controls: Bool = false) -> Data {
     let rows = ids.map { id in
-      """
+      let unsubscribe = controls
+        ? "<span id=\"UnsubscribeItemBtn\(id)\" class=\"general_btn subscribe toggled\" onclick=\"UnsubscribeItem( '\(id)', '431960' );\"></span>"
+        : ""
+      return """
       <div class="workshopItemSubscription " id="Subscription\(id)">
-        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)&searchtext="><div class="workshopItemTitle">Item \(id)</div></a>
-        <a id="UnsubscribeItemBtn\(id)" class="btn_grey_black btn_small_thin" href="javascript:UnsubscribeItem( '\(id)', '431960' );"><span>Unsubscribe</span></a>
+        <div class="workshopItemSubscriptionDetails">
+          <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)&searchtext="><div class="workshopItemTitle">Item \(id)</div></a>
+          <div class="workshopItemDate">Subscribed on 4 Oct @ 11:10pm</div>
+        </div>
+        <div class="workshopItemSubscriptionControls">\(unsubscribe)</div>
       </div>
       """
     }.joined()
@@ -378,12 +446,15 @@ final class WorkshopSourceTests: XCTestCase {
     ]
   }
 
-  private func browseHTML(rows: [[String: Any]]) -> Data {
+  private func browseHTML(rows: [[String: Any]], page: Int = 1, pages: Int = 1, count: Int? = nil) -> Data {
     let queries: [[String: Any]] = [
       [
         "queryKey": ["workshop_browse"],
         "state": [
-          "data": ["eresult": 1, "current_page": 1, "total_pages": 1, "total_count": rows.count, "results": rows]
+          "data": [
+            "eresult": 1, "current_page": page, "total_pages": pages, "total_count": count ?? rows.count,
+            "results": rows,
+          ]
         ],
       ]
     ]
@@ -412,6 +483,11 @@ private final class SourceFixture {
     get { answers.read { $0.browse } }
     set { answers.write { $0.browse = newValue } }
   }
+  /// Steam's browse answer for one page number; `browse` answers the others.
+  var browsePages: [Int: Data] {
+    get { answers.read { $0.browsePages } }
+    set { answers.write { $0.browsePages = newValue } }
+  }
   var collection: Data {
     get { answers.read { $0.collection } }
     set { answers.write { $0.collection = newValue } }
@@ -429,6 +505,7 @@ private final class SourceFixture {
     set { answers.write { $0.subscriptionPages = newValue } }
   }
   var browseSections: [String] { answers.read { $0.browseSections } }
+  var browsePagesRequested: [Int] { answers.read { $0.browsePagesRequested } }
   var detailsRequests: Int { answers.read { $0.detailsRequests } }
   var cookies: [String?] { answers.read { $0.cookies } }
 
@@ -463,11 +540,13 @@ private final class SourceFixture {
 private final class SourceAnswers: @unchecked Sendable {
   struct State {
     var browse = Data()
+    var browsePages: [Int: Data] = [:]
     var collection = Data()
     var details: [String: [String: Any]] = [:]
     var profiles: [String: Data] = [:]
     var subscriptionPages: [Int: Data] = [:]
     var browseSections: [String] = []
+    var browsePagesRequested: [Int] = []
     var detailsRequests = 0
     var cookies: [String?] = []
   }
@@ -488,7 +567,9 @@ private final class SourceAnswers: @unchecked Sendable {
       switch (host, path) {
       case ("steamcommunity.com", "/workshop/browse"):
         state.browseSections.append(value("section") ?? "")
-        return (200, state.browse)
+        let page = Int(value("p") ?? "1") ?? 1
+        state.browsePagesRequested.append(page)
+        return (200, state.browsePages[page] ?? state.browse)
       case ("api.steampowered.com", "/ISteamRemoteStorage/GetCollectionDetails/v1"):
         return (200, state.collection)
       case ("api.steampowered.com", "/ISteamRemoteStorage/GetPublishedFileDetails/v1"):

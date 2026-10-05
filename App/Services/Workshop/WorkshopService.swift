@@ -265,6 +265,17 @@ actor WorkshopService {
     static let collectionSample = 3
     private static let ratingTags: Set<String> = ["questionable", "mature"]
 
+    /// Whether the sidebar hides an age rating, which Steam cannot apply to a collection, so
+    /// collections are screened here and a page of them can come back with gaps.
+    static func screensRatings(tags: [String], excludedTags: [String]) -> Bool {
+        !hiddenTags(tags: tags, excludedTags: excludedTags).isDisjoint(with: ratingTags)
+    }
+
+    /// The excluded tags, lowercased, less any that are also required, as on Steam.
+    private static func hiddenTags(tags: [String], excludedTags: [String]) -> Set<String> {
+        Set(excludedTags.map { $0.lowercased() }).subtracting(tags.map { $0.lowercased() })
+    }
+
     /// Collections, as Steam's browse page lists them. While Questionable or Mature is hidden, a
     /// collection is shown only when neither its own tags nor its first few wallpapers carry a
     /// hidden tag, and it has a wallpaper to look at: collections are rarely tagged, and a title
@@ -276,8 +287,8 @@ actor WorkshopService {
             search: search, kind: .all, sort: sort, page: page, tags: tags, excludedTags: excludedTags,
             section: "collections"))
         var (listing, children) = try Self.decodeBrowse(html)
-        let excluded = Set(excludedTags.map { $0.lowercased() }).subtracting(tags.map { $0.lowercased() })
-        guard !excluded.isDisjoint(with: Self.ratingTags) else { return listing }
+        guard Self.screensRatings(tags: tags, excludedTags: excludedTags) else { return listing }
+        let excluded = Self.hiddenTags(tags: tags, excludedTags: excludedTags)
         var samples: [String: [String]] = [:]
         for collection in listing.items { samples[collection.id] = Array((children[collection.id] ?? []).prefix(Self.collectionSample)) }
         let sampled = try await details(ids: Array(Set(samples.values.flatMap { $0 })).sorted())
@@ -383,11 +394,12 @@ actor WorkshopService {
     /// account's name. Steam's sign-in page instead means the session is gone.
     static func decodeProfileListing(_ html: String) throws -> (ids: [String], total: Int, name: String?) {
         var ids: [String] = []
-        // An author's items are tiles carrying `data-publishedfileid`; subscriptions are rows
-        // whose Unsubscribe link, `<a id="UnsubscribeItemBtn<id>"
-        // href="javascript:UnsubscribeItem( '<id>', '<app>' );">`, is all that names the item.
+        // An author's items are tiles carrying `data-publishedfileid`; subscriptions are rows,
+        // `<div class="workshopItemSubscription " id="Subscription<id>">`, whose details and
+        // Unsubscribe control (`UnsubscribeItem( '<id>', '<app>' )`) are not always in the
+        // served page, so the row's own id is what names the item.
         let idPattern = try NSRegularExpression(
-            pattern: #"(?:data-publishedfileid="|id="UnsubscribeItemBtn|UnsubscribeItem\(\s*')(\d+)"#)
+            pattern: #"(?:data-publishedfileid="|id="(?:Subscription|UnsubscribeItemBtn)|UnsubscribeItem\(\s*')(\d+)["']"#)
         for match in idPattern.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
             guard let range = Range(match.range(at: 1), in: html) else { continue }
             let id = String(html[range])
@@ -429,8 +441,8 @@ actor WorkshopService {
     /// is dropped while an age rating is hidden, as nothing vouches for what it holds.
     static func matching(_ page: WorkshopPage, tags: [String], excludedTags: [String]) -> WorkshopPage {
         let required = Set(tags.map { $0.lowercased() })
-        let excluded = Set(excludedTags.map { $0.lowercased() }).subtracting(required)
-        let screening = !excluded.isDisjoint(with: ratingTags)
+        let excluded = hiddenTags(tags: tags, excludedTags: excludedTags)
+        let screening = screensRatings(tags: tags, excludedTags: excludedTags)
         var filtered = page
         filtered.items = page.items.filter { item in
             let own = Set(item.tags.map { $0.lowercased() })

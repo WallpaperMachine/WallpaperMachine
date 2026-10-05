@@ -127,12 +127,15 @@ keeps the full-size preview for the selected item.
 
 ## Collections, authors and subscriptions
 
-The toolbar's first menu chooses what Discover lists: **Wallpapers** (the browse
-page above), **Collections** or **Your subscriptions**. An author's wallpapers
-and a collection's items are opened from a tile instead, and replace the menu and
-the search field with a back button and what is on show; back returns to the
-list, page 1, they were opened from (`WorkshopStore.open`, `back` and
-`sourceHistory`). Choosing from the menu starts a new history. Only Wallpapers and
+A row of tabs heading Discover's toolbar chooses what it lists: **Wallpapers**
+(the browse page above), **Collections** or **Your subscriptions**. They are tabs
+rather than a menu so subscriptions can be found at a glance; in a narrow column
+(the window minimum with the filters open) they drop their glyphs instead of
+wrapping. An author's wallpapers and a collection's items are opened from a tile
+instead: no tab is current, and the search field gives way to a back button and
+what is on show; back returns to the list, page 1, they were opened from
+(`WorkshopStore.open`, `back` and `sourceHistory`). Choosing a tab starts a new
+history. Only Wallpapers and
 Collections are searched and sorted by Steam; the others come in their own order,
 so the panel hides the search field and the sort menu for them. The filter sidebar
 applies everywhere: Steam applies it to the two lists, and `WorkshopService.matching`
@@ -157,6 +160,17 @@ own list of each collection's children, and one details request covers the whole
 page. A collection inside a collection is dropped for the same reason, as nothing
 vouches for what it holds. Ticking both ratings shows every collection unsampled.
 
+Screening often drops most of a Steam page (two thirds of the popular ones under
+the default Everyone-only rating), so while it is on, a panel page is not one
+Steam page: `WorkshopStore.filledPage` fills it to 30 from as many screened Steam
+pages as it takes (at most `maxSteamPagesPerPage`), on from where the previous
+panel page stopped, and fetches the next Steam page alongside. Next and Back show
+each kept collection once, and each Steam page is read once per search. The page
+count and result count are estimates from the rate at which pages so far consumed
+Steam's, and refine while paging. A page jumped to before the one ahead of it was
+shown starts at an estimated Steam page, so it can repeat or skip collections near
+its edges. **Open on Steam** goes to the Steam page the panel page starts on.
+
 ### Authors
 
 A Discover tile's details offer **More by this author** when Steam named the
@@ -178,13 +192,18 @@ keychain, ends when the app quits or on **Sign out of Steam**, and is sent only 
 `steamcommunity.com`, to read the subscriptions list (the author page with
 `browsefilter=mysubscriptions`). That page lists rows rather than an author's
 tiles, so `WorkshopService.decodeProfileListing` reads an item's id from either
-layout: an author tile's `data-publishedfileid`, or a subscription row's
-Unsubscribe link (`UnsubscribeItemBtn<id>`, `UnsubscribeItem( '<id>', … )`). A
+layout: an author tile's `data-publishedfileid`, or a subscription row's own
+id (`<div class="workshopItemSubscription" id="Subscription<id>">`; Steam may fill
+the row's details and Unsubscribe control in later, so they are only a fallback). A
 page whose paging line counts entries but none can be read is reported as
 unreadable instead of being shown as an empty list. Without a session, or when
 Steam answers with its sign-in page instead, the session is forgotten and the grid
 is emptied (no tiles of the list shown before stay behind), so the panel offers
 **Sign in to Steam…** and says it is separate from SteamCMD's sign-in.
+
+Signed in, the line above the grid says so, counts the subscriptions, and leads
+with **Download the ones not in your library** as the list's main action beside
+**Sign out of Steam**; an empty list offers **Browse Workshop**.
 
 **Download the ones not in your library** reads every page of subscriptions (at
 most 1,000 pages of 30), drops what is installed, collections and Application items, and
