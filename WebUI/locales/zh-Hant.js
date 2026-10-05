@@ -1044,7 +1044,9 @@ export default {
   // Discover sources: collections, authors and subscriptions
   'Collections': '收藏集',
   'Your subscriptions': '我的訂閱',
-  'Show': '顯示',
+  'Workshop lists': '工作坊列表',
+  '{count} subscribed': '已訂閱 {count} 項',
+  'Wallpapers you subscribe to on the Steam Workshop appear here.': '你在 Steam 工作坊訂閱的桌布會顯示在這裡。',
   'Go back': '返回',
   'Wallpapers by {name}': '{name} 的桌布',
   'This author’s wallpapers': '此作者的桌布',

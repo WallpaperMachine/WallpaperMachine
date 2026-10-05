@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-05 — Discover source tabs (Your subscriptions findable)
+
+- Change: Discover's source <select> replaced by a tab row (Wallpapers / Collections / Your subscriptions) heading the toolbar; signed-in subscriptions summary leads with a primary Download-missing button, count and Sign out; empty subscriptions offer Browse Workshop.
+- python3 scripts/test.py --only ControlPanelDiscoverTests --only WebPanelWorkshopSourceTests: 10 passed (new testDiscoverListsAreTabsAndSubscriptionsLeadWithTheirDownload, incl. one-row tabs at the 760px minimum with filters open).
+- python3 scripts/test.py: 1170 passed, 0 failed, 14 skipped; Python localization catalog tests OK.
+- impeccable detect on WebUI/panel.css, panel.js: no findings.
+- Gap: no visual/desktop check (no screenshot authorization); layout verified only through offscreen WKWebView DOM geometry.
+
 ## 2026-10-05 — Local XHR startup compatibility for web wallpapers (landed on main)
 
 Commit 41e88a2 (2026-10-03) existed only on a local main worktree; applied onto current main on 2026-10-05. Its original 2026-10-03 entry is carried over below, and the gate was re-run on the new base.
@@ -122,16 +130,3 @@ Issue #28: preset 3610485014 (base 2983846453, a day/night switch template) drew
 - Renderer skips: two asset-dependent text cases, one local-project Metal case, and WE_TEST_VIDEO unset in the routine gate. The video diagnostic was run separately with the reported clip; skipped asset cases are not claimed as passing.
 - python3 scripts/build.py --configuration Release: exit 0; Release app built, not launched or installed.
 - No wallpaper assets, settings, hardware-decoder selection or frame scheduling changed. No desktop control, screenshots or audio hardware; desktop appearance, sustained playback and energy impact remain unverified.
-
-## 2026-10-03 — PR 25 merge with audited main
-
-- Merged `origin/main` at `d895d74` without rebasing; preserve the audit registry/GPU prerequisites, all 12 synthetic scenes, both regression sets, and all 42 distinct historical verification entries.
-- Reconciled stage-interface bounds with the audit leading-macro undefinition/redefinition behavior; the new unit regression passed.
-- `python3 scripts/build.py --renderer-only` — passed; renderer rebuilt and bridge bindings regenerated, matching the incoming generated files. No Release app build.
-- `python3 scripts/check_rust.py` — all four suites exited zero: core 223, bridge 378, core integration summaries 15, shader 533 reported passed; shader reports three unavailable corpus early-return skips.
-- Rust exclusions remain explicit: two desktop window tests and four external-corpus tests; desktop/media/network opt-ins disabled.
-- `python3 scripts/check_renderer.py` — all registered binaries passed; all 12 synthetic pooled/isolated pairs matched with zero diagnostics; eight projects completed two reload cycles.
-- Additional C++ suites rebuilt and passed in isolated state: scene_schema_tests 108, script_runtime_compat_test 91, mouse_input_test 13.
-- `python3 scripts/test.py` — all Python suites passed; 1,156 native passed, zero failed, 12 skipped. Renderer-tooling targeted suite: 17 passed.
-- Renderer corpus skips: two local text scenes and the environment-selected Metal project case. No desktop visual/live keyboard validation, authored-reference parity claim or app launch.
-- `git diff origin/main --check`, regenerated-binding consistency, historical-entry preservation/order and conflict-marker checks passed; incoming generator whitespace was not hand-edited.
