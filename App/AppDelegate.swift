@@ -1189,7 +1189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             if PlaylistStore.shared.playlist(for: displayId).mode == .rotate {
                 guard playlistScheduler?.skip(displayId) == true else {
                     throw AutomationError(
-                        message: String(localized: "This display has no rotating playlist to move along."))
+                        message: String(localized: "This display’s playlist has no other wallpaper to change to."))
                 }
                 return
             }

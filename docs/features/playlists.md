@@ -29,9 +29,10 @@ interval; the row's note says roughly when the next change is due. The menu bar'
 **Next Wallpaper** does the same for the panel's target display when that display
 rotates, and otherwise takes the next wallpaper in library order. Both are asked
 for, so they also change a display that is paused or covered; only the timer's own
-changes wait (see below). A link, keyboard shortcut or Shortcuts action that asks
-for the next wallpaper on a display that cannot rotate reports so instead of
-succeeding without a change.
+changes wait (see below). When the playlist has nothing else to change to (its
+only wallpaper is already on screen), Change now and a link, keyboard shortcut or
+Shortcuts action asking for the next wallpaper say so instead of succeeding
+without a change.
 
 This display's list is edited from Installed: the list button in a wallpaper's
 details adds it to, or removes it from, the list of the target display, and a

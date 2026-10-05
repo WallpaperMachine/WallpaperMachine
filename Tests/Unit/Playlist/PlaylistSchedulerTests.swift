@@ -160,6 +160,9 @@ final class PlaylistSchedulerTests: XCTestCase {
         XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(60 * 60))
         store.update("primary") { $0.wallpaperIDs = ["c"] }
         XCTAssertFalse(scheduler.canSkip("primary"), "the only wallpaper on the list is already showing")
+        XCTAssertFalse(scheduler.skip("primary"), "with nothing else to change to, Next must not report success")
+        await settle()
+        XCTAssertEqual(applied, ["c"])
     }
 
     /// Change now and Next Wallpaper are asked for, so they move a paused or covered display

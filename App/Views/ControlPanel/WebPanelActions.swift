@@ -236,7 +236,9 @@ extension WebPanelController {
       let display = try playlistDisplay(request)
       guard playlists.skipHandler?(display) == true else {
         throw WallpaperActionError(
-          message: String(localized: "This display has no rotating playlist to move along."))
+          message: playlists.playlist(for: display).mode == .rotate
+            ? String(localized: "This display’s playlist has no other wallpaper to change to.")
+            : String(localized: "This display has no rotating playlist to move along."))
       }
       return
     default: break
