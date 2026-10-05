@@ -8,6 +8,48 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.5 — 2026-10-05
+
+### English
+
+This update fixes a control panel freeze, stalled wallpaper changes after display changes and an empty Your subscriptions list, along with several wallpaper playback problems
+
+#### Improved
+
+- When Steam returns a Workshop page the app cannot read, it now says so instead of showing an empty list
+
+#### Fixed
+
+- The control panel no longer freezes after a failed redraw when you switch tabs, and instead shows the error in its banner and keeps responding
+- After a display is rearranged, changes resolution or wakes from sleep, applying a wallpaper no longer hangs for 90 seconds and wrongly restores the previous one
+- Your subscriptions now lists your subscribed wallpapers after signing in to Steam, and Download the ones not in your library finds them too
+- Web wallpapers that load local files no longer stay stuck on their loading screen
+- Workshop presets that bring their own background pictures or videos now show them instead of a black screen
+- With the optional native video playback, video wallpapers keep playing without sound when the Mac's audio output cannot start, instead of switching to Compatibility playback
+- WallpaperMachine no longer retries endlessly on desktops whose still wallpaper macOS refuses, and tries again when you switch to them or the Mac wakes
+- Day/night switches in Workshop presets now keep their pill shape and appear where the preset places them, without leaving the optional Native Metal renderer
+
+### 简体中文
+
+本次更新修复了控制面板卡死、显示器变化后应用壁纸停滞以及“你的订阅”列表为空的问题，并解决了多项壁纸播放问题
+
+#### 改进
+
+- 当 Steam 返回无法读取的 Workshop 页面时，应用现在会明确提示，而不是显示为空列表
+
+#### 修复
+
+- 切换标签页时若重绘失败，控制面板不再整窗卡死，而是在错误横幅中显示问题并继续响应操作
+- 显示器重新排列、更改分辨率或从睡眠中唤醒后，应用壁纸不再卡住 90 秒并错误地恢复为之前的壁纸
+- 登录 Steam 后，“你的订阅”现在会列出已订阅的壁纸，“下载不在壁纸库中的项目”也能找到它们
+- 读取本地文件的网页壁纸不再停留在加载画面
+- 自带背景图片或视频的 Workshop 预设现在会显示这些内容，而不再是黑屏
+- 启用可选的原生视频播放时，即使 Mac 的音频输出无法启动，视频壁纸也会继续无声播放，而不再切换到兼容播放
+- 对于 macOS 一直拒绝设置静态壁纸的桌面，WallpaperMachine 不再无休止地重试，而是在切换到该桌面或 Mac 唤醒时再试
+- Workshop 预设中的日夜切换开关现在会保持药丸形状并出现在预设指定的位置，且不再退出可选的原生 Metal 渲染器
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.4...v1.2.5
+
 ## 1.2.4 — 2026-10-04
 
 ### English
