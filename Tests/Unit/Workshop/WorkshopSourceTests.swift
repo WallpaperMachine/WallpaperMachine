@@ -39,6 +39,16 @@ final class WorkshopSourceTests: XCTestCase {
 
   // MARK: Decoding
 
+  func testTheSessionCookieDoesNotFollowARedirectOffSteamCommunity() throws {
+    var request = URLRequest(url: try XCTUnwrap(URL(string: "https://steamcommunity.com/profiles/1/myworkshopfiles/")))
+    request.setValue("steamLoginSecure=fixture", forHTTPHeaderField: "Cookie")
+    XCTAssertNotNil(WorkshopService.redirected(request).value(forHTTPHeaderField: "Cookie"))
+    for target in ["https://login.steampowered.com/jwt/refresh", "http://steamcommunity.com/", "https://steamcommunity.com:8443/"] {
+      request.url = URL(string: target)
+      XCTAssertNil(WorkshopService.redirected(request).value(forHTTPHeaderField: "Cookie"), target)
+    }
+  }
+
   func testProfileListingReadsItsItemsTotalAndOwner() throws {
     let listing = try WorkshopService.decodeProfileListing(String(
       decoding: profileHTML(ids: ["300", "100", "300", "200"], name: "Night &amp; Day", total: "1,147"),

@@ -144,11 +144,13 @@ actor WorkshopService {
         var request = URLRequest(url: url)
         request.timeoutInterval = 35
         request.setValue("WallpaperMachine/1.0 (macOS; public Workshop browser)", forHTTPHeaderField: "User-Agent")
-        if let account, url.scheme == "https", url.host == "steamcommunity.com" {
+        var redirects: SteamCookieRedirectGuard?
+        if let account, Self.mayCarrySession(url) {
             request.httpShouldHandleCookies = false
             request.setValue("steamLoginSecure=\(account.cookie)", forHTTPHeaderField: "Cookie")
+            redirects = SteamCookieRedirectGuard()
         }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request, delegate: redirects)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw WorkshopFailure(message: String(localized: "Steam could not load the Workshop. Check your connection or open Steam in your browser, then retry."))
@@ -157,6 +159,19 @@ actor WorkshopService {
             throw WorkshopFailure(message: String(localized: "Steam returned an unreadable Workshop page. Try again or browse on Steam."))
         }
         return html
+    }
+
+    /// The Steam session cookie goes to steamcommunity.com over HTTPS and nowhere else.
+    static func mayCarrySession(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.scheme == "https" && url.host == "steamcommunity.com" && url.port == nil && url.user == nil
+    }
+
+    /// A redirect keeps the session cookie only while it stays where `mayCarrySession` allows.
+    static func redirected(_ request: URLRequest) -> URLRequest {
+        var request = request
+        if !mayCarrySession(request.url) { request.setValue(nil, forHTTPHeaderField: "Cookie") }
+        return request
     }
 
     /// Steam's public details endpoint answers up to this many items per request without a key.
@@ -562,5 +577,15 @@ actor WorkshopService {
         let page = WorkshopPage(items: items, page: result["current_page"] as? Int ?? 1,
                                 totalPages: max(1, result["total_pages"] as? Int ?? 1), totalCount: result["total_count"] as? Int ?? 0)
         return (page, children)
+    }
+}
+
+/// Strips the Steam session cookie from a redirect that leaves steamcommunity.com.
+private final class SteamCookieRedirectGuard: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(WorkshopService.redirected(request))
     }
 }
