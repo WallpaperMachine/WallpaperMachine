@@ -175,8 +175,13 @@ final class PlaylistScheduler {
             var attempted = false
             defer {
                 inFlight.remove(display)
-                requestedWhileInFlight.remove(display)
-                if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
+                // A change asked for while this one waited rode on it. If this one was dropped
+                // unmade (the playlist changed meanwhile), the asked-for change is made on its own.
+                let unanswered = requestedWhileInFlight.remove(display) != nil && !attempted
+                let remade = unanswered && skip(display)
+                if remade {
+                    // That change schedules the next interval once it is made.
+                } else if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
                     store.schedule(display, at: now().addingTimeInterval(Self.seconds(playlist.interval)))
                 } else {
                     evaluate()
@@ -220,7 +225,8 @@ final class PlaylistScheduler {
             var attempted = false
             defer {
                 inFlight.remove(display)
-                requestedWhileInFlight.remove(display)
+                // A day or night switch never answers a rotation someone asked for meanwhile.
+                if requestedWhileInFlight.remove(display) != nil { skip(display) }
                 if (attempted || isRunning(display)), (store.revisions[display] ?? 0) == revision {
                     settledPeriods[display] = (period, revision)
                 }
