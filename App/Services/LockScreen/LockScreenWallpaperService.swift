@@ -49,6 +49,9 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private var lastScreenSaverRequested = false
   @ObservationIgnored private var lastHasWebWallpapers = false
   @ObservationIgnored private var published: LockScreenConfiguration?
+  /// The published activation whose first frame has not arrived, and when the wait for it gives
+  /// up. A refresh that interrupts the wait waits on for the same revision until that deadline.
+  @ObservationIgnored private var unconfirmed: (revision: String, deadline: Date)?
   @ObservationIgnored private var lockScreenActivationError: String?
 
   convenience init(bridge: WallpaperBridge, contentRevision: @escaping () -> UInt64 = { 0 }) {
@@ -289,7 +292,7 @@ final class LockScreenWallpaperService {
       }
       inputs.sort { $0.displayID < $1.displayID }
       let currentContentRevision = contentRevision()
-      if inputs == lastInputs, let published,
+      if inputs == lastInputs, let published, unconfirmed?.revision != published.revision,
         lastContentRevision == currentContentRevision,
         lastLockScreenRequested == isRequested,
         lastScreenSaverRequested == screenSaverRequested
@@ -335,20 +338,26 @@ final class LockScreenWallpaperService {
         lastHasWebWallpapers = prepared.hasWebWallpapers
         try checkReadinessFailures(published)
         try applySelection(published, inputs: inputs)
-        updateStatuses(published, hasWebWallpapers: prepared.hasWebWallpapers)
-        return
-      }
-      if configuration.lockScreenEnabled, !ownsDesktopProvider {
-        try beforeActivation?()
-        ownsDesktopProvider = true
-      }
-      try publish(configuration)
-      LockScreenAssetPublisher.collectGarbage(
-        exchange: root, keeping: prepared.referencedRevisions)
-      try applySelection(configuration, inputs: inputs)
-      if !configuration.lockScreenEnabled, ownsDesktopProvider {
-        ownsDesktopProvider = false
-        try afterDeactivation?()
+        guard unconfirmed?.revision == published.revision else {
+          updateStatuses(published, hasWebWallpapers: prepared.hasWebWallpapers)
+          return
+        }
+        // A refresh interrupted the wait for this activation's first frame. It is still not
+        // confirmed, so wait on for the same revision rather than claim it or publish again.
+        configuration = published
+      } else {
+        if configuration.lockScreenEnabled, !ownsDesktopProvider {
+          try beforeActivation?()
+          ownsDesktopProvider = true
+        }
+        try publish(configuration)
+        LockScreenAssetPublisher.collectGarbage(
+          exchange: root, keeping: prepared.referencedRevisions)
+        try applySelection(configuration, inputs: inputs)
+        if !configuration.lockScreenEnabled, ownsDesktopProvider {
+          ownsDesktopProvider = false
+          try afterDeactivation?()
+        }
       }
       // Idle-only selections need not be acquired until macOS starts the saver.
       // Report selection, not rendered readiness; lock-screen activation still
@@ -481,8 +490,24 @@ final class LockScreenWallpaperService {
     }
   }
 
+  /// Waits for every lock-screen display to report a frame of `configuration`. Cancelled, the
+  /// wait stays owed and keeps its deadline, so refreshes can neither skip nor postpone it.
   private func awaitReadiness(_ configuration: LockScreenConfiguration) async throws {
-    let deadline = Date().addingTimeInterval(readinessTimeout)
+    let deadline = unconfirmed.flatMap { $0.revision == configuration.revision ? $0.deadline : nil }
+      ?? Date().addingTimeInterval(readinessTimeout)
+    unconfirmed = (configuration.revision, deadline)
+    do {
+      try await awaitFrames(configuration, until: deadline)
+      unconfirmed = nil
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      unconfirmed = nil
+      throw error
+    }
+  }
+
+  private func awaitFrames(_ configuration: LockScreenConfiguration, until deadline: Date) async throws {
     while Date() < deadline {
       try Task.checkCancellation()
       try checkExtensionFailure(configuration)
