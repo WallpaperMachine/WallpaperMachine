@@ -88,8 +88,9 @@ final class DesktopWallpaperSync {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var posters: [ObjectIdentifier: Data] = [:]
     private var revisions: [ObjectIdentifier: UInt64] = [:]
-    /// When each layer's poster arrived, so a display that briefly has two wallpaper windows
-    /// (one replacing the other) shows the newer poster, never neither.
+    /// When each layer's poster frame was received, so a display that briefly has two wallpaper
+    /// windows (one replacing the other) shows the newer poster, never neither. Counted on
+    /// receipt, not when encoding ends, so a slow encode cannot reverse the order.
     private var arrivals: [ObjectIdentifier: UInt64] = [:]
     private var arrivalCount: UInt64 = 0
     private let surfaces: @MainActor () -> [DesktopPosterSurface]
@@ -254,6 +255,8 @@ final class DesktopWallpaperSync {
         let key = ObjectIdentifier(layer)
         let revision = (revisions[key] ?? 0) &+ 1
         revisions[key] = revision
+        arrivalCount &+= 1
+        let arrival = arrivalCount
         let encode = self.encode
         Task(priority: .userInitiated) { [weak self, weak layer] in
             do {
@@ -262,8 +265,7 @@ final class DesktopWallpaperSync {
                       self.revisions[key] == revision,
                       self.surfaces().contains(where: { $0.layer === layer }) else { return }
                 self.posters[key] = png
-                self.arrivalCount &+= 1
-                self.arrivals[key] = self.arrivalCount
+                self.arrivals[key] = arrival
                 self.synchronizeAllSpaces()
             } catch { self?.report(error) }
         }
