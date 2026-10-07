@@ -13,6 +13,19 @@ import XCTest
 final class WebWallpaperSuspensionTests: XCTestCase {
   private var project: URL!
 
+  /// Supplies WebKit's visibility input without ordering a desktop window.
+  private final class VisibilityWindow: NSWindow {
+    var covered = false {
+      didSet {
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: self)
+      }
+    }
+    override var isVisible: Bool { true }
+    override var occlusionState: NSWindow.OcclusionState { covered ? [] : .visible }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+  }
+
   override func setUpWithError() throws {
     project = FileManager.default.temporaryDirectory.appendingPathComponent(
       "web-suspension-\(UUID().uuidString)", isDirectory: true)
@@ -85,6 +98,40 @@ final class WebWallpaperSuspensionTests: XCTestCase {
     XCTAssertEqual(snapshot.value(.webAttached, for: surface), 1)
   }
 
+  func testTransientOcclusionDoesNotInterruptAnUnsuspendedPage() async throws {
+    let (page, container) = hostedPage()
+    let window = VisibilityWindow(
+      contentRect: container.frame, styleMask: .borderless, backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = container
+    defer {
+      page.stop()
+      window.contentView = nil
+      window.close()
+    }
+    page.load()
+    try await waitUntilLoaded(page)
+    try await poll { (try? await self.frames(page)) ?? 0 > 2 }
+    let running = try await frames(page)
+    XCTAssertGreaterThan(running, 2, "the fixture must be animating before its window is covered")
+    let generation = page.documentGeneration
+
+    // A Space transition can briefly occlude the window without the host ever
+    // suspending it. WebKit must not make an independent pause decision.
+    window.covered = true
+    try await Task.sleep(for: .milliseconds(100))
+    let coveredStart = try await frames(page)
+    try await Task.sleep(for: .milliseconds(300))
+    let coveredEnd = try await frames(page)
+    XCTAssertGreaterThan(coveredEnd, coveredStart + 1, "the host still permits this page to animate")
+
+    window.covered = false
+    try await Task.sleep(for: .milliseconds(150))
+    let revealed = try await frames(page)
+    XCTAssertGreaterThan(revealed, coveredEnd)
+    XCTAssertEqual(page.documentGeneration, generation)
+  }
+
   // A page that implements no pause listener cannot be asked to stop, and once
   // its web view leaves the window tree WebKit stops running its script — so a
   // detached page cannot be asked anything either. Whether the page's own work
@@ -155,6 +202,12 @@ final class WebWallpaperSuspensionTests: XCTestCase {
   }
 
   // MARK: - helpers
+
+  private func frames(_ page: WebWallpaperPage) async throws -> Int {
+    let value = try await page.webView.callAsyncJavaScript(
+      "return window.__ticks.frames", arguments: [:], in: nil, contentWorld: .page)
+    return try XCTUnwrap(value as? Int)
+  }
 
   private func waitUntilLoaded(_ page: WebWallpaperPage, timeout: TimeInterval = 10) async throws {
     let deadline = Date().addingTimeInterval(timeout)

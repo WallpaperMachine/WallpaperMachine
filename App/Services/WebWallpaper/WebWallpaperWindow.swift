@@ -260,6 +260,19 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsMagnification = false
         webView.setValue(false, forKey: "drawsBackground")
+        // The presentation policy owns occlusion, including its settling delay.
+        // WebKit otherwise stops rAF independently during a brief Space/desktop
+        // transition, even when the host never suspends this page. Ignoring only
+        // window occlusion keeps attached pages animating; host suspension still
+        // detaches the view and applies inactiveSchedulingPolicy above.
+        let occlusionSelector = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+        if webView.responds(to: occlusionSelector) {
+            typealias SetOcclusionDetection = @convention(c) (AnyObject, Selector, Bool) -> Void
+            unsafeBitCast(webView.method(for: occlusionSelector), to: SetOcclusionDetection.self)(
+                webView, occlusionSelector, false)
+        } else {
+            AppLog.warn("WebKit window occlusion control unavailable; web wallpapers use system scheduling")
+        }
         #if DEBUG
             webView.isInspectable = true
         #endif

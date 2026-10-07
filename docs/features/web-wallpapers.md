@@ -123,6 +123,14 @@ a separate web view with its own handler.
   receives no pointer events. The document is never reloaded to suspend it, so
   its JavaScript state survives. How much WebKit then throttles the page is its
   own decision and has not been measured here.
+- While attached, a desktop page leaves window-occlusion decisions to
+  `WallpaperPresentationPolicy`. A guarded per-view WebKit selector disables
+  WebKit's independent window-occlusion check; otherwise even a brief Space or
+  Show Desktop transition can stop animation frames before the host's settling
+  delay expires. Host suspension still detaches the view and retains `.suspend`
+  scheduling. If that selector is unavailable, the page retains WebKit's default
+  scheduling and logs the limitation. This does not change the control panel or
+  native screen-saver web surfaces.
 - A content process that keeps terminating is restarted on a windowed budget
   with exponential backoff rather than forever; the budget returns only after a
   document has run without interruption for the stable-run threshold.
@@ -387,6 +395,11 @@ context menu suppressed. `WebWallpaperMouseRoutingTests.swift` pins the
 desktop-only routing policy. `WebWallpaperLocalRequestTests.swift` covers
 synchronous startup loaders, empty successful responses, async ready-state
 metadata, JSON/binary bodies, missing files, cancellation and request reuse.
+`WebWallpaperSuspensionTests.swift` also supplies occlusion changes through a
+window that is never ordered on screen: a running page keeps producing animation
+frames until the host suspends it, and the existing detach/reattach checks cover
+host suspension without reloading the document. This is not a measurement of
+WindowServer transition smoothness on the real desktop.
 `Tests/Unit/Panel/WebPanelAssetPropertiesTests.swift` covers the inspector side:
 what `Choose…` and `Clear` send, the refusal of a `texture` property by the path
 editor, the folder measurement published to the page, and a chosen name carrying
