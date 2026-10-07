@@ -8,6 +8,92 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.2.6 — 2026-10-07
+
+### English
+
+This release gets Discover working again with Steam's current Workshop pages and makes your subscriptions easier to find. It also fixes many problems with playlists, identical monitors, large downloads and the experimental animated lock screen
+
+#### New
+
+- Discover now opens with Wallpapers, Collections and Your subscriptions tabs, and Your subscriptions shows your sign-in, subscription count and a prominent download button
+- Discover shows an Open on Steam button that opens the Steam page listing what is currently on show
+
+#### Improved
+
+- With Questionable or Mature hidden, as by default, Collections pages are now filled to 30 tiles instead of showing only a handful
+- Sound-reactive web wallpapers no longer keep the app reading audio while paused, and reading starts again with playback
+- Your Steam sign-in is no longer sent along when Steam redirects a request to another address
+- Download the ones not in your library is now disabled when there is nothing to download
+- The Discover list tabs can now be switched with the arrow, Home and End keys, like the page tabs
+- The top tabs no longer all grey out while a page opens, and the Filter button is disabled while its change is saved
+
+#### Fixed
+
+- Discover no longer shows Workshop unavailable for every search after Steam changed its browse page format
+- Your subscriptions lists your subscribed wallpapers again when signed in to Steam, instead of reporting an unreadable Workshop page
+- Large Workshop downloads no longer fail with SteamCMD timed out while they are still downloading
+- Two identical monitors no longer swap wallpapers after macOS renumbers displays, and duplicate display entries in settings are cleaned up on next launch
+- Updates without a usable checksum are now refused as unverifiable before downloading, instead of being installed without a check
+- Turning on the experimental animated lock screen no longer reports success before it draws, which left it off again after a relaunch
+- The experimental animated lock screen and wallpaper screen saver now repair conflicts with other copies of WallpaperMachine automatically
+- With only Use wallpaper as screen saver on, the desktop picture in Mission Control and when switching Spaces follows wallpaper changes again
+- When switching wallpapers, the old wallpaper's still picture no longer takes the desktop back or stops the new one from showing
+- A playlist change that falls due while windows cover a display now happens as soon as the desktop shows again
+- Change now and Next Wallpaper now move a playlist along while its display is paused, covered or waiting on a scheduled change
+- Links, keyboard shortcuts and Shortcuts no longer report success when a playlist has no other wallpaper to change to or cannot change
+- A display that failed to pause or resume its wallpaper and was unplugged meanwhile now pauses or resumes correctly when reconnected
+- If the renderer fails to start, opening the control panel from a link, keyboard shortcut or Shortcuts now works at once instead of failing after 15 seconds
+- Error alerts from Play/Pause in the menu bar or from files opened at launch no longer stall the app or hang quitting
+- Help with emailed codes, shown while Steam waits for a Steam Guard code, now opens Steam's help page
+- A quick second change to the same control, such as another slider move or search, is no longer dropped after the first was rejected
+- When a Discover list fails to open, the previous list no longer stays on screen, and Try again reloads the list that failed
+- Pages hidden entirely by the age rating filters now say so and offer the next page, instead of saying you subscribe to nothing
+- Changing the search while a Collections page fills no longer mixes in the old search's collections
+
+### 简体中文
+
+本版本让发现重新适配 Steam 当前的 Workshop 页面，并让你的订阅更容易找到。它还修复了播放列表、相同型号显示器、大型下载和实验性锁定屏幕动画的诸多问题
+
+#### 新增
+
+- 发现现在顶部提供壁纸、合集和你的订阅标签页，你的订阅会显示登录状态、订阅数量和醒目的下载按钮
+- 发现新增在 Steam 上打开按钮，可打开当前所示内容对应的 Steam 列表页面
+
+#### 改进
+
+- 在默认隐藏 Questionable 或 Mature 内容时，合集每页现在会填满 30 项，不再只显示寥寥几个
+- 响应声音的网页壁纸暂停时，应用不再持续读取音频，恢复播放后再重新开始读取
+- 当 Steam 将请求重定向到其他地址时，你的 Steam 登录信息不再随之发送
+- 没有可下载的内容时，下载不在壁纸库中的项目按钮现在会被禁用
+- 发现中的列表标签页现在可以像页面标签页一样用方向键、Home 和 End 键切换
+- 页面打开时顶部标签页不再全部变灰，筛选按钮在其更改保存期间会被禁用
+
+#### 修复
+
+- Steam 更改浏览页面格式后，发现中每次搜索都显示 Workshop 不可用的问题已修复
+- 登录 Steam 后，你的订阅会再次列出已订阅的壁纸，不再提示 Workshop 页面无法读取
+- 仍在下载中的大型 Workshop 项目不再因 SteamCMD 超时而失败
+- macOS 重新编号显示器后，两台相同型号的显示器不再互换壁纸，设置中重复的显示器条目也会在下次启动时清理
+- 缺少可用校验和的更新现在会在下载前被视为无法验证而拒绝，不再未经检查就安装
+- 开启实验性的锁定屏幕动画时，不再在画面绘制前就报告已启用，从而避免重新启动后又被关闭
+- 实验性的锁定屏幕动画和壁纸屏幕保护程序现在会自动修复与其他 WallpaperMachine 副本之间的冲突
+- 仅开启将壁纸用作屏幕保护程序时，调度中心和切换空间时显示的桌面图片会再次跟随壁纸变化
+- 切换壁纸时，旧壁纸的静态图片不再夺回桌面，也不再阻止新图片显示
+- 窗口遮挡显示器期间到期的播放列表切换，现在会在桌面重新露出时立即进行
+- 显示器暂停、被遮挡或正在等待计划切换时，立即切换和下一张壁纸现在也会让播放列表前进
+- 当播放列表没有其他可切换的壁纸或无法切换时，链接、键盘快捷键和快捷指令不再报告成功
+- 暂停或恢复壁纸失败且期间被拔出的显示器，重新连接后会正确暂停或恢复
+- 渲染器无法启动时，通过链接、键盘快捷键或快捷指令打开控制面板现在会立即成功，不再等待 15 秒后失败
+- 菜单栏中播放/暂停或启动时打开文件产生的错误提示，不再使应用卡住或导致退出时挂起
+- 等待 Steam Guard 邮件验证码时显示的邮件验证码帮助，现在会打开 Steam 的帮助页面
+- 前一次更改被拒绝后，紧接着对同一控件的更改（例如再次拖动滑块或搜索）不再被丢弃
+- 发现中的列表打开失败时，上一个列表不再留在屏幕上，重试会重新加载失败的列表
+- 被年龄分级筛选完全隐藏的页面现在会说明情况并提供下一页，不再显示你没有任何订阅
+- 在合集页面加载期间更改搜索，不再混入旧搜索的合集
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.5...v1.2.6
+
 ## 1.2.5 — 2026-10-05
 
 ### English
