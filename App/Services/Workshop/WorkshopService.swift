@@ -480,11 +480,34 @@ actor WorkshopService {
         return first.count > 400 ? String(first.prefix(399)) + "…" : first
     }
 
-    /// The JSON string literal the page hands to `JSON.parse` for `window.SSR.renderContext`,
-    /// quotes included. Scanned rather than matched: a regular expression over a string literal
-    /// of a megabyte or more, as a page of collections holds, runs out of backtracking room.
-    static func renderContextLiteral(in html: String) -> Data? {
+    /// The page's `renderContext`. Steam serves it as `{"renderContext": {…}}` in a
+    /// `<script type="application/json" id="valve-ssr-data">` block; older pages handed a JSON
+    /// string literal to `JSON.parse` for `window.SSR.renderContext`, still read in case Steam
+    /// serves either. Scanned rather than matched: a regular expression over a page of a
+    /// megabyte or more, as a page of collections holds, runs out of backtracking room.
+    static func renderContext(in html: String) -> [String: Any]? {
         let bytes = Array(html.utf8)
+        if let data = ssrDataBlock(in: bytes) {
+            return (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["renderContext"] as? [String: Any]
+        }
+        guard let encoded = renderContextLiteral(in: bytes),
+              let contextString = try? JSONSerialization.jsonObject(with: encoded, options: .fragmentsAllowed) as? String
+        else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(contextString.utf8)) as? [String: Any]
+    }
+
+    /// The text of the `valve-ssr-data` script element. JSON in a script element cannot hold
+    /// `</script`, so the first one after the element's start ends it.
+    private static func ssrDataBlock(in bytes: [UInt8]) -> Data? {
+        guard let marker = firstIndex(of: Array(#"id="valve-ssr-data""#.utf8), in: bytes, from: 0),
+              let open = bytes[marker...].firstIndex(of: UInt8(ascii: ">")),
+              let close = firstIndex(of: Array("</script".utf8), in: bytes, from: open + 1) else { return nil }
+        return Data(bytes[(open + 1)..<close])
+    }
+
+    /// The JSON string literal an older page hands to `JSON.parse` for
+    /// `window.SSR.renderContext`, quotes included.
+    private static func renderContextLiteral(in bytes: [UInt8]) -> Data? {
         guard let marker = firstIndex(of: Array("window.SSR.renderContext".utf8), in: bytes, from: 0) else { return nil }
         var index = marker + "window.SSR.renderContext".utf8.count
         func skipSpaces() { while index < bytes.count, [0x20, 0x09, 0x0A, 0x0D].contains(bytes[index]) { index += 1 } }
@@ -527,11 +550,9 @@ actor WorkshopService {
     /// A browse page and, for each collection on it, the ids of the wallpapers it holds (not
     /// the collections it holds), in the collection's order.
     static func decodeBrowse(_ html: String) throws -> (page: WorkshopPage, children: [String: [String]]) {
-        guard let encoded = renderContextLiteral(in: html),
-              let contextString = try JSONSerialization.jsonObject(with: encoded, options: .fragmentsAllowed) as? String,
-              let context = try JSONSerialization.jsonObject(with: Data(contextString.utf8)) as? [String: Any],
+        guard let context = renderContext(in: html),
               let queryString = context["queryData"] as? String,
-              let queryData = try JSONSerialization.jsonObject(with: Data(queryString.utf8)) as? [String: Any],
+              let queryData = try? JSONSerialization.jsonObject(with: Data(queryString.utf8)) as? [String: Any],
               let queries = queryData["queries"] as? [[String: Any]],
               let query = queries.first(where: { ($0["queryKey"] as? [Any])?.first as? String == "workshop_browse" }),
               let state = query["state"] as? [String: Any],

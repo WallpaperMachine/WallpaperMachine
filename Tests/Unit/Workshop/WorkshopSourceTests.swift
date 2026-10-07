@@ -129,6 +129,14 @@ final class WorkshopSourceTests: XCTestCase {
     XCTAssertEqual(browse.children["901"]?.count, 40)
   }
 
+  /// Steam served `renderContext` through `JSON.parse` before its `valve-ssr-data` block.
+  func testOlderBrowsePagesAreStillRead() throws {
+    let browse = try WorkshopService.decodeBrowse(String(decoding: browseHTML(rows: [
+      wallpaperRow("12", tags: ["Scene"]),
+    ], legacy: true), as: UTF8.self))
+    XCTAssertEqual(browse.page.items.map(\.id), ["12"])
+  }
+
   func testDetailsMarkCollectionsMadeBySteamsCollectionApp() throws {
     var row = detailsRow("5", tags: [])
     row["creator_app_id"] = WorkshopService.collectionCreatorApp
@@ -491,7 +499,9 @@ final class WorkshopSourceTests: XCTestCase {
     ]
   }
 
-  private func browseHTML(rows: [[String: Any]], page: Int = 1, pages: Int = 1, count: Int? = nil) -> Data {
+  private func browseHTML(
+    rows: [[String: Any]], page: Int = 1, pages: Int = 1, count: Int? = nil, legacy: Bool = false
+  ) -> Data {
     let queries: [[String: Any]] = [
       [
         "queryKey": ["workshop_browse"],
@@ -503,13 +513,23 @@ final class WorkshopSourceTests: XCTestCase {
         ],
       ]
     ]
-    guard let queryData = try? JSONSerialization.data(withJSONObject: ["queries": queries]),
-      let context = try? JSONSerialization.data(withJSONObject: ["queryData": String(decoding: queryData, as: UTF8.self)]),
-      let encoded = try? JSONSerialization.data(
-        withJSONObject: String(decoding: context, as: UTF8.self), options: .fragmentsAllowed)
-    else { return Data() }
+    guard let queryData = try? JSONSerialization.data(withJSONObject: ["queries": queries]) else { return Data() }
+    let context = ["queryData": String(decoding: queryData, as: UTF8.self)]
+    if legacy {
+      guard let contextData = try? JSONSerialization.data(withJSONObject: context),
+        let encoded = try? JSONSerialization.data(
+          withJSONObject: String(decoding: contextData, as: UTF8.self), options: .fragmentsAllowed)
+      else { return Data() }
+      return Data(
+        "<html><script>window.SSR.renderContext = JSON.parse(\(String(decoding: encoded, as: UTF8.self)));</script></html>".utf8)
+    }
+    guard let ssr = try? JSONSerialization.data(withJSONObject: ["loaderData": [], "renderContext": context]) else {
+      return Data()
+    }
     return Data(
-      "<html><script>window.SSR.renderContext = JSON.parse(\(String(decoding: encoded, as: UTF8.self)));</script></html>".utf8)
+      ("<html><body><a href=\"https://steamcommunity.com/\">Steam</a>"
+        + "<script type=\"application/json\" id=\"valve-ssr-data\" nonce=\"n\">\(String(decoding: ssr, as: UTF8.self))</script>"
+        + "<script nonce=\"n\">window.SSR={renderContext:d.renderContext};</script></body></html>").utf8)
   }
 }
 

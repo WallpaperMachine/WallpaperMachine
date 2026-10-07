@@ -494,13 +494,11 @@ final class WorkshopStoreTests: XCTestCase {
     ]
     let queryData = String(
       decoding: try JSONSerialization.data(withJSONObject: ["queries": queries]), as: UTF8.self)
-    let context = String(
-      decoding: try JSONSerialization.data(withJSONObject: ["queryData": queryData]), as: UTF8.self)
-    let encoded = String(
-      decoding: try JSONSerialization.data(withJSONObject: context, options: .fragmentsAllowed),
+    let ssr = String(
+      decoding: try JSONSerialization.data(withJSONObject: ["renderContext": ["queryData": queryData]]),
       as: UTF8.self)
     return Data(
-      "<html><script>window.SSR.renderContext = JSON.parse(\(encoded));</script></html>".utf8)
+      "<html><script type=\"application/json\" id=\"valve-ssr-data\">\(ssr)</script></html>".utf8)
   }
 
   private static func waitUntil(_ condition: () -> Bool) async throws {
