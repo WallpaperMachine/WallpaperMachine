@@ -25,6 +25,18 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-07 — Automatic recovery from duplicate wallpaper extensions
+
+- Activation now validates and reconciles native extension registrations to the running app, preserving other app bundles and verifying the resulting registry.
+- A wrong extension copy triggers one fresh activation; snapshot refreshes share registration work and preserve the recovery limit, while disabling or shutdown cancels preparation.
+- Read-only pluginkit discovery confirmed installed and worktree Debug registrations before implementation; no live registration-repair command was executed.
+- Targeted iteration: python3 scripts/test.py --only LockScreenExtensionRegistrationTests --only LockScreenWallpaperServiceTests --only LockScreenExtensionDiagnosticsTests passed 60 tests; the final gate also covers parent-unregistration removing its extension first (61 related tests passed).
+- Full gate, run once: python3 scripts/test.py exited 0; 268 Python script tests passed; native tests: 1209 passed, 0 failed, 14 skipped of 1223.
+- Skipped opt-in coverage: 11 NativeVideoPlayerMediaTests and 3 live Steam network/install tests; no private asset corpus or desktop checks were run.
+- Initial targeted compilation hit the documented Finder/File Provider xattr signing issue; cleared disposable Debug product xattrs with xattr -cr build/Build/Products/Debug, then verified through the passing gate.
+- git diff --check passed; owning documentation links resolve; all shipped native language catalogs contain the new messages.
+- Unverified: real LaunchServices/PlugInKit repair convergence, macOS choosing the intended extension, and visible lock-screen/screen-saver transitions. No Release build, app installation/restart, or desktop automation.
+
 ## 2026-10-05 — Code audit fixes: downloads, playlists, Discover, lock screen, updater, panel
 
 - Scope: 16 fixes and Open on Steam from a read-only audit of aa47389 (Swift app, WebUI, bridge to panel); no renderer change.
@@ -116,14 +128,3 @@ Issue #28: preset 3610485014 (base 2983846453, a day/night switch template) drew
 - /usr/sbin/taskpolicy -b python3 scripts/check_renderer.py --skip-build: passed all required binaries, all 12 generated scene pixel comparisons and expected pixels with zero diagnostics, and eight reload projects twice.
 - python3 scripts/test.py: Python checks passed; native suite 1156 passed, 0 failed, 12 optional media/network tests skipped.
 - User commit 9a63ed3 and its bilingual release note remain included. Optional local wallpaper/video corpus tests were skipped; no desktop launch, install, audio hardware, or visual smoke test was performed.
-
-## 2026-10-04 — Normalize complete puppet poses across animation layers
-
-- Original synthetic regressions: both NonAdditive tests fail against the original WPPuppet.cpp and pass with the correction.
-- CMake mdl_schema_tests and scene_schema_tests: exit 0; 57 model and 109 scene tests passed.
-- python3 scripts/test.py: exit 0; Python checks passed, native gate 1156 passed, 0 failed, 12 opt-in media/network skips.
-- python3 scripts/check_renderer.py --project <local-project>: exit 0; all 30 registered binaries succeeded; 12 generated scenes and one local scene had pooled/isolated pixel equality and zero diagnostics; local reload x2 passed.
-- Renderer gate skipped two optional private text scenes, a private video import and its unconfigured local Metal case; the affected local scene was separately rendered successfully by metal_scene_draw_smoke.
-- Private offline renders of Into The Abyss inspected at scene time 15 seconds on Compatibility and native Metal: hair and arm reassembled. Compatibility before/after both used 1024 passes across 16 samples and 276121600 allocated GPU bytes.
-- python3 scripts/build.py --configuration Release: exit 0; rebuilt renderer and Release app. No installation or launch.
-- git diff --check passed. Desktop presentation, live smoothness and energy use unverified; no desktop control, screen capture or audio hardware used.

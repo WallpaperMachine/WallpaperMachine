@@ -161,7 +161,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   @MainActor
   func testActivationFailureAlwaysHandsDesktopBackToPosterProvider() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene()] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal,
       reload: { throw LockScreenWallpaperFailure(message: "agent missing") }),
@@ -183,7 +183,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testDisableWithFailedRestorationStillHandsDesktopBack() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
     var failReload = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene()] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal,
       reload: {
@@ -215,7 +215,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   @MainActor
   func testRefreshWhileAwaitingTheFirstFrameNeitherClaimsEnabledNorRepublishes() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene()] },
     selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
     service.beforeActivation = {}
@@ -245,7 +245,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testNoAppliedWallpaperReleasesDesktopProvider() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
     var scenes = [scene()]
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { scenes },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { scenes },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -275,7 +275,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     // The external display is first (primary); display identity is not array order.
     var records = [external, builtIn]
     var publications: [LockScreenConfiguration] = []
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { records },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { records },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -333,7 +333,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var records = [external, builtIn]
     var online: Set<UInt32> = [1, 2]
     var reloads = 0
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { records },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { records },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: { reloads += 1 }),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -386,7 +386,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var calls = 0
     var pending: CheckedContinuation<[BridgeLockScreenScene], Never>?
     var suspend = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: {
       calls += 1
       if suspend { return await withCheckedContinuation { pending = $0 } }
       return []
@@ -439,7 +439,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     defaults.set(true, forKey: preference)
     var fail = true
     var calls = 0
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: {
       calls += 1
       if fail { throw LockScreenWallpaperFailure(message: "scene lookup failed") }
       return []
@@ -470,7 +470,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testRecoveryFailureDoesNotStartMonitorAndRefreshCanRecover() async throws {
     defaults.set(true, forKey: preference)
     try Data("invalid journal".utf8).write(to: journal)
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -488,7 +488,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   @MainActor
   func testDisableCancelsReadinessBeforeEnabledPreferenceCanCommit() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene()] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -517,7 +517,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testNewGenerationCannotCommitPreviousReadiness() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
     var records = [scene()]
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { records },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { records },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -543,7 +543,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testShutdownStopsMonitorBeforeWaitingAndKeepsItStoppedOnFailure() async throws {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
     var failReload = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene()] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene()] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal,
       reload: {
@@ -580,7 +580,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testShutdownRestoresNativeChoicesBeforeWaitingForDesktopRestoration() async throws {
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
       selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
       exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
       displayUUID: { _ in "one" })
@@ -613,7 +613,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
 
   @MainActor
   func testFailedDesktopRestorationLeavesQuitCancelledAndAllowsExplicitRetry() async throws {
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [] },
       selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
       exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
     try service.start()
@@ -646,7 +646,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var publications = 0
     var reloads = 0
     var sceneReads = 0
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: {
       sceneReads += 1
       return [builtIn]
     },
@@ -715,7 +715,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     record.displayId = 1
     var contentRevision: UInt64 = 0
     var publications = 0
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
       selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
       exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
       displayUUID: { _ in "one" }, persistConfiguration: { url, bytes in
@@ -753,7 +753,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var builtIn = scene()
     builtIn.displayId = 1
     var online: Set<UInt32> = [1]
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [builtIn] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [builtIn] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -803,7 +803,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var external = builtIn
     external.displayId = 2
     var records = [builtIn]
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { records },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { records },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -853,7 +853,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
     try Data("other-wallpaper".utf8).write(to: other.appendingPathComponent("other.png"))
 
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene(propertiesJSON: #"{"cover":"/Users/someone/a b+c.png"}"#)] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene(propertiesJSON: #"{"cover":"/Users/someone/a b+c.png"}"#)] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -890,7 +890,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     try XCTSkipIf(CGDisplayIsOnline(CGMainDisplayID()) == 0, "No online main display")
     try writeManagedAsset(propertyId: "cover", fileName: "first.png", bytes: "first-bytes")
     var properties = #"{"cover":"/Users/someone/first.png"}"#
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [self.scene(propertiesJSON: properties)] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [self.scene(propertiesJSON: properties)] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor)
@@ -958,7 +958,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     try write(native)
     let original = try PropertyListSerialization.propertyList(
       from: Data(contentsOf: store), format: nil) as! NSDictionary
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1001,7 +1001,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
       ]
       try write(original)
       defaults.removePersistentDomain(forName: defaultsSuite)
-      let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+      let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
         selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
         exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
         displayUUID: { _ in "one" })
@@ -1032,7 +1032,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
       var online = true
       var record = scene()
       record.displayId = 1
-      let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+      let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
       selection: LockScreenWallpaperSelection(
         storeURL: store, journalURL: journal, reload: {}),
       exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1095,7 +1095,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var record = scene(propertiesJSON:
       #"{"cover":{"type":"file","value":"/old/a b.png"},"empty":{"type":"directory","value":"/old/empty"},"color":{"type":"color","value":"1 0 0"}}"#)
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1141,7 +1141,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     let original = try Data(contentsOf: store)
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1158,7 +1158,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testIdleRendererFailureRestoresSelectionAndStopsAutomaticRetries() async throws {
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1183,7 +1183,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testCancellingLockActivationDoesNotCancelAnAlreadySelectedSaver() async throws {
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
@@ -1218,7 +1218,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     record.displayId = 1
     var answerLock = false
     var desktopReturned = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       if answerLock { try? self.answerPublishedReadiness() }
     }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
@@ -1283,7 +1283,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     record.displayId = 1
     var online = true
     var answerLock = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       if answerLock { try? self.answerPublishedReadiness() }
     }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
       storeURL: store, journalURL: journal, reload: {}),
@@ -1337,7 +1337,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     let bundle = root.appendingPathComponent("extension.appex")
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       _ = try? LockScreenExtensionStatus.loadConfiguration(
         exchange: self.exchange, bundleURL: bundle, supportedVersion: 1,
         reportWriteFailure: { XCTFail("\($0)") })
@@ -1368,7 +1368,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var record = scene()
     record.displayId = 1
     var lockRevision: String?
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       if let configuration = try? self.publishedConfiguration(), configuration.lockScreenEnabled,
         !configuration.scenes.isEmpty {
         lockRevision = configuration.revision
@@ -1425,7 +1425,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   func testFailedSaverOnlyPublicationRestoresBothSelections() async throws {
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
     displayUUID: { _ in "one" }, persistConfiguration: { url, data in
@@ -1458,12 +1458,232 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
   }
 
   @MainActor
+  func testRegistrationRunsForActivationButNotSteadyRefreshOrDisable() async throws {
+    var record = scene()
+    record.displayId = 1
+    var registrations = 0
+    let service = LockScreenWallpaperService(prepareExtension: { registrations += 1 },
+      notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" })
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    service.setEnabled(true)
+    await waitFor("activation") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertEqual(registrations, 1)
+    service.refresh()
+    await waitFor("unchanged refresh") { !service.isBusy }
+    service.setEnabled(false)
+    await waitFor("disable") { !service.isBusy }
+    XCTAssertEqual(registrations, 1)
+    service.setScreenSaverEnabled(true)
+    await waitFor("saver activation") { !service.isBusy }
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertEqual(registrations, 2, "The screen saver also uses the registered extension")
+    service.setEnabled(true)
+    await waitFor("lock screen alongside saver") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertEqual(registrations, 3)
+    try await service.shutdown()
+    XCTAssertEqual(registrations, 3)
+  }
+
+  @MainActor
+  func testRegistrationFailureDoesNotSelectOrPersistNativePresentation() async throws {
+    var record = scene()
+    record.displayId = 1
+    let service = LockScreenWallpaperService(prepareExtension: {
+      throw LockScreenWallpaperFailure(message: "registration unavailable")
+    }, notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" })
+    service.beforeActivation = { XCTFail("Registration must finish before native selection") }
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("registration failure") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(service.screenSaverEnabled)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertNotNil(service.screenSaverError)
+    XCTAssertFalse(defaults.bool(forKey: preference))
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertEqual(try selectedProvider("Idle"), "display-one-idle")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: journal.path))
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testDisableDuringRegistrationCannotPublishOrSelectTheCancelledActivation() async throws {
+    var record = scene()
+    record.displayId = 1
+    var finishRegistration: CheckedContinuation<Void, Never>?
+    let service = LockScreenWallpaperService(prepareExtension: {
+      await withCheckedContinuation { finishRegistration = $0 }
+    }, notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" })
+    service.beforeActivation = { XCTFail("A cancelled activation must not own the desktop") }
+    service.setEnabled(true)
+    await waitFor("registration started") { finishRegistration != nil }
+    XCTAssertFalse(service.isEnabled)
+    service.setEnabled(false)
+    finishRegistration?.resume()
+    await waitFor("cancelled activation") { !service.isBusy }
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: exchange.appendingPathComponent(LockScreenConfiguration.fileName).path))
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testRefreshDuringRegistrationSharesTheWorkAndStillWaitsForPixels() async throws {
+    var record = scene()
+    record.displayId = 1
+    var preparations = 0
+    var finishRegistration: CheckedContinuation<Void, Never>?
+    let service = LockScreenWallpaperService(prepareExtension: {
+      preparations += 1
+      await withCheckedContinuation { finishRegistration = $0 }
+    }, notifyConfigurationChanged: {}, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" })
+    service.setEnabled(true)
+    await waitFor("registration started") { finishRegistration != nil }
+    service.refresh()
+    service.refresh()
+    finishRegistration?.resume()
+    await waitFor("publication after registration") {
+      FileManager.default.fileExists(atPath: self.exchange.appendingPathComponent(LockScreenConfiguration.fileName).path)
+    }
+    XCTAssertEqual(preparations, 1)
+    XCTAssertTrue(service.isBusy)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertFalse(defaults.bool(forKey: preference))
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    await waitFor("first frame") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertEqual(preparations, 1)
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testWrongCopyIsAutomaticallyRepairedAndRetriedWithANewRevision() async throws {
+    let bundle = root.appendingPathComponent("intended.appex")
+    var record = scene()
+    record.displayId = 1
+    var registrations = 0
+    var revisions: [String] = []
+    let service = LockScreenWallpaperService(prepareExtension: { registrations += 1 },
+      notifyConfigurationChanged: {
+        guard let configuration = try? self.publishedConfiguration(), !configuration.scenes.isEmpty else { return }
+        revisions.append(configuration.revision)
+        let first = revisions.count == 1
+        let report = LockScreenExtensionStatus(revision: configuration.revision,
+          bundlePath: first ? self.root.appendingPathComponent("old.appex").path : bundle.path,
+          supportedVersion: first ? 1 : LockScreenConfiguration.supportedVersion, error: nil)
+        try? JSONEncoder().encode(report).write(to: self.exchange.appendingPathComponent(LockScreenExtensionStatus.fileName))
+      }, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" }, expectedExtensionBundle: bundle)
+    let responder = readinessResponder()
+    defer { responder.cancel() }
+    service.setEnabled(true)
+    service.setScreenSaverEnabled(true)
+    await waitFor("copy conflict recovery") { !service.isBusy }
+    XCTAssertTrue(service.isEnabled)
+    XCTAssertTrue(service.screenSaverEnabled)
+    XCTAssertNil(service.errorMessage)
+    XCTAssertNil(service.screenSaverError)
+    XCTAssertEqual(registrations, 2)
+    XCTAssertEqual(Set(revisions).count, 2)
+    XCTAssertTrue(defaults.bool(forKey: preference))
+    XCTAssertEqual(try selectedProvider("Desktop"), LockScreenConfiguration.extensionIdentifier)
+    XCTAssertEqual(try selectedProvider("Idle"), LockScreenConfiguration.extensionIdentifier)
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testPersistentWrongCopyStopsAfterOneAutomaticRetryAndRestoresSelection() async throws {
+    var record = scene()
+    record.displayId = 1
+    var registrations = 0
+    var activations = 0
+    let service = LockScreenWallpaperService(prepareExtension: { registrations += 1 },
+      notifyConfigurationChanged: {
+        guard let configuration = try? self.publishedConfiguration(), !configuration.scenes.isEmpty else { return }
+        activations += 1
+        let report = LockScreenExtensionStatus(revision: configuration.revision,
+          bundlePath: self.root.appendingPathComponent("old.appex").path,
+          supportedVersion: LockScreenConfiguration.supportedVersion, error: nil)
+        try? JSONEncoder().encode(report).write(to: self.exchange.appendingPathComponent(LockScreenExtensionStatus.fileName))
+      }, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" }, expectedExtensionBundle: root.appendingPathComponent("intended.appex"))
+    service.setEnabled(true)
+    await waitFor("bounded copy recovery") { !service.isBusy }
+    XCTAssertEqual(registrations, 2)
+    XCTAssertEqual(activations, 2)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertFalse(service.canRefreshAutomatically)
+    XCTAssertFalse(defaults.bool(forKey: preference))
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    XCTAssertTrue(try publishedConfiguration().scenes.isEmpty)
+    try await service.shutdown()
+  }
+
+  @MainActor
+  func testRefreshDuringCopyRecoveryCannotResetTheAutomaticRetryLimit() async throws {
+    var record = scene()
+    record.displayId = 1
+    var preparations = 0
+    var finishRepair: CheckedContinuation<Void, Never>?
+    let service = LockScreenWallpaperService(prepareExtension: {
+      preparations += 1
+      if preparations == 2 { await withCheckedContinuation { finishRepair = $0 } }
+    }, notifyConfigurationChanged: {
+      guard let configuration = try? self.publishedConfiguration(), !configuration.scenes.isEmpty else { return }
+      let report = LockScreenExtensionStatus(revision: configuration.revision,
+        bundlePath: self.root.appendingPathComponent("old.appex").path,
+        supportedVersion: LockScreenConfiguration.supportedVersion, error: nil)
+      try? JSONEncoder().encode(report).write(to: self.exchange.appendingPathComponent(LockScreenExtensionStatus.fileName))
+    }, scenes: { [record] },
+      selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
+      exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
+      displayUUID: { _ in "one" }, expectedExtensionBundle: root.appendingPathComponent("intended.appex"))
+    service.setEnabled(true)
+    await waitFor("repair started") { finishRepair != nil }
+    service.refresh()
+    finishRepair?.resume()
+    await waitFor("bounded repair after refresh") { !service.isBusy }
+    XCTAssertEqual(preparations, 2)
+    XCTAssertFalse(service.isEnabled)
+    XCTAssertNotNil(service.errorMessage)
+    XCTAssertFalse(service.canRefreshAutomatically)
+    XCTAssertEqual(try selectedProvider("Desktop"), "display-one-desktop")
+    service.refresh(retryingLockScreen: true)
+    await waitFor("explicit retry") { !service.isBusy }
+    XCTAssertEqual(preparations, 4, "An explicit retry allows one new recovery attempt")
+    XCTAssertFalse(service.isEnabled)
+    try await service.shutdown()
+  }
+
+  @MainActor
   func testConfigurationFailureRestoresSelectionWithoutWaitingForFrameTimeout() async throws {
     let bundle = root.appendingPathComponent("extension.appex")
     var record = scene()
     record.displayId = 1
     var loadFailed = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       guard let configuration = try? self.publishedConfiguration(), !configuration.scenes.isEmpty else { return }
       do {
         let invalid = ["version": 2, "revision": configuration.revision, "scenes": false] as [String: Any]
@@ -1499,7 +1719,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     let bundle = root.appendingPathComponent("extension.appex")
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {
       _ = try? LockScreenExtensionStatus.loadConfiguration(
         exchange: self.exchange, bundleURL: bundle, reportWriteFailure: { XCTFail("\($0)") })
     }, scenes: { [record] }, selection: LockScreenWallpaperSelection(
@@ -1530,7 +1750,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     var record = scene()
     record.displayId = 1
     var inspected = false
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
     displayUUID: { _ in "one" }, expectedExtensionBundle: root.appendingPathComponent("intended.appex"),
@@ -1553,7 +1773,7 @@ final class LockScreenWallpaperServiceTests: XCTestCase {
     let bundle = root.appendingPathComponent("extension.appex")
     var record = scene()
     record.displayId = 1
-    let service = LockScreenWallpaperService(notifyConfigurationChanged: {}, scenes: { [record] },
+    let service = LockScreenWallpaperService(prepareExtension: {}, notifyConfigurationChanged: {}, scenes: { [record] },
     selection: LockScreenWallpaperSelection(storeURL: store, journalURL: journal, reload: {}),
     exchange: exchange, defaults: defaults, scheduleMonitor: scheduleMonitor,
     displayUUID: { _ in "one" }, expectedExtensionBundle: bundle)

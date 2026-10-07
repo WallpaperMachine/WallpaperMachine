@@ -2,17 +2,17 @@ import Darwin
 import Foundation
 
 enum LockScreenExtensionDiagnostics {
-  static let differentCopyMessage = String(localized: "macOS loaded the lock-screen renderer from another copy of WallpaperMachine. Keep only the intended copy of the app, then retry.")
+  static let differentCopyMessage = String(localized: "macOS is still loading the wallpaper renderer from another copy of WallpaperMachine. Close other running copies, then retry in this app.")
 
   static func failure(
     status: LockScreenExtensionStatus, revision: String, expectedBundle: URL
   ) -> LockScreenWallpaperFailure? {
     guard status.revision == revision else { return nil }
+    if !isSameBundle(URL(fileURLWithPath: status.bundlePath), expectedBundle) {
+      return LockScreenWallpaperFailure(message: differentCopyMessage, reason: .differentExtensionCopy)
+    }
     if status.supportedVersion != LockScreenConfiguration.supportedVersion {
       return LockScreenWallpaperFailure(message: String(localized: "The app and the lock-screen renderer use incompatible configuration versions. Quit other copies of WallpaperMachine and reopen the intended app, then retry."))
-    }
-    if !isSameBundle(URL(fileURLWithPath: status.bundlePath), expectedBundle) {
-      return LockScreenWallpaperFailure(message: differentCopyMessage)
     }
     if let error = status.error {
       return LockScreenWallpaperFailure(message: String(localized: "The lock-screen renderer could not load its configuration: \(error)"))

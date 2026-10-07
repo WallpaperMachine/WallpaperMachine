@@ -33,10 +33,13 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private let displayUUID: (UInt32) -> String?
   @ObservationIgnored private let persistConfiguration: (URL, Data) throws -> Void
   @ObservationIgnored private let notifyConfigurationChanged: () -> Void
+  @ObservationIgnored private let prepareExtension: () async throws -> Void
   @ObservationIgnored private let expectedExtensionBundle: URL
   @ObservationIgnored private let runningExtensionBundles: () -> [URL]
   @ObservationIgnored private let readinessTimeout: TimeInterval
   @ObservationIgnored private var work: Task<Void, Never>?
+  @ObservationIgnored private var extensionPreparation: Task<Void, Error>?
+  @ObservationIgnored private var copyRecoveryAttempted = false
   @ObservationIgnored private var monitor: Timer?
   @ObservationIgnored private var generation: UInt64 = 0
   @ObservationIgnored private var recovered = false
@@ -55,7 +58,9 @@ final class LockScreenWallpaperService {
   @ObservationIgnored private var lockScreenActivationError: String?
 
   convenience init(bridge: WallpaperBridge, contentRevision: @escaping () -> UInt64 = { 0 }) {
+    let registration = LockScreenExtensionRegistration()
     self.init(
+      prepareExtension: { try await registration.prepare() },
       notifyConfigurationChanged: {
         CFNotificationCenterPostNotification(
           CFNotificationCenterGetDarwinNotifyCenter(),
@@ -68,6 +73,7 @@ final class LockScreenWallpaperService {
   }
 
   init(
+    prepareExtension: @escaping () async throws -> Void,
     notifyConfigurationChanged: @escaping () -> Void,
     scenes: @escaping () async throws -> [BridgeLockScreenScene],
     selection: LockScreenWallpaperSelection, exchange: URL,
@@ -92,6 +98,7 @@ final class LockScreenWallpaperService {
     self.displayUUID = displayUUID
     self.persistConfiguration = persistConfiguration
     self.notifyConfigurationChanged = notifyConfigurationChanged
+    self.prepareExtension = prepareExtension
     self.expectedExtensionBundle = expectedExtensionBundle
     self.runningExtensionBundles = runningExtensionBundles
     self.readinessTimeout = readinessTimeout
@@ -138,6 +145,8 @@ final class LockScreenWallpaperService {
 
   func setScreenSaverEnabled(_ enabled: Bool) {
     guard !stopping else { return }
+    cancelExtensionPreparation()
+    copyRecoveryAttempted = false
     screenSaverRequested = enabled
     updateMonitor()
     if !enabled { defaults.set(false, forKey: Self.screenSaverPreference) }
@@ -146,6 +155,10 @@ final class LockScreenWallpaperService {
 
   func refresh(retryingLockScreen: Bool = false) {
     guard !stopping else { return }
+    if retryingLockScreen || (!isBusy && !canRefreshAutomatically) {
+      cancelExtensionPreparation()
+      copyRecoveryAttempted = false
+    }
     if retryingLockScreen {
       // The committed display mapping must survive a retry for disable during wake.
       if lockScreenActivationError != nil { lastLockScreenRequested = nil }
@@ -189,6 +202,7 @@ final class LockScreenWallpaperService {
     stopping = true
     updateMonitor()
     generation &+= 1
+    cancelExtensionPreparation()
     work?.cancel()
     await work?.value
     work = nil
@@ -328,6 +342,22 @@ final class LockScreenWallpaperService {
       configuration.lockScreenEnabled = isRequested && lockScreenActivationError == nil
         && configuration.scenes.contains { $0.webEntryFile == nil }
       configuration.screenSaverEnabled = screenSaverRequested && !configuration.scenes.isEmpty
+      if (configuration.lockScreenEnabled || configuration.screenSaverEnabled)
+        && (published?.scenes.isEmpty != false
+          || (configuration.lockScreenEnabled && published?.lockScreenEnabled != true)
+          || (configuration.screenSaverEnabled && published?.screenSaverEnabled != true))
+      {
+        if isRequested { status = String(localized: "Checking the system wallpaper renderer…") }
+        if screenSaverRequested { screenSaverStatus = String(localized: "Checking the system wallpaper renderer…") }
+        // A snapshot refresh cancels its waiter, not the shared registration work.
+        // Keep the result until publication so the next waiter cannot restart it.
+        if extensionPreparation == nil {
+          extensionPreparation = Task { try await prepareExtension() }
+        }
+        try await extensionPreparation?.value
+        try Task.checkCancellation()
+        guard generation == revision, anyRequested else { return }
+      }
       if let published, published.scenes == configuration.scenes,
          published.lockScreenEnabled == configuration.lockScreenEnabled,
          published.screenSaverEnabled == configuration.screenSaverEnabled {
@@ -351,6 +381,7 @@ final class LockScreenWallpaperService {
           ownsDesktopProvider = true
         }
         try publish(configuration)
+        extensionPreparation = nil
         LockScreenAssetPublisher.collectGarbage(
           exchange: root, keeping: prepared.referencedRevisions)
         try applySelection(configuration, inputs: inputs)
@@ -387,14 +418,32 @@ final class LockScreenWallpaperService {
       lastScreenSaverRequested = screenSaverRequested
       lastHasWebWallpapers = prepared.hasWebWallpapers
       updateStatuses(configuration, hasWebWallpapers: prepared.hasWebWallpapers)
+      copyRecoveryAttempted = false
       if isEnabled { defaults.set(true, forKey: Self.preference) }
       if screenSaverEnabled { defaults.set(true, forKey: Self.screenSaverPreference) }
     } catch is CancellationError {
       // A newer request owns the next publication; keep the committed surfaces.
     } catch {
       guard generation == revision else { return }
+      var failure = error
+      if (error as? LockScreenWallpaperFailure)?.reason == .differentExtensionCopy,
+        !copyRecoveryAttempted
+      {
+        // Discovery can race a new Debug build, or macOS can retain the old process.
+        // Restore first, then let a fresh activation repair registration and reselect once.
+        do {
+          copyRecoveryAttempted = true
+          AppLog.info("Native extension copy changed; repairing registration and retrying activation once")
+          try deactivate()
+          try Task.checkCancellation()
+          await update(revision: revision)
+          return
+        } catch is CancellationError {
+          return
+        } catch { failure = error }
+      }
       lockScreenActivationError = nil
-      var message = error.localizedDescription
+      var message = failure.localizedDescription
       do { try deactivate() } catch {
         message += " " + String(localized: "Restoration also failed: \(error.localizedDescription)")
       }
@@ -472,6 +521,7 @@ final class LockScreenWallpaperService {
   /// provider. Both steps always run so a failed restoration can never leave
   /// the poster sync suspended; the first error is rethrown afterwards.
   private func deactivate() throws {
+    cancelExtensionPreparation()
     isEnabled = false
     screenSaverEnabled = false
     lastInputs = nil
@@ -482,6 +532,11 @@ final class LockScreenWallpaperService {
       do { try afterDeactivation?() } catch { if firstError == nil { firstError = error } }
     }
     if let firstError { throw firstError }
+  }
+
+  private func cancelExtensionPreparation() {
+    extensionPreparation?.cancel()
+    extensionPreparation = nil
   }
 
   private struct RendererUnavailable: LocalizedError {
@@ -533,7 +588,8 @@ final class LockScreenWallpaperService {
       !LockScreenExtensionDiagnostics.isSameBundle($0, expected)
     }) {
       AppLog.error("Native extension timeout: running bundle=\(other.path), expected=\(expected.path)")
-      throw LockScreenWallpaperFailure(message: LockScreenExtensionDiagnostics.differentCopyMessage)
+      throw LockScreenWallpaperFailure(
+        message: LockScreenExtensionDiagnostics.differentCopyMessage, reason: .differentExtensionCopy)
     }
     throw RendererUnavailable()
   }

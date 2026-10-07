@@ -296,6 +296,17 @@ Swift tests cover, without starting the app:
   screen-saver disable/re-enable (including Off during a lock-screen retry before a
   missing display UUID returns), stale readiness rejection, current renderer failure,
   and full rollback when the shared extension or Idle-only publication fails.
+  `LockScreenExtensionRegistrationTests` uses synthetic app bundles and an injected
+  registry to cover current-copy selection, duplicate and removed-copy cleanup,
+  retained bundle files, symlink aliases, invalid inventory/bundle rejection,
+  cancellation, command failures and verification of the final registration.
+  Service tests cover registration before either native mode, unchanged refreshes,
+  cancellation before publication, and one bounded retry for a wrong extension
+  copy (including an older configuration version), with restoration on failure.
+  Snapshot refreshes during preparation share its result and cannot reset the
+  retry limit; successful registration still needs a frame acknowledgement.
+  These tests never mutate LaunchServices or PlugInKit; live registration repair
+  and macOS choosing the intended extension still need an authorized runtime check.
   These tests do not establish real lock-screen visual timing or private XPC
   snapshot transport. No test selects a real wallpaper.
 - **Diagnostics** — `AppLogRouterTests`: lines logged before the bridge keep

@@ -129,7 +129,7 @@ unavailable during wake, turning the screen saver off still restores its Idle ch
 immediately rather than waiting for that display lookup to recover.
 
 Both modes still share the publisher and extension. Configuration-loading errors,
-incompatible extension copies, reported renderer failures, and failed publication
+unresolved extension conflicts, reported renderer failures, and failed publication
 or restoration can roll back both selections. Retaining the Idle selection after
 a lock-screen timeout does not establish that macOS has started rendering it.
 
@@ -184,18 +184,38 @@ with the same wallpaper identity creates a new generation, while a healthy
 same-identity update keeps its context. Completion and readiness callbacks from
 an older generation cannot remove or acknowledge its replacement.
 
-Every copy of the app on disk registers the same extension identifier, and
-macOS may launch any of them — including the Debug build `scripts/test.py`
-rebuilds beside the Release app.
-`pluginkit -m -A -D -v -i app.wallpapermachine.wallpaper-extension` lists every
-registered copy (without `-A -D` it shows only one); keep one while testing.
-After testing copied app bundles, unregister their `.appex` paths with
-`pluginkit -r` and stop keeping those copies as launchable `.app` bundles.
-Verify the running extension's executable path points inside the installed app;
-checking only the bundle identifier does not establish which copy macOS chose.
-Startup logs include the extension bundle path and supported configuration
-version. Detection reports the conflict and restores owned selections; it does
-not unregister copies, change which app is installed, or restart the app.
+Every copy of the app on disk can register the same extension identifier,
+including Debug builds and worktrees. Before activating either native mode,
+WallpaperMachine now reconciles registrations to the **currently running app**.
+It validates its bundled renderer, lists all versions and physical copies with
+`pluginkit -m -A -D -v -i app.wallpapermachine.wallpaper-extension`, registers its
+own app and extension, and unregisters other copies of the same app from
+LaunchServices and PlugInKit. It then reads the registry again to confirm that
+only its own extension remains. An already correct registration is left alone.
+The process preserves app bundles, worktrees and build output; developers can
+keep Release and Debug copies on disk. A missing or invalid current renderer
+stops activation; an unrelated bundle occupying an old registration's path is
+never unregistered. Failed discovery never authorizes registration cleanup.
+
+Registration commands run off the UI thread with cancellation and a ten-second
+deadline per command. They do not change extension enable/disable elections,
+reset the system registry, install apps or restart app copies. The ordinary
+native-selection flow still reloads the wallpaper service after publication.
+Snapshot refreshes share an in-progress registration attempt; they neither
+restart it nor reset the automatic recovery limit. Changing a native-mode
+switch or shutting down cancels the pending preparation before it can publish.
+Registration alone does not establish playback: lock-screen activation still
+waits for the matching first-frame acknowledgement.
+
+macOS can rediscover a copy after a build or launch; unregistering it is not a
+permanent exclusion. If a current diagnostic (or a legacy timeout's process-path
+check) identifies another copy, the app restores its owned selections and makes
+one fresh activation attempt, repeating registration repair with a new revision.
+If that also fails, it restores the selections and shows **Retry**. Close other
+running copies before retrying in that case. Ordinary two-second refreshes do
+not continually rewrite registration. Startup logs include the extension bundle
+path and configuration version; checking only its identifier does not prove
+which copy macOS actually loaded.
 
 ## Turning it off
 

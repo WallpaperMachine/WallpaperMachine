@@ -2,7 +2,9 @@ import AppKit
 import Darwin
 
 struct LockScreenWallpaperFailure: LocalizedError {
+  enum Reason { case general, differentExtensionCopy }
   let message: String
+  var reason: Reason = .general
   var errorDescription: String? { message }
 }
 
