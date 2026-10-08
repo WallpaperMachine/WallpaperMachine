@@ -1,4 +1,5 @@
 import AppKit
+import Dispatch
 import Foundation
 import UniformTypeIdentifiers
 
@@ -104,40 +105,54 @@ final class WallpaperImportPicker {
 
         func run(onReady: @escaping @MainActor @Sendable (Int32) throws -> Void) async throws -> Data {
             try await withTaskCancellationHandler {
-                try await Task.detached(priority: .userInitiated) { [self] in
-                    defer {
-                        try? parentConnection.fileHandleForWriting.close()
-                        try? output.fileHandleForReading.close()
+                try await withCheckedThrowingContinuation { continuation in
+                    // Pipe reads can wait for the entire picker session. Keep them off the
+                    // cooperative executor, and keep Process launch/wait on one worker.
+                    DispatchQueue.global(qos: .userInitiated).async { [self] in
+                        continuation.resume(with: Result { try runBlocking(onReady: onReady) })
                     }
-                    try lock.withLock {
-                        guard !cancelled else { throw CancellationError() }
-                        try process.run()
-                    }
-                    let data: Data
-                    do {
-                        let ready = try output.fileHandleForReading.read(upToCount: 1)
-                        if isCancelled { throw CancellationError() }
-                        guard ready == Data([1]) else { throw Failure.unexpectedOutput }
-                        try await onReady(process.processIdentifier)
-                        if isCancelled { throw CancellationError() }
-                        try parentConnection.fileHandleForWriting.write(contentsOf: Data([1]))
-                        // Drain concurrently with the child's writes, including large multi-selections.
-                        data = try output.fileHandleForReading.readToEnd() ?? Data()
-                    } catch {
-                        cancel()
-                        process.waitUntilExit()
-                        throw error
-                    }
-                    process.waitUntilExit()
-                    if isCancelled { throw CancellationError() }
-                    guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-                        throw Failure.exited(process.terminationStatus)
-                    }
-                    return data
-                }.value
+                }
             } onCancel: {
                 self.cancel()
             }
+        }
+
+        private func runBlocking(onReady: @escaping @MainActor @Sendable (Int32) throws -> Void) throws -> Data {
+            defer {
+                try? parentConnection.fileHandleForWriting.close()
+                try? output.fileHandleForReading.close()
+            }
+            try lock.withLock {
+                guard !cancelled else { throw CancellationError() }
+                try process.run()
+            }
+            let data: Data
+            do {
+                let ready = try output.fileHandleForReading.read(upToCount: 1)
+                if isCancelled { throw CancellationError() }
+                guard ready == Data([1]) else { throw Failure.unexpectedOutput }
+                // The async caller has yielded; only this blocking worker waits for the
+                // main-actor activation handshake. No async hop moves the process waiter.
+                try DispatchQueue.main.sync {
+                    try MainActor.assumeIsolated {
+                        if isCancelled { throw CancellationError() }
+                        try onReady(process.processIdentifier)
+                    }
+                }
+                if isCancelled { throw CancellationError() }
+                try parentConnection.fileHandleForWriting.write(contentsOf: Data([1]))
+                data = try output.fileHandleForReading.readToEnd() ?? Data()
+            } catch {
+                cancel()
+                process.waitUntilExit()
+                throw error
+            }
+            process.waitUntilExit()
+            if isCancelled { throw CancellationError() }
+            guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+                throw Failure.exited(process.terminationStatus)
+            }
+            return data
         }
 
         func cancel() {

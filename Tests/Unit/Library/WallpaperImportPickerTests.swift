@@ -76,6 +76,33 @@ final class WallpaperImportPickerTests: XCTestCase {
         }
     }
 
+    func testConcurrentHelpersCompleteTheirMainActorHandshakeAndReturnAllOutput() async throws {
+        let helpers = (0..<16).map { _ in
+            WallpaperImportPicker.HelperProcess(executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: [
+                "-c", "printf '\\001'; /bin/dd bs=1 count=1 of=/dev/null 2>/dev/null; printf selection",
+            ])
+        }
+        defer { for helper in helpers { helper.cancel() } }
+        var activations = 0
+        var results = 0
+        try await withThrowingTaskGroup(of: Data.self) { group in
+            for helper in helpers {
+                group.addTask {
+                    try await helper.run { _ in
+                        MainActor.preconditionIsolated()
+                        activations += 1
+                    }
+                }
+            }
+            for try await result in group {
+                XCTAssertEqual(result, Data("selection".utf8))
+                results += 1
+            }
+        }
+        XCTAssertEqual(activations, helpers.count)
+        XCTAssertEqual(results, helpers.count)
+    }
+
     private func assertReaped(_ pid: Int32, file: StaticString = #filePath, line: UInt = #line) {
         guard pid > 0 else { return XCTFail("The picker did not publish its PID", file: file, line: line) }
         let result = kill(pid, 0)

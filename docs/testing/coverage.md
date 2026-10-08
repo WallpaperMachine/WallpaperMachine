@@ -24,6 +24,12 @@ Swift tests cover, without starting the app:
   `WallpaperImportPickerTests` exercises real child processes: cancellation
   before launch, reaping after cancellation, cleanup when activation fails,
   invalid handshakes, and failed exits not being treated as user cancellation.
+  Concurrent helper coverage exercises sixteen main-actor activation handshakes
+  and complete pipe outputs. Picker launch, blocking reads and process reaping run
+  in one GCD worker block, with only activation on the main actor. This avoids
+  blocking Swift's cooperative executor and changing threads around Foundation's
+  run-loop-based `waitUntilExit`; see [Apple's concurrency guidance](https://developer.apple.com/videos/play/wwdc2021/10254/)
+  and [Process.waitUntilExit](https://developer.apple.com/documentation/foundation/process/waituntilexit()).
   Native picker localization and the real selection-to-parent URL handoff
   require a separately authorized desktop smoke; these tests open no picker.
   The Finder/Dock hand-off in `AppDelegate` is not covered (it needs a running app).
