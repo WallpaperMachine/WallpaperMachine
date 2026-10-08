@@ -2,15 +2,20 @@ import Foundation
 
 /// Something the app can be told to do from outside its window: a `wallpapermachine://` link,
 /// the Shortcuts app, or a global keyboard shortcut. Each is something the menu bar or the
-/// panel already offers; nothing here deletes, downloads or changes settings.
+/// panel already offers; nothing here deletes or downloads wallpaper files.
 enum AutomationCommand: Equatable, Sendable {
     case play
     case pause
     case togglePlayback
     /// The next wallpaper on `display`, or on the panel's target display when nil.
     case next(display: String?)
+    /// Walks back through successful switches on this display.
+    case previous(display: String?)
     /// Applies an installed wallpaper on `display`, or on the target display when nil.
     case apply(wallpaperID: String, display: String?)
+    case applyPlaylist(planID: String, display: String?)
+    case applyPreset(presetID: String)
+    case applyDisplayLayout(layoutID: String)
     /// Brings up the control panel, on one of its pages when named.
     case open(page: Page?)
 
@@ -45,9 +50,19 @@ enum AutomationCommand: Equatable, Sendable {
         case "pause" where values.isEmpty: self = .pause
         case "toggle" where values.isEmpty: self = .togglePlayback
         case "next" where Set(values.keys).isSubset(of: ["display"]): self = .next(display: display)
+        case "previous" where Set(values.keys).isSubset(of: ["display"]): self = .previous(display: display)
         case "apply" where Set(values.keys).isSubset(of: ["id", "display"]):
             guard let id = values["id"] else { return nil }
             self = .apply(wallpaperID: id, display: display)
+        case "playlist" where Set(values.keys).isSubset(of: ["id", "display"]):
+            guard let id = values["id"] else { return nil }
+            self = .applyPlaylist(planID: id, display: display)
+        case "preset" where Set(values.keys) == ["id"]:
+            guard let id = values["id"] else { return nil }
+            self = .applyPreset(presetID: id)
+        case "layout" where Set(values.keys) == ["id"]:
+            guard let id = values["id"] else { return nil }
+            self = .applyDisplayLayout(layoutID: id)
         case "open" where Set(values.keys).isSubset(of: ["page"]):
             if let page = values["page"] {
                 guard let known = Page(rawValue: page.lowercased()) else { return nil }

@@ -401,6 +401,68 @@ the error; an apply failure stays until an apply succeeds. Nothing is submitted
 by the app; the user edits and sends the issue on GitHub. Neither is shown when
 the snapshot carries no `https` repository URL.
 
+### Live preview
+
+An installed scene, video or Web wallpaper has **Preview wallpaper** in its
+details. It opens one ordinary, resizable **Wallpaper Preview** window. Choosing
+another preview replaces that window's content; it does not apply to a display,
+change the panel's selection, consume a playback-history entry or save options.
+The preview reads the current property draft, including text still being edited,
+and the target display's scaling options. **Reload preview** reads them again.
+
+The window has its own **Play/Pause**, sound toggle and reload control. Every
+new preview, including reload, starts muted. Scene/video rendering is capped at
+30 FPS and the effective lower limit when its inputs are read. Web pages receive
+that FPS through the standard wallpaper host protocol; honoring it depends on
+the page, so this is not a WebKit frame-rate guarantee. Hiding, covering or minimizing the
+window, locking the session or sleeping the displays suspends it. Resuming
+visibility preserves an explicit user pause. Closing the window cancels pending
+preparation, removes file watchers and releases its renderer or WebKit page.
+A superseded load cannot replace the newer preview. Load failures remain in the
+window with their reason and a reload action; first-frame/page readiness has a
+30-second budget while visible.
+
+Scene and video previews use a private Compatibility renderer attached to the
+window, independently of the desktop's renderer preference. Scene hover, buttons
+and dragging are scoped to that view. Web previews reuse the wallpaper host
+protocol in a separate, nonpersistent website data store and support ordinary
+in-window interaction. File and directory properties use the existing managed
+asset authorization and staging path. Preview storage is discarded when closed;
+it is not the desktop page's localStorage or signed-in session.
+
+Audio response and system media information are unavailable in preview and the
+window says so. Page-initiated capture, dialogs, new windows and file pickers are
+declined. A Web preview is refused if WebKit cannot establish whole-page mute.
+Scene previews need the shared scene resources, just as desktop scenes do.
+Per-wallpaper energy ratings exclude the interval while a preview is open.
+
+`WallpaperPreviewSession` owns the loading and playback lifecycle;
+`WallpaperPreviewLoader` validates the installed paths, manifest and inputs.
+The bridge's read-only `wallpaper_preview` export keeps Web property scalar types
+and never reconciles the desktop. `WallpaperPreviewWindowController` is created
+only for an explicit preview action. Offscreen and fixture-level tests cover
+these contracts; real window presentation remains a separate authorized check.
+
+### Previous and recently used
+
+The activity bar's **Previous wallpaper** returns the target display to its last
+successfully applied wallpaper. Repeated presses continue backward instead of
+alternating between two wallpapers. Missing or unsupported library entries are
+skipped; a failed application leaves history intact. The menu bar, global
+keyboard shortcuts and [automation](automation.md) offer the same command.
+
+**Recently used** in the activity bar lists up to 50 distinct wallpapers used on
+that display, newest use first, and applies one when chosen. The menu bar shows
+the latest ten. **Clear history** clears only the target display's recent list
+and back history. Neither action deletes wallpaper files. Successful automatic
+playlist changes are included; reapplying an unchanged assignment adds nothing.
+
+`WallpaperHistoryStore` saves per-display history in the
+`WallpaperMachine.wallpaperHistory` preference. It survives relaunch, is pruned
+when wallpapers are deleted in the app, and remains local to this Mac (it is not
+included in backup packages). History records successful assignment and saving;
+it does not certify every frame a wallpaper subsequently displays.
+
 ## First wallpaper support prompt
 
 After a wallpaper downloaded through Discover or pixiv is successfully applied by
@@ -475,6 +537,21 @@ is below the saved frame rate, the field notes `Limited to {fps} fps by
 Performance settings` and can open Settings → Performance. The inspector's
 per-display frame-rate field shows the same note. Saved frame rates are not
 rewritten.
+
+**Copy or swap wallpapers** under an independent display transfers its current
+wallpaper to another eligible screen or exchanges their assignments. **Display
+layouts** below the display sections saves and reapplies named arrangements.
+Unavailable layouts stay visible with their missing resource; all targets are
+validated before changes. These operations preserve existing playback rules and
+use the normal command queue. See [Multi-display wallpaper layouts](display-layouts.md)
+for recovery, history, saved settings and the per-Space boundary.
+
+**Automatic wallpaper selection → Follow desktop Space** adds an experimental
+wallpaper/playlist picker for each regular desktop on the display. The current
+desktop is marked, reordered desktops keep their UUID-based choice, and unavailable
+desktops can be forgotten. Fullscreen app Spaces keep the previous selection.
+See [Space-based wallpaper choices](spaces.md) for transition, pause and lock-screen
+ownership limits; this mode does not create or switch Spaces.
 
 A display the app has never configured starts enabled with the primary
 display's wallpaper, so a newly connected monitor shows a wallpaper without a
@@ -678,7 +755,10 @@ the actual running backend and fallback reason when the runtime reports them.
 
 **Settings → Storage → Backup** exports a versioned `.wmbackup` directory package
 containing renderer/wallpaper settings, allowlisted preferences (collections,
-plans, presets, favorites and image placements included), and retained UserAssets.
+plans, presets, favorites, image placements, display layouts, automatic-selection rules and solar
+coordinates included), and retained UserAssets. Handled automatic events and
+temporary Focus recovery state remain local and are cleared on successful restore;
+rollback restores their original values.
 **Include the wallpaper library** also copies installed projects. Login sessions,
 passwords, keychain entries, logs, caches and shared scene resources are excluded.
 The local scene-assets selection stays local and may need to be selected again.
@@ -688,8 +768,9 @@ checks and rollback. Export checks the complete manifest size before copying
 payload bytes and supports the full 48 MB preset archive limit.
 
 Choose a backup to preview its contents, conflicts and missing-resource warnings.
-**Keep what is on this Mac** preserves conflicting per-display playlists and their
-deadlines as whole records; independent records can be imported. **Replace with
+**Keep what is on this Mac** preserves conflicting per-display playlists, their
+deadlines and automatic-selection configurations as whole records; independent
+records can be imported. **Replace with
 the backup** replaces conflicts. Confirmed restoration is staged for the next
 launch, before stores or the renderer read settings; nothing changes in the
 running session, and the app does not quit or restart automatically.

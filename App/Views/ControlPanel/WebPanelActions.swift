@@ -9,7 +9,9 @@ extension WebPanelController {
     // Browsing and cancellation stay usable while a native operation awaits I/O. pixiv
     // browsing and downloads never touch the renderer, so they are always available.
     if try performPixiv(action, request: request) { return }
-    if try performLibraryOrganization(action, request: request) { return }
+    if try await performLibraryOrganization(action, request: request) { return }
+    if try await performDisplayLayouts(action, request: request) { return }
+    if try performWallpaperAutomation(action, request: request) { return }
     if try await performBackup(action, request: request) { return }
     if try await performCompatibility(action, request: request) { return }
     if try await performImagePlacement(action, request: request) { return }
@@ -204,10 +206,10 @@ extension WebPanelController {
     case "revealDownloadedUpdate":
       updater.revealDownloadedUpdate()
       return
-    // Playlists are preferences; only Change now reaches the renderer, through the scheduler's
-    // own command.
+    // Automatic wallpaper choices can also change playlists. Serialize manual edits with
+    // those choices so an in-flight activation cannot overwrite a newer setting.
     case "playlistSetting":
-      try playlistSetting(request)
+      try await editPlaylist(request) { request, _ in try playlistSetting(request) }
       return
     // Recorded in Settings → General: the page sends the key's position and the modifiers held.
     case "hotkeySet":
@@ -227,10 +229,46 @@ extension WebPanelController {
         installed: store.librarySnapshot.wallpapers.map(\.id), library: ClientPaths.libraryURL)
       return
     case "playlistAdd":
-      playlists.add(try wallpaperIDs(request), to: try playlistDisplay(request))
+      try await editPlaylist(request) { request, display in
+        playlists.add(try wallpaperIDs(request), to: display)
+      }
       return
     case "playlistRemove":
-      playlists.remove(try request.string("id"), from: try playlistDisplay(request))
+      try await editPlaylist(request) { request, display in
+        playlists.remove(try request.string("id"), from: display)
+      }
+      return
+    case "playlistReorder":
+      guard let ids = request.body["ids"] as? [String], ids.count <= 10_000,
+            let expected = request.body["expectedIDs"] as? [String], expected.count <= 10_000
+      else { throw WebPanelRequest.invalid }
+      try await editPlaylist(request) { _, display in
+        try playlists.reorder(ids, on: display, expected: expected)
+      }
+      return
+    case "playlistClearFailures":
+      playlists.clearFailures(on: try playlistDisplay(request))
+      return
+    case "historyClear":
+      store.history.clear(on: try playlistDisplay(request))
+      return
+    case "previewWallpaper":
+      let id = try wallpaperID(request)
+      guard let preview = store.openPreview,
+            store.librarySnapshot.wallpapers.contains(where: { $0.id == id && $0.supported })
+      else { throw WebPanelRequest.invalid }
+      let properties: [String: String]
+      if let value = request.body["properties"] {
+        guard let values = value as? [String: String], values.count <= 1_000,
+              values.values.reduce(0, { $0 + $1.utf8.count }) <= 1024 * 1024 else { throw WebPanelRequest.invalid }
+        properties = values
+      } else { properties = [:] }
+      let selection = WallpaperPreviewSession.Selection(wallpaperID: id, displayID: navigation.targetDisplayID, textOverrides: properties)
+      try await store.commands.run(slot: "preview", subject: id) {
+        guard store.librarySnapshot.wallpapers.contains(where: { $0.id == id && $0.supported })
+        else { throw WebPanelRequest.invalid }
+        preview(selection)
+      }
       return
     case "playlistSkip":
       let display = try playlistDisplay(request)
@@ -274,6 +312,11 @@ extension WebPanelController {
         // switch is already waiting to replace it.
         if hidesAfterActivating, store.supportPrompt?.isPending != true,
           !store.commands.hasWaiting(slot: slot) { NSApp.hide(nil) }
+      }
+    case "previousWallpaper":
+      let displayID = try playlistDisplay(request)
+      try await store.commands.run(slot: BridgeStore.activationSlot(displayId: displayID)) {
+        try await store.activatePreviousWallpaperAsync(displayId: displayID)
       }
     // The confirmation is asked before queueing, so an open sheet holds up nothing else.
     case "delete":
@@ -454,7 +497,12 @@ extension WebPanelController {
           throw WallpaperActionError(
             message: String(localized: "Lock Screen integration is unavailable."))
         }
-        lock.setEnabled(try request.boolean("value"))
+        let enabled = try request.boolean("value")
+        if enabled, store.settingsSnapshot.displays.contains(where: { $0.enabled && $0.mode == .standalone
+          && automations.configuration(for: $0.displayId).mode == .spaces }) {
+          throw WallpaperActionError(message: String(localized: "Choose another automatic wallpaper mode for your displays before enabling animated lock-screen wallpaper."))
+        }
+        lock.setEnabled(enabled)
       case "screenSaverEnabled":
         guard let lock = store.lockScreenWallpaper else {
           throw WallpaperActionError(
@@ -753,6 +801,8 @@ extension WebPanelController {
     var firstError: Error?
     do { try forgetFavorites(ids) } catch { firstError = error }
     playlists.forget(ids)
+    do { try automations.forgetWallpapers(Set(ids)) } catch { firstError = firstError ?? error }
+    store.history.forget(Set(ids))
     workshop.updates.forget(ids)
     do { try collections.forget(ids) } catch { firstError = firstError ?? error }
     do { try await presets.forget(wallpaperIDs: ids) } catch { firstError = firstError ?? error }
@@ -819,6 +869,20 @@ extension WebPanelController {
         playlists.update(display) { $0.nightStart = minute }
       }
     default: throw WebPanelRequest.invalid
+    }
+  }
+
+  private func editPlaylist(_ request: WebPanelRequest,
+                            _ change: (WebPanelRequest, String) throws -> Void) async throws {
+    let display = try playlistDisplay(request)
+    var body = request.body
+    body["displayID"] = display
+    let pinned = WebPanelRequest(body)
+    // Each field edit is retained; different settings must not coalesce in the activation slot.
+    try await store.commands.run {
+      _ = try playlistDisplay(pinned)
+      try change(pinned, display)
+      automations.manualChoice?(display)
     }
   }
 

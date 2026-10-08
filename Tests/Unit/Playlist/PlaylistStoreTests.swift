@@ -50,6 +50,33 @@ final class PlaylistStoreTests: XCTestCase {
         XCTAssertNil(store.nextChange["primary"])
     }
 
+    func testReorderingPreservesMembershipAndDeadlineAndDetachesSavedPlan() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") { $0.mode = .rotate; $0.source = .list; $0.wallpaperIDs = ["a", "b", "c"] }
+        let plan = try store.savePlan(from: "primary", name: "Original")
+        try store.applyPlan(plan.id, to: "primary")
+        let deadline = Date(timeIntervalSince1970: 1_800_000_000)
+        store.schedule("primary", at: deadline)
+        try store.reorder(["c", "a", "b"], on: "primary", expected: ["a", "b", "c"])
+        let reloaded = PlaylistStore(defaults: defaults)
+        XCTAssertEqual(reloaded.playlist(for: "primary").wallpaperIDs, ["c", "a", "b"])
+        XCTAssertNil(reloaded.playlist(for: "primary").planID)
+        XCTAssertEqual(reloaded.nextChange["primary"], deadline)
+        XCTAssertEqual(reloaded.plan(id: plan.id)?.playlist.wallpaperIDs, ["a", "b", "c"])
+    }
+
+    func testStaleDuplicateOrForeignReordersLeaveTheListIntact() throws {
+        let store = PlaylistStore(defaults: defaults)
+        store.update("primary") { $0.source = .list; $0.wallpaperIDs = ["a", "b", "c"] }
+        for ids in [["a", "b"], ["a", "a", "c"], ["a", "b", "elsewhere"]] {
+            XCTAssertThrowsError(try store.reorder(ids, on: "primary"))
+        }
+        XCTAssertThrowsError(try store.reorder(["c", "b", "a"], on: "primary", expected: ["b", "a", "c"]))
+        XCTAssertEqual(store.playlist(for: "primary").wallpaperIDs, ["a", "b", "c"])
+        store.update("primary") { $0.source = .collection }
+        XCTAssertThrowsError(try store.reorder(["c", "b", "a"], on: "primary"))
+    }
+
     func testWallpapersThatLeaveTheLibraryLeaveEveryPlaylist() {
         let store = PlaylistStore(defaults: defaults)
         store.add(["a", "b"], to: "primary")

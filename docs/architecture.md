@@ -57,6 +57,14 @@ reaches `windowShouldClose` and hides the control panel exactly as its close but
 (`NSClassFromString("XCTestCase") != nil`) the delegate short-circuits: no services are created
 against the user's real app-support folder.
 
+An explicitly opened `WallpaperPreviewWindowController` keeps the app in regular
+activation policy as well. Its `WallpaperPreviewSession` owns one separate WebKit
+page or Compatibility renderer, never an engine display assignment. The read-only
+bridge preview descriptor exports draft inputs; the App target's
+`App/Bridge/WallpaperPreviewBridge.h` imports the existing scene C API for a normal
+`CAMetalLayer` view. Preview shutdown precedes app renderer shutdown. See
+[live preview](features/control-panel.md#live-preview) for its playback limits.
+
 ### Control panel: WKWebView and the JavaScript bridge
 
 The control-panel UI is HTML/CSS/JS in `WebUI/`, bundled as the app resource folder `WebUI`.
@@ -150,7 +158,7 @@ Services are grouped by domain under `App/Services/`.
 |---|---|---|
 | `Appearance/` | `AppTheme` (`AppThemePreferences`, `AppThemeStore`) | Mode/accent/tone preferences shared by AppKit and the page |
 | `Desktop/` | `DesktopSpaceWallpaperAPI`, `DesktopWallpaperLedger`, `DesktopWallpaperSync`, `PlaybackPreferences`, `AppRuleMonitor`, `OtherAudioMonitor`, `SystemConditionMonitor`, `FocusFilterState`, `WallpaperPresentationPolicy`, `WallpaperCoverageProbes` | Per-Space desktop picture control, original-wallpaper journal, still-poster sync, playback rules (apps, other audio, Low Power Mode, heat, Focus filter), per-display renderer suspension |
-| `Automation/` | `AutomationCommand`, `AppAutomation`, `HotKeyPreferences`, `GlobalHotKeys`, `WallpaperIntents`, `WallpaperFocusFilter` | Commands from outside the window (keyboard shortcuts, the Shortcuts app, `wallpapermachine://` links) routed to `AppDelegate.performAutomation`, and the Focus filter that pauses, mutes or stops wallpapers during a Focus; see [features/automation.md](features/automation.md) |
+| `Automation/` | `AutomationCommand`, `AppAutomation`, `HotKeyPreferences`, `GlobalHotKeys`, `WallpaperIntents`, `WallpaperConfigurationIntents`, `WallpaperFocusFilter`, `WallpaperAutomationStore/Planner/Scheduler/Controller`, `WallpaperSolarTimes` | Explicit commands through `AppDelegate.performAutomation`; per-display weekday/solar/appearance rules and temporary Focus selections through the shared command queue, with local recovery and manual-choice precedence; see [features/automation.md](features/automation.md) |
 | `Playlist/` | `WallpaperPlaylist`, `PlaylistPlanner`, `PlaylistStore`, `PlaylistScheduler` | Per-display rotation and day and night wallpapers, switched through the display's command slot while playback runs; see [features/playlists.md](features/playlists.md) |
 | `GitHub/` | `GitHubReleaseClient`, `AppUpdateModels`, `AppUpdateStore`, `AppUpdateInstaller` | GitHub Releases update check, download, in-place install |
 | `Library/` | `ClientPaths`, `WallpaperImportService`, `LibraryImportStore`, `StillImageWallpaper`, `WallpaperDeletionService` | App-support layout, non-destructive import (run for the app, not the panel page, so Finder and Dock drops import too), still pictures packaged as `web` wallpapers, guarded deletion |
@@ -178,6 +186,13 @@ engine reconciliation and reports them through `webWallpapers()`. Every wallpape
 hiding itself after an activation — hides the panel only. With AppKit's default the wallpaper
 windows left the screen too, and occlusion suspended every display.
 
+Multi-display user commands are coordinated above these windows by
+`WallpaperDisplayTransfer` and `BridgeStoreDisplayLayouts`: saved arrangements,
+copy and swap validate all screen/content references, hold one user-command turn,
+and verify recovery after failure. `WallpaperDisplayLayoutStore` owns only saved
+wallpaper choices; playlists, properties and display topology remain with their
+existing owners. See [display layouts](features/display-layouts.md).
+
 Swift keeps the *system* wallpaper consistent with that window:
 
 - `DesktopSpaceWallpaperAPI` `dlopen`s CoreGraphics and HIServices and resolves
@@ -198,7 +213,13 @@ Swift keeps the *system* wallpaper consistent with that window:
 - `DesktopWallpaperSync` encodes real renderer output into a PNG poster
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
   matches the animated one; a Space change or wake re-applies the existing poster instead of
-  capturing another. A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
+  capturing another in the ordinary all-Spaces mode. The experimental
+  [Space selection mode](features/spaces.md) uses `WallpaperSpaceMonitor` UUID/visit
+  context to request a fresh scoped frame; producers echo the original context and
+  the coordinator rejects late frames/encodes. Its ledger writes only the active
+  native Space and retains inactive posters through replacement gaps. Public fallback
+  targets have no Space identity and cannot accept scoped writes.
+  A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
   writes in a row, the initial one plus the quick retries) is left alone until the next Space
   change or wake rather than rewritten on every snapshot. It suspends itself while the native
   lock-screen provider owns the desktop. On quit, the native service restores its selections

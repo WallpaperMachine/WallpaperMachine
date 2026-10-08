@@ -218,6 +218,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         entryFile: String,
         surface: RuntimeSurfaceKey = RuntimeSurfaceKey(kind: .desktopWeb, displayID: 0),
         counters: RuntimeCounters? = nil,
+        persistentData: Bool = true,
         recovery: RecoveryPolicy = RecoveryPolicy(),
         now: (@MainActor () -> ContinuousClock.Instant)? = nil,
         wait: (@Sendable (Duration) async throws -> Void)? = nil
@@ -234,7 +235,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         let configuration = WKWebViewConfiguration()
         // Persistent: web wallpapers keep their own state (tasks, favourites) in
         // localStorage exactly as they do under Wallpaper Engine.
-        configuration.websiteDataStore = .default()
+        configuration.websiteDataStore = persistentData ? .default() : .nonPersistent()
         configuration.mediaTypesRequiringUserActionForPlayback = []
         // Wallpaper Engine loads projects from file:// with sibling-file access;
         // ES modules and fetch() against project assets need the same origin

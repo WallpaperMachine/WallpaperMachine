@@ -24,6 +24,11 @@ final class UserCommandQueue {
 
     private(set) var isBusy = false
     private var waiters: [Waiter] = []
+    private var slotRevisions: [String: UInt64] = [:]
+
+    /// Also advances for a waiting command that was replaced. Background retries use this
+    /// to yield to a newer intent even after that intent has left the waiting list.
+    func revision(for slot: String) -> UInt64 { slotRevisions[slot] ?? 0 }
 
     /// Commands waiting behind the running one, oldest first.
     var waiting: [Waiting] { waiters.map { Waiting(slot: $0.slot, subject: $0.subject) } }
@@ -37,7 +42,10 @@ final class UserCommandQueue {
         slot: String? = nil, subject: String? = nil,
         _ operation: @MainActor () async throws -> Void
     ) async rethrows -> Bool {
-        if let slot { supersede(slot: slot) }
+        if let slot {
+            slotRevisions[slot, default: 0] &+= 1
+            supersede(slot: slot)
+        }
         if isBusy {
             let admitted = await withCheckedContinuation { continuation in
                 waiters.append(Waiter(slot: slot, subject: subject, continuation: continuation))

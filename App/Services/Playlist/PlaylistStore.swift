@@ -21,6 +21,12 @@ final class PlaylistStore {
     /// repeats. Only for this run of the app.
     private(set) var recent: [String: [String]] = [:]
     private(set) var revisions: [String: UInt64] = [:]
+    struct SkippedWallpaper: Equatable {
+        let message: String
+        let retryAfter: Date
+    }
+    /// Failures belong to this run only. An app update or relaunch starts with a fresh attempt.
+    private(set) var skipped: [String: [String: SkippedWallpaper]] = [:]
     /// Changes a rotating display to its next wallpaper now, answering false when it does not
     /// rotate. The app delegate points it at the scheduler; the panel's Change now calls it.
     var skipHandler: (@MainActor (String) -> Bool)?
@@ -71,6 +77,25 @@ final class PlaylistStore {
         update(display) { $0.wallpaperIDs.removeAll { $0 == id } }
     }
 
+    /// Reordering never changes membership or the next deadline. Refuse a stale page instead
+    /// of silently dropping wallpapers added since that page was rendered.
+    func reorder(_ ids: [String], on display: String, expected: [String]? = nil) throws {
+        let playlist = playlist(for: display)
+        guard playlist.source == .list, ids.count == playlist.wallpaperIDs.count,
+              expected == nil || expected == playlist.wallpaperIDs,
+              Set(ids).count == ids.count, Set(ids) == Set(playlist.wallpaperIDs) else {
+            throw OrderError.changed
+        }
+        update(display) { $0.wallpaperIDs = ids }
+    }
+
+    enum OrderError: LocalizedError {
+        case changed
+        var errorDescription: String? {
+            String(localized: "The playlist changed. Refresh it and try reordering again.")
+        }
+    }
+
     /// Drops wallpapers that left the library from every list and every day or night choice.
     func forget(_ ids: [String]) {
         let gone = Set(ids)
@@ -96,7 +121,25 @@ final class PlaylistStore {
         for display in recent.keys {
             recent[display]?.removeAll(where: gone.contains)
         }
+        for display in skipped.keys {
+            skipped[display] = skipped[display]?.filter { !gone.contains($0.key) }
+        }
         if changed { persist(plansChanged: true) }
+    }
+
+    func recordFailure(_ id: String, on display: String, message: String, retryAfter: Date) {
+        skipped[display, default: [:]][id] = SkippedWallpaper(message: message, retryAfter: retryAfter)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    func clearFailures(on display: String) {
+        guard skipped.removeValue(forKey: display) != nil else { return }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    func clearFailure(_ id: String, on display: String) {
+        guard skipped[display]?.removeValue(forKey: id) != nil else { return }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }
 
     /// Dates the display's next change; nil clears it. Setting the date it already has is not a
@@ -164,6 +207,16 @@ final class PlaylistStore {
         playlists[display] = playlist
         recent[display] = nil
         nextChange[display] = playlist.mode == .rotate ? .distantPast : nil
+        persist()
+    }
+
+    /// Returns from a temporary Focus override without detaching a saved plan or
+    /// immediately advancing its rotation past the restored wallpaper.
+    func restore(_ playlist: DisplayPlaylist, on display: String, now: Date = Date()) {
+        revisions[display, default: 0] &+= 1
+        playlists[display] = playlist
+        recent[display] = nil
+        nextChange[display] = playlist.mode == .rotate ? now.addingTimeInterval(TimeInterval(playlist.interval * 60)) : nil
         persist()
     }
 

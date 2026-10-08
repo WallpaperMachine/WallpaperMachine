@@ -142,6 +142,12 @@ Web projects remain unsupported for **Animate lock screen**.
 
 ## Caveats
 
+- **Follow desktop Space** and animated lock-screen wallpaper currently require
+  different Desktop ownership. Settings prevents enabling both for an active
+  independent display; choose another automatic mode or turn animated lock-screen
+  wallpaper off. Screen-saver-only mode can still use the currently applied content.
+  See [Space-based wallpaper choices](spaces.md).
+
 - It requires macOS 26 or later. On earlier releases the app does not start the
   service, Settings reports "Requires macOS 26 or later", and the extension
   refuses the system's connection: the private protocol it speaks has only been

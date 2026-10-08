@@ -22,10 +22,10 @@ App/                               WallpaperMachine application target sources o
   Bridge/                          BridgeEnvironment.swift (Vulkan ICD) and Generated/ (uniffi output; not hand-edited)
   Logging/                         AppLog.swift; the only Swift logging entry point
   Services/Appearance/             AppTheme.swift: theme preference model and store
-  Services/Automation/             commands from outside the window: keyboard shortcuts, App Intents (Shortcuts app,
-                                   Focus filter) and wallpapermachine:// links
-  Services/Desktop/                desktop picture APIs, original-wallpaper ledger, poster sync, presentation policy,
-                                   playback rules and the system conditions (Low Power Mode, heat, Focus) that feed it
+  Services/Automation/             keyboard shortcuts, App Intents, links, weekday/solar/appearance selection rules,
+                                   and temporary Focus choices with restoration
+  Services/Desktop/                multi-display copy/swap and recovery, desktop picture APIs, original-wallpaper ledger,
+                                   scoped poster sync, read-only Space topology, presentation policy, playback rules and system conditions
   Services/Diagnostics/            runtime diagnostics session and counter sampling; per-coalition energy readout
   Services/GitHub/                 GitHub release client, update models, update store, installer
   Services/Library/                ClientPaths and library import/deletion; owns the app-support layout
@@ -34,6 +34,7 @@ App/                               WallpaperMachine application target sources o
   Services/NativeVideo/            AVFoundation video backend: admission, player and host window
   Services/Pixiv/                  pixiv browsing, sign-in session, downloads and still-wallpaper packaging
   Services/Playlist/               per-display playlists: model, planner, store and the scheduler that switches wallpapers
+  Services/Preview/                isolated live preview inputs, lifecycle, WebKit and scene/video surfaces
   Services/Steam/                  SteamCMD runtime discovery and setup state
   Services/SystemMedia/            shared now-playing session (MediaRemote, Music/Spotify
                                    AppleScript fallback) and artwork for Web and Scene media integration

@@ -8,6 +8,7 @@ final class FocusFilterState {
     static let shared = FocusFilterState()
     static let didChangeNotification = Notification.Name("WallpaperMachine.focusFilterDidChange")
     private static let key = "WallpaperMachine.focusFilterAction"
+    private static let selectionKey = "WallpaperMachine.focusWallpaperSelection"
 
     private let defaults: UserDefaults
 
@@ -20,13 +21,19 @@ final class FocusFilterState {
         defaults.string(forKey: Self.key).flatMap(AppRuleAction.init(rawValue:))
     }
 
-    func set(_ action: AppRuleAction?) {
-        guard action != self.action else { return }
+    var selection: FocusWallpaperSelection? {
+        defaults.data(forKey: Self.selectionKey).flatMap { try? JSONDecoder().decode(FocusWallpaperSelection.self, from: $0) }
+    }
+
+    func set(_ action: AppRuleAction?, selection: FocusWallpaperSelection? = nil) {
+        guard action != self.action || selection != self.selection else { return }
         if let action {
             defaults.set(action.rawValue, forKey: Self.key)
         } else {
             defaults.removeObject(forKey: Self.key)
         }
+        if let selection, let data = try? JSONEncoder().encode(selection) { defaults.set(data, forKey: Self.selectionKey) }
+        else { defaults.removeObject(forKey: Self.selectionKey) }
         AppLog.info("Focus filter \(action.map { "asks wallpapers to \($0.rawValue)" } ?? "cleared")")
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }

@@ -754,7 +754,8 @@ final class NativeVideoWallpaperHostTests: XCTestCase {
         let layer = try XCTUnwrap(surfacesMade[7]?.posterLayer)
         let updated = expectation(description: "native pixels published through the real desktop coordinator")
         let sync = try DesktopWallpaperSync(folder: root.appendingPathComponent("posters"), workspace: workspace,
-            surfaces: { [DesktopPosterSurface(layer: layer, display: "7")] }, frameCenter: center)
+            surfaces: { [DesktopPosterSurface(layer: layer, display: "7")] }, frameCenter: center,
+            scope: { _ in .desktop(id: "test-space", context: "native-video-space-visit") })
         workspace.didWrite = { updated.fulfill() }
         sync.start()
         sync.refresh()

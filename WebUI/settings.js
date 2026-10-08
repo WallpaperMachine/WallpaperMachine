@@ -1,6 +1,9 @@
 import { t, language } from './i18n.js';
 import { intervalLabel, sourceSelect, sourceNote, planRows, plansGroup } from './plans.js';
 import { backupGroup } from './backup.js';
+import { playlistOrderMarkup, movePlaylistItem, installPlaylistDrag } from './playlist-order.js';
+import { automationRows, solarLocationGroup, automationClick, automationInput, automationChange, automationSubmit, restoreAutomationFocus } from './automation.js';
+import { displayTransferRow, displayLayoutsGroup, displayLayoutInput, displayLayoutChange, displayLayoutClick, displayLayoutSubmit } from './display-layouts.js';
 
 const views = new WeakMap();
 let liveView = null;
@@ -17,11 +20,11 @@ const otherAudioActions = [['keepRunning', 'Keep running'], ['mute', 'Mute'], ['
 const displaySleepActions = [['pause', 'Pause'], ['stop', 'Stop (free memory)']];
 const desktopCoveredActions = [['pause', 'Pause'], ['keepRunning', 'Keep running']];
 const systemConditionActions = [['keepRunning', 'Keep running'], ['pause', 'Pause'], ['stop', 'Stop (free memory)']];
-const focusActions = { keepRunning: 'Keep running', mute: 'Mute', pause: 'Pause', stop: 'Stop (free memory)' };
+const focusActions = { keepRunning: 'Keep running', mute: 'Mute', pause: 'Pause', stop: 'Stop (free memory)', wallpaper: 'Use wallpaper', playlist: 'Use saved playlist' };
 const thermalStates = { nominal: 'normal', fair: 'warm', serious: 'hot', critical: 'very hot' };
-const hotkeyTitles = { togglePlayback: 'Play or pause wallpapers', nextWallpaper: 'Next wallpaper', openControlPanel: 'Open the control panel' };
+const hotkeyTitles = { togglePlayback: 'Play or pause wallpapers', nextWallpaper: 'Next wallpaper', previousWallpaper: 'Previous wallpaper', openControlPanel: 'Open the control panel' };
 // What the Shortcuts app and wallpapermachine:// links can do; the ellipsis stands for an id.
-const automationLinks = ['wallpapermachine://toggle', 'wallpapermachine://play', 'wallpapermachine://pause', 'wallpapermachine://next', 'wallpapermachine://apply?id=…', 'wallpapermachine://open?page=settings'];
+const automationLinks = ['wallpapermachine://toggle', 'wallpapermachine://play', 'wallpapermachine://pause', 'wallpapermachine://next', 'wallpapermachine://previous', 'wallpapermachine://apply?id=…', 'wallpapermachine://playlist?id=…', 'wallpapermachine://preset?id=…', 'wallpapermachine://layout?id=…', 'wallpapermachine://open?page=settings'];
 const playlistModes = [['off', 'Off'], ['rotate', 'Rotate wallpapers'], ['dayNight', 'Day and night']];
 const playlistOrders = [['sequential', 'In order'], ['shuffle', 'Shuffle']];
 
@@ -245,12 +248,16 @@ export function renderSettings(container, state, helpers) {
     // `armed` a Delete that has been pressed once and waits for its confirmation.
     view = { container, state, helpers, section: 'performance', settingsSectionToken: NaN, drafts: new Map(), pending: new Set(), error: '', recording: null, editor: null, armed: '' };
     views.set(container, view);
+    installPlaylistDrag(view, (displayID, ids, expectedIDs, id) => submitPlaylistOrder(view, displayID, ids, expectedIDs, id));
     container.addEventListener('click', event => onClick(view, event));
     container.addEventListener('input', event => onInput(view, event));
     container.addEventListener('change', event => onChange(view, event));
     container.addEventListener('submit', event => onSubmit(view, event));
     // Escape in an inline name field gives the field up, as its Cancel does.
     container.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && view.layoutEditor && !view.pending.has('display-layout') && event.target.closest('[data-form="display-layout"]')) {
+        event.preventDefault(); displayLayoutClick(view, 'layoutCancel', {}, () => draw(view)); return;
+      }
       if (event.key !== 'Escape' || !view.editor || !event.target.closest('form[data-form="name"]')) return;
       event.preventDefault();
       endEditing(view);
@@ -344,7 +351,7 @@ function draw(view) {
         : `<kbd class="settings-shortcut">${e(hotkey.shortcut || t('Not set'))}</kbd>${button(hotkey.shortcut ? t('Change…') : t('Record…'), 'hotkeyRecord', { id }, busy)}${hotkey.shortcut ? button(t('Clear'), 'hotkeyClear', { id }, busy) : ''}`;
       return row(`hotkey-${id}`, t(hotkeyTitles[id] || id), control) + error(`hotkey-error-${id}`, hotkey.error);
     }).join('') + `<p class="settings-note" data-key="hotkeys-note">${e(t('They work whichever app is in front. Hold ⌘, ⌥ or ⌃ with the key; F13 to F20 work alone. No permission is needed.'))}</p>`)
-      + disclosure('general-automation', t('Shortcuts app and links'), paragraphs(t('The Shortcuts app offers WallpaperMachine’s actions: play or pause wallpapers, change to the next wallpaper, apply a wallpaper you choose and open this window. Siri and Spotlight can run them too.'), t('A wallpapermachine:// link does the same from a browser, a script or another app. Next and Apply act on the target display, or on the one a display= value names; an id is the wallpaper’s folder name in your library.')) + `<ul class="settings-list" data-key="automation-links">${automationLinks.map(link => `<li><code>${e(link)}</code></li>`).join('')}</ul>`)
+      + disclosure('general-automation', t('Shortcuts app and links'), paragraphs(t('The Shortcuts app can control playback, go to the previous or next wallpaper, apply a wallpaper, saved playlist or property preset, and open this window. Siri and Spotlight can run these actions too.'), t('Apply Display Layout restores a saved arrangement across its displays. Choose the layout by name in Shortcuts, or use its saved id in a layout link.'), t('Links can run the same actions. Wallpaper and playlist actions accept display= for a specific screen; otherwise they use the target display. Property presets affect their wallpaper on every display. Choose saved items by name in Shortcuts.')) + `<ul class="settings-list" data-key="automation-links">${automationLinks.map(link => `<li><code>${e(link)}</code></li>`).join('')}</ul>`)
     + group('general-lock', t('Lock screen'), settingToggle('lockScreenEnabled', 'Animate lock screen', lockUnavailable || settings.lockScreenBusy, t('Experimental'))
       + row('lock-status', t('Lock screen status'), `<span class="settings-status" role="status">${e(lockUnavailable ? (settings.lockScreenAvailable === false && settings.lockScreenStatus) || t('Unavailable') : settings.lockScreenBusy ? `${settings.lockScreenStatus || t('Updating')}…` : settings.lockScreenStatus)}</span>${settings.lockScreenError ? button(t('Retry'), 'lockScreenRetry', {}, busy || settings.lockScreenBusy) : ''}`, '', 'settings-readout')
       + error('lock-error', settings.lockScreenError)
@@ -452,7 +459,7 @@ function draw(view) {
       + row('battery-state', t('Power source'), `<span class="settings-status" role="status">${e(batteryActive ? t('On battery. Reduced quality is in use.') : settings.onBatteryPower ? t('On battery') : t('Plugged in. Your usual quality settings are in use.'))}</span>`, '', 'settings-readout') : '')
     + row('low-power', t('In Low Power Mode'), select('lowPowerModeAction', t('In Low Power Mode'), draft('lowPowerModeAction', settings.lowPowerModeAction || 'keepRunning'), localizedOptions(systemConditionActions), 'data-setting="lowPowerModeAction"', busy || unavailable), settings.lowPowerMode ? t('Low Power Mode is on now.') : t('Low Power Mode is off now.'))
     + row('thermal', t('When the Mac is hot'), select('thermalAction', t('When the Mac is hot'), draft('thermalAction', settings.thermalAction || 'keepRunning'), localizedOptions(systemConditionActions), 'data-setting="thermalAction"', busy || unavailable), t('Applies while macOS reports the Mac as hot or very hot, which is when it starts slowing itself down. Right now it is {state}.', { state: t(thermalStates[settings.thermalState] || 'normal') }))
-    + row('focus', t('Focus'), button(t('Open Focus Settings…'), 'openFocusSettings', {}, busy), settings.focusAction && settings.focusAction !== 'keepRunning' ? t('A Focus filter is in effect now: {action}.', { action: t(focusActions[settings.focusAction] || settings.focusAction) }) : t('In System Settings → Focus, add the WallpaperMachine filter to a Focus to pause, mute or stop wallpapers while it is on. No Focus filter is in effect now.'))
+    + row('focus', t('Focus'), button(t('Open Focus Settings…'), 'openFocusSettings', {}, busy), settings.focusAction && settings.focusAction !== 'keepRunning' ? t('A Focus filter is in effect now: {action}.', { action: t(focusActions[settings.focusAction] || settings.focusAction) }) : t('In System Settings → Focus, add the WallpaperMachine filter to pause, mute, stop or temporarily switch wallpapers. No Focus filter is in effect now.'))
     + row('app-rules', t('App rules'), '', t('Pause, mute or stop wallpapers while a chosen app is running or in front.')) + disclosure('app-rules-editor', t('Edit…'), rulesEditor));
   const quality = group('performance-quality', t('Quality'),
     row('quality-preset', t('Preset'), `<div class="settings-segment" role="group" aria-label="${e(t('Quality preset'))}">${presetButtons}</div>`, t('Low, Medium and High set the frame-rate limit and render scale together. Custom means the current values match none of those.'))
@@ -530,7 +537,8 @@ function draw(view) {
     const rotateRows = row(key('playlist-source-row'), t('Wallpapers'), sourceSelect(ctx, key('playlist-source'), name(t('Wallpapers')), playlist, listed.length, playlistData('source'), off), sourceNote(ctx, playlist))
       + row(key('playlist-order-row'), t('Order'), select(key('playlist-order'), name(t('Order')), draft(key('playlist-order'), playlist.order), localizedOptions(playlistOrders), playlistData('order'), off))
       + row(key('playlist-interval-row'), t('How often'), select(key('playlist-interval'), name(t('How often')), draft(key('playlist-interval'), playlist.interval), (state.playlistIntervals || []).map(minutes => [minutes, intervalLabel(minutes)]), `${playlistData('interval')} data-number`, off))
-      + (playlist.source === 'list' ? `<div class="settings-playlist" data-key="${e(key('playlist-list'))}">${listed.length ? listed.map(item => `<div class="settings-rule" data-key="${e(key(`playlist-item-${item.id}`))}"><span class="settings-rule-name">${e(item.title)}</span>${button(t('Remove'), 'playlistRemove', { id: item.id, displayID: id }, off)}</div>`).join('') : `<p class="settings-empty">${e(t('The list is empty. In Installed, select wallpapers and choose Add to playlist, or use the list button in a wallpaper’s details.'))}</p>`}</div>` : '')
+      + (playlist.source === 'list' ? playlistOrderMarkup(ctx, id, playlist, off) : '')
+      + playlistFailures(ctx, id, playlist, off)
       + row(key('playlist-next-row'), t('Next change'), button(t('Change now'), 'playlistSkip', { displayID: id }, off), nextChange ? t('Around {time}, if wallpapers are playing then.', { time: nextChange }) : t('Starts counting once wallpapers play.'));
     const wallpaperChoices = [['', t('Leave as it is')], ...playable.map(item => [item.id, item.title])];
     const dayNightRows = row(key('playlist-day-row'), t('Day wallpaper'), select(key('playlist-day'), name(t('Day wallpaper')), draft(key('playlist-day'), playlist.dayWallpaperID || ''), wallpaperChoices, playlistData('dayWallpaper'), off))
@@ -548,6 +556,8 @@ function draw(view) {
       + row(key('mode-row'), t('Display mode'), select(key('mode'), name(t('Display mode')), draft(key('mode'), display.mode), localizedOptions([['standalone', 'Independent'], ['mirror', 'Mirror another display']]), data('mode'), off || primary))
       + (mirror ? row(key('target-row'), t('Mirror source'), select(key('mirrorTarget'), name(t('Mirror source')), draft(key('mirrorTarget'), display.mirrorTarget), [['', t('Choose display')], ...(display.mirrorTargets || []).map(target => [target.id, target.title])], data('mirrorTarget'), off || !display.mirrorTargets?.length), !display.mirrorTargets?.length ? t('No compatible display available.') : '') : row(key('wallpaper-row'), t('Wallpaper'), button(t('Choose…'), 'chooseDisplayWallpaper', { displayID: id }, off) + button(t('Eject'), 'eject', { id: display.wallpaperID, displayID: id }, off || !display.wallpaperID), wallpaper?.title || (display.wallpaperID ? display.wallpaperID : t('None selected'))))
       + playlistRows
+      + displayTransferRow(ctx, display, off)
+      + automationRows(ctx, display, off || mirror)
       + disclosure(key('advanced'), t('Playback & scaling'), (!mirror && !display.wallpaperID ? `<div class="settings-note">${e(t('Choose a wallpaper to adjust playback.'))}</div>` : '') + row(key('scaling-row'), t('Scaling'), select(key('scalingMode'), name(t('Scaling')), draft(key('scalingMode'), playback.scalingMode), localizedOptions([['none', 'No scaling'], ['stretch', 'Stretch'], ['match', 'Match'], ['fill', 'Fill']]), data('scalingMode'), playbackOff))
         + row(key('factor-row'), t('Scale factor'), number('scalingFactor', t('Scale factor'), Number.MIN_VALUE, null, 'any', '×'))
         + row(key('fps-row'), t('Frame rate'), number('fps', t('Frame rate'), 1, playback.maxFps || 60, 1, 'fps'))
@@ -555,7 +565,7 @@ function draw(view) {
         + row(key('muted-row'), t('Mute audio'), toggle(key('muted'), name(t('Mute audio')), draft(key('muted'), playback.muted), data('muted'), playbackOff))
         + row(key('volume-row'), t('Volume'), `<input data-key="${e(key('volume'))}" type="range" aria-label="${e(name(t('Volume')))}" min="0" max="1" step="0.01" value="${e(draft(key('volume'), playback.volume))}" ${data('volume')}${disabled(playbackOff || playback.muted)}><output class="settings-unit" data-value-for="${e(key('volume'))}">${Math.round(Number(draft(key('volume'), playback.volume || 0)) * 100)}%</output>`), 'settings-disclosure-rows') + '</section>';
   }).join('') || `<div class="settings-empty">${e(t('No displays connected.'))}</div>`;
-  const displaysPage = displays + plansGroup(ctx);
+  const displaysPage = displays + displayLayoutsGroup(ctx) + plansGroup(ctx) + solarLocationGroup(ctx);
 
   const scenePending = Boolean(scene?.pending);
   const sceneRequest = (state.downloadRequests || []).find(request => request.id === 'scene-assets');
@@ -688,6 +698,8 @@ function reconcile(parent, desired) {
 
 function onInput(view, event) {
   const input = event.target;
+  if (displayLayoutInput(view, input)) return;
+  if (automationInput(view, input, () => draw(view))) return;
   if (!input.matches('input[data-key]') || input.type === 'radio') return;
   const key = input.dataset.key;
   view.drafts.set(key, input.type === 'checkbox' ? input.checked : input.value);
@@ -701,6 +713,12 @@ function onInput(view, event) {
 
 async function onChange(view, event) {
   const input = event.target;
+  if (displayLayoutChange(view, input, () => draw(view))) return;
+  if (automationInput(view, input, () => draw(view))) return;
+  if (input.dataset.autoMode || input.dataset.autoAppearance || input.dataset.autoSpace) {
+    await automationChange(view, input, (action, args) => perform(view, action, action, args));
+    return;
+  }
   if ('local' in input.dataset) {
     view.drafts.set(input.dataset.key, input.type === 'checkbox' ? input.checked : input.value);
     draw(view);
@@ -798,6 +816,38 @@ async function onClick(view, event) {
   if (!button || button.disabled) return;
   const action = button.dataset.action;
   const args = JSON.parse(button.dataset.args || '{}');
+  if (action.startsWith('layout') || ['displayLayoutApply', 'displayLayoutDelete', 'displayCopyWallpaper', 'displaySwapWallpapers'].includes(action)) {
+    await displayLayoutClick(view, action, args, () => draw(view), (command, body, after, onError) => perform(view, 'display-layout', command, body, after, onError));
+    return;
+  }
+  if (automationClick(view, action, args, () => draw(view))) return;
+  if (action === 'automationSpace' && args.target === null) {
+    const restoreFocus = button === document.activeElement;
+    let removed = false;
+    await perform(view, action, action, args, () => { removed = true; });
+    if (removed && restoreFocus) {
+      const mode = [...view.container.querySelectorAll('[data-auto-mode]')].find(input => input.dataset.autoMode === args.displayID);
+      const next = mode?.closest('details')?.querySelector('[data-action="automationSpace"]:not(:disabled)');
+      (next || mode)?.focus();
+    }
+    return;
+  }
+  if (action === 'automationRuleRemove') {
+    await perform(view, action, action, args, () => {
+      if (view.automationEditor?.displayID === args.displayID && view.automationEditor?.id === args.id) view.automationEditor = null;
+      view.automationFocus = { displayID: args.displayID };
+    });
+    restoreAutomationFocus(view);
+    return;
+  }
+  if (action === 'automationClearLocation') {
+    await perform(view, action, action, args, () => { view.drafts.delete('solar-latitude'); view.drafts.delete('solar-longitude'); });
+    return;
+  }
+  if (action === 'playlistMove') {
+    await movePlaylistItem(view, args, (displayID, ids, expectedIDs, id) => submitPlaylistOrder(view, displayID, ids, expectedIDs, id));
+    return;
+  }
   if (action === 'openPerformance') {
     view.section = 'performance';
     draw(view);
@@ -857,6 +907,18 @@ function endEditing(view) {
 // The browser's own required-field check runs first, so an empty name never gets this far.
 async function onSubmit(view, event) {
   const form = event.target;
+  if (form.dataset.form === 'display-layout') {
+    event.preventDefault();
+    await displayLayoutSubmit(view, form, () => draw(view), (command, body, after, onError) => perform(view, 'display-layout', command, body, after, onError));
+    return;
+  }
+  if (['automation-rule', 'solar-location'].includes(form.dataset.form)) {
+    event.preventDefault();
+    await automationSubmit(view, form, (action, args, after) => perform(view, action, action, args, after));
+    draw(view);
+    restoreAutomationFocus(view);
+    return;
+  }
   if (form.dataset.form !== 'name') return;
   event.preventDefault();
   const name = String(form.elements.name?.value || '').trim();
@@ -867,7 +929,35 @@ async function onSubmit(view, event) {
   draw(view);
 }
 
-async function perform(view, key, action, args, after) {
+async function submitPlaylistOrder(view, displayID, ids, expectedIDs, id) {
+  const focused = document.activeElement;
+  const restore = focused?.closest('[data-playlist-item]')?.dataset.playlistItem === id;
+  const direction = restore ? JSON.parse(focused.dataset.args || '{}').direction : null;
+  await perform(view, `playlist-order-${displayID}`, 'playlistReorder', { displayID, ids, expectedIDs }, () => {
+    const library = new Map((view.state.wallpapers || []).map(item => [item.id, item.title]));
+    const visible = ids.filter(item => library.has(item));
+    view.playlistAnnouncement = { displayID, text: t('{title} moved to position {position} of {count}.',
+      { title: library.get(id) || id, position: visible.indexOf(id) + 1, count: visible.length }) };
+  });
+  if (restore) {
+    const row = [...view.container.querySelectorAll('[data-playlist-item]')].find(row => row.dataset.playlistDisplay === displayID && row.dataset.playlistItem === id);
+    const buttons = [...(row?.querySelectorAll('button:not(:disabled)') || [])];
+    const same = buttons.find(button => button.dataset.action === 'playlistMove' && JSON.parse(button.dataset.args || '{}').direction === direction);
+    (same || buttons[0])?.focus();
+  }
+}
+
+function playlistFailures(ctx, displayID, playlist, off) {
+  const skipped = playlist.skipped || [];
+  if (!skipped.length) return '';
+  const { state, e, disclosure, button } = ctx;
+  const titles = new Map((state.wallpapers || []).map(item => [item.id, item.title]));
+  const details = skipped.map(item => `<li><strong>${e(titles.get(item.id) || item.id)}</strong><span class="settings-note">${e(item.message)}</span></li>`).join('');
+  return disclosure(`playlist-skipped-${displayID}`, t('Temporarily skipped ({count})', { count: skipped.length }),
+    `<p class="settings-note">${e(t('Failed wallpapers are skipped for 15 minutes. You can still apply one manually.'))}</p><ul class="settings-list">${details}</ul>${button(t('Allow these wallpapers again'), 'playlistClearFailures', { displayID }, off)}`);
+}
+
+async function perform(view, key, action, args, after, onError) {
   if (view.pending.has(key)) return;
   view.pending.add(key);
   view.error = '';
@@ -877,7 +967,8 @@ async function perform(view, key, action, args, after) {
     if (state) view.state = state;
     if (after) await after();
   } catch (error) {
-    view.error = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    if (onError) onError(message); else view.error = message;
   } finally {
     view.pending.delete(key);
     draw(view);

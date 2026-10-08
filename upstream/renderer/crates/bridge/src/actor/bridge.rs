@@ -27,7 +27,7 @@ use crate::{
             ClearShaderCache,
             CommitApplyAfterReconcile, CommitDisplayAfterReconcile, CompleteAudioResponse,
             CompleteRestoreAfterReconcile, EditProperty, EjectWallpaperFromDisplay,
-            GetAllSnapshots, GetAppSnapshot, GetLibrarySnapshot, GetLockScreenScenes,
+            GetAllSnapshots, GetAppSnapshot, GetLibrarySnapshot, GetLockScreenScenes, GetWallpaperPreview,
             GetMonitorInformationSnapshot, GetSettingsSnapshot, GetWallpaperOptionsSnapshot,
             GetWebWallpapers,
             InitialFrameReady, InjectDisplayForTest, InjectSceneProjectForTest,
@@ -63,7 +63,7 @@ use crate::{
         BridgePropertyValue,
         BridgeRendererCountersReport, BridgeRendererSurfaceCounters, BridgeScalingMode,
         BridgeSnapshotBundle, BridgeWallpaperEntry, BridgeWallpaperKind,
-        BridgeWallpaperMutationBundle, BridgeWebWallpaper, MousePollingControl,
+        BridgeWallpaperMutationBundle, BridgeWallpaperPreview, BridgeWebWallpaper, MousePollingControl,
     },
     config::{
         AppConfig, ConfigStore, SceneRendererModeCfg, SerializedSelector, VideoBackendModeCfg,
@@ -1212,6 +1212,52 @@ impl<E: EngineFacade + Clone> BridgeActor<E> {
             .collect()
     }
 
+    fn wallpaper_preview(&self, wallpaper_id: &str, display_id: &str) -> Result<BridgeWallpaperPreview, BridgeError> {
+        use std::path::{Component, Path, PathBuf};
+        let mut components = Path::new(wallpaper_id).components();
+        if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+            return Err(BridgeError::invalid_input("invalid preview wallpaper identifier"));
+        }
+        let model = self.state.project_model(wallpaper_id)?;
+        let entry = self.state.library.iter().find(|entry| entry.id == wallpaper_id)
+            .ok_or_else(|| BridgeError::invalid_input("preview wallpaper is not installed"))?;
+        if !entry.supported || entry.kind == BridgeWallpaperKind::Unknown {
+            return Err(BridgeError::invalid_input("this wallpaper type cannot be previewed"));
+        }
+        let draft = self.state.wallpaper_draft(wallpaper_id)?;
+        let config = draft.current();
+        let render = config.monitors.iter().find(|render| render.selector.id() == display_id);
+        let overrides = model.override_values(&config.property_overrides);
+        let properties = model.properties.iter()
+            .filter(|property| !matches!(property.kind, PropertyKind::Group | PropertyKind::Text))
+            .map(|property| (property.id.clone(), property.effective_value(&overrides)))
+            .collect::<BTreeMap<_, _>>();
+        let properties_json = if entry.kind == BridgeWallpaperKind::Webpage {
+            self.web_properties_json(wallpaper_id, &properties)
+        } else {
+            let values = properties.iter().map(|(id, value)| (id.clone(), value.to_json()))
+                .collect::<serde_json::Map<_, _>>();
+            let flat = serde_json::Value::Object(values).flatten()
+                .map_err(|error| BridgeError::engine(error.to_string()))?;
+            serde_json::to_string(&flat).map_err(|error| BridgeError::engine(error.to_string()))?
+        };
+        let path = |value: PathBuf| -> Result<String, BridgeError> {
+            std::path::absolute(value).map_err(|error| BridgeError::engine(error.to_string()))?
+                .into_os_string().into_string()
+                .map_err(|_| BridgeError::invalid_input("preview path is not UTF-8"))
+        };
+        Ok(BridgeWallpaperPreview {
+            wallpaper_id: wallpaper_id.to_string(), title: entry.title.clone(), kind: entry.kind,
+            project_path: path(self.paths.steam_workshop_root().join(wallpaper_id))?,
+            entry_file: model.entry_file.clone().unwrap_or_default(),
+            assets_path: path(self.paths.assets_root())?, properties_json,
+            fps: self.live_target_fps(render.and_then(|render| render.frame_rate).unwrap_or(30)).clamp(1, 30),
+            scaling_mode: render.map(|render| render.parse_scaling_mode().into()).unwrap_or(BridgeScalingMode::Fill),
+            scaling_factor: render.map_or(1.0, |render| render.scaling_factor),
+            volume: config.audio.volume,
+        })
+    }
+
     fn lock_screen_scenes(&self) -> Result<Vec<BridgeLockScreenScene>, BridgeError> {
         let displays = self.engine.display_snapshot();
         // The native presentations own visibility and sleep. Export committed
@@ -2322,6 +2368,14 @@ impl<E: EngineFacade + Clone> Message<ClearShaderCache> for BridgeActor<E> {
         Ok(self
             .state
             .settings(&displays, self.launch_at_login.status(), &self.paths, self.engine.video_pipeline_state(), &self.engine.scene_runtime_reports()))
+    }
+}
+
+impl<E: EngineFacade + Clone> Message<GetWallpaperPreview> for BridgeActor<E> {
+    type Reply = Result<BridgeWallpaperPreview, BridgeError>;
+
+    async fn handle(&mut self, msg: GetWallpaperPreview, _ctx: &mut Context<Self, Self::Reply>) -> Self::Reply {
+        self.wallpaper_preview(&msg.wallpaper_id, &msg.display_id)
     }
 }
 

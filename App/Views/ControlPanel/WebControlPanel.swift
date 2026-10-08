@@ -18,7 +18,7 @@ struct WebControlPanel: NSViewRepresentable {
   func makeCoordinator() -> WebPanelController {
     let controller = WebPanelController(
       store: store, navigation: navigation, workshop: workshop, pixiv: pixiv, updater: updater,
-      imports: imports)
+      imports: imports, automations: .shared, displayLayouts: .shared, spaces: .shared)
     // Discover previews start caching the moment Steam's page arrives, and the following page
     // is fetched behind the one on show, so neither waits for the web view to ask. The pixiv
     // tab does the same with its thumbnails and its next page.
@@ -62,6 +62,9 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
   let appLanguage: AppLanguageStore
   let playback: PlaybackPreferences
   let playlists: PlaylistStore
+  let automations: WallpaperAutomationStore
+  let displayLayouts: WallpaperDisplayLayoutStore
+  let spaces: WallpaperSpaceMonitor
   let hotKeys: HotKeyPreferences
   let collections: WallpaperCollectionStore
   let presets: WallpaperPresetStore
@@ -169,7 +172,10 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     backup: WallpaperBackupStore? = nil,
     imagePlacement: StillImagePlacementStore? = nil,
     compatibility: WallpaperCompatibilityStore? = nil,
-    chooseApplication: (@MainActor () async -> URL?)? = nil
+    chooseApplication: (@MainActor () async -> URL?)? = nil,
+    automations: WallpaperAutomationStore? = nil,
+    displayLayouts: WallpaperDisplayLayoutStore? = nil,
+    spaces: WallpaperSpaceMonitor? = nil
   ) {
     self.store = store
     self.assets = assets ?? WebPanelAssets()
@@ -186,6 +192,9 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.defaults = defaults
     self.playback = playback ?? .shared
     self.playlists = playlists ?? .shared
+    self.automations = automations ?? WallpaperAutomationStore(defaults: defaults)
+    self.displayLayouts = displayLayouts ?? WallpaperDisplayLayoutStore(defaults: defaults)
+    self.spaces = spaces ?? WallpaperSpaceMonitor()
     self.hotKeys = hotKeys ?? .shared
     self.collections = collections ?? .shared
     self.presets = presets ?? .shared
@@ -268,6 +277,10 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
       (WallpaperCollectionStore.didChangeNotification, collections),
       (WallpaperPresetStore.didChangeNotification, presets),
       (StillImagePlacementStore.didChangeNotification, imagePlacement),
+      (WallpaperAutomationStore.didChangeNotification, automations),
+      (WallpaperAutomationStore.statusChangedNotification, automations),
+      (WallpaperDisplayLayoutStore.didChangeNotification, displayLayouts),
+      (WallpaperSpaceMonitor.didChangeNotification, spaces),
     ]
     for (name, object) in featureNotifications {
       NotificationCenter.default.publisher(for: name, object: object)
@@ -683,7 +696,7 @@ final class WebPanelAssets: NSObject, WKURLSchemeHandler {
   private static let files: Set<String> = [
     "index.html", "panel.js", "panel.css", "settings.js", "settings.css", "welcome.js",
     "welcome.css", "theme.js", "icons.js", "i18n.js", "property-label.js", "pixiv.js", "support-prompt.js",
-    "collections.js", "presets.js", "placement.js", "compatibility.js", "plans.js", "backup.js",
+    "collections.js", "presets.js", "placement.js", "compatibility.js", "plans.js", "backup.js", "playlist-order.js", "automation.js", "display-layouts.js",
     "app-icons/minimal.png", "app-icons/day.png", "app-icons/night.png",
   ]
   /// One catalog module per shipped language, served as `mwe-ui://app/locales/<tag>.js`.

@@ -9,12 +9,13 @@ final class WebPanelPlaylistTests: XCTestCase {
   private var defaults: UserDefaults!
   private var playlists: PlaylistStore!
   private var controller: WebPanelController!
+  private var store: BridgeStore!
 
   override func setUp() async throws {
     root = FileManager.default.temporaryDirectory.appendingPathComponent("panel-playlist-\(UUID().uuidString)")
     defaults = try XCTUnwrap(UserDefaults(suiteName: root.lastPathComponent))
     playlists = PlaylistStore(defaults: defaults)
-    let store = BridgeStore(bridge: WallpaperBridge(noPointer: .init()))
+    store = BridgeStore(bridge: WallpaperBridge(noPointer: .init()))
     store.settingsSnapshot = BridgeSnapshotFixtures.settings(displays: [
       display("primary", enabled: true, mode: .standalone),
       display("mirrored", enabled: true, mode: .mirror),
@@ -107,5 +108,82 @@ final class WebPanelPlaylistTests: XCTestCase {
     }
     try await controller.perform("playlistSkip", body: ["displayID": "primary"])
     XCTAssertEqual(asked, ["primary"])
+  }
+
+  func testReorderingUsesExactMembershipAndAnEligibleDisplay() async throws {
+    playlists.update("primary") { $0.source = .list; $0.wallpaperIDs = ["a", "b"] }
+    try await controller.perform("playlistReorder", body: ["ids": ["b", "a"], "expectedIDs": ["a", "b"]])
+    XCTAssertEqual(playlists.playlist(for: "primary").wallpaperIDs, ["b", "a"])
+    for body: [String: Any] in [
+      ["ids": ["a", "a"], "expectedIDs": ["b", "a"]],
+      ["ids": ["a", "b"], "expectedIDs": ["a", "b"]],
+      ["ids": ["a", "b"], "expectedIDs": ["b", "a"], "displayID": "mirrored"],
+    ] {
+      do { try await controller.perform("playlistReorder", body: body); XCTFail("accepted stale/invalid order") }
+      catch {}
+    }
+    XCTAssertEqual(playlists.playlist(for: "primary").wallpaperIDs, ["b", "a"])
+  }
+
+  func testManualPlaylistEditsWaitForActivationAndKeepEveryField() async throws {
+    var release: CheckedContinuation<Void, Never>?
+    let activation = Task { @MainActor in
+      await store.commands.run(slot: BridgeStore.activationSlot(displayId: "primary")) {
+        await withCheckedContinuation { release = $0 }
+        playlists.update("primary") { $0.mode = .off }
+      }
+    }
+    while release == nil { await Task.yield() }
+    var manual: [String] = []
+    controller.automations.manualChoice = { manual.append($0) }
+    let first = Task { try await controller.perform("playlistSetting", body: ["displayID": "primary", "key": "mode", "value": "rotate"]) }
+    let second = Task { try await controller.perform("playlistSetting", body: ["displayID": "primary", "key": "interval", "value": 60]) }
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertEqual(store.commands.waiting.count, 2)
+    XCTAssertEqual(playlists.playlist(for: "primary").mode, .off)
+    release?.resume()
+    await activation.value
+    try await first.value
+    try await second.value
+    XCTAssertEqual(playlists.playlist(for: "primary").mode, .rotate)
+    XCTAssertEqual(playlists.playlist(for: "primary").interval, 60)
+    XCTAssertEqual(manual, ["primary", "primary"])
+  }
+
+  func testAutomationActionsSaveOnlyValidInstalledTargetsAndExposeThemInSnapshot() async throws {
+    try await controller.perform("automationMode", body: ["displayID": "primary", "value": "schedule"])
+    try await controller.perform("automationRuleSave", body: ["displayID": "primary", "rule": [
+      "weekdays": [2, 3, 4, 5, 6], "event": "sunrise", "minute": 480, "offset": -20,
+      "target": ["kind": "wallpaper", "id": "a"],
+    ]])
+    try await controller.perform("automationLocation", body: ["latitude": 1.35, "longitude": 103.82])
+    let rule = try XCTUnwrap(controller.automations.configuration(for: "primary").rules.first)
+    XCTAssertEqual(rule.weekdays, [2, 3, 4, 5, 6])
+    XCTAssertEqual(rule.offset, -20)
+    let snapshot = controller.wallpaperAutomationSnapshot()
+    XCTAssertEqual((snapshot["location"] as? [String: Double])?["latitude"], 1.35)
+    let displays = try XCTUnwrap(snapshot["displays"] as? [String: [String: Any]])
+    XCTAssertEqual(displays["primary"]?["mode"] as? String, "schedule")
+    try await controller.perform("automationRuleRemove", body: ["displayID": "primary", "id": rule.id])
+    XCTAssertTrue(controller.automations.configuration(for: "primary").rules.isEmpty)
+  }
+
+  func testAutomationRefusesMalformedDaysTimesTargetsAndMirrorsWithoutChangingSettings() async throws {
+    let valid: [String: Any] = ["weekdays": [2], "event": "time", "minute": 480, "offset": 0,
+                                "target": ["kind": "wallpaper", "id": "a"]]
+    for (key, value): (String, Any) in [
+      ("weekdays", [true]), ("weekdays", [1.5]), ("weekdays", [1, 1]), ("weekdays", []),
+      ("minute", 1440), ("offset", 181), ("minute", 60.5), ("event", "sometimes"),
+      ("target", ["kind": "wallpaper", "id": "app"]), ("target", ["kind": "playlist", "id": "gone"]),
+    ] {
+      var rule = valid; rule[key] = value
+      do { try await controller.perform("automationRuleSave", body: ["rule": rule]); XCTFail("accepted \(key): \(value)") }
+      catch {}
+    }
+    for display in ["mirrored", "gone"] {
+      do { try await controller.perform("automationMode", body: ["displayID": display, "value": "schedule"]); XCTFail("accepted \(display)") }
+      catch {}
+    }
+    XCTAssertTrue(controller.automations.configurations.isEmpty)
   }
 }

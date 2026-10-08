@@ -15,6 +15,9 @@ final class AppAutomation {
     var wallpapers: (@MainActor () -> [(id: String, title: String)])?
     /// Connected, enabled independent displays, keyed by the existing stable selector.
     var displays: (@MainActor () -> [(id: String, title: String)])?
+    var playlistPlans: (@MainActor () -> [(id: String, title: String)])?
+    var displayLayouts: (@MainActor () -> [(id: String, title: String)])?
+    var propertyPresets: (@MainActor () -> [(id: String, title: String, wallpaper: String)])?
 
     private let wait: Duration
     private let poll: Duration
@@ -37,6 +40,21 @@ final class AppAutomation {
     func availableDisplays() async -> [(id: String, title: String)] {
         _ = await readyHandler()
         return displays?() ?? []
+    }
+
+    func availablePlaylistPlans() async -> [(id: String, title: String)] {
+        _ = await readyHandler()
+        return playlistPlans?() ?? []
+    }
+
+    func availableDisplayLayouts() async -> [(id: String, title: String)] {
+        _ = await readyHandler()
+        return displayLayouts?() ?? []
+    }
+
+    func availablePropertyPresets() async -> [(id: String, title: String, wallpaper: String)] {
+        _ = await readyHandler()
+        return propertyPresets?() ?? []
     }
 
     private func readyHandler() async -> (@MainActor (AutomationCommand) async throws -> Void)? {

@@ -1002,6 +1002,7 @@ final class WebWallpaperHost {
               let window = windows.values.first(where: { $0.posterLayer === layer }) else { return }
         let webView = window.page.webView
         let center = frameCenter
+        let context = notification.userInfo?["context"] as? String
         webView.takeSnapshot(with: nil) { image, error in
             MainActor.assumeIsolated {
                 guard let image else {
@@ -1010,7 +1011,7 @@ final class WebWallpaperHost {
                 }
                 guard let frame = Self.rgbaPixels(of: image) else { return }
                 DesktopPosterFrame(pixels: frame.pixels, width: frame.width, height: frame.height, bgra: false)
-                    .publish(for: layer, to: center)
+                    .publish(for: layer, to: center, context: context)
             }
         }
     }

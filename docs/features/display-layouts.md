@@ -1,0 +1,111 @@
+# Multi-display wallpaper layouts
+
+**Settings → Displays → Display layouts** saves the wallpaper choices on enabled,
+independent displays under a name. **Apply** restores the whole arrangement;
+**Rename…** and **Delete…** manage the saved records. Deleting a layout leaves
+current wallpapers alone. Empty and mirrored displays are excluded when saving.
+Up to 64 layouts with 64 display assignments each are supported.
+
+Layouts save wallpaper IDs and existing display selectors, plus display titles
+for explanation. They do not save wallpaper properties, scaling, playlists,
+automatic-selection rules, display enablement or mirror topology. Applying uses
+each wallpaper's existing options for its destination. The user's Play/Pause stays
+unchanged. Playlists and automatic rules keep running, just as after a manual Apply;
+a later scheduled event can change the restored wallpaper.
+
+## Copy and swap
+
+Each enabled independent display that has a wallpaper offers **Copy or swap
+wallpapers** when another eligible display exists. Choose the other display, then:
+
+- **Copy wallpaper** applies the source wallpaper to the destination, leaving the
+  source assignment unchanged. An empty destination is allowed.
+- **Swap wallpapers** exchanges the two current assignments. Both displays must
+  already have a wallpaper; no content or settings files are moved or copied.
+
+The destination picker excludes the source, disabled and mirrored displays. Native
+validation repeats these checks when the queued operation begins, so a stale panel
+cannot redirect a request to another display. Empty destination choices disable
+both actions. The buttons retain contextual accessible names and return focus to
+the initiating control; failures focus their complete error in Display layouts.
+
+## Missing resources and failure recovery
+
+Every saved display and wallpaper must be available before any assignment changes.
+A saved layout with a missing wallpaper, disabled/mirrored screen or disconnected
+display remains visible with the reason and a disabled Apply button. Reconnecting
+the display or reinstalling the wallpaper makes the same record usable again.
+No screen is substituted by position or by matching its friendly title. The
+`primary` selector keeps its existing app meaning; other selectors retain the
+renderer identity used throughout display settings.
+
+Copy, swap and layout application each hold one user-command queue turn. The
+operation validates all targets and rejects pending edits on involved wallpapers,
+then checks the assignments again after preparation and between changes. A later
+manual wallpaper command waits for this operation, including any recovery, and
+then wins on its own display.
+
+If a switch fails or is cancelled midway, recovery restores the affected original
+assignments, including an originally empty destination. Recovery does not overwrite
+an unexpected third-party assignment or guess from an untrustworthy snapshot.
+The result explicitly distinguishes verified restoration from displays that could
+not be restored; those need inspection before retrying. There is no promise that
+multiple WindowServer surfaces change on the same frame.
+
+Only final, trustworthy assignment changes enter recent/previous history. A fully
+rolled-back operation leaves history and manual automatic-selection overrides
+untouched. If recovery remains incomplete, the confirmed final changes are recorded.
+An explicit successful no-op still counts as a manual choice for automatic rules.
+
+## Shortcuts and backups
+
+**Apply Display Layout** in Shortcuts uses a searchable saved-layout picker. Siri
+and Spotlight receive the same action, and a link can use:
+
+```
+wallpapermachine://layout?id=LAYOUT_ID
+```
+
+There is no `display=` parameter because the layout names all of its displays.
+The command validates current display and library availability before applying.
+
+Saved layouts use the allowlisted `WallpaperMachine.displayLayouts` preference.
+Local backups include these records. Keep-existing restoration merges by layout
+ID and retains local records with the same ID; ordinary display names are labels,
+not filesystem paths or authorization to access content. Deleted wallpaper
+references remain visible instead of being silently pruned into a partial layout.
+
+## Spaces boundary
+
+These are per-display layouts. [Follow desktop Space](spaces.md) separately keeps
+wallpaper/playlist choices by Space UUID and reloads the active display on a desktop
+change. Applying a layout is a manual override for the current visit. A layout does
+not save that Space map or switch Spaces, and inactive desktops do not retain
+separate live renderer instances. Actual OS transitions still need desktop verification.
+
+## Code and verification
+
+| Responsibility | Source |
+| --- | --- |
+| Records, bounded persistence and backup validation | `App/Services/Library/WallpaperDisplayLayoutStore.swift` |
+| Capture, planning, preflight and verified recovery | `App/Services/Desktop/WallpaperDisplayTransfer.swift` |
+| Bridge queue, clean-option checks and final history | `App/ViewModels/BridgeStoreDisplayLayouts.swift` |
+| Panel actions/snapshot | `App/Views/ControlPanel/WebPanelDisplayLayouts.swift` |
+| Settings UI | `WebUI/display-layouts.js`, integrated in `WebUI/settings.js` |
+| Shortcuts | `WallpaperConfigurationIntents.swift`, `AutomationCommand.swift`, `AppDelegate.performAutomation` |
+
+`WallpaperDisplayLayoutStoreTests` checks persistence, name/identity/size bounds
+and unavailable references. `WallpaperDisplayTransferTests` covers capture,
+copy/swap, stale preparation, validation before writes, failures after mutation,
+empty restoration, external-choice preservation and cancellation cleanup.
+`WallpaperDisplayTransferIntegrationTests` exercises the real BridgeStore with a
+snapshot-updating test bridge: history, manual-choice callbacks, clean-edit
+preflight, paused playback and a newer queued manual action.
+
+`ControlPanelDisplayLayoutTests` drives an offscreen WKWebView through save,
+rename, apply, delete, copy, swap, failed recovery feedback, Escape/focus return,
+escaped names, unavailable displays and 760-point English/Chinese/Japanese layout.
+`WallpaperBackupTests`, `AutomationCommandTests` and `AppAutomationTests` cover
+backup merging, URL validation and catalogs. These tests create no desktop
+wallpaper windows and do not prove real multi-monitor compositor transitions,
+visible appearance, VoiceOver, Siri or Shortcuts registration.

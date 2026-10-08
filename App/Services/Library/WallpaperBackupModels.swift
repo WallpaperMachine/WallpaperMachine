@@ -90,10 +90,14 @@ struct WallpaperBackupJournal: Codable, Sendable {
 /// Deliberately enumerated. Cookies, login/session state, SteamCMD paths, update history,
 /// diagnostics and caches must never enter a backup through a broad defaults prefix.
 struct WallpaperBackupPreferences: Sendable {
+    /// Local transaction recovery may restore these, but backup packages may never supply them.
+    static let localRecoveryKeys: Set<String> = ["WallpaperMachine.automaticWallpaperHandled", "WallpaperMachine.focusWallpaperRestore", "WallpaperMachine.spaceVisits"]
     static let allowedKeys: Set<String> = [
         "WallpaperMachine.collections", "WallpaperMachine.playlistPlans",
         "WallpaperMachine.wallpaperPresets", "WallpaperMachine.imagePlacements",
         "WallpaperMachine.playlists", "WallpaperMachine.playlistNextChange",
+        "WallpaperMachine.automaticWallpapers", "WallpaperMachine.solarLocation",
+        "WallpaperMachine.displayLayouts",
         "WallpaperMachine.favoriteWallpaperIDs", "WallpaperMachine.appTheme",
         "WallpaperMachine.appLanguage", "AppleLanguages", "WallpaperMachine.hotKeys",
         "WallpaperMachine.displaySleepAction", "WallpaperMachine.otherAudioAction",
@@ -174,6 +178,11 @@ struct WallpaperBackupPreferences: Sendable {
             }
         }
         switch key {
+        case "WallpaperMachine.automaticWallpapers": try WallpaperAutomationStore.validateConfigurations(data())
+        case "WallpaperMachine.displayLayouts": _ = try WallpaperDisplayLayoutStore.decode(data())
+        case "WallpaperMachine.solarLocation":
+            let location = try JSONDecoder().decode(WallpaperSolarLocation.self, from: data())
+            guard location.isValid else { throw invalid() }
         case "WallpaperMachine.wallpaperPresets": try WallpaperPresetStore.validateArchiveData(data())
         case "WallpaperMachine.collections":
             let records = try JSONDecoder().decode([WallpaperCollection].self, from: data())

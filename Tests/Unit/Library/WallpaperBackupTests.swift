@@ -81,6 +81,79 @@ final class WallpaperBackupTests: XCTestCase {
         return preferences
     }
 
+    func testAutomationRulesMergeByDisplayAndRestoreClearsOnlyLocalRecoveryState() async throws {
+        let original = try fixture()
+        let incoming = WallpaperAutomationStore(defaults: original)
+        for display in ["primary", "secondary"] {
+            try incoming.update(display) {
+                $0.mode = .appearance; $0.light = .init(kind: .wallpaper, id: "101")
+                $0.spaces["desktop-uuid"] = .init(kind: .wallpaper, id: "101")
+            }
+        }
+        try incoming.setLocation(.init(latitude: 1.35, longitude: 103.82))
+        incoming.markHandled("source event", on: "primary")
+        let export = try WallpaperBackupPreferences(defaults: original, domainName: domainName(for: original))
+        for key in WallpaperBackupPreferences.localRecoveryKeys { XCTAssertNil(export.values[key]) }
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true, preferences: export)
+        let live = try defaults()
+        let existing = WallpaperAutomationStore(defaults: live)
+        try existing.update("primary") { $0.mode = .schedule; $0.rules = [.init(target: .init(kind: .wallpaper, id: "own"))] }
+        let primary = existing.configuration(for: "primary")
+        for key in WallpaperBackupPreferences.localRecoveryKeys { live.set(Data("local state".utf8), forKey: key) }
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        let restored = WallpaperAutomationStore(defaults: live)
+        XCTAssertEqual(restored.configuration(for: "primary"), primary)
+        XCTAssertEqual(restored.configuration(for: "secondary").light?.id, "101")
+        XCTAssertEqual(restored.configuration(for: "secondary").spaces["desktop-uuid"]?.id, "101")
+        XCTAssertEqual(restored.location, incoming.location)
+        for key in WallpaperBackupPreferences.localRecoveryKeys { XCTAssertNil(live.object(forKey: key)) }
+    }
+
+    func testFailedPublicationRestoresTheExactLocalAutomationRecoveryValues() async throws {
+        let original = try fixture()
+        let incoming = WallpaperAutomationStore(defaults: original)
+        try incoming.update("primary") { $0.mode = .appearance; $0.dark = .init(kind: .wallpaper, id: "101") }
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true,
+            preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let live = try defaults()
+        let prior = Data("previous local Focus state".utf8)
+        for key in WallpaperBackupPreferences.localRecoveryKeys { live.set(prior, forKey: key) }
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .replace)
+        XCTAssertThrowsError(try service.applyPendingRestore(defaults: live, domainName: domainName(for: live), beforePublish: { path in
+            guard path == "Preferences" else { return }
+            // Emulate interruption after a transient-key write; rollback must use the journal.
+            for key in WallpaperBackupPreferences.localRecoveryKeys { live.removeObject(forKey: key) }
+            throw CocoaError(.fileWriteUnknown)
+        }))
+        for key in WallpaperBackupPreferences.localRecoveryKeys { XCTAssertEqual(live.data(forKey: key), prior) }
+        XCTAssertNil(live.object(forKey: WallpaperAutomationStore.configurationsKey))
+    }
+
+    func testDisplayLayoutsRoundTripAndKeepExistingMergesByLayoutIdentity() async throws {
+        let original = try fixture()
+        let layouts = WallpaperDisplayLayoutStore(defaults: original)
+        let assignment = WallpaperDisplayAssignment(displayID: "identity:external", displayTitle: "Studio", wallpaperID: "101")
+        let first = try layouts.save(name: "Original", assignments: [assignment])
+        let second = try layouts.save(name: "Another", assignments: [assignment])
+        let live = try defaults()
+        var local = first; local.name = "Keep this name"
+        live.set(try JSONEncoder().encode([local]), forKey: WallpaperDisplayLayoutStore.storageKey)
+        try WallpaperBackupService(supportRoot: source).export(to: package, includeLibrary: true,
+            preferences: .init(defaults: original, domainName: domainName(for: original)))
+        let service = WallpaperBackupService(supportRoot: destination)
+        let preview = try service.preview(package: package, preferences: .init(defaults: live, domainName: domainName(for: live)))
+        try service.stageRestore(package: package, preview: preview, policy: .keepExisting)
+        _ = try service.applyPendingRestore(defaults: live, domainName: domainName(for: live))
+        let restored = WallpaperDisplayLayoutStore(defaults: live)
+        XCTAssertEqual(try restored.layout(first.id), local)
+        XCTAssertEqual(try restored.layout(second.id), second)
+    }
+
     func testBackupExportsOnlyPersistentPreferencesAndKeepExistingIgnoresInheritedValues() async throws {
         let original = try defaults()
         let target = try defaults()
@@ -541,6 +614,9 @@ final class WallpaperBackupTests: XCTestCase {
             ("WallpaperMachine.imagePlacements", Data(#"{"version":2,"placements":{}}"#.utf8)),
             ("WallpaperMachine.hotKeys", Data(#"{"togglePlayback":{"keyCode":"oops","modifiers":0,"label":"P"}}"#.utf8)),
             ("WallpaperMachine.appRules", Data(#"[{"id":"not-uuid"}]"#.utf8)),
+            ("WallpaperMachine.automaticWallpapers", Data(#"{"primary":{"mode":"unknown","rules":[],"revision":0}}"#.utf8)),
+            ("WallpaperMachine.solarLocation", Data(#"{"latitude":100,"longitude":0}"#.utf8)),
+            ("WallpaperMachine.displayLayouts", Data(#"[{"id":"layout","name":"Empty","assignments":[]}]"#.utf8)),
         ]
         let manifestBaseline = try Data(contentsOf: package.appendingPathComponent("manifest.json"))
         for (key, value) in invalidValues {

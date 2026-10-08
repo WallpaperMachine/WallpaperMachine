@@ -76,6 +76,20 @@ struct NextWallpaperIntent: AppIntent {
     }
 }
 
+struct PreviousWallpaperIntent: AppIntent {
+    static let title: LocalizedStringResource = "Previous Wallpaper"
+    static let description: IntentDescription? = IntentDescription(
+        "Returns a chosen display to its previous wallpaper, or the target display when none is chosen.")
+
+    @Parameter(title: "Display")
+    var display: WallpaperDisplayEntity?
+
+    func perform() async throws -> some IntentResult {
+        try await AppAutomation.shared.perform(.previous(display: display?.id))
+        return .result()
+    }
+}
+
 struct ApplyWallpaperIntent: AppIntent {
     static let title: LocalizedStringResource = "Apply Wallpaper"
     static let description: IntentDescription? = IntentDescription(
@@ -125,5 +139,21 @@ struct WallpaperMachineShortcuts: AppShortcutsProvider {
             intent: ApplyWallpaperIntent(),
             phrases: ["Apply a wallpaper with \(.applicationName)"],
             shortTitle: "Apply Wallpaper", systemImageName: "photo.on.rectangle")
+        AppShortcut(
+            intent: PreviousWallpaperIntent(),
+            phrases: ["Previous wallpaper in \(.applicationName)"],
+            shortTitle: "Previous Wallpaper", systemImageName: "backward")
+        AppShortcut(
+            intent: ApplyWallpaperPlaylistIntent(),
+            phrases: ["Apply a playlist with \(.applicationName)"],
+            shortTitle: "Apply Playlist", systemImageName: "list.bullet")
+        AppShortcut(
+            intent: ApplyWallpaperPropertyPresetIntent(),
+            phrases: ["Apply a property preset with \(.applicationName)"],
+            shortTitle: "Apply Property Preset", systemImageName: "slider.horizontal.3")
+        AppShortcut(
+            intent: ApplyWallpaperDisplayLayoutIntent(),
+            phrases: ["Apply a display layout with \(.applicationName)"],
+            shortTitle: "Apply Display Layout", systemImageName: "display.2")
     }
 }

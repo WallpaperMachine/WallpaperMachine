@@ -29,7 +29,7 @@ extension WebPanelController {
 
     /// Collection edits are local metadata. Plan application reaches only the scheduler,
     /// which retains pause state and waits for the display to present again.
-    func performLibraryOrganization(_ action: String, request: WebPanelRequest) throws -> Bool {
+    func performLibraryOrganization(_ action: String, request: WebPanelRequest) async throws -> Bool {
         switch action {
         case "collectionCreate":
             let ids = request.body["ids"] == nil ? [] : try organizationIDs(request, requireInstalled: true)
@@ -50,17 +50,17 @@ extension WebPanelController {
         case "playlistPlanRename":
             try playlists.renamePlan(request.string("planID"), name: request.string("name"))
         case "playlistPlanDelete":
-            try playlists.deletePlan(request.string("planID"))
+            let id = try request.string("planID")
+            try playlists.deletePlan(id)
+            try automations.forgetPlan(id)
         case "playlistPlanApply":
             let display = try playlistDisplay(request)
             let id = try request.string("planID")
-            guard let plan = playlists.plan(id: id) else { throw LibraryOrganizationError.missingPlan }
-            if plan.playlist.source == .collection {
-                guard let collectionID = plan.playlist.collectionID,
-                    collections.collection(id: collectionID) != nil
-                else { throw LibraryOrganizationError.missingCollection }
+            try await store.commands.run(slot: BridgeStore.activationSlot(displayId: display)) {
+                _ = try playlistDisplay(request)
+                try WallpaperAutomationController.applyPlaylist(id, to: display, playlists: playlists, collections: collections)
+                automations.manualChoice?(display)
             }
-            try playlists.applyPlan(id, to: display)
         default:
             return false
         }

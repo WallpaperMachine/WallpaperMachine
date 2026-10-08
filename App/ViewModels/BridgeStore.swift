@@ -15,6 +15,7 @@ struct WallpaperActionError: LocalizedError {
 final class BridgeStore {
     let bridge: WallpaperBridge
     let supportPrompt: SupportPromptStore?
+    let history: WallpaperHistoryStore
     var appSnapshot: BridgeAppSnapshot
     var librarySnapshot: BridgeLibrarySnapshot {
         didSet { if librarySnapshot != oldValue { libraryPresentationRevision &+= 1 } }
@@ -30,6 +31,9 @@ final class BridgeStore {
     var latestBridgeErrorRevision: UInt64
     var lockScreenWallpaper: LockScreenWallpaperService?
     @ObservationIgnored var onSnapshotApplied: (() -> Void)?
+    @ObservationIgnored var onWallpaperApplied: (@MainActor (_ wallpaperID: String, _ displayID: String) -> Void)?
+    @ObservationIgnored var onUserWallpaperChoice: (@MainActor (_ wallpaperID: String, _ displayID: String) -> Void)?
+    @ObservationIgnored var openPreview: (@MainActor (WallpaperPreviewSession.Selection) -> Void)?
     private(set) var hostWallpaperStates: [String: HostWallpaperState] = [:]
     @ObservationIgnored private var hostStartupTask: Task<Void, Never>?
     @ObservationIgnored var retryHostWallpaper: (@MainActor (String, UInt32) -> Void)?
@@ -62,14 +66,17 @@ final class BridgeStore {
     var wallpaperContentRevision: UInt64 = 0
 
     convenience init() throws {
-        self.init(bridge: try WallpaperBridge(), supportPrompt: SupportPromptStore())
+        self.init(bridge: try WallpaperBridge(), supportPrompt: SupportPromptStore(),
+                  history: WallpaperHistoryStore(defaults: ClientPreferences.defaults))
     }
 
-    init(bridge: WallpaperBridge, supportPrompt: SupportPromptStore? = nil) {
+    init(bridge: WallpaperBridge, supportPrompt: SupportPromptStore? = nil,
+         history: WallpaperHistoryStore? = nil) {
         let snapshots = Self.emptySnapshots()
 
         self.bridge = bridge
         self.supportPrompt = supportPrompt
+        self.history = history ?? WallpaperHistoryStore()
         self.appSnapshot = snapshots.app
         self.librarySnapshot = snapshots.library
         self.wallpaperOptionsSnapshot = snapshots.wallpaperOptions
@@ -211,7 +218,22 @@ final class BridgeStore {
         return next == current ? nil : next
     }
 
-    func activateWallpaperAsync(id: String, displayId: String, userInitiated: Bool = false) async throws {
+    func previousWallpaperID(displayId: String) -> String? {
+        history.previous(on: displayId,
+            current: monitorInformationSnapshot.rows.first { $0.displayId == displayId }?.wallpaperId,
+            available: Set(librarySnapshot.wallpapers.filter(\.supported).map(\.id)))
+    }
+
+    func activatePreviousWallpaperAsync(displayId: String) async throws {
+        try validateActivationTarget(displayId)
+        guard let id = previousWallpaperID(displayId: displayId) else {
+            throw WallpaperActionError(message: String(localized: "This display has no previous wallpaper still in your library."))
+        }
+        try await activateWallpaperAsync(id: id, displayId: displayId, userInitiated: true, returningToPrevious: true)
+    }
+
+    func activateWallpaperAsync(id: String, displayId: String, userInitiated: Bool = false,
+                                returningToPrevious: Bool = false, recordsHistory: Bool = true) async throws {
         await waitForIdleActivation()
         try requireIdleWallpaperEdits(id: id)
         guard librarySnapshot.wallpapers.contains(where: { $0.id == id }) else {
@@ -228,7 +250,10 @@ final class BridgeStore {
             throw WallpaperActionError(message: String(localized: "Wallpaper settings are unavailable. Refresh Library and retry."))
         }
         if isWallpaperActive(id: id, displayId: displayId), !options.dirty,
-           !wallpaperAppliesNeedingSave.contains(id), !editorState.hasPendingEdits(wallpaperID: id) { return }
+           !wallpaperAppliesNeedingSave.contains(id), !editorState.hasPendingEdits(wallpaperID: id) {
+            if userInitiated { onUserWallpaperChoice?(id, displayId) }
+            return
+        }
         guard options.supported else {
             throw WallpaperActionError(message: String(localized: "This wallpaper type cannot be played on macOS. You can still inspect or remove it from your library."))
         }
@@ -241,6 +266,7 @@ final class BridgeStore {
         // Validation and async draft commits may outlive a display topology change.
         try validateActivationTarget(displayId)
         let previouslyActive = isWallpaperActive(id: id, displayId: displayId)
+        let previousAssignments = independentAssignments()
         var applyCompleted = false
         do {
             try await setDisplayConfigEnabledAsync(wallpaperId: id, displayId: displayId, enabled: true)
@@ -264,6 +290,9 @@ final class BridgeStore {
             }
             throw error
         }
+        if recordsHistory { recordHistory(before: previousAssignments, returningDisplay: returningToPrevious ? displayId : nil) }
+        reportSuccessfulApply(wallpaperID: id)
+        if userInitiated { onUserWallpaperChoice?(id, displayId) }
         // Startup, playlist rotation and update reloads never solicit support. Wait until
         // saving and the final display check both succeed for an explicit activation.
         if userInitiated, !previouslyActive {
@@ -389,6 +418,43 @@ final class BridgeStore {
         wallpaperId: String
     ) async throws -> BridgeWallpaperOptionsSnapshot {
         try await bridge.wallpaperOptionsSnapshot(wallpaperId: wallpaperId)
+    }
+
+    /// Uncommitted text/scale fields stay local too: preview copies them without invoking
+    /// any setter, saving a draft, changing selection or applying to a display.
+    func wallpaperPreviewRequestAsync(id: String, displayID: String,
+                                     textOverrides: [String: String] = [:]) async throws -> WallpaperPreviewRequest {
+        if !textOverrides.isEmpty {
+            let options = try await wallpaperOptionsSnapshotAsync(wallpaperId: id)
+            let allowed = Set(options.properties.filter { $0.kind == .textInput && $0.enabled }.map(\.id))
+            guard textOverrides.count <= 1_000, textOverrides.keys.allSatisfy(allowed.contains),
+                  textOverrides.values.reduce(0, { $0 + $1.utf8.count }) <= 1024 * 1024 else {
+                throw WallpaperActionError(message: String(localized: "Some preview options are no longer available. Refresh the library and try again."))
+            }
+        }
+        let descriptor = try await bridge.wallpaperPreview(wallpaperId: id, displayId: displayID)
+        try Task.checkCancellation()
+        var request = try WallpaperPreviewRequest(descriptor)
+        if let draft = editorState.scalingDrafts[.init(wallpaperID: id, fieldID: displayID)] {
+            guard let value = draft.value else {
+                throw WallpaperActionError(message: draft.errorMessage ?? String(localized: "Enter a valid scale before previewing."))
+            }
+            request.scalingFactor = value
+        }
+        if let data = request.propertiesJSON.data(using: .utf8),
+           var properties = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            var texts = Dictionary(uniqueKeysWithValues: editorState.propertyTextDrafts.filter { $0.key.wallpaperID == id }
+                .map { ($0.key.fieldID, $0.value) })
+            texts.merge(textOverrides, uniquingKeysWith: { _, latest in latest })
+            for (key, value) in texts where properties[key] != nil {
+                if request.kind == .web, var property = properties[key] as? [String: Any] {
+                    property["value"] = value
+                    properties[key] = property
+                } else { properties[key] = value }
+            }
+            request.propertiesJSON = String(decoding: try JSONSerialization.data(withJSONObject: properties, options: [.sortedKeys]), as: UTF8.self)
+        }
+        return request
     }
 
     func setFilterAsync(kind: BridgeWallpaperKind, enabled: Bool) async throws {
@@ -644,6 +710,7 @@ final class BridgeStore {
         let previousDisplays = Set(monitorInformationSnapshot.rows.filter {
             $0.wallpaperId == wallpaperId && $0.mirrorTargetDisplayId == nil
         }.map(\.displayId))
+        let previousAssignments = independentAssignments()
         try validateWallpaperForPlayback(id: wallpaperId)
         try await commitPendingWallpaperEditsAsync(id: wallpaperId)
         do {
@@ -654,11 +721,37 @@ final class BridgeStore {
             try await resyncAfterFailedApplyAsync(cause: error)
             throw error
         }
+        recordHistory(before: previousAssignments)
+        reportSuccessfulApply(wallpaperID: wallpaperId)
+        if userInitiated {
+            for (display, wallpaper) in independentAssignments() where previousAssignments[display] != wallpaper {
+                onUserWallpaperChoice?(wallpaper, display)
+            }
+        }
         if userInitiated, monitorInformationSnapshot.rows.contains(where: {
             $0.wallpaperId == wallpaperId && $0.mirrorTargetDisplayId == nil
                 && !previousDisplays.contains($0.displayId)
         }) {
             supportPrompt?.recordSuccessfulActivation(wallpaperID: wallpaperId)
+        }
+    }
+
+    private func independentAssignments() -> [String: String] {
+        Dictionary(monitorInformationSnapshot.rows.compactMap { row in
+            row.mirrorTargetDisplayId == nil && !row.wallpaperId.isEmpty ? (row.displayId, row.wallpaperId) : nil
+        }, uniquingKeysWith: { _, latest in latest })
+    }
+
+    private func recordHistory(before: [String: String], returningDisplay: String? = nil) {
+        for (display, wallpaper) in independentAssignments() where before[display] != wallpaper {
+            history.recordSwitch(from: before[display], to: wallpaper, on: display,
+                                 returningToPrevious: display == returningDisplay)
+        }
+    }
+
+    private func reportSuccessfulApply(wallpaperID: String) {
+        for (display, wallpaper) in independentAssignments() where wallpaper == wallpaperID {
+            onWallpaperApplied?(wallpaper, display)
         }
     }
 

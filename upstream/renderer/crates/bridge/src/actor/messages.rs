@@ -31,6 +31,11 @@ pub struct GetLibrarySnapshot;
 
 pub struct GetLockScreenScenes;
 
+pub struct GetWallpaperPreview {
+    pub wallpaper_id: String,
+    pub display_id: String,
+}
+
 pub struct GetWebWallpapers;
 
 pub struct GetMonitorInformationSnapshot;

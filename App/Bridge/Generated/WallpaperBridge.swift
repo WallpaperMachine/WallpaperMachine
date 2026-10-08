@@ -1339,6 +1339,15 @@ public protocol WallpaperBridgeProtocol : AnyObject {
     func wallpaperOptionsSnapshot(wallpaperId: String) async throws  -> BridgeWallpaperOptionsSnapshot
     
     /**
+     * Exports current draft inputs for an isolated preview, without selecting, applying,
+     * persisting or opening any wallpaper. Preview playback is owned by the host.
+     *
+     * # Errors
+     * Returns an error for a missing or unsupported project or invalid input paths.
+     */
+    func wallpaperPreview(wallpaperId: String, displayId: String) async throws  -> BridgeWallpaperPreview
+    
+    /**
      * The most recent process-wide audio analysis, or `None` when none has
      * been produced. `None` and a spectrum with `stereo` false are different
      * states: nothing has been analysed yet, versus a mono capture.
@@ -3285,6 +3294,30 @@ open func wallpaperOptionsSnapshot(wallpaperId: String)async throws  -> BridgeWa
             completeFunc: ffi_wallpaper_bridge_rust_future_complete_rust_buffer,
             freeFunc: ffi_wallpaper_bridge_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeBridgeWallpaperOptionsSnapshot.lift,
+            errorHandler: FfiConverterTypeBridgeError.lift
+        )
+}
+    
+    /**
+     * Exports current draft inputs for an isolated preview, without selecting, applying,
+     * persisting or opening any wallpaper. Preview playback is owned by the host.
+     *
+     * # Errors
+     * Returns an error for a missing or unsupported project or invalid input paths.
+     */
+open func wallpaperPreview(wallpaperId: String, displayId: String)async throws  -> BridgeWallpaperPreview {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_wallpaper_bridge_fn_method_wallpaperbridge_wallpaper_preview(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(wallpaperId),FfiConverterString.lower(displayId)
+                )
+            },
+            pollFunc: ffi_wallpaper_bridge_rust_future_poll_rust_buffer,
+            completeFunc: ffi_wallpaper_bridge_rust_future_complete_rust_buffer,
+            freeFunc: ffi_wallpaper_bridge_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBridgeWallpaperPreview.lift,
             errorHandler: FfiConverterTypeBridgeError.lift
         )
 }
@@ -7127,6 +7160,148 @@ public func FfiConverterTypeBridgeWallpaperOptionsSnapshot_lower(_ value: Bridge
 
 
 /**
+ * Read-only inputs for a host-owned preview. No display assignment or playback state is
+ * changed when these are exported. Properties include the current, unapplied draft.
+ */
+public struct BridgeWallpaperPreview {
+    public var wallpaperId: String
+    public var title: String
+    public var kind: BridgeWallpaperKind
+    public var projectPath: String
+    public var entryFile: String
+    public var assetsPath: String
+    public var propertiesJson: String
+    public var fps: UInt32
+    public var scalingMode: BridgeScalingMode
+    public var scalingFactor: Double
+    public var volume: Float
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(wallpaperId: String, title: String, kind: BridgeWallpaperKind, projectPath: String, entryFile: String, assetsPath: String, propertiesJson: String, fps: UInt32, scalingMode: BridgeScalingMode, scalingFactor: Double, volume: Float) {
+        self.wallpaperId = wallpaperId
+        self.title = title
+        self.kind = kind
+        self.projectPath = projectPath
+        self.entryFile = entryFile
+        self.assetsPath = assetsPath
+        self.propertiesJson = propertiesJson
+        self.fps = fps
+        self.scalingMode = scalingMode
+        self.scalingFactor = scalingFactor
+        self.volume = volume
+    }
+}
+
+
+
+extension BridgeWallpaperPreview: Equatable, Hashable {
+    public static func ==(lhs: BridgeWallpaperPreview, rhs: BridgeWallpaperPreview) -> Bool {
+        if lhs.wallpaperId != rhs.wallpaperId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.projectPath != rhs.projectPath {
+            return false
+        }
+        if lhs.entryFile != rhs.entryFile {
+            return false
+        }
+        if lhs.assetsPath != rhs.assetsPath {
+            return false
+        }
+        if lhs.propertiesJson != rhs.propertiesJson {
+            return false
+        }
+        if lhs.fps != rhs.fps {
+            return false
+        }
+        if lhs.scalingMode != rhs.scalingMode {
+            return false
+        }
+        if lhs.scalingFactor != rhs.scalingFactor {
+            return false
+        }
+        if lhs.volume != rhs.volume {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(wallpaperId)
+        hasher.combine(title)
+        hasher.combine(kind)
+        hasher.combine(projectPath)
+        hasher.combine(entryFile)
+        hasher.combine(assetsPath)
+        hasher.combine(propertiesJson)
+        hasher.combine(fps)
+        hasher.combine(scalingMode)
+        hasher.combine(scalingFactor)
+        hasher.combine(volume)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBridgeWallpaperPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BridgeWallpaperPreview {
+        return
+            try BridgeWallpaperPreview(
+                wallpaperId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeBridgeWallpaperKind.read(from: &buf), 
+                projectPath: FfiConverterString.read(from: &buf), 
+                entryFile: FfiConverterString.read(from: &buf), 
+                assetsPath: FfiConverterString.read(from: &buf), 
+                propertiesJson: FfiConverterString.read(from: &buf), 
+                fps: FfiConverterUInt32.read(from: &buf), 
+                scalingMode: FfiConverterTypeBridgeScalingMode.read(from: &buf), 
+                scalingFactor: FfiConverterDouble.read(from: &buf), 
+                volume: FfiConverterFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BridgeWallpaperPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.wallpaperId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeBridgeWallpaperKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.projectPath, into: &buf)
+        FfiConverterString.write(value.entryFile, into: &buf)
+        FfiConverterString.write(value.assetsPath, into: &buf)
+        FfiConverterString.write(value.propertiesJson, into: &buf)
+        FfiConverterUInt32.write(value.fps, into: &buf)
+        FfiConverterTypeBridgeScalingMode.write(value.scalingMode, into: &buf)
+        FfiConverterDouble.write(value.scalingFactor, into: &buf)
+        FfiConverterFloat.write(value.volume, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeWallpaperPreview_lift(_ buf: RustBuffer) throws -> BridgeWallpaperPreview {
+    return try FfiConverterTypeBridgeWallpaperPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBridgeWallpaperPreview_lower(_ value: BridgeWallpaperPreview) -> RustBuffer {
+    return FfiConverterTypeBridgeWallpaperPreview.lower(value)
+}
+
+
+/**
  * Committed inputs for a web wallpaper the host renders in a web view on one
  * display. Mirrors of a web source display appear as separate entries.
  */
@@ -9289,6 +9464,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_wallpaper_options_snapshot() != 45708) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_wallpaper_preview() != 42915) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_wallpaper_bridge_checksum_method_wallpaperbridge_web_audio_spectrum() != 62382) {

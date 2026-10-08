@@ -625,11 +625,13 @@ function renderInspector(discover) {
   const showInLibrary = discover && isInstalled && !(download && !download.pending && !download.error) ? button(t('Show in library'), 'showInstalled', { id: item.id }, { icon: 'image', className: 'link' }) : '';
   const activateLabel = target?.wallpaperID === item.id ? t('Reapply wallpaper') : t('Apply wallpaper');
   const activation = isInstalled ? button('', 'activate', { id: item.id }, { icon: 'play', title: activateLabel, className: 'primary inspector-play', disabled: !canActivate }) : '';
+  const previewAction = isInstalled && state.previewAvailable && !['Application', 'Unknown'].includes(item.kind)
+    ? button(t('Preview wallpaper'), 'previewWallpaper', { id: item.id }, { icon: 'eye', className: 'wide', title: t('Open a live preview without changing your desktop') }) : '';
   morph($('inspector'), `<div class="inspector-layout" ${keyAttr(`inspector-${item.id}-${discover}`)}><div class="inspector-scroll"><div class="inspector-heading">
     <div class="inspector-artwork"><div class="inspector-preview">${preview(item.preview)}</div>${activation}</div>
     <h2>${escapeHTML(item.title)}</h2>${discover && item.creator ? `<p class="inspector-creator">${escapeHTML(item.creator)}${moreByAuthor(item)}</p>` : ''}
     <p class="inspector-meta">${meta}</p>${energy ? `<p class="inspector-energy muted"><small>${escapeHTML(energy)}</small></p>` : ''}
-    <div class="actions inspector-actions">${!isInstalled ? downloadAction : ''}${secondary}</div>${tags(item.tags)}
+    <div class="actions inspector-actions">${!isInstalled ? downloadAction : ''}${previewAction}${secondary}</div>${tags(item.tags)}
     ${!isInstalled && download?.pending && !download.queued ? `<progress class="inspector-progress" max="1"${Number.isFinite(download.progress) ? ` value="${clamp(download.progress)}"` : ''} aria-label="${escapeHTML(t('{title} download progress', { title: item.title }))}"></progress><p class="muted"><small>${escapeHTML(download.status)}${transfer(download, { includePercent: false }) ? ` · ${transfer(download, { includePercent: false })}` : ''}</small></p>` : ''}
     ${request ? `<p class="muted"><small>${escapeHTML(stageHint(request.stage))}</small></p>` : ''}
     ${updateNotice}
@@ -904,7 +906,7 @@ function renderActivity() {
   const showImport = state.import?.busy || (report && importReportUnseen) || (popover === 'import' && popoverTrigger.startsWith('#activity-bar '));
   const transferring = active.filter(item => !item.authenticating);
   const label = transferring.length === 1 ? t('{title} download progress', { title: transferring[0].title }) : t('{count} downloads progress', { count: transferring.length });
-  morph($('activity-bar'), `<div class="activity-left">${button('', 'playback', {}, { icon: !hasWallpaper || state.paused ? 'play' : 'pause', title: !hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Resume wallpaper playback') : t('Pause wallpaper playback'), className: 'quiet icon-button', disabled: state.busy || !hasWallpaper })}<span class="activity-copy">${escapeHTML(!hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Playback paused') : t('Playback running'))}</span></div><div class="activity-right">${showImport ? button(importSummary, 'openImport', {}, { icon: 'folder', className: 'quiet', title: importSummary }) : ''}${state.setup?.busy ? `<span class="activity-copy">${escapeHTML(t('Setting up SteamCMD…'))}</span>` : ''}${pixivActivity()}${transferring.length ? `<progress class="activity-progress" max="1"${progress !== null ? ` value="${progress}"` : ''} aria-label="${escapeHTML(label)}"></progress>` : ''}${button(downloadSummary, 'openDownloads', {}, { icon: 'download', className: 'quiet', title: downloadSummary })}</div>`);
+  morph($('activity-bar'), `<div class="activity-left">${button('', 'previousWallpaper', { displayID: state.targetDisplayID }, { icon: 'chevronLeft', title: t('Previous wallpaper'), className: 'quiet icon-button', disabled: !state.history?.previousID || !state.displays?.some(display => display.id === state.targetDisplayID && display.enabled && display.mode !== 'mirror') })}${button('', 'playback', {}, { icon: !hasWallpaper || state.paused ? 'play' : 'pause', title: !hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Resume wallpaper playback') : t('Pause wallpaper playback'), className: 'quiet icon-button', disabled: state.busy || !hasWallpaper })}<span class="activity-copy">${escapeHTML(!hasWallpaper ? t('No wallpaper playing') : state.paused ? t('Playback paused') : t('Playback running'))}</span>${button(t('Recently used'), 'openHistory', {}, { className: 'quiet', expanded: popover === 'history', controls: 'history-popover' })}</div><div class="activity-right">${showImport ? button(importSummary, 'openImport', {}, { icon: 'folder', className: 'quiet', title: importSummary }) : ''}${state.setup?.busy ? `<span class="activity-copy">${escapeHTML(t('Setting up SteamCMD…'))}</span>` : ''}${pixivActivity()}${transferring.length ? `<progress class="activity-progress" max="1"${progress !== null ? ` value="${progress}"` : ''} aria-label="${escapeHTML(label)}"></progress>` : ''}${button(downloadSummary, 'openDownloads', {}, { icon: 'download', className: 'quiet', title: downloadSummary })}</div>`);
 }
 // pixiv downloads are the app's own and brief, so they are not rows in the Steam downloads list;
 // while one runs, the activity bar says so on every tab and leads back to the pixiv tab.
@@ -920,13 +922,20 @@ function previewThumb(url) {
   return `<span class="thumb-placeholder">${icon('image', 15)}</span>${source ? `<img ${keyAttr(source)} src="${escapeHTML(source)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : ''}`;
 }
 function renderPopover() {
-  const queue = $('queue-popover');
-  const importer = $('import-popover');
-  queue.hidden = popover !== 'downloads';
-  importer.hidden = popover !== 'import';
-  if (popover === 'downloads') morph(queue, queueMarkup());
-  if (popover === 'import') morph(importer, importMarkup());
-  if (popover) placePopover(popover === 'downloads' ? queue : importer);
+  for (const [kind, id, markup] of [['downloads', 'queue-popover', queueMarkup], ['import', 'import-popover', importMarkup], ['history', 'history-popover', historyMarkup]]) {
+    const node = $(id);
+    node.hidden = popover !== kind;
+    if (popover === kind) { morph(node, markup()); placePopover(node); }
+  }
+}
+function historyMarkup() {
+  const target = state.displays?.find(display => display.id === state.targetDisplayID);
+  const wallpapers = new Map((state.wallpapers || []).map(item => [item.id, item]));
+  const recent = (state.history?.recentIDs || []).map(id => wallpapers.get(id)).filter(Boolean);
+  const available = target?.enabled && target.mode !== 'mirror';
+  const rows = recent.map(item => `<li data-key="history-${escapeHTML(item.id)}"><button type="button" class="history-item" data-action="activate" data-id="${escapeHTML(item.id)}" aria-label="${escapeHTML(t('Apply {title}', { title: item.title }))}"${target?.wallpaperID === item.id ? ' aria-current="true"' : ''}${disabled(!available || busy('activate', { id: item.id }))}><span class="queue-thumb">${previewThumb(item.thumbnail || item.preview)}</span><span class="history-title">${escapeHTML(item.title)}</span>${target?.wallpaperID === item.id ? `<span class="history-active">${escapeHTML(t('Active'))}</span>` : ''}</button></li>`).join('');
+  const body = rows ? `<ul class="queue-list history-list">${rows}</ul>` : `<p class="queue-empty">${escapeHTML(t('No recent wallpapers for this display. Apply a wallpaper to start its history.'))}</p>`;
+  return `<div class="popover-heading"><h2 id="history-popover-title">${escapeHTML(t('Recently used'))}</h2>${button('', 'closePopover', {}, { icon: 'close', title: t('Close history'), className: 'quiet icon-button' })}</div><p class="history-display">${escapeHTML(target?.title || '')}</p>${body}<div class="popover-footer"><p class="queue-note">${escapeHTML(t('Keeps the last 50 wallpapers used on this display.'))}</p>${recent.length ? button(t('Clear history'), 'historyClear', { displayID: state.targetDisplayID }, { className: 'quiet', disabled: !available }) : ''}</div>`;
 }
 function queueMarkup() {
   const { downloads, requests } = queueState();
@@ -993,7 +1002,7 @@ function openPopover(kind, trigger) {
   popoverTrigger = triggerSelector(trigger) || popoverTrigger;
   renderActivity();
   renderPopover();
-  $(kind === 'downloads' ? 'queue-popover' : 'import-popover').focus();
+  $({ downloads: 'queue-popover', import: 'import-popover', history: 'history-popover' }[kind]).focus();
 }
 function closePopover(restore) {
   if (!popover) return;
@@ -1163,6 +1172,7 @@ async function handleAction(action, data, element) {
       await deliver('dismissError');
       return;
     case 'openDownloads': openPopover('downloads', element); return;
+    case 'openHistory': openPopover('history', element); return;
     case 'showDownloadsFromDialog': { const trigger = dialogTrigger; closeDialog(); openPopover('downloads', document.querySelector('#top-actions [data-action="openDownloads"]') || (trigger ? document.querySelector(trigger) : null)); return; }
     case 'openImport': openPopover('import', element); return;
     case 'closePopover': closePopover(true); return;
@@ -1195,6 +1205,12 @@ async function handleAction(action, data, element) {
     case 'activate':
       try { await deliver(action, { id }); activationFailures.delete(id); } catch (error) { activationFailures.set(id, error?.message || String(error)); throw error; } finally { render(); }
       return;
+    case 'previewWallpaper': {
+      const texts = new Set((state.options?.id === id ? state.options.properties : []).filter(property => property.kind === 'textInput' && property.enabled !== false).map(property => property.id));
+      const properties = Object.fromEntries([...drafts].filter(([key, value]) => key.startsWith(`${id}\u0000`) && typeof value === 'string' && texts.has(key.split('\u0000')[1])).map(([key, value]) => [key.split('\u0000')[1], value]));
+      await deliver(action, { id, properties });
+      return;
+    }
     case 'apply':
       for (const [key, value] of [...drafts]) if (key.startsWith(`${id}\u0000`)) { await deliver('property', { id, propertyID: key.split('\u0000')[1], value }); if (drafts.get(key) === value) drafts.delete(key); }
       await deliver(action, { id }); return;
@@ -1347,7 +1363,7 @@ document.addEventListener('click', event => {
       ? (state?.page === 'installed' ? 'activate' : tileDoubleClickAction(control.dataset.id)) : control.dataset.action;
     run(handleAction(action, control.dataset, control));
   }
-  if (popover && !event.target.closest('#queue-popover, #import-popover') && !['openDownloads', 'openImport'].includes(control?.dataset.action)) closePopover(false);
+  if (popover && !event.target.closest('#queue-popover, #import-popover, #history-popover') && !['openDownloads', 'openImport', 'openHistory'].includes(control?.dataset.action)) closePopover(false);
 });
 document.addEventListener('input', event => {
   const element = event.target;

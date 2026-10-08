@@ -210,11 +210,20 @@ struct WallpaperBackupService: Sendable {
             try validateRendererConfiguration(root: prepared, entries: manifest.entries.filter { entry in
                 selected.contains(where: { entry.path == $0 || entry.path.hasPrefix($0 + "/") })
             })
-            let changedKeys = nextPreferences.keys.sorted()
+            let resetsAutomation = nextPreferences["WallpaperMachine.automaticWallpapers"] != nil
+                || nextPreferences["WallpaperMachine.playlists"] != nil
+                || selected.contains(where: { $0 == "config.toml" || $0.hasPrefix("wallpapers/") })
+            let transientKeys = resetsAutomation ? WallpaperBackupPreferences.localRecoveryKeys : []
+            let changedKeys = Set(nextPreferences.keys).union(transientKeys).sorted()
+            var previousValues = current.values
+            let domain = defaults.persistentDomain(forName: domainName) ?? [:]
+            for key in transientKeys {
+                if let value = domain[key] { previousValues[key] = try WallpaperBackupPreferences.encode(value) }
+            }
             var journal = WallpaperBackupJournal(units: selected.map {
                 .init(path: $0, existed: manager.fileExists(atPath: supportRoot.appendingPathComponent($0).path))
-            }, originalPreferences: current.values.filter { changedKeys.contains($0.key) },
-                absentPreferences: changedKeys.filter { current.values[$0] == nil })
+            }, originalPreferences: previousValues.filter { changedKeys.contains($0.key) },
+                absentPreferences: changedKeys.filter { previousValues[$0] == nil })
             try writeJSON(journal, to: transaction.appendingPathComponent("journal.json"))
             do {
                 for unit in journal.units {
@@ -232,6 +241,7 @@ struct WallpaperBackupService: Sendable {
                 // Preferences are last, after every referenced file is safely in place.
                 try beforePublish?("Preferences")
                 for (key, data) in nextPreferences { defaults.set(try WallpaperBackupPreferences.decode(data), forKey: key) }
+                for key in transientKeys { defaults.removeObject(forKey: key) }
                 guard defaults.synchronize() else {
                     throw WallpaperBackupFailure(message: String(localized: "Restored preferences could not be saved. The previous state has been retained."))
                 }
@@ -465,13 +475,14 @@ struct WallpaperBackupService: Sendable {
             return
         }
         let journal = try readJSON(WallpaperBackupJournal.self, at: transaction, name: "journal.json")
+        let recoveryKeys = WallpaperBackupPreferences.allowedKeys.union(WallpaperBackupPreferences.localRecoveryKeys)
         guard journal.version == 1,
-              Set(journal.absentPreferences).isSubset(of: WallpaperBackupPreferences.allowedKeys),
+              Set(journal.absentPreferences).isSubset(of: recoveryKeys),
               Set(journal.absentPreferences).isDisjoint(with: journal.originalPreferences.keys),
               journal.units.count <= limits.maximumEntries else { throw files.unsafe("journal.json") }
         // The journal is our exact old state, including preferences an old app could
         // not hydrate. Recovery must not reject those originals under a newer schema.
-        guard Set(journal.originalPreferences.keys).isSubset(of: WallpaperBackupPreferences.allowedKeys) else { throw files.unsafe("journal.json") }
+        guard Set(journal.originalPreferences.keys).isSubset(of: recoveryKeys) else { throw files.unsafe("journal.json") }
         for data in journal.originalPreferences.values { try validateValue(WallpaperBackupPreferences.decode(data), depth: 0) }
         var paths = Set<String>()
         for unit in journal.units {
@@ -533,13 +544,13 @@ struct WallpaperBackupService: Sendable {
             if policy == .keepExisting, let old = existing[key] {
                 let current = try WallpaperBackupPreferences.decode(old)
                 switch key {
-                case "WallpaperMachine.collections", "WallpaperMachine.playlistPlans", "WallpaperMachine.favoriteWallpaperIDs",
-                     "WallpaperMachine.wallpaperPresets", "WallpaperMachine.imagePlacements", "WallpaperMachine.playlists":
+                case "WallpaperMachine.collections", "WallpaperMachine.playlistPlans", "WallpaperMachine.displayLayouts", "WallpaperMachine.favoriteWallpaperIDs",
+                     "WallpaperMachine.wallpaperPresets", "WallpaperMachine.imagePlacements", "WallpaperMachine.playlists", "WallpaperMachine.automaticWallpapers":
                     guard let oldJSON = current as? Data, let newJSON = remapped as? Data else { throw files.changed() }
                     let oldValue = try JSONSerialization.jsonObject(with: oldJSON)
                     let newValue = try JSONSerialization.jsonObject(with: newJSON)
                     let merged: Any
-                    if key == "WallpaperMachine.playlists" {
+                    if key == "WallpaperMachine.playlists" || key == "WallpaperMachine.automaticWallpapers" {
                         guard let oldMap = oldValue as? [String: Any], let newMap = newValue as? [String: Any] else { throw files.changed() }
                         merged = newMap.merging(oldMap) { _, old in old }
                     } else { merged = mergeJSON(existing: oldValue, incoming: newValue) }

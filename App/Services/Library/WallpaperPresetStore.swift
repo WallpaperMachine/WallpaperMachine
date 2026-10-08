@@ -232,7 +232,8 @@ final class WallpaperPresetStore {
   /// File/directory paths participate in the existing draft transaction. The
   /// immediate picker setter changes committed state and cannot be cancelled;
   /// EditProperty accepts the same kinds without publishing resource changes.
-  func apply(_ preset: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot, bridge: BridgeStore) async throws {
+  func apply(_ preset: WallpaperPropertyPreset, options: BridgeWallpaperOptionsSnapshot, bridge: BridgeStore,
+             userInitiated: Bool = false) async throws {
     try requireClean(options, hasPendingEdits: bridge.editorState.hasPendingEdits(wallpaperID: options.wallpaperId)
       || bridge.isWallpaperEditInProgress(id: options.wallpaperId))
     let mutations = try await Task.detached(priority: .utility) {
@@ -276,7 +277,7 @@ final class WallpaperPresetStore {
       }
       try await validateRetainedSelections(selections, preset: preset, options: options)
       try await UserAssetSelectionAuthorization.perform(managed: managed, wallpaperID: preset.wallpaperID, selections: selections) {
-        if !mutations.isEmpty || !selections.isEmpty { try await bridge.applyWallpaperOptionsAsync(wallpaperId: options.wallpaperId) }
+        if !mutations.isEmpty || !selections.isEmpty { try await bridge.applyWallpaperOptionsAsync(wallpaperId: options.wallpaperId, userInitiated: userInitiated) }
       }
     } catch {
       let original = error

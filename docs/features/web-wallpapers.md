@@ -8,6 +8,9 @@ for them.
 
 ## What the user sees
 
+- [Live preview](control-panel.md#live-preview) runs an installed project in its
+  own window and temporary website data store, with independent playback and
+  default mute. It never replaces the desktop page or its stored state.
 - Web wallpapers import, download and apply like scene and video wallpapers, and
   their user properties (combos, sliders, colors, text, booleans) are edited in the
   same inspector. Apply pushes the committed values into the running page.

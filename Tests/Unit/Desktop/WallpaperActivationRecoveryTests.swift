@@ -59,6 +59,24 @@ final class WallpaperActivationRecoveryTests: XCTestCase {
                       "Without a trustworthy re-read the app must ask for a full refresh")
     }
 
+    func testHistoryChangesOnlyAfterSuccessfulActivationAndPreviousFailureDoesNotConsumeIt() async throws {
+        let bridge = ApplyFailureBridge(noPointer: .init())
+        let history = WallpaperHistoryStore()
+        let store = BridgeStore(bridge: bridge, history: history)
+        try await store.refreshAllAsync()
+        history.recordSwitch(from: "failing", to: "earlier", on: "primary")
+        let before = history.entries
+        await XCTAssertThrowsErrorAsync(try await store.activatePreviousWallpaperAsync(displayId: "primary"))
+        XCTAssertEqual(history.entries, before, "a failed back operation must leave its destination available")
+        bridge.applyError = nil
+        try await store.activatePreviousWallpaperAsync(displayId: "primary")
+        XCTAssertNil(store.previousWallpaperID(displayId: "primary"))
+        XCTAssertEqual(history.recent(on: "primary", available: ["failing", "earlier"]), ["failing", "earlier"])
+        let applied = history.entries
+        try await store.activateWallpaperAsync(id: "failing", displayId: "primary")
+        XCTAssertEqual(history.entries, applied, "reapplying must not add another history entry")
+    }
+
     func testMatroskaVideoCanBeActivatedWithEitherBackendPreference() async throws {
         let folder = try writeVideoProject(entry: "compatibility.mkv")
         _ = try SyntheticVideoFixture.writeMatroska(name: "compatibility", into: folder)

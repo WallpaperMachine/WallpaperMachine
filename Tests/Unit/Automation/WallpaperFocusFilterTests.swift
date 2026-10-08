@@ -9,8 +9,16 @@ final class WallpaperFocusFilterTests: XCTestCase {
         XCTAssertNil(WallpaperFocusFilter().action.ruleAction)
     }
 
-    func testEachChoiceActsAsTheSameAppRuleWould() {
-        XCTAssertEqual(
-            FocusWallpaperAction.allCases.map(\.ruleAction), [nil, .mute, .pause, .stop])
+    func testInactiveFocusIgnoresRetainedChoicesAndActiveChoiceRequiresItsEntity() throws {
+        var filter = WallpaperFocusFilter()
+        filter.action = .wallpaper
+        XCTAssertThrowsError(try filter.wallpaperSelection())
+        filter.wallpaper = WallpaperEntity(id: "wallpaper", title: "Wallpaper")
+        filter.playlist = WallpaperPlaylistEntity(id: "plan", title: "Plan")
+        XCTAssertEqual(try filter.wallpaperSelection()?.target, .init(kind: .wallpaper, id: "wallpaper"))
+        filter.action = .playlist
+        XCTAssertEqual(try filter.wallpaperSelection()?.target, .init(kind: .playlist, id: "plan"))
+        filter.action = .keepRunning
+        XCTAssertNil(try filter.wallpaperSelection(), "the Focus-off defaults must release the temporary choice")
     }
 }

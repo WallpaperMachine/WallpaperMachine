@@ -228,6 +228,23 @@ pub struct BridgeWallpaperEntry {
     pub preview_path: Option<String>,
 }
 
+/// Read-only inputs for a host-owned preview. No display assignment or playback state is
+/// changed when these are exported. Properties include the current, unapplied draft.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct BridgeWallpaperPreview {
+    pub wallpaper_id: String,
+    pub title: String,
+    pub kind: BridgeWallpaperKind,
+    pub project_path: String,
+    pub entry_file: String,
+    pub assets_path: String,
+    pub properties_json: String,
+    pub fps: u32,
+    pub scaling_mode: BridgeScalingMode,
+    pub scaling_factor: f64,
+    pub volume: f32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct BridgeLibrarySnapshot {
     pub wallpapers: Vec<BridgeWallpaperEntry>,

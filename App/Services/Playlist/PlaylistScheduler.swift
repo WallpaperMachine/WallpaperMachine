@@ -23,6 +23,7 @@ final class PlaylistScheduler {
     private let current: @MainActor (String) -> String?
     private let isRunning: @MainActor (String) -> Bool
     private let activate: Activate
+    private let commandRevision: @MainActor (String) -> UInt64
     private let now: @MainActor () -> Date
     private let calendar: Calendar
     private let center: NotificationCenter
@@ -40,6 +41,9 @@ final class PlaylistScheduler {
     /// period, and choosing a different day or night wallpaper applies at once.
     private var settledPeriods: [String: (period: Date, revision: UInt64)] = [:]
     private var random = SystemRandomNumberGenerator()
+    static let failureCooldown: TimeInterval = 15 * 60
+    /// A broken library must not monopolize the command queue in one automatic change.
+    static let maximumAttempts = 5
 
     init(
         store: PlaylistStore,
@@ -50,6 +54,7 @@ final class PlaylistScheduler {
         current: @escaping @MainActor (String) -> String?,
         isRunning: @escaping @MainActor (String) -> Bool,
         activate: @escaping Activate,
+        commandRevision: @escaping @MainActor (String) -> UInt64 = { _ in 0 },
         now: (@MainActor () -> Date)? = nil,
         calendar: Calendar = .autoupdatingCurrent,
         center: NotificationCenter = .default,
@@ -67,6 +72,7 @@ final class PlaylistScheduler {
         self.current = current
         self.isRunning = isRunning
         self.activate = activate
+        self.commandRevision = commandRevision
         self.now = now ?? { Date() }
         self.calendar = calendar
         self.center = center
@@ -100,6 +106,14 @@ final class PlaylistScheduler {
         timer?.cancel()
         timer = nil
         armedFor = nil
+    }
+
+    /// A restored/manual choice in a day/night plan stays until its next boundary.
+    func holdCurrentPeriod(_ display: String) {
+        let playlist = store.playlist(for: display)
+        guard playlist.mode == .dayNight else { return }
+        let phase = PlaylistPlanner.phase(at: now(), dayStart: playlist.dayStart, nightStart: playlist.nightStart, calendar: calendar)
+        settledPeriods[display] = (phase.until, store.revisions[display] ?? 0)
     }
 
     /// Makes every change that is due, dates the next ones and arms the timer for the earliest.
@@ -145,7 +159,7 @@ final class PlaylistScheduler {
     func canSkip(_ display: String) -> Bool {
         let playlist = store.playlist(for: display)
         guard playlist.mode == .rotate else { return false }
-        let candidates = candidates(for: playlist)
+        let candidates = availableCandidates(for: playlist, on: display)
         return candidates.contains { $0 != current(display) }
     }
 
@@ -187,29 +201,47 @@ final class PlaylistScheduler {
                     evaluate()
                 }
             }
-            var candidates: [String] = []
-            do {
-                let applied = try await activate(display) { [self] in
-                    guard (store.revisions[display] ?? 0) == revision,
-                        displays().contains(display),
-                        requested || requestedWhileInFlight.contains(display) || isRunning(display)
-                    else { return nil }
+            var tried = Set<String>()
+            for _ in 0..<Self.maximumAttempts {
+                var selected: String?
+                var command: UInt64?
+                var candidates: [String] = []
+                do {
+                    let applied = try await activate(display) { [self] in
+                        guard !observers.isEmpty, (store.revisions[display] ?? 0) == revision,
+                            displays().contains(display),
+                            requested || requestedWhileInFlight.contains(display) || isRunning(display)
+                        else { return nil }
+                        // Resolve membership when the command runs, not when its timer fired.
+                        let latest = store.playlist(for: display)
+                        candidates = self.availableCandidates(for: latest, on: display).filter { !tried.contains($0) }
+                        selected = PlaylistPlanner.next(
+                            after: current(display), in: candidates, order: latest.order,
+                            recent: store.recent[display] ?? [], using: &random)
+                        command = commandRevision(display)
+                        attempted = attempted || selected != nil
+                        return selected
+                    }
+                    if let applied, (store.revisions[display] ?? 0) == revision {
+                        store.clearFailure(applied, on: display)
+                        store.recordPick(applied, on: display, candidates: self.candidates(for: store.playlist(for: display)))
+                        AppLog.info("playlist changed display \(display) to \(applied)")
+                    }
+                    // A nil result means superseded or ineligible, never an instruction to retry.
+                    break
+                } catch is CancellationError {
+                    break
+                } catch {
+                    guard let selected else { break }
                     attempted = true
-                    // Resolve membership when the command runs, not when its timer fired.
-                    let latest = store.playlist(for: display)
-                    candidates = self.candidates(for: latest)
-                    return PlaylistPlanner.next(
-                        after: current(display), in: candidates, order: latest.order,
-                        recent: store.recent[display] ?? [], using: &random)
+                    tried.insert(selected)
+                    store.recordFailure(selected, on: display, message: error.localizedDescription,
+                                        retryAfter: now().addingTimeInterval(Self.failureCooldown))
+                    AppLog.warn("playlist skipped \(selected) on display \(display): \(error.localizedDescription)")
+                    guard !observers.isEmpty, (store.revisions[display] ?? 0) == revision,
+                          displays().contains(display), command == commandRevision(display),
+                          current(display) != selected else { break }
                 }
-                if let applied, (store.revisions[display] ?? 0) == revision {
-                    store.recordPick(applied, on: display, candidates: candidates)
-                    AppLog.info("playlist changed display \(display) to \(applied)")
-                }
-            } catch {
-                // A failed command is one attempt, not a new immediate retry loop.
-                attempted = true
-                AppLog.warn("playlist could not change display \(display): \(error.localizedDescription)")
             }
         }
     }
@@ -256,6 +288,14 @@ final class PlaylistScheduler {
         let ids = playlist.collectionID.flatMap { collections.collection(id: $0)?.wallpaperIDs } ?? []
         return PlaylistPlanner.candidates(
             for: playlist, library: library(), favorites: favorites(), collectionIDs: ids)
+    }
+
+    private func availableCandidates(for playlist: DisplayPlaylist, on display: String) -> [String] {
+        let date = now()
+        return candidates(for: playlist).filter {
+            guard let failure = store.skipped[display]?[$0] else { return true }
+            return failure.retryAfter <= date
+        }
     }
 
     private func arm(_ date: Date?) {

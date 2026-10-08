@@ -29,11 +29,12 @@ class ControlPanelTestCase: XCTestCase {
 
   func withPanel(
     displayTitles: DisplayTitleResolver = .renderer, supportPrompt: SupportPromptStore? = nil,
+    spaces: WallpaperSpaceMonitor? = nil,
     _ body: (PanelFixture) async throws -> Void
   ) async throws {
     let fixture = makeStore(supportPrompt: supportPrompt)
     let panel = try PanelFixture(
-      store: fixture.store, bridge: fixture.bridge, displayTitles: displayTitles)
+      store: fixture.store, bridge: fixture.bridge, displayTitles: displayTitles, spaces: spaces)
     do {
       try await panel.start()
       try await body(panel)
@@ -67,7 +68,7 @@ class ControlPanelTestCase: XCTestCase {
   }
 }
 
-final class LayoutSnapshotBridge: WallpaperBridge {
+class LayoutSnapshotBridge: WallpaperBridge {
   var snapshot: BridgeSnapshotBundle?
   @MainActor var options: [String: BridgeWallpaperOptionsSnapshot] = [:]
   @MainActor var optionRequests: [String] = []
@@ -230,6 +231,8 @@ final class PanelFixture {
   /// The feature stores the panel edits, each over this fixture's own defaults, library and
   /// support folder, so no test reaches the app's shared instances.
   let playlists: PlaylistStore
+  let automations: WallpaperAutomationStore
+  let spaces: WallpaperSpaceMonitor
   let collections: WallpaperCollectionStore
   let presets: WallpaperPresetStore
   let backup: WallpaperBackupStore
@@ -244,7 +247,7 @@ final class PanelFixture {
   let library: URL
 
   init(store: BridgeStore, bridge: LayoutSnapshotBridge, displayTitles: DisplayTitleResolver,
-    pixivTransport: (any PixivTransport)? = nil) throws {
+    pixivTransport: (any PixivTransport)? = nil, spaces: WallpaperSpaceMonitor? = nil) throws {
     self.store = store
     self.bridge = bridge
     library = root.appendingPathComponent("Library", isDirectory: true)
@@ -306,6 +309,8 @@ final class PanelFixture {
     let visibility = self.visibility
     theme = AppThemeStore(defaults: defaults)
     playlists = PlaylistStore(defaults: defaults)
+    automations = WallpaperAutomationStore(defaults: defaults)
+    self.spaces = spaces ?? WallpaperSpaceMonitor()
     collections = WallpaperCollectionStore(defaults: defaults)
     presets = WallpaperPresetStore(
       defaults: defaults, managed: ManagedUserAssetStore(root: root.appendingPathComponent("UserAssets")))
@@ -327,7 +332,7 @@ final class PanelFixture {
           directory: root.appendingPathComponent("pixiv-thumbnails"), fetcher: PreviewFetcher { _ in image })),
       appLanguage: .english(), playback: PlaybackPreferences(defaults: defaults), playlists: playlists,
       hotKeys: HotKeyPreferences(defaults: defaults), collections: collections, presets: presets,
-      backup: backup, imagePlacement: imagePlacement, compatibility: compatibility)
+      backup: backup, imagePlacement: imagePlacement, compatibility: compatibility, automations: automations, spaces: self.spaces)
     controller.signInToPixiv = { nil }
     web = controller.makeWebView()
     web.setFrameSize(NSSize(width: 960, height: 640))

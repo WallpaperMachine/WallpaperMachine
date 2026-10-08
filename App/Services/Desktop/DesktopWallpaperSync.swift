@@ -60,9 +60,9 @@ struct DesktopPosterFrame: Sendable {
     }
 
     @MainActor
-    func publish(for layer: CALayer, to center: NotificationCenter) {
+    func publish(for layer: CALayer, to center: NotificationCenter, context: String? = nil) {
         center.post(name: DesktopPosterNotification.ready, object: layer,
-                    userInfo: ["pixels": pixels, "width": width, "height": height, "bgra": bgra])
+                    userInfo: ["pixels": pixels, "width": width, "height": height, "bgra": bgra, "context": context ?? ""])
     }
 }
 
@@ -78,6 +78,14 @@ struct DesktopPosterSurface {
     var display: String
 }
 
+enum DesktopPosterScope: Equatable {
+    case all
+    case desktop(id: String, context: String)
+    case hold
+
+    var context: String? { if case .desktop(_, let context) = self { return context }; return nil }
+}
+
 /// The first ready frame is submitted to all native desktop Spaces immediately.
 /// Window enumeration and frame encoding are injected for headless regression
 /// tests, including layer replacement and out-of-order completion.
@@ -87,6 +95,7 @@ final class DesktopWallpaperSync {
     private var frameObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var posters: [ObjectIdentifier: Data] = [:]
+    private var posterScopes: [ObjectIdentifier: DesktopPosterScope] = [:]
     private var revisions: [ObjectIdentifier: UInt64] = [:]
     /// When each layer's poster frame was received, so a display that briefly has two wallpaper
     /// windows (one replacing the other) shows the newer poster, never neither. Counted on
@@ -97,6 +106,10 @@ final class DesktopWallpaperSync {
     private let frameCenter: NotificationCenter
     private let workspaceCenter: NotificationCenter?
     private let encode: @Sendable (DesktopPosterFrame) async throws -> Data
+    private let scope: @MainActor (String) -> DesktopPosterScope
+    private let beforeDesktopChange: @MainActor () -> Void
+    private let retainedDisplays: @MainActor () -> Set<String>
+    private var knownDisplays = Set<String>()
     private var retry: Task<Void, Never>?
     private var lastRefresh: ContinuousClock.Instant?
     private var coalesced: Task<Void, Never>?
@@ -107,19 +120,25 @@ final class DesktopWallpaperSync {
     private var pendingCapture = false
     var isSuspended: Bool { stopped }
 
-    convenience init(folder: URL) throws {
+    convenience init(folder: URL, scope: @escaping @MainActor (String) -> DesktopPosterScope = { _ in .all },
+                     retainedDisplays: @escaping @MainActor () -> Set<String> = { [] },
+                     beforeDesktopChange: @escaping @MainActor () -> Void = {}) throws {
         try self.init(folder: folder, workspace: SystemDesktopPictureWorkspace(), surfaces: {
             WallpaperPresentationPolicy.wallpaperWindows().compactMap { window in
                 guard let layer = window.contentView?.layer,
                       let screen = window.screen, let id = SystemDesktopPictureWorkspace.id(screen) else { return nil }
                 return DesktopPosterSurface(layer: layer, display: id)
             }
-        }, frameCenter: .default, workspaceCenter: NSWorkspace.shared.notificationCenter)
+        }, frameCenter: .default, workspaceCenter: NSWorkspace.shared.notificationCenter,
+                      scope: scope, retainedDisplays: retainedDisplays, beforeDesktopChange: beforeDesktopChange)
     }
 
     init(folder: URL, workspace: any DesktopPictureWorkspace,
          surfaces: @escaping @MainActor () -> [DesktopPosterSurface],
          frameCenter: NotificationCenter, workspaceCenter: NotificationCenter? = nil,
+         scope: @escaping @MainActor (String) -> DesktopPosterScope = { _ in .all },
+         retainedDisplays: @escaping @MainActor () -> Set<String> = { [] },
+         beforeDesktopChange: @escaping @MainActor () -> Void = {},
          encode: @escaping @Sendable (DesktopPosterFrame) async throws -> Data = { frame in
              try await Task.detached(priority: .userInitiated) {
                  try DesktopPosterEncoder.png(pixels: frame.pixels, width: frame.width, height: frame.height, bgra: frame.bgra)
@@ -129,6 +148,8 @@ final class DesktopWallpaperSync {
         self.surfaces = surfaces
         self.frameCenter = frameCenter
         self.workspaceCenter = workspaceCenter
+        self.scope = scope; self.beforeDesktopChange = beforeDesktopChange
+        self.retainedDisplays = retainedDisplays
         self.encode = encode
     }
 
@@ -178,8 +199,10 @@ final class DesktopWallpaperSync {
     /// surface that has no poster yet, such as a renderer replaced meanwhile,
     /// still asks for one. Desktops that kept refusing posters are tried again.
     private func refreshAfterDesktopChange() {
+        beforeDesktopChange()
         ledger.retryRefusedDesktops()
-        let missing = surfaces().contains { posters[ObjectIdentifier($0.layer)] == nil }
+        let missing = surfaces().contains { posters[ObjectIdentifier($0.layer)] == nil
+            || posterScopes[ObjectIdentifier($0.layer)] != scope($0.display) }
         refresh(capture: missing)
     }
 
@@ -193,7 +216,10 @@ final class DesktopWallpaperSync {
         // snapshot, or an activeSpaceDidChange notification to request pixels.
         if capture {
             for surface in surfaces() {
-                frameCenter.post(name: DesktopPosterNotification.request, object: surface.layer)
+                let scope = scope(surface.display)
+                guard scope != .hold else { continue }
+                frameCenter.post(name: DesktopPosterNotification.request, object: surface.layer,
+                                 userInfo: ["context": scope.context ?? ""])
             }
         }
         synchronizeAllSpaces()
@@ -217,6 +243,8 @@ final class DesktopWallpaperSync {
         for observer in workspaceObservers { workspaceCenter?.removeObserver(observer) }
         workspaceObservers.removeAll()
         posters.removeAll()
+        posterScopes.removeAll()
+        knownDisplays.removeAll()
         revisions.removeAll()
         arrivals.removeAll()
     }
@@ -247,11 +275,14 @@ final class DesktopWallpaperSync {
 
     private func receive(_ notification: Notification) {
         guard !stopped, let layer = notification.object as? CALayer,
-              surfaces().contains(where: { $0.layer === layer }),
+              let surface = surfaces().first(where: { $0.layer === layer }),
               let values = notification.userInfo,
               let pixels = values["pixels"] as? Data,
               let width = values["width"] as? Int, let height = values["height"] as? Int,
               let bgra = values["bgra"] as? Bool else { return }
+        let receivedScope = scope(surface.display)
+        guard receivedScope != .hold,
+              (values["context"] as? String ?? "") == (receivedScope.context ?? "") else { return }
         let key = ObjectIdentifier(layer)
         let revision = (revisions[key] ?? 0) &+ 1
         revisions[key] = revision
@@ -263,8 +294,10 @@ final class DesktopWallpaperSync {
                 let png = try await encode(DesktopPosterFrame(pixels: pixels, width: width, height: height, bgra: bgra))
                 guard let self, !self.stopped, let layer,
                       self.revisions[key] == revision,
-                      self.surfaces().contains(where: { $0.layer === layer }) else { return }
+                      self.surfaces().contains(where: { $0.layer === layer }),
+                      self.scope(surface.display) == receivedScope else { return }
                 self.posters[key] = png
+                self.posterScopes[key] = receivedScope
                 self.arrivals[key] = arrival
                 self.synchronizeAllSpaces()
             } catch { self?.report(error) }
@@ -275,21 +308,35 @@ final class DesktopWallpaperSync {
         let surfaces = surfaces()
         let keys = Set(surfaces.map { ObjectIdentifier($0.layer) })
         posters = posters.filter { keys.contains($0.key) }
+        posterScopes = posterScopes.filter { keys.contains($0.key) }
         revisions = revisions.filter { keys.contains($0.key) }
         arrivals = arrivals.filter { keys.contains($0.key) }
         var byDisplay: [String: Data] = [:]
         var newest: [String: UInt64] = [:]
+        var targetSpaces: [String: Set<String>] = [:]
+        let retained = retainedDisplays()
+        knownDisplays.formUnion(surfaces.map(\.display))
+        knownDisplays.formUnion(retained)
+        for display in knownDisplays {
+            switch scope(display) {
+            case .all: break
+            case .desktop(let id, _): targetSpaces[display] = [id]
+            case .hold: targetSpaces[display] = []
+            }
+        }
         for surface in surfaces {
+            let currentScope = scope(surface.display)
             // A window with no poster yet must not take away the one its sibling has.
             let key = ObjectIdentifier(surface.layer)
-            guard let poster = posters[key], let arrival = arrivals[key],
+            guard currentScope != .hold, posterScopes[key] == currentScope,
+                  let poster = posters[key], let arrival = arrivals[key],
                   arrival >= newest[surface.display] ?? 0 else { continue }
             byDisplay[surface.display] = poster
             newest[surface.display] = arrival
         }
         retry?.cancel()
         do {
-            try ledger.synchronize(posters: byDisplay, liveDisplays: Set(surfaces.map(\.display)))
+            try ledger.synchronize(posters: byDisplay, liveDisplays: Set(surfaces.map(\.display)).union(retained), targetSpaces: targetSpaces)
         } catch {
             report(error)
             // Retry native asynchronous acknowledgement/Space creation races,

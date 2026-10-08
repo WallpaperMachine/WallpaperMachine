@@ -1,0 +1,110 @@
+import Foundation
+import XCTest
+@testable import WallpaperMachine
+
+@MainActor
+final class WallpaperPreviewRequestTests: XCTestCase {
+    private var root: URL!
+    private var library: URL!
+    private var project: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("preview-inputs-\(UUID().uuidString)")
+        library = root.appendingPathComponent("Library")
+        project = library.appendingPathComponent("preview")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try writeProject(type: "web", entry: "index.html")
+        try Data("<!doctype html><title>Preview</title>".utf8).write(to: project.appendingPathComponent("index.html"))
+    }
+
+    override func tearDownWithError() throws { try FileManager.default.removeItem(at: root) }
+
+    private func writeProject(type: String, entry: String) throws {
+        try JSONSerialization.data(withJSONObject: ["type": type, "file": entry])
+            .write(to: project.appendingPathComponent("project.json"))
+    }
+
+    private func descriptor(kind: BridgeWallpaperKind = .webpage, entry: String = "index.html") -> BridgeWallpaperPreview {
+        .init(wallpaperId: "preview", title: "Preview", kind: kind, projectPath: project.path,
+              entryFile: entry, assetsPath: root.appendingPathComponent("Assets").path,
+              propertiesJson: "{}", fps: 30, scalingMode: .fill, scalingFactor: 1, volume: 0.5)
+    }
+
+    func testValidInstalledWebProjectPassesWithoutChangingItsFiles() async throws {
+        let before = try Data(contentsOf: project.appendingPathComponent("project.json"))
+        let request = try WallpaperPreviewRequest(descriptor())
+        let validated = try await WallpaperPreviewLoader(libraryURL: library).validate(request)
+        XCTAssertEqual(validated, request)
+        XCTAssertEqual(try Data(contentsOf: project.appendingPathComponent("project.json")), before)
+    }
+
+    func testEntryTraversalAndSymlinkEscapeAreRejected() async throws {
+        let outside = root.appendingPathComponent("outside.html")
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("link.html"), withDestinationURL: outside)
+        for entry in ["../../outside.html", "link.html", outside.path] {
+            try writeProject(type: "web", entry: entry)
+            let request = try WallpaperPreviewRequest(descriptor(entry: entry))
+            do { _ = try await WallpaperPreviewLoader(libraryURL: library).validate(request); XCTFail("escaped the installed project") }
+            catch {}
+        }
+    }
+
+    func testChangedKindMissingEntryAndInvalidPropertiesDoNotLoad() async throws {
+        let loader = WallpaperPreviewLoader(libraryURL: library)
+        let request = try WallpaperPreviewRequest(descriptor())
+        try writeProject(type: "video", entry: "index.html")
+        do { _ = try await loader.validate(request); XCTFail("a stale manifest was accepted") } catch {}
+        try writeProject(type: "web", entry: "missing.html")
+        do { _ = try await loader.validate(WallpaperPreviewRequest(descriptor(entry: "missing.html"))); XCTFail("missing entry accepted") } catch {}
+        try writeProject(type: "web", entry: "index.html")
+        var invalid = request
+        invalid.propertiesJSON = "not JSON"
+        do { _ = try await loader.validate(invalid); XCTFail("invalid properties accepted") } catch {}
+    }
+
+    func testSceneNeedsSharedResourcesButVideoDoesNot() async throws {
+        let loader = WallpaperPreviewLoader(libraryURL: library)
+        try writeProject(type: "scene", entry: "scene.json")
+        try Data("fixture package".utf8).write(to: project.appendingPathComponent("scene.pkg"))
+        do { _ = try await loader.validate(WallpaperPreviewRequest(descriptor(kind: .projectScene, entry: "scene.json"))); XCTFail("missing shared resources accepted") } catch {}
+        try writeProject(type: "video", entry: "clip.webm")
+        try Data("fixture metadata only".utf8).write(to: project.appendingPathComponent("clip.webm"))
+        _ = try await loader.validate(WallpaperPreviewRequest(descriptor(kind: .video, entry: "clip.webm")))
+    }
+
+    func testPreviewCopiesUnappliedTextAndScaleWithoutMutatingDesktopOrDrafts() async throws {
+        let bridge = PreviewInputsBridge(noPointer: .init())
+        var input = descriptor()
+        input.propertiesJson = #"{"message":{"type":"textinput","value":"saved"}}"#
+        bridge.preview = input
+        bridge.options = BridgeSnapshotFixtures.options(wallpaperId: "preview", kind: .webpage, properties: [
+            BridgePropertyDescriptor(id: "message", kind: .textInput, labelHtml: "Message",
+                value: .string(value: "saved"), defaultValue: .string(value: "saved"), slider: nil,
+                comboOptions: [], fileFilter: nil, directoryMode: nil, dirty: false,
+                canRestoreDefaults: false, enabled: true, assetManaged: false, assetMissing: false, assetSourcePath: nil),
+        ])
+        let store = BridgeStore(bridge: bridge)
+        store.appSnapshot = .init(playbackState: .playing, selectedWallpaperId: "other", activeWallpaperIds: ["other"], errors: [])
+        let before = store.appSnapshot
+        let field = WallpaperEditorState.FieldKey(wallpaperID: "preview", fieldID: "message")
+        store.editorState.setPropertyText("local draft", key: field)
+        store.editorState.setScalingText("1.75", key: .init(wallpaperID: "preview", fieldID: "primary"), locale: Locale(identifier: "en_US_POSIX"))
+        let result = try await store.wallpaperPreviewRequestAsync(id: "preview", displayID: "primary", textOverrides: ["message": "current text"])
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(result.propertiesJSON.utf8)) as? [String: [String: Any]])
+        XCTAssertEqual(json["message"]?["value"] as? String, "current text")
+        XCTAssertEqual(result.scalingFactor, 1.75)
+        XCTAssertEqual(store.appSnapshot, before)
+        XCTAssertTrue(store.history.entries.isEmpty)
+        XCTAssertEqual(store.editorState.propertyTextDrafts[field], "local draft")
+        XCTAssertTrue(store.editorState.hasPendingEdits(wallpaperID: "preview"))
+        do { _ = try await store.wallpaperPreviewRequestAsync(id: "preview", displayID: "primary", textOverrides: ["unknown": "x"]); XCTFail("undeclared preview property accepted") } catch {}
+    }
+}
+
+private final class PreviewInputsBridge: WallpaperBridge {
+    var preview: BridgeWallpaperPreview!
+    var options: BridgeWallpaperOptionsSnapshot!
+    override func wallpaperPreview(wallpaperId: String, displayId: String) async throws -> BridgeWallpaperPreview { preview }
+    override func wallpaperOptionsSnapshot(wallpaperId: String) async throws -> BridgeWallpaperOptionsSnapshot { options }
+}

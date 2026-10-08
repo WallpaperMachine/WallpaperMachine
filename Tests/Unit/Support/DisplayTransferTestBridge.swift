@@ -1,0 +1,82 @@
+import Foundation
+@testable import WallpaperMachine
+
+/// A two-display bridge that really updates assignment snapshots without any desktop windows.
+@MainActor
+final class DisplayTransferTestBridge: LayoutSnapshotBridge {
+    var assignments = ["primary": "a", "secondary": "b"]
+    var eligible = Set(["primary", "secondary"])
+    var dirtyWallpapers = Set<String>()
+    var failOnce: String?
+    var failAfterMutation = false
+    var beforeApply: (@MainActor () async -> Void)?
+    private var selected = "a"
+    private var edits: [String: [String: Bool]] = [:]
+    private(set) var applications: [(String, String)] = []
+
+    func installProjects(in library: URL) throws {
+        for id in ["a", "b", "c"] {
+            let folder = library.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"type":"web","title":"Fixture","file":"index.html"}"#.utf8).write(to: folder.appendingPathComponent("project.json"))
+            try Data("<!doctype html><title>Fixture</title>".utf8).write(to: folder.appendingPathComponent("index.html"))
+        }
+    }
+
+    private func currentOptions(_ id: String) -> BridgeWallpaperOptionsSnapshot {
+        BridgeSnapshotFixtures.options(wallpaperId: id, title: id, kind: .webpage,
+            dirty: dirtyWallpapers.contains(id), displayConfigurations: ["primary", "secondary"].map { display in
+                .init(displayId: display, title: display, enabled: edits[id]?[display] ?? (assignments[display] == id),
+                      scalingMode: .fill, scalingFactor: 1, targetFps: 30, maxFps: 60,
+                      muted: true, volume: 0, dirty: false, canRestoreDefaults: false)
+            })
+    }
+    var currentBundle: BridgeSnapshotBundle {
+        .init(app: .init(playbackState: .paused, selectedWallpaperId: selected, activeWallpaperIds: Array(Set(assignments.values)), errors: []),
+            library: .init(wallpapers: ["a", "b", "c"].map { id in
+                .init(id: id, title: id == "a" ? "Ocean <img src=x>" : id, kind: .webpage, supported: true,
+                      active: assignments.values.contains(id), selected: selected == id, previewPath: nil)
+            }, scanStatus: .init(scanning: false, done: 3, total: 3), sceneCount: 0, videoCount: 0, webpageCount: 3, unknownCount: 0),
+            wallpaperOptions: currentOptions(selected), monitorInformation: .init(rows: ["primary", "secondary"].map { display in
+                .init(displayId: display, title: display, wallpaperId: assignments[display] ?? "", wallpaperTitle: assignments[display] ?? "",
+                      mirrorTargetDisplayId: nil, mirrorTargetTitle: nil, scalingMode: "fill", targetFps: "30", audioResponse: false)
+            }), settings: BridgeSnapshotFixtures.settings(displays: ["primary", "secondary"].map { display in
+                .init(displayId: display, title: display, enabled: eligible.contains(display), mode: .standalone,
+                      mirrorTargets: [], selectedMirrorTarget: nil, scalingMode: .fill, scalingFactor: 1, targetFps: 30,
+                      maxFps: 60, muted: true, volume: 0)
+            }))
+    }
+    private var mutation: BridgeWallpaperMutationBundle {
+        let bundle = currentBundle
+        return .init(app: bundle.app, library: bundle.library, wallpaperOptions: bundle.wallpaperOptions!,
+                     monitorInformation: bundle.monitorInformation, settings: bundle.settings)
+    }
+    override func selectWallpaper(id: String) async throws -> BridgeSnapshotBundle { selected = id; return currentBundle }
+    override func allSnapshots() async throws -> BridgeSnapshotBundle { currentBundle }
+    override func wallpaperOptionsSnapshot(wallpaperId: String) async throws -> BridgeWallpaperOptionsSnapshot { currentOptions(wallpaperId) }
+    override func setDisplayConfigEnabled(wallpaperId: String, displayId: String, enabled: Bool) async throws -> BridgeWallpaperMutationBundle {
+        selected = wallpaperId
+        edits[wallpaperId, default: [:]][displayId] = enabled
+        return mutation
+    }
+    override func applyWallpaperOptions(wallpaperId: String) async throws -> BridgeWallpaperMutationBundle {
+        if let beforeApply { await beforeApply() }
+        let changes = edits[wallpaperId] ?? [:]
+        let fail = changes.keys.contains { "\($0)=\(wallpaperId)" == failOnce }
+        if fail { failOnce = nil }
+        if fail && !failAfterMutation { throw CocoaError(.fileWriteUnknown) }
+        for (display, enabled) in changes {
+            if enabled { assignments[display] = wallpaperId }
+            else if assignments[display] == wallpaperId { assignments[display] = nil }
+            applications.append((display, wallpaperId))
+        }
+        edits[wallpaperId] = nil
+        if fail { throw CocoaError(.fileWriteUnknown) }
+        return mutation
+    }
+    override func ejectWallpaperFromDisplay(displayId: String, wallpaperId: String) async throws -> BridgeDisplayMutationBundle {
+        if assignments[displayId] == wallpaperId { assignments[displayId] = nil }
+        let value = currentBundle
+        return .init(app: value.app, library: value.library, monitorInformation: value.monitorInformation, settings: value.settings)
+    }
+}

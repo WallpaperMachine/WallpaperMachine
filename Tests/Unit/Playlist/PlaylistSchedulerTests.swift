@@ -40,6 +40,7 @@ final class PlaylistSchedulerTests: XCTestCase {
 
     private func makeScheduler(
         library: [String] = ["a", "b", "c"], favorites: Set<String> = [],
+        commandRevision: @escaping @MainActor (String) -> UInt64 = { _ in 0 },
         activate: PlaylistScheduler.Activate? = nil
     ) -> PlaylistScheduler {
         PlaylistScheduler(
@@ -51,13 +52,129 @@ final class PlaylistSchedulerTests: XCTestCase {
                 self.applied.append(id)
                 return id
             },
-            now: { self.clock }, calendar: calendar, center: .default,
+            commandRevision: commandRevision, now: { self.clock }, calendar: calendar, center: .default,
             sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
     }
 
     /// Lets the switch a scheduler started on the main actor run to its end.
     private func settle() async {
         for _ in 0..<50 { await Task.yield() }
+    }
+
+    func testFailedWallpaperIsSkippedImmediatelyAndRetriedAfterCooldown() async {
+        store.update("primary") { $0.mode = .rotate; $0.interval = 5 }
+        var attempts: [String] = []
+        var broken = true
+        let scheduler = makeScheduler(activate: { display, choose in
+            guard let id = choose() else { return nil }
+            attempts.append(id)
+            if id == "b", broken { throw WallpaperActionError(message: "Fixture failed") }
+            self.shown[display] = id
+            return id
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        XCTAssertTrue(scheduler.skip("primary"))
+        await settle()
+        XCTAssertEqual(attempts, ["b", "c"])
+        XCTAssertEqual(shown["primary"], "c")
+        XCTAssertNotNil(store.skipped["primary"]?["b"])
+        shown["primary"] = "a"
+        scheduler.skip("primary")
+        await settle()
+        XCTAssertEqual(attempts, ["b", "c", "c"], "a failed item is not immediately retried")
+        clock.addTimeInterval(PlaylistScheduler.failureCooldown)
+        shown["primary"] = "a"
+        broken = false
+        scheduler.skip("primary")
+        await settle()
+        XCTAssertEqual(attempts.last, "b")
+        XCTAssertEqual(shown["primary"], "b")
+        XCTAssertNil(store.skipped["primary"]?["b"])
+    }
+
+    func testBrokenLibraryHasBoundedAttemptsAndKeepsTheCurrentWallpaper() async {
+        store.update("primary") { $0.mode = .rotate; $0.interval = 5 }
+        var attempts: [String] = []
+        let scheduler = makeScheduler(library: ["a"] + (1...20).map { "broken-\($0)" }, activate: { _, choose in
+            guard let id = choose() else { return nil }
+            attempts.append(id)
+            throw WallpaperActionError(message: "Fixture failed")
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        scheduler.skip("primary")
+        await settle()
+        XCTAssertEqual(attempts.count, PlaylistScheduler.maximumAttempts)
+        XCTAssertEqual(Set(attempts).count, attempts.count)
+        XCTAssertEqual(shown["primary"], "a")
+        XCTAssertEqual(store.nextChange["primary"], clock.addingTimeInterval(5 * 60))
+    }
+
+    func testCancellationDoesNotBlacklistOrTryAnotherWallpaper() async {
+        store.update("primary") { $0.mode = .rotate }
+        var attempts: [String] = []
+        let scheduler = makeScheduler(activate: { _, choose in
+            guard let id = choose() else { return nil }
+            attempts.append(id)
+            throw CancellationError()
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        scheduler.skip("primary")
+        await settle()
+        XCTAssertEqual(attempts, ["b"])
+        XCTAssertTrue(store.skipped.isEmpty)
+    }
+
+    func testFailedAutomaticSwitchYieldsToANewerManualCommand() async throws {
+        store.update("primary") { $0.mode = .rotate }
+        let queue = UserCommandQueue()
+        let slot = BridgeStore.activationSlot(displayId: "primary")
+        var release: CheckedContinuation<Void, Never>?
+        var attempts: [String] = []
+        let scheduler = makeScheduler(commandRevision: { _ in queue.revision(for: slot) }, activate: { _, choose in
+            try await queue.run(slot: slot) {
+                guard let id = choose() else { return }
+                attempts.append(id)
+                await withCheckedContinuation { release = $0 }
+                throw WallpaperActionError(message: "Fixture failed")
+            }
+            return nil
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        scheduler.skip("primary")
+        await settle()
+        let continuation = try XCTUnwrap(release)
+        let manual = Task {
+            await queue.run(slot: slot) { self.shown["primary"] = "manual" }
+        }
+        await settle()
+        XCTAssertTrue(queue.hasWaiting(slot: slot))
+        continuation.resume()
+        await manual.value
+        await settle()
+        XCTAssertEqual(attempts, ["b"], "an automatic retry must not supersede the manual switch")
+        XCTAssertEqual(shown["primary"], "manual")
+    }
+
+    func testChangingPlaylistDuringFailureDoesNotContinueTheOldRotation() async {
+        store.update("primary") { $0.mode = .rotate }
+        var attempts: [String] = []
+        let scheduler = makeScheduler(activate: { _, choose in
+            guard let id = choose() else { return nil }
+            attempts.append(id)
+            self.store.update("primary") { $0.mode = .off }
+            throw WallpaperActionError(message: "Fixture failed")
+        })
+        scheduler.start()
+        defer { scheduler.stop() }
+        scheduler.skip("primary")
+        await settle()
+        XCTAssertEqual(attempts, ["b"])
+        XCTAssertEqual(shown["primary"], "a")
+        XCTAssertNil(store.nextChange["primary"])
     }
 
     func testRotationWaitsItsIntervalThenAdvancesInOrder() async {

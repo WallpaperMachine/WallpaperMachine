@@ -65,9 +65,11 @@ file; pass `rg -u` to search them deliberately.
 
 | Document | Purpose |
 |---|---|
-| [features/control-panel.md](features/control-panel.md) | Panel UX, local collections, property presets, image placement, compatibility checks, and local backup/restore |
+| [features/control-panel.md](features/control-panel.md) | Panel UX, live preview, playback history, local collections, property presets, image placement, compatibility checks, and local backup/restore |
 | [features/workshop-downloads.md](features/workshop-downloads.md) | Discover, SteamCMD setup, download queue |
-| [features/automation.md](features/automation.md) | Global keyboard shortcuts, Shortcuts app actions (Siri, Spotlight) and `wallpapermachine://` links, and the commands they share |
+| [features/automation.md](features/automation.md) | Weekday/time/solar/appearance rules, temporary Focus choices, global shortcuts, Shortcuts actions for wallpapers/playlists/presets, and `wallpapermachine://` links |
+| [features/display-layouts.md](features/display-layouts.md) | Saved multi-display wallpaper arrangements, copy/swap, preflight and recovery, Shortcuts, backup and the per-Space boundary |
+| [features/spaces.md](features/spaces.md) | Experimental wallpaper/playlist choices by desktop UUID, visit/manual/Focus semantics, scoped poster ownership and verification limits |
 | [features/playlists.md](features/playlists.md) | Per-display rotation and day/night selection, local collection sources, reusable named plans, scheduling and storage |
 | [features/pixiv.md](features/pixiv.md) | pixiv tab: rankings and tag search, saving a page as a still wallpaper, pixiv sign-in and R-18 works |
 | [features/audio-response.md](features/audio-response.md) | Audio-responsive wallpapers |

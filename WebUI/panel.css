@@ -227,6 +227,12 @@ select { appearance: none; padding-right: 26px; background-image: url("data:imag
 select { overflow: hidden; text-overflow: ellipsis; }
 select:hover:not(:disabled) { border-color: var(--line-strong); }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+.history-display { margin: 0; padding: 0 16px 10px; color: var(--muted); overflow-wrap: anywhere; }
+.history-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; text-align: left; border: 0; border-radius: 0; background: transparent; }
+.history-item:hover:not(:disabled) { background: var(--accent-soft); }
+.history-item .queue-thumb { flex: none; }
+.history-title { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.history-active { flex: none; color: var(--muted); font-size: 11px; }
 input { caret-color: var(--accent); }
 input[type="checkbox"] { accent-color: var(--control); width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
 input[type="range"] { accent-color: var(--control); min-width: 0; width: 100%; }

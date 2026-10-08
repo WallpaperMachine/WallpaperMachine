@@ -438,6 +438,7 @@ final class NativeVideoWallpaperHost {
         guard let layer = notification.object as? CALayer,
             let (displayID, surface) = surfaces.first(where: { $0.value.posterLayer === layer })
         else { return }
+        let context = notification.userInfo?["context"] as? String
         Task { @MainActor [weak self] in
             let image = await surface.posterImage()
             guard let self, !self.stopped, let image else { return }
@@ -446,7 +447,7 @@ final class NativeVideoWallpaperHost {
             // a frame of the wrong clip, and publishing it would show it.
             guard self.surfaces[displayID] === surface, surface.posterLayer === layer,
                   let frame = DesktopPosterFrame.rgba(image) else { return }
-            frame.publish(for: layer, to: self.frameCenter)
+            frame.publish(for: layer, to: self.frameCenter, context: context)
         }
     }
 

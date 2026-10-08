@@ -188,19 +188,28 @@ the condition holds right now.
 A Focus can act on wallpapers through a Focus filter (`WallpaperFocusFilter`, an
 App Intents `SetFocusFilterIntent`): in System Settings → Focus → a Focus →
 Focus Filters, add WallpaperMachine and choose **Keep running**, **Mute**,
-**Pause** or **Stop (free memory)**. macOS performs the filter with that value
+**Pause**, **Stop (free memory)**, **Use wallpaper** or **Use saved playlist**.
+The latter two temporarily select content on an optional display; restoration and
+manual-choice behavior are described in [Automation](automation.md#focus-selection-and-restoration).
+macOS performs the filter with that value
 when the Focus turns on and with the default, Keep running, when it turns off;
 `FocusFilterState` keeps the last value across launches, and the app reads the
 filter in force again at launch. **Open Focus Settings…** on the Focus row opens
 that pane; the app cannot add a filter itself. Adding the filter needs no
 permission.
 
-`SystemConditionMonitor` turns the three into rule actions that join the app
+`SystemConditionMonitor` turns the playback conditions into rule actions that join the app
 rules' in `WallpaperPresentationPolicy`, so they pause, mute or stop wallpapers
 exactly as an app rule does and never change the user's own Play/Pause. It only
 observes notifications (`NSProcessInfoPowerStateDidChange`,
 `ProcessInfo.thermalStateDidChangeNotification`, the preferences and the Focus
 filter); nothing is polled. Web mute uses the same availability boundary as above.
+Wallpaper and playlist selections instead reach `WallpaperAutomationScheduler`;
+they never become pause/mute/stop actions or change the user's own Play/Pause.
+The experimental [desktop Space mode](spaces.md) uses the same eligibility gate,
+retains manual overrides for the current visit, and defers Focus exit while the
+current desktop cannot be identified. Animated lock-screen ownership currently
+conflicts with that mode; screen-saver-only ownership does not.
 
 ### App rules
 

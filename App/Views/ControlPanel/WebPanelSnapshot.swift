@@ -23,6 +23,7 @@ extension WebPanelController {
     _ = store.appSnapshot
     _ = store.supportPrompt?.isPending
     _ = store.librarySnapshot
+    _ = store.history.entries
     _ = store.libraryRefreshRevision
     _ = store.wallpaperOptionsSnapshot
     _ = store.monitorInformationSnapshot
@@ -461,7 +462,8 @@ extension WebPanelController {
     // What Playback shows as in effect right now, beside the saved choices.
     let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     let thermalState = Self.thermalState(ProcessInfo.processInfo.thermalState)
-    let focusAction = FocusFilterState.shared.action?.rawValue ?? "keepRunning"
+    let focusAction = FocusFilterState.shared.selection?.target.kind.rawValue
+      ?? FocusFilterState.shared.action?.rawValue ?? "keepRunning"
     // The sections are built separately: as one literal, the Swift compiler on the
     // macOS 15 release runner gives up type-checking it in reasonable time.
     let settingsSnapshot: [String: Any] = [
@@ -555,6 +557,10 @@ extension WebPanelController {
       let next = playlists.nextChange[display].map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null
       var value = Self.organizationPlaylistSnapshot(playlist)
       value["nextChange"] = next
+      value["skipped"] = (playlists.skipped[display] ?? [:]).sorted { $0.key < $1.key }.map { id, failure in
+        ["id": id, "message": failure.message,
+         "retryAfter": failure.retryAfter.timeIntervalSince1970 * 1000] as [String: Any]
+      }
       playlistSnapshot[display] = value
     }
     let updateCheck = workshop.updates
@@ -600,6 +606,12 @@ extension WebPanelController {
       "queuedApplyIDs": store.waitingActivationIDs,
       "error": error as Any? ?? null,
       "libraryLoading": loading, "favorites": favoriteIDs.sorted(), "wallpapers": wallpapers,
+      "history": [
+        "recentIDs": store.history.recent(on: navigation.targetDisplayID,
+          available: Set(store.librarySnapshot.wallpapers.filter(\.supported).map(\.id))),
+        "previousID": store.previousWallpaperID(displayId: navigation.targetDisplayID) as Any? ?? null,
+      ],
+      "previewAvailable": store.openPreview != nil,
       "hostStates": hostStatesSnapshot(),
       "libraryRevision": library.revision,
       "filtersCollapsed": filtersCollapsed,
@@ -608,6 +620,8 @@ extension WebPanelController {
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
       "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
+      "automation": wallpaperAutomationSnapshot(),
+      "displayLayouts": displayLayoutsSnapshot(),
       "libraryOrganization": libraryOrganizationSnapshot(),
       "wallpaperPresets": wallpaperPresetsSnapshot(),
       "backup": backupSnapshot(),

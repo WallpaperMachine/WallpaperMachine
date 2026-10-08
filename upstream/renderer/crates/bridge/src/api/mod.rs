@@ -12,7 +12,7 @@ pub use types::{
     BridgeAppSnapshot, BridgeAudioSpectrum, BridgeComboOption, BridgeDirectoryMode,
     BridgeDisplayConfigRow, BridgeDisplayMode, BridgeDisplayMutationBundle,
     BridgeDisplaySettingsRow, BridgeFileFilter, BridgeLibraryScanStatus, BridgeLibrarySnapshot,
-    BridgeLockScreenScene, BridgeLogLevel, BridgeLogStatus, BridgeMonitorInfoRow,
+    BridgeLockScreenScene, BridgeLogLevel, BridgeLogStatus, BridgeMonitorInfoRow, BridgeWallpaperPreview,
     BridgeNativeVideoWallpaper, BridgeMediaSnapshot,
     BridgeMonitorInformationSnapshot, BridgePlaybackState, BridgeBatteryMode, BridgePropertyDescriptor,
     BridgePropertyKind, BridgePropertyValue, BridgeRendererCountersReport,
@@ -64,7 +64,7 @@ use crate::{
         messages::{
             ApplyWallpaperOptions, Bootstrap, CancelWallpaperOptions, ClearShaderCache,
             EditProperty, EjectWallpaperFromDisplay, GetAllSnapshots, GetAppSnapshot,
-            GetLibrarySnapshot, GetLockScreenScenes, GetMonitorInformationSnapshot,
+            GetLibrarySnapshot, GetLockScreenScenes, GetWallpaperPreview, GetMonitorInformationSnapshot,
             GetSettingsSnapshot, GetWallpaperOptionsSnapshot, GetWebWallpapers, InitialFrameReady,
             GetNativeVideoWallpapers, PollMousePosition, RejectNativeVideo, RendererCounters,
             RefreshDisplays, RefreshLibrary, RestorePropertyDefault, SelectWallpaper,
@@ -957,6 +957,17 @@ impl WallpaperBridge {
     /// Returns an error when scene resolution or renderer-input conversion fails.
     pub async fn lock_screen_scenes(&self) -> Result<Vec<BridgeLockScreenScene>, BridgeError> {
         self.actor.ask(GetLockScreenScenes).await
+    }
+
+    /// Exports current draft inputs for an isolated preview, without selecting, applying,
+    /// persisting or opening any wallpaper. Preview playback is owned by the host.
+    ///
+    /// # Errors
+    /// Returns an error for a missing or unsupported project or invalid input paths.
+    pub async fn wallpaper_preview(
+        &self, wallpaper_id: String, display_id: String,
+    ) -> Result<BridgeWallpaperPreview, BridgeError> {
+        self.actor.ask(GetWallpaperPreview { wallpaper_id, display_id }).await
     }
 
     /// Returns committed web wallpapers for the currently connected displays.

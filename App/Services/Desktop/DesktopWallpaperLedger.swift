@@ -96,7 +96,7 @@ final class DesktopWallpaperLedger {
 
     /// Submit a fresh frame to EVERY desktop on its display, without a Space
     /// change event. A loading renderer keeps the previous poster until ready.
-    func synchronize(posters: [String: Data], liveDisplays: Set<String>) throws {
+    func synchronize(posters: [String: Data], liveDisplays: Set<String>, targetSpaces: [String: Set<String>] = [:]) throws {
         let targets = try workspace.targets()
         var firstError: Error?
         // Cache only within this pass: external edits/missing files must still
@@ -105,6 +105,9 @@ final class DesktopWallpaperLedger {
         let fallbacks = userWallpapers(targets: targets)
         let digests = posters.mapValues { Data(SHA256.hash(data: $0)) }
         for target in targets {
+            // A key with an empty set holds every Space on that display. The public
+            // fallback has no identity and cannot safely accept a Space-specific poster.
+            if let allowed = targetSpaces[target.display], target.space.map(allowed.contains) != true { continue }
             do {
                 if let png = posters[target.display], liveDisplays.contains(target.display) {
                     try apply(png: png, digest: digests[target.display]!, target: target,

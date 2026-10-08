@@ -102,7 +102,8 @@ struct DesktopPosterMailbox {
     // first. A single slot would credit whichever request happens to be in
     // flight when pixels arrive, and a capture that overlaps a newer request
     // would then mark that newer request satisfied with older pixels.
-    std::deque<uint64_t> handed_out;
+    std::string context;
+    std::deque<std::pair<uint64_t, std::string>> handed_out;
     std::chrono::steady_clock::time_point next_attempt {};
     std::function<void()> wake;
     __weak CAMetalLayer* layer;
@@ -126,11 +127,15 @@ void configure_desktop_poster(wallpaper::RenderInitInfo& info, void* metal_layer
     std::weak_ptr<DesktopPosterMailbox> weak_mailbox = mailbox;
     mailbox->observer = [[NSNotificationCenter defaultCenter]
         addObserverForName:@"WallpaperMachine.requestDesktopPoster"
-        object:mailbox->layer queue:nil usingBlock:^(NSNotification*) {
+        object:mailbox->layer queue:nil usingBlock:^(NSNotification* notification) {
             auto state = weak_mailbox.lock();
             if (state == nullptr) return;
             std::scoped_lock lock(state->guard);
             ++state->requested;
+            NSString* context = notification.userInfo[@"context"];
+            const char* text = [context isKindOfClass:[NSString class]] && context.length <= 4096
+                ? context.UTF8String : nullptr;
+            state->context = text != nullptr ? text : "";
             // Woken under the lock that unbinding also takes, so a render
             // handler that has already unbound cannot be poked afterwards.
             // The wake only enqueues a message, so it does not re-enter here.
@@ -147,7 +152,7 @@ void configure_desktop_poster(wallpaper::RenderInitInfo& info, void* metal_layer
                         std::chrono::steady_clock::time_point now) {
         if (state.requested == state.delivered) return false;
         const bool retry =
-            ! state.handed_out.empty() && state.handed_out.back() == state.requested;
+            ! state.handed_out.empty() && state.handed_out.back().first == state.requested;
         return ! (retry && now < state.next_attempt);
     };
     info.poster_pending = [mailbox, due] {
@@ -159,7 +164,7 @@ void configure_desktop_poster(wallpaper::RenderInitInfo& info, void* metal_layer
         const auto now = std::chrono::steady_clock::now();
         if (! due(*mailbox, now)) return false;
         mailbox->next_attempt = now + std::chrono::seconds(2);
-        mailbox->handed_out.push_back(mailbox->requested);
+        mailbox->handed_out.emplace_back(mailbox->requested, mailbox->context);
         if (mailbox->handed_out.size() > DesktopPosterMailbox::kMaxOutstanding) {
             mailbox->handed_out.pop_front();
         }
@@ -169,6 +174,7 @@ void configure_desktop_poster(wallpaper::RenderInitInfo& info, void* metal_layer
                                   uint32_t height, bool bgra) {
         @autoreleasepool {
             CAMetalLayer* layer = nil;
+            std::string captured_context;
             {
                 std::scoped_lock lock(mailbox->guard);
                 // Captures report in the order they were started, so the head
@@ -178,22 +184,25 @@ void configure_desktop_poster(wallpaper::RenderInitInfo& info, void* metal_layer
                 // is satisfied the second is already answered, and leaving it
                 // at the head would throw away the next request's pixels.
                 while (! mailbox->handed_out.empty() &&
-                       mailbox->handed_out.front() <= mailbox->delivered) {
+                       mailbox->handed_out.front().first <= mailbox->delivered) {
                     mailbox->handed_out.pop_front();
                 }
                 if (mailbox->handed_out.empty()) return;
-                const uint64_t captured = mailbox->handed_out.front();
+                const uint64_t captured = mailbox->handed_out.front().first;
+                captured_context = mailbox->handed_out.front().second;
                 mailbox->handed_out.pop_front();
                 mailbox->delivered = captured;
                 layer = mailbox->layer;
             }
             if (layer == nil) return;
             NSData* data = [NSData dataWithBytes:pixels.data() length:pixels.size()];
+            NSString* context = [NSString stringWithUTF8String:captured_context.c_str()];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[NSNotificationCenter defaultCenter]
                     postNotificationName:@"WallpaperMachine.desktopPosterReady"
                     object:layer userInfo:@{ @"pixels": data, @"width": @(width),
-                                            @"height": @(height), @"bgra": @(bgra) }];
+                                            @"height": @(height), @"bgra": @(bgra),
+                                            @"context": context != nil ? context : @"" }];
             });
         }
     };

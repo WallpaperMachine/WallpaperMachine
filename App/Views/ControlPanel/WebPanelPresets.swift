@@ -25,7 +25,7 @@ extension WebPanelController {
       let id = try wallpaperID(request)
       let preset = try presets.preset(id: request.string("presetID"))
       let options = try await store.wallpaperOptionsSnapshotAsync(wallpaperId: id)
-      try await presets.apply(preset, options: options, bridge: store)
+      try await presets.apply(preset, options: options, bridge: store, userInitiated: true)
       presets.status = String(localized: "Property preset applied.")
     case "wallpaperPresetExport":
       let id = try wallpaperID(request)

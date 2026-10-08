@@ -894,9 +894,90 @@ final class DesktopWallpaperTests: XCTestCase {
     }
 
     @MainActor
-    private func post(_ pixels: Data, layer: CAMetalLayer, center: NotificationCenter) {
+    private func post(_ pixels: Data, layer: CAMetalLayer, center: NotificationCenter, context: String = "") {
         center.post(name: Notification.Name("WallpaperMachine.desktopPosterReady"), object: layer,
-                    userInfo: ["pixels": pixels, "width": 1, "height": 1, "bgra": false])
+                    userInfo: ["pixels": pixels, "width": 1, "height": 1, "bgra": false, "context": context])
+    }
+
+    @MainActor
+    func testSpaceRestrictionNeverWritesAnotherDesktopOrThePublicFallback() throws {
+        let workspace = MemoryDesktopWorkspace()
+        let fallback = DesktopPictureTarget(display: "1", space: nil)
+        workspace.pictures = [one: original("one"), two: original("two"), fallback: original("visible")]
+        let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1"], targetSpaces: ["1": ["one"]])
+        XCTAssertEqual(workspace.writes, [one])
+        XCTAssertEqual(workspace.pictures[two], original("two"))
+        XCTAssertEqual(workspace.pictures[fallback], original("visible"))
+        let saved = workspace.pictures[one]
+        workspace.writes.removeAll()
+        try ledger.synchronize(posters: [:], liveDisplays: [], targetSpaces: ["1": []])
+        XCTAssertTrue(workspace.writes.isEmpty)
+        XCTAssertEqual(workspace.pictures[one], saved)
+        try ledger.restoreAll()
+        XCTAssertEqual(workspace.pictures[one], original("one"))
+    }
+
+    @MainActor
+    func testLateFramesAndEncodesFromAnotherSpaceAreRejected() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        let center = NotificationCenter(), layer = CAMetalLayer(), encoder = ControlledPosterEncoder()
+        var scope = DesktopPosterScope.desktop(id: "one", context: "visit-a")
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+            surfaces: { [.init(layer: layer, display: "1")] }, frameCenter: center,
+            scope: { _ in scope }, encode: { await encoder.encode($0) })
+        sync.start(); defer { sync.stop() }
+        post(Data([1]), layer: layer, center: center, context: "visit-a")
+        try await waitFor(encoder, data: Data([1]))
+        scope = .desktop(id: "two", context: "visit-b")
+        await encoder.finish(Data([1]))
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(workspace.writes.isEmpty)
+        post(Data([2]), layer: layer, center: center, context: "visit-a")
+        for _ in 0..<20 { await Task.yield() }
+        let receivedStale = await encoder.has(Data([2]))
+        XCTAssertFalse(receivedStale)
+        post(Data([3]), layer: layer, center: center, context: "visit-b")
+        try await waitFor(encoder, data: Data([3]))
+        await encoder.finish(Data([3]))
+        try await waitUntil { workspace.writes == [self.two] }
+        XCTAssertEqual(workspace.pictures[one], original("one"))
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([3]))
+        scope = .all
+        post(Data([4]), layer: layer, center: center, context: "visit-b")
+        for _ in 0..<20 { await Task.yield() }
+        let receivedAfterModeChange = await encoder.has(Data([4]))
+        XCTAssertFalse(receivedAfterModeChange)
+    }
+
+    @MainActor
+    func testScopedPostersSurviveReplacementGapsAndEjectRestoresOnlyTheCurrentSpace() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        let center = NotificationCenter(), layer = CAMetalLayer()
+        var surfaces = [DesktopPosterSurface(layer: layer, display: "1")]
+        var retained: Set<String> = ["1"]
+        var scope = DesktopPosterScope.desktop(id: "one", context: "visit-a")
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace, surfaces: { surfaces },
+            frameCenter: center, scope: { _ in scope }, retainedDisplays: { retained }, encode: { $0.pixels })
+        sync.start(); defer { sync.stop() }
+        post(Data([1]), layer: layer, center: center, context: "visit-a")
+        try await waitUntil { workspace.writes == [self.one] }
+        let first = try XCTUnwrap(workspace.pictures[one])
+        scope = .hold; surfaces = []; workspace.writes.removeAll()
+        sync.refresh(capture: false)
+        XCTAssertTrue(workspace.writes.isEmpty)
+        XCTAssertEqual(workspace.pictures[one], first)
+        surfaces = [.init(layer: layer, display: "1")]
+        scope = .desktop(id: "two", context: "visit-b")
+        post(Data([2]), layer: layer, center: center, context: "visit-b")
+        try await waitUntil { workspace.writes == [self.two] }
+        XCTAssertEqual(try Data(contentsOf: first.url), Data([1]))
+        surfaces = []; retained = []
+        sync.refresh(capture: false)
+        try await waitUntil { workspace.pictures[self.two] == self.original("two") }
+        XCTAssertEqual(workspace.pictures[one], first)
     }
 
     private func waitFor(_ encoder: ControlledPosterEncoder, data: Data) async throws {

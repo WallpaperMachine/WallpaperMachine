@@ -264,12 +264,54 @@ Swift tests cover, without starting the app:
   that lets wallpapers run, since macOS performs it with defaults when a Focus
   ends. The real Focus Settings pane and a real Low Power Mode are not exercised.
 - **Automation** — `AutomationCommandTests`, `AppAutomationTests`,
-  `HotKeyPreferencesTests` and `GlobalHotKeysTests`; what each covers, and what
+  `HotKeyPreferencesTests`, `GlobalHotKeysTests`, `WallpaperAutomationPlannerTests`,
+  `WallpaperAutomationStoreTests`, `WallpaperAutomationSchedulerTests` and offscreen
+  `ControlPanelAutomationTests`: rules, solar/DST boundaries, appearance selection,
+  Focus recovery/manual precedence, editor round trips and preference validation.
+  `WallpaperBackupTests` covers rule merging and local recovery-state rollback.
+  What each covers, and what
   needs the running app, is in [automation](../features/automation.md#verification).
 - **Playlists** — `PlaylistPlannerTests`, `PlaylistStoreTests`,
   `PlaylistSchedulerTests` (fake clock, library and activation; no renderer) and
-  `WebPanelPlaylistTests`; what each covers is listed in
+  `WebPanelPlaylistTests`, plus offscreen `ControlPanelPlaybackToolsTests` for
+  drag/button sorting, keyboard focus and stale-drag rejection; what each covers is listed in
   [playlists](../features/playlists.md#verification).
+- **Desktop Spaces** — `WallpaperSpaceMonitorTests`, Space scenarios in
+  `WallpaperAutomationSchedulerTests`, store/backup migration checks and offscreen
+  `ControlPanelSpaceWallpaperTests`. `DesktopWallpaperTests` covers scoped writes,
+  late-frame/encode rejection, replacement gaps and restoration; the native-video
+  host exercises request contexts through the coordinator. Actual Space transitions
+  and installed desktop behavior remain unverified; see [Spaces](../features/spaces.md).
+- **Multi-display layouts** — `WallpaperDisplayLayoutStoreTests`,
+  `WallpaperDisplayTransferTests` and `WallpaperDisplayTransferIntegrationTests`
+  cover bounded persistence, complete preflight, copy/swap, recovery including
+  cancellation/empty destinations, history and newer manual commands.
+  Offscreen `ControlPanelDisplayLayoutTests` covers save/rename/apply/delete,
+  copy/swap failure feedback, keyboard focus, missing screens and compact locales;
+  backup and command tests cover portable records and links. Real WindowServer
+  transitions, visible appearance and separate per-Space assignments are not
+  established. See [display layouts](../features/display-layouts.md#code-and-verification).
+- **Wallpaper history** — `WallpaperHistoryStoreTests` covers per-display
+  persistence, bounded recent lists, repeated Previous, removal and clearing.
+  `WallpaperActivationRecoveryTests` checks that a failed Previous leaves its
+  destination available and a no-op reapply adds nothing. The offscreen playback
+  tools tests cover history order, escaped titles, current-state accessibility,
+  clearing only the target display and restoring focus after closing the list.
+- **Live preview** — `WallpaperPreviewSessionTests` exercises hidden-load
+  deferral, pause composition, replacement/close generation guards, failure
+  teardown, reload, readiness timeout and pointer coordinate conversion using
+  injected surfaces. `WallpaperPreviewRequestTests` checks installed-path bounds,
+  symlink escape, stale manifests, resource checks and copying unapplied values
+  without changing bridge state. `WebWallpaperPreviewSurfaceTests` uses real
+  offscreen WebKit for typed properties, independent temporary storage, mute,
+  capture-denial stubs and stop cleanup. `ControlPanelPreviewTests` drives the
+  inspector action without opening a window. `WallpaperPreviewLayoutTests`
+  checks the 480-point content view with English, Chinese and Japanese controls
+  and a full-width selectable error row, without creating an NSWindow.
+  Rust `wallpaper_preview` tests
+  check read-only draft export and Web combo types. Native window presentation,
+  actual scene/video first frames in that window and OS visibility events are
+  not established by these unit tests.
 - **Lock screen** — per-display ownership, independent originals, external
   Desktop changes, journal recovery after service-reload failure, inherited
   Space cleanup, system-copied fallback restoration, global linked conflicts,

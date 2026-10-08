@@ -23,5 +23,6 @@ mod project_parse;
 mod property_snapshot;
 mod settings_intents;
 mod wallpaper_options_draft;
+mod wallpaper_preview;
 mod web_audio_media;
 mod state_consistency;
