@@ -8,6 +8,64 @@ Simplified Chinese. The app's What's New window offers both translations; the
 GitHub Release body repeats only the English notes. See
 [docs/release.md](docs/release.md) for how a version is cut.
 
+## 1.3.2 — 2026-10-08
+
+### English
+
+This release adds playlists, per-display wallpaper history, automatic wallpaper choices and saved multi-display layouts, and keeps the Mission Control picture closer to your actual wallpaper
+
+#### New
+
+- Create reorderable playlists that automatically skip wallpapers that fail to play, within a set limit
+- Each display keeps a history of recent wallpapers, and Previous takes you back to the one before
+- Choose wallpapers automatically by weekday, solar times, light or dark appearance, and Focus
+- Save layouts for multiple displays, copy or swap them between displays, and restore a saved layout
+- Use Shortcuts to control playlists, property presets and display layouts
+- Scene, Video and Web wallpapers each get their own muted preview
+- Experimental: choose a different wallpaper for each desktop Space
+- Settings › General adds an option, off by default, to update the Mission Control picture every 5 minutes for wallpapers that change over time
+
+#### Improved
+
+- Mission Control shows a more current wallpaper picture, retaken shortly after a wallpaper starts, changes or resumes, and after Space changes and wake
+- Wallpapers you pick yourself now take priority over pending automatic changes
+- The app now explains which options cannot be used with the experimental animated lock screen
+
+#### Fixed
+
+- Web wallpapers no longer pause their animation during desktop transitions
+- With the animated lock screen on, Mission Control no longer shows a black picture for wallpapers that fade in
+- The file picker for importing wallpapers no longer becomes unresponsive while waiting for you to choose or cancel
+
+### 简体中文
+
+此版本新增播放列表、按显示器记录的壁纸历史、自动选择壁纸和多显示器布局保存，并让调度中心中的画面更贴近实际壁纸
+
+#### 新增
+
+- 可创建能调整顺序的播放列表，并在一定限度内自动跳过无法播放的壁纸
+- 每个显示器都会保留最近使用的壁纸记录，可通过“上一个”返回之前的壁纸
+- 可按星期、太阳时段、浅色或深色外观以及专注模式自动选择壁纸
+- 可保存多显示器布局，在显示器之间复制或交换，并恢复已保存的布局
+- 可通过快捷指令控制播放列表、属性预设和显示器布局
+- 场景、视频和网页壁纸各自拥有独立的静音预览
+- 实验性功能：可为每个桌面空间选择不同的壁纸
+- 设置 › 通用新增一个默认关闭的选项，可每 5 分钟更新一次调度中心中的壁纸画面，适合随时间变化的壁纸
+
+#### 改进
+
+- 调度中心中的壁纸画面更及时，会在壁纸启动、切换或恢复后不久以及切换空间和唤醒后重新截取
+- 你手动选择的壁纸现在会优先于待执行的自动切换
+- 应用现在会说明哪些选项无法与实验性的动态锁定屏幕同时使用
+
+#### 修复
+
+- 网页壁纸在桌面切换过渡期间不再出现动画暂停
+- 开启动态锁定屏幕时，调度中心不再为淡入显示的壁纸显示黑色画面
+- 导入壁纸时的文件选择器在等待选择或取消时不再失去响应
+
+**Full changelog**: https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.2.6...v1.3.2
+
 ## 1.3.1 — 2026-10-08
 
 ### English
