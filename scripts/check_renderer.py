@@ -46,6 +46,7 @@ REALTIME_TESTS = {
         "FrameTimerTest.ABurstOfWakeOnceAtTheCeilingDoesNotAddCallbacks",
         "FrameTimerTest.ADrawSlightlyLongerThanTheIntervalDoesNotHalveTheRate",
         "ThreadTimerTest.CadenceKeepsItsPeriodDespiteWakeSlack",
+        "ThreadTimerTest.RequestsAfterALongWaitStillRespectTheCeiling",
     ),
     "unchanged_present_test": (
         "UnchangedPresent.APlainVideoPresentsEveryNewFrameAndNothingElse",

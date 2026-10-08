@@ -109,6 +109,10 @@ and only its exit 77 filters exactly those named tests out of their binaries wit
 median under `skips`, each with a CI warning. A default local renderer run remains
 necessary evidence for them. A new cadence test that fails only on hosted runners
 belongs in `REALTIME_TESTS`; the harness tests check every name still exists.
+`ThreadTimerTest.RequestsAfterALongWaitStillRespectTheCeiling` is included:
+its 50 ms observation loop can overrun on a VM and count seven 10 ms ticks
+against an assumed six-tick bound. The conditional skip requires the same
+imprecise-timer probe result; ordinary local runs still execute the test.
 
 ## Probes
 

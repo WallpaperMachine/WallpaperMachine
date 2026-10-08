@@ -19,6 +19,10 @@ on:
         required: true
         default: patch
         type: string
+      notes_from:
+        description: "Optional previous published tag for notes after an unpublished failed release"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -53,10 +57,14 @@ jobs:
         env:
           TAG: ${{ steps.bump.outputs.tag }}
           RELEASE_NOTES_API_KEY: ${{ secrets.RELEASE_NOTES_API_KEY }}
+          NOTES_FROM: ${{ github.event.inputs.notes_from }}
         # The tag does not exist yet, so the range ends at HEAD. The bump commit
         # itself is never part of the notes it describes. Without the key, or when the
         # model fails, nothing is committed or tagged; re-run the job.
-        run: python3 scripts/release_notes.py --tag "$TAG" --to HEAD --ai --changelog --apply
+        run: |
+          args=(--tag "$TAG" --to HEAD --ai --changelog --apply)
+          if [ -n "$NOTES_FROM" ]; then args+=(--previous "$NOTES_FROM"); fi
+          python3 scripts/release_notes.py "${args[@]}"
 
       - name: Commit, tag, and push
         id: push

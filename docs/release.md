@@ -285,6 +285,18 @@ could be replaced by a later ordinary push and silently lost.
 The workflow needs permission to push to `main`: `contents: write`, and branch
 protection must allow GitHub Actions.
 
+If a tag was created but its release never passed the publication gate, preserve
+that tag and fix the failed checks on `main`. A new patch release can set the
+optional workflow-dispatch `notes_from` input to the last published tag, so its
+model-written bilingual notes include the still-unpublished changes. This only
+sets `release_notes.py --previous`; it does not change the version policy, skip tests
+or replace a live release. Ordinary releases leave it empty and use the preceding
+tag as before. For example:
+
+```sh
+gh workflow run version.yml --ref main -f spec=patch -f notes_from=v1.2.6
+```
+
 ### Build (`build.yml`)
 
 `workflow_call` only, with a required `tag` input. It is the single place a
