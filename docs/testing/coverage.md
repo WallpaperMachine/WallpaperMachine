@@ -285,7 +285,8 @@ Swift tests cover, without starting the app:
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/
-  host wake orders and preserves user pause across sleep/wake.
+  host wake orders, preserves user pause across sleep/wake, and lets an unlocked
+  lock-screen surface settle for `desktopSettleBudget` before it holds a frame.
   `LockScreenFrameBackingTests` composites real snapshot pixels under a Metal
   layer without a drawable and checks snapshot ownership across replacement.
   `LockScreenWallpaperServiceTests.testDisplayTopologyChangesDoNotClearSurvivingLockScreens`

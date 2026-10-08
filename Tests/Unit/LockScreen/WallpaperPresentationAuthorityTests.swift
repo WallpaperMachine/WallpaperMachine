@@ -80,6 +80,37 @@ final class WallpaperPresentationAuthorityTests: XCTestCase {
     XCTAssertEqual(Authority.suspensionReasons(for: unlocked), .noConsumer)
   }
 
+  func testAnUnlockedLockScreenSurfaceSettlesAsTheDesktopBeforeHoldingAFrame() {
+    // It is also the desktop picture Mission Control shows: holding the first
+    // frame would show an intro's black opening.
+    let settling = Authority.Request(role: .lockScreen, presentationMode: "active", presentedFor: .zero)
+    XCTAssertTrue(Authority.mayPresent(settling))
+    var almost = settling
+    almost.presentedFor = Authority.desktopSettleBudget - .milliseconds(1)
+    XCTAssertTrue(Authority.mayPresent(almost))
+    var settled = settling
+    settled.presentedFor = Authority.desktopSettleBudget
+    XCTAssertEqual(Authority.suspensionReasons(for: settled), .noConsumer)
+
+    var paused = settling
+    paused.userPaused = true
+    XCTAssertEqual(Authority.suspensionReasons(for: paused), .userPaused,
+      "settling does not override the user's pause")
+    var asleep = settling
+    asleep.displaysAsleep = true
+    XCTAssertEqual(Authority.suspensionReasons(for: asleep), .displaysAsleep)
+
+    var screenSaverOnly = settling
+    screenSaverOnly.lockScreenEnabled = false
+    XCTAssertEqual(Authority.suspensionReasons(for: screenSaverOnly), .noConsumer,
+      "without lock-screen animation this surface is not the desktop")
+    var idle = settling
+    idle.presentationMode = "idle"
+    idle.screenSaverEnabled = false
+    XCTAssertEqual(Authority.suspensionReasons(for: idle), .noConsumer,
+      "an Idle surface is never the desktop")
+  }
+
   func testDisplaySleepAndHostSuspensionStopEvenAVisibleLockScreen() {
     let showing = Authority.Request(role: .lockScreen, sessionLocked: true)
     XCTAssertTrue(Authority.mayPresent(showing))
@@ -220,10 +251,21 @@ final class WallpaperPresentationAuthorityTests: XCTestCase {
 
   // MARK: - scheduled re-evaluation
 
-  func testOnlyAPreviewSchedulesItsOwnExpiry() {
+  func testOnlyBoundedPlaybackSchedulesItsOwnExpiry() {
     XCTAssertNil(
       Authority.nextReevaluation(for: .init(role: .lockScreen, sessionLocked: true)),
-      "a lock-screen surface changes state on an event, not on a timer")
+      "a lock-screen surface still producing its first frame has no deadline")
+    XCTAssertNil(
+      Authority.nextReevaluation(
+        for: .init(role: .lockScreen, presentedFor: Authority.desktopSettleBudget)),
+      "a settled desktop changes state on an event, not on a timer")
+    XCTAssertNil(
+      Authority.nextReevaluation(
+        for: .init(role: .lockScreen, presentedFor: .zero, lockScreenEnabled: false)))
+    XCTAssertEqual(
+      Authority.nextReevaluation(for: .init(role: .lockScreen, presentedFor: .seconds(5))),
+      Authority.desktopSettleBudget - .seconds(5),
+      "a settling desktop is re-evaluated when its settling runs out")
     XCTAssertNil(
       Authority.nextReevaluation(
         for: .init(role: .preview, presentedFor: nil)),

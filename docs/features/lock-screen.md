@@ -15,8 +15,15 @@ This uses a sandboxed native wallpaper extension — the
 [`Extension/`](../../Extension) ExtensionKit target — rather than drawing an
 ordinary app window over the login UI. While it is active the native desktop
 remains a still frame, while the existing desktop renderer keeps playing.
-Once its first frame is ready, an unlocked lock-screen surface pauses its
-renderer while retaining scene state, textures and device allocations. A
+That still frame is what Mission Control shows, so an unlocked lock-screen
+surface keeps animating for 15 seconds after its first frame
+(`WallpaperPresentationAuthority.desktopSettleBudget`) rather than holding an
+intro's opening (often black) or a setting before it has faded in. A new
+wallpaper or changed setting replaces the renderer and settles again; the
+periodic Mission Control update in Settings does not apply in this mode.
+Once it has settled it pauses its
+renderer while retaining scene state, textures and device allocations, and
+reads the held frame back for snapshots and the backing below. A
 readback frame is committed beneath the nonopaque Metal layer before readiness
 is acknowledged, with implicit animations disabled. It supplies real wallpaper
 pixels when a drawable is not yet available or is reclaimed across sleep;
