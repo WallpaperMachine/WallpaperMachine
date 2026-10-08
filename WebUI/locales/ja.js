@@ -570,6 +570,8 @@ export default {
   'Keep windows in place when clicking the wallpaper': '壁紙をクリックしたときにウインドウを移動しない',
   'Hide window after applying a wallpaper': '壁紙を適用したあとにウインドウを隠す',
   'Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.': 'macOSの「壁紙をクリックしてデスクトップを表示」をオフにして、クリックがインタラクティブな壁紙に届くようにします。',
+  'Update the Mission Control picture every 5 minutes': 'Mission Controlの画像を5分ごとに更新',
+  'Mission Control shows a still picture of the wallpaper, retaken when it starts, changes or resumes. This also retakes it while it plays. Not used while the lock screen is animated.': 'Mission Controlには壁紙の静止画が表示され、壁紙の開始時、変更時、再開時に撮り直されます。オンにすると再生中にも撮り直します。ロック画面のアニメーション表示中は使われません。',
   'Animate lock screen': 'ロック画面をアニメーション表示',
   'Experimental': '実験的',
   'Lock screen status': 'ロック画面の状態',

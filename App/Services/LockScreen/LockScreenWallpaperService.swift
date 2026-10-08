@@ -212,7 +212,7 @@ final class LockScreenWallpaperService {
       isEnabled = false
       screenSaverEnabled = false
       lastInputs = nil
-      // The native journal can restore a PNG poster. Its owner must then
+      // The native journal can restore a poster. Its owner must then
       // restore the user's original after WallpaperAgent has reloaded.
       try await restoringDesktop()
       isBusy = false

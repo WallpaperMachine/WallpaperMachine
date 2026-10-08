@@ -195,10 +195,17 @@ Swift keeps the *system* wallpaper consistent with that window:
   posters. An older journal containing only empty originals cannot recover the user's previous
   choice: the user must select it again in System Settings. It deletes posters no readable
   desktop shows, keeping only the newest few on a display where some desktop could not be read.
-- `DesktopWallpaperSync` encodes real renderer output into a PNG poster
+- `DesktopWallpaperSync` encodes real renderer output into a JPEG poster
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
-  matches the animated one; a Space change or wake re-applies the existing poster instead of
-  capturing another. A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
+  (what Mission Control shows) matches the animated one. A new or changed wallpaper is captured
+  at once and again 3 s and 15 s later (`settleCaptureDelays`), as is one that resumes after a
+  pause, a cover or display sleep, so intros and settings that take a moment to show reach the
+  poster. A Space change or wake applies the existing poster at once and asks for a fresh frame.
+  **Settings › General › Update the Mission Control picture every 5 minutes**
+  (`PlaybackPreferences.refreshesDesktopPicturePeriodically`, off by default) adds a capture every
+  `periodicRefreshInterval`. Settling and periodic captures ask only displays the presentation
+  policy has not suspended, and a frame identical to the current poster costs a readback and a
+  hash: it is neither encoded nor written. A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
   writes in a row, the initial one plus the quick retries) is left alone until the next Space
   change or wake rather than rewritten on every snapshot. It suspends itself while the native
   lock-screen provider owns the desktop. On quit, the native service restores its selections

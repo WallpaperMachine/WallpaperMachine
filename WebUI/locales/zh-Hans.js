@@ -570,6 +570,8 @@ export default {
   'Keep windows in place when clicking the wallpaper': '点击壁纸时保持窗口不动',
   'Hide window after applying a wallpaper': '应用壁纸后隐藏窗口',
   'Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.': '关闭 macOS 的“点按墙纸以显示桌面”，让点击可以传到可交互的壁纸。',
+  'Update the Mission Control picture every 5 minutes': '每 5 分钟更新调度中心中的画面',
+  'Mission Control shows a still picture of the wallpaper, retaken when it starts, changes or resumes. This also retakes it while it plays. Not used while the lock screen is animated.': '调度中心显示的是壁纸的静态画面，会在壁纸开始、更改或恢复播放时重新截取。打开后，播放期间也会重新截取。锁定屏幕动态壁纸开启时不使用。',
   'Animate lock screen': '锁定屏幕动态壁纸',
   'Experimental': '实验性',
   'Lock screen status': '锁定屏幕状态',

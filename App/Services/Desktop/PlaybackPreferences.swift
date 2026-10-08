@@ -73,6 +73,7 @@ final class PlaybackPreferences {
     private static let appRulesKey = "WallpaperMachine.appRules"
     private static let lowPowerModeKey = "WallpaperMachine.lowPowerModeAction"
     private static let thermalKey = "WallpaperMachine.thermalAction"
+    private static let periodicDesktopPictureKey = "WallpaperMachine.refreshDesktopPicturePeriodically"
 
     private let defaults: UserDefaults
 
@@ -106,6 +107,16 @@ final class PlaybackPreferences {
     var thermalAction: SystemConditionAction {
         get { storedEnum(Self.thermalKey, default: .keepRunning) }
         set { store(newValue.rawValue, forKey: Self.thermalKey) }
+    }
+
+    /// Off by default: the still picture Mission Control shows is otherwise
+    /// taken again only when a wallpaper starts, changes or resumes.
+    var refreshesDesktopPicturePeriodically: Bool {
+        get { defaults.bool(forKey: Self.periodicDesktopPictureKey) }
+        set {
+            defaults.set(newValue, forKey: Self.periodicDesktopPictureKey)
+            postChange()
+        }
     }
 
     private(set) var appRules: [AppRule]

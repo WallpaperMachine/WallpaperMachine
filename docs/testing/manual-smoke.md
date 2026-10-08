@@ -171,6 +171,12 @@ reuse, or visual behavior, which is why these items are manual.
       Fill/Match/Stretch, scaling and flipping.
 - [ ] Check different and mirrored wallpapers on connected displays,
       pause/resume, and a newly created Desktop.
+- [ ] Apply a wallpaper with an intro, wait about 20 seconds and open Mission
+      Control: the thumbnails show the wallpaper after its intro. Change a
+      property that fades in and check again.
+- [ ] Turn on **Update the Mission Control picture every 5 minutes**, wait past
+      five minutes with the wallpaper visible and check that the thumbnails
+      moved on; with it off they keep the last settled frame.
 - [ ] Eject a wallpaper: all Desktops recover their previous native image and
       scaling.
 - [ ] Quit and reopen to check restoration journaling.
@@ -182,7 +188,7 @@ reuse, or visual behavior, which is why these items are manual.
       not overwrite it.
 
 Mission Control posters are sampled still frames, not live animation. Updates
-begin as soon as a rendered frame is available, but rendering, PNG encoding and
+begin as soon as a rendered frame is available, but rendering, JPEG encoding and
 the system's thumbnail compositor still take time; zero-millisecond visual
 latency cannot be guaranteed. The app uses dynamically resolved
 `CGSCopyManagedDisplaySpaces` and `DesktopPictureSetDisplayForSpace` to target
@@ -209,11 +215,11 @@ are kept.
 
 - [ ] Enable Animate Lock Screen, then apply wallpaper A and wallpaper B without
       visiting other Spaces, and inspect every desktop thumbnail.
-- [ ] Disable the feature: journaled Desktop/Idle entries are restored and PNG
+- [ ] Disable the feature: journaled Desktop/Idle entries are restored and
       poster synchronization resumes.
 - [ ] Quit with the feature enabled: the native provider is restored before
       poster restoration is attempted. Repeat with lock-screen only, screen-saver
-      only, and both enabled after a PNG poster has already been installed.
+      only, and both enabled after a poster has already been installed.
       Every desktop returns to its original; quit waits through the native
       service reload. A restoration failure keeps the app running and reports
       the error so Exit can be retried.

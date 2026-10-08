@@ -222,9 +222,9 @@ which copy macOS actually loaded.
 Disabling either control restores only its still-owned selections. Quitting
 restores both. Wallpaper and screen-saver changes made elsewhere are preserved.
 
-If the native provider replaced a desktop PNG poster, quit restores the native
+If the native provider replaced a desktop poster, quit restores the native
 selection first, then waits for WallpaperAgent's asynchronous reload and restores
-the poster's saved original. The PNG journal and image stay available while the
+the poster's saved original. The poster journal and image stay available while the
 native store still references them. Quit retries for up to about five seconds;
 if restoration still fails, it cancels termination and exposes the error in the
 menu bar (and native-feature status) so the user can retry. A failed activation
