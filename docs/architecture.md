@@ -210,15 +210,23 @@ Swift keeps the *system* wallpaper consistent with that window:
   posters. An older journal containing only empty originals cannot recover the user's previous
   choice: the user must select it again in System Settings. It deletes posters no readable
   desktop shows, keeping only the newest few on a display where some desktop could not be read.
-- `DesktopWallpaperSync` encodes real renderer output into a PNG poster
+- `DesktopWallpaperSync` encodes real renderer output into a JPEG poster
   (`DesktopPosterEncoder`) under `<support>/DesktopPosters`, so the static system wallpaper
-  matches the animated one; a Space change or wake re-applies the existing poster instead of
-  capturing another in the ordinary all-Spaces mode. The experimental
-  [Space selection mode](features/spaces.md) uses `WallpaperSpaceMonitor` UUID/visit
-  context to request a fresh scoped frame; producers echo the original context and
-  the coordinator rejects late frames/encodes. Its ledger writes only the active
-  native Space and retains inactive posters through replacement gaps. Public fallback
-  targets have no Space identity and cannot accept scoped writes.
+  (what Mission Control shows) matches the animated one. A new or changed wallpaper is captured
+  at once and again 3 s and 15 s later (`settleCaptureDelays`), as is one that resumes after a
+  pause, a cover or display sleep, so intros and settings that take a moment to show reach the
+  poster. A Space change or wake applies the existing poster at once and asks for a fresh frame.
+  **Settings › General › Update the Mission Control picture every 5 minutes**
+  (`PlaybackPreferences.refreshesDesktopPicturePeriodically`, off by default) adds a capture every
+  `periodicRefreshInterval`. Settling and periodic captures ask only displays the presentation
+  policy has not suspended, and a frame identical to the current poster costs a readback and a
+  hash: it is not encoded again, and unchanged target pictures are not rewritten.
+  The experimental [Space selection mode](features/spaces.md) uses `WallpaperSpaceMonitor`
+  UUID/visit context on every immediate, settling and periodic request. Producers echo
+  the original context and the coordinator rejects late frames/encodes. A fresh response
+  with identical pixels can reuse the encoded image for a new Space. Its ledger writes
+  only the active native Space and retains inactive posters through replacement gaps.
+  Public fallback targets have no Space identity and cannot accept scoped writes.
   A desktop macOS keeps refusing (`DesktopWallpaperLedger.refusalsBeforePause`
   writes in a row, the initial one plus the quick retries) is left alone until the next Space
   change or wake rather than rewritten on every snapshot. It suspends itself while the native

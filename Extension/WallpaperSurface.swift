@@ -315,7 +315,7 @@ final class WallpaperSurface: LockScreenSurfaceLifecycle {
   /// frame must not buy it the right to animate for as long as a settings
   /// window happens to stay open.
   private var authorityRequest: WallpaperPresentationAuthority.Request {
-    // Native desktop is a frozen poster; the ordinary desktop renderer remains live.
+    // Native desktop holds a frame once it has settled; the ordinary desktop renderer remains live.
     let locked =
       (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool
       ?? false
@@ -349,6 +349,9 @@ final class WallpaperSurface: LockScreenSurfaceLifecycle {
         try check(owe_scene_wallpaper_set_paused(renderer, shouldPause))
       }
       rendererPaused = shouldPause
+      // The held frame becomes what snapshots and the backing show, in place of
+      // the readiness frame (often an intro's black opening).
+      if shouldPause, renderer != nil { requestFrame() }
       counters.record(shouldPause ? .presentationSuspended : .presentationAuthorized, for: surfaceKey)
       WallpaperRuntime.log(
         "Playback display=\(scene.displayID) mode=\(presentation) activity=\(activity) locked=\(request.sessionLocked) paused=\(shouldPause) reasons=\(reasons.rawValue)"
@@ -356,8 +359,9 @@ final class WallpaperSurface: LockScreenSurfaceLifecycle {
     } catch { WallpaperRuntime.log(error.localizedDescription) }
   }
 
-  /// Re-evaluates a preview when its budget runs out, so it stops on its own
-  /// rather than waiting for a host update that may never come.
+  /// Re-evaluates a preview when its budget runs out, or a desktop when it has
+  /// settled, so it stops on its own rather than waiting for a host update that
+  /// may never come.
   private func schedulePreviewExpiry(for request: WallpaperPresentationAuthority.Request) {
     previewExpiry?.cancel()
     previewExpiry = nil

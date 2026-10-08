@@ -15,7 +15,8 @@ enum WallpaperPresentationAuthority {
   /// What a surface is for. The desktop is owned by the application's
   /// presentation policy; these are the roles the extension hosts.
   enum SurfaceRole: Sendable {
-    /// A surface the lock screen itself shows.
+    /// A surface the lock screen itself shows. While lock-screen animation is
+    /// on it is also the desktop picture macOS shows, in Mission Control too.
     case lockScreen
     /// A surface a settings or gallery UI shows while the user is choosing.
     case preview
@@ -95,6 +96,12 @@ enum WallpaperPresentationAuthority {
   /// open does not render indefinitely.
   static let previewBudget: Duration = .seconds(10)
 
+  /// How long an unlocked lock-screen surface keeps animating after its first
+  /// frame before it holds one. It is also the desktop picture, and holding the
+  /// first frame would show a wallpaper's intro (often plain black) or a
+  /// setting before it has faded in.
+  static let desktopSettleBudget: Duration = .seconds(15)
+
   /// Every reason this surface may not keep presenting. An empty set means it
   /// may. Producing the first frame is never one of the reasons: readiness has
   /// to be allowed to render, which is exactly why it must not also grant the
@@ -114,7 +121,7 @@ enum WallpaperPresentationAuthority {
         showing = request.lockScreenEnabled
           && (request.sessionLocked || request.presentationMode == "locked")
       }
-      if !showing { reasons.insert(.noConsumer) }
+      if !showing && !isSettlingAsDesktop(request) { reasons.insert(.noConsumer) }
     case .preview:
       // A preview is its own consumer while the user is looking at it, so it is
       // not gated on the session being locked. What bounds it is time.
@@ -135,11 +142,29 @@ enum WallpaperPresentationAuthority {
   }
 
   /// When the decision for this surface will change on its own, so the caller
-  /// can re-evaluate then instead of polling. Only a preview has such a moment.
+  /// can re-evaluate then instead of polling: when a preview's budget, or a
+  /// desktop's settling, runs out.
   static func nextReevaluation(for request: Request) -> Duration? {
-    guard request.role == .preview, !request.continuousPreviewRequested,
-      let presentedFor = request.presentedFor, presentedFor < previewBudget
-    else { return nil }
-    return previewBudget - presentedFor
+    guard let presentedFor = request.presentedFor else { return nil }
+    let budget: Duration
+    switch request.role {
+    case .preview:
+      guard !request.continuousPreviewRequested else { return nil }
+      budget = previewBudget
+    case .lockScreen:
+      guard isSettlingAsDesktop(request) else { return nil }
+      budget = desktopSettleBudget
+    }
+    return presentedFor < budget ? budget - presentedFor : nil
+  }
+
+  /// A lock-screen surface that is the desktop picture and has not yet had
+  /// `desktopSettleBudget` since its first frame. Producing that first frame is
+  /// readiness, not settling, so a surface still producing it does not count.
+  private static func isSettlingAsDesktop(_ request: Request) -> Bool {
+    guard request.role == .lockScreen, request.lockScreenEnabled,
+      request.presentationMode != "idle", let presentedFor = request.presentedFor
+    else { return false }
+    return presentedFor < desktopSettleBudget
   }
 }

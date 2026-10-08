@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import QuartzCore
+import UniformTypeIdentifiers
 import XCTest
 @testable import WallpaperMachine
 
@@ -48,6 +49,14 @@ private actor ControlledPosterEncoder {
     }
     func has(_ data: Data) -> Bool { requests[data] != nil }
     func finish(_ data: Data) { requests.removeValue(forKey: data)?.resume(returning: data) }
+}
+
+private actor CountingPosterEncoder {
+    private(set) var count = 0
+    func encode(_ frame: DesktopPosterFrame) -> Data {
+        count += 1
+        return frame.pixels
+    }
 }
 
 final class DesktopWallpaperTests: XCTestCase {
@@ -114,7 +123,7 @@ final class DesktopWallpaperTests: XCTestCase {
         }
         XCTAssertEqual(urls.count, 20, "Never alternate stale WallpaperAgent cache keys")
         XCTAssertEqual(workspace.pictures[one]?.url, workspace.pictures[two]?.url)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter { $0.pathExtension == "png" }.count, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter { $0.pathExtension == DesktopPosterEncoder.fileExtension }.count, 1)
         try ledger.restoreAll()
         XCTAssertEqual(workspace.pictures[one], original("same"))
     }
@@ -324,7 +333,7 @@ final class DesktopWallpaperTests: XCTestCase {
         let workspace = MemoryDesktopWorkspace()
         workspace.pictures = [one: original("before")]
         let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
-        try ledger.apply(png: Data([1]), target: one)
+        try ledger.apply(image: Data([1]), target: one)
         let poster = try XCTUnwrap(workspace.pictures[one])
         // The native journal has put the PNG back in the store, but the old
         // WallpaperAgent still reports the extension's pathless selection.
@@ -383,7 +392,7 @@ final class DesktopWallpaperTests: XCTestCase {
         let workspace = MemoryDesktopWorkspace()
         workspace.pictures = [one: original("before")]
         let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
-        try ledger.apply(png: Data([1]), target: one)
+        try ledger.apply(image: Data([1]), target: one)
         workspace.persistedPictures = [try XCTUnwrap(workspace.pictures[one]?.url)]
         workspace.pictures[one] = try DesktopSpaceWallpaperAPI.decodePicture([:])
         let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
@@ -441,7 +450,7 @@ final class DesktopWallpaperTests: XCTestCase {
     func testUnreadableOriginalReportsFailureWithoutWriting() throws {
         let workspace = MemoryDesktopWorkspace()
         let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
-        XCTAssertThrowsError(try ledger.apply(png: Data([1]), target: one))
+        XCTAssertThrowsError(try ledger.apply(image: Data([1]), target: one))
         XCTAssertTrue(workspace.writes.isEmpty)
     }
 
@@ -560,7 +569,7 @@ final class DesktopWallpaperTests: XCTestCase {
 
     private func posterNames() throws -> Set<String> {
         Set(try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "png" }.map(\.lastPathComponent))
+            .filter { $0.pathExtension == DesktopPosterEncoder.fileExtension }.map(\.lastPathComponent))
     }
 
     @MainActor
@@ -628,18 +637,18 @@ final class DesktopWallpaperTests: XCTestCase {
     }
 
     @MainActor
-    func testSpaceChangeReappliesThePosterWithoutCapturingAnother() async throws {
+    func testSpaceChangeAppliesThePosterAtOnceAndCapturesAFreshFrame() async throws {
         let workspace = MemoryDesktopWorkspace()
         workspace.pictures = [one: original("one")]
         let frames = NotificationCenter(), spaces = NotificationCenter()
-        let layer = CAMetalLayer(), replacement = CAMetalLayer()
-        var surfaces = [DesktopPosterSurface(layer: layer, display: "1")]
-        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace, surfaces: { surfaces },
+        let layer = CAMetalLayer()
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [DesktopPosterSurface(layer: layer, display: "1")] },
                                             frameCenter: frames, workspaceCenter: spaces,
-                                            encode: { $0.pixels })
+                                            encode: { $0.pixels }, settleDelays: [])
         var requests = 0
         let observer = frames.addObserver(forName: Notification.Name("WallpaperMachine.requestDesktopPoster"),
-                                          object: nil, queue: nil) { _ in requests += 1 }
+                                          object: layer, queue: nil) { _ in requests += 1 }
         defer { frames.removeObserver(observer); sync.stop() }
         sync.start()
         let installed = expectation(description: "Poster installed")
@@ -648,7 +657,8 @@ final class DesktopWallpaperTests: XCTestCase {
         await fulfillment(of: [installed], timeout: 2)
 
         // A Space the poster is not on yet becomes current. It gets the poster
-        // that already exists; nothing reads the GPU or encodes a PNG again.
+        // that exists without waiting for pixels, and a fresh frame is asked
+        // for because an animated wallpaper has moved on since.
         workspace.pictures[two] = original("two")
         let added = expectation(description: "New Space updated")
         workspace.didWrite = { added.fulfill() }
@@ -656,18 +666,162 @@ final class DesktopWallpaperTests: XCTestCase {
         await fulfillment(of: [added], timeout: 2)
         workspace.didWrite = nil
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([1]))
-        XCTAssertEqual(requests, 0, "a Space change captured a poster that already existed")
+        XCTAssertEqual(requests, 1)
+    }
 
-        // A surface without a poster -- its renderer was replaced meanwhile --
-        // still asks for one.
-        surfaces = [DesktopPosterSurface(layer: replacement, display: "1")]
-        let requested = expectation(description: "Replacement asked for a frame")
-        let replacementObserver = frames.addObserver(
-            forName: Notification.Name("WallpaperMachine.requestDesktopPoster"), object: replacement, queue: nil
-        ) { _ in requested.fulfill() }
-        defer { frames.removeObserver(replacementObserver) }
-        spaces.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        await fulfillment(of: [requested], timeout: 2)
+    @MainActor
+    func testWallpaperIsCapturedAgainAsItSettlesAndAfterItResumes() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        let layer = CAMetalLayer(), center = NotificationCenter()
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [DesktopPosterSurface(layer: layer, display: "1")] },
+                                            frameCenter: center,
+                                            settleDelays: [.milliseconds(40), .milliseconds(100)])
+        var requests = 0
+        let observer = center.addObserver(forName: Notification.Name("WallpaperMachine.requestDesktopPoster"),
+                                          object: layer, queue: nil) { _ in requests += 1 }
+        defer { center.removeObserver(observer); sync.stop() }
+        sync.start()
+        sync.refresh()
+        XCTAssertEqual(requests, 1)
+        // An intro or a fading setting shows only after the first frame.
+        try await waitUntil { requests == 3 }
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(requests, 3, "settling ends after its last capture")
+
+        sync.presentationResumed()
+        XCTAssertEqual(requests, 3, "a resumed wallpaper has not moved yet")
+        try await waitUntil { requests == 5 }
+    }
+
+    @MainActor
+    func testLaterCapturesSkipDisplaysThatAreNotPresenting() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        let shown = CAMetalLayer(), covered = CAMetalLayer(), center = NotificationCenter()
+        let sync = try DesktopWallpaperSync(
+            folder: root, workspace: workspace,
+            surfaces: { [DesktopPosterSurface(layer: shown, display: "1"), DesktopPosterSurface(layer: covered, display: "2")] },
+            frameCenter: center, settleDelays: [.milliseconds(30)], periodicInterval: .milliseconds(30))
+        sync.canCapture = { $0.display == "1" }
+        var requests: [ObjectIdentifier: Int] = [:]
+        let observer = center.addObserver(forName: Notification.Name("WallpaperMachine.requestDesktopPoster"),
+                                          object: nil, queue: nil) { note in
+            guard let layer = note.object as? CALayer else { return }
+            requests[ObjectIdentifier(layer), default: 0] += 1
+        }
+        defer { center.removeObserver(observer); sync.stop() }
+        sync.refreshesPeriodically = true
+        sync.start()
+        sync.refresh()
+        // A new wallpaper needs a poster wherever it is shown, presenting or not.
+        XCTAssertEqual(requests[ObjectIdentifier(covered)], 1)
+        try await waitUntil { requests[ObjectIdentifier(shown), default: 0] >= 3 }
+        XCTAssertEqual(requests[ObjectIdentifier(covered)], 1, "a suspended wallpaper would draw the same frame again")
+    }
+
+    @MainActor
+    func testPeriodicCapturesRunOnlyWhileEnabled() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        let layer = CAMetalLayer(), center = NotificationCenter()
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [DesktopPosterSurface(layer: layer, display: "1")] },
+                                            frameCenter: center, settleDelays: [], periodicInterval: .milliseconds(30))
+        var requests = 0
+        let observer = center.addObserver(forName: Notification.Name("WallpaperMachine.requestDesktopPoster"),
+                                          object: layer, queue: nil) { _ in requests += 1 }
+        defer { center.removeObserver(observer); sync.stop() }
+        sync.start()
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(requests, 0)
+        sync.refreshesPeriodically = true
+        try await waitUntil { requests >= 2 }
+        sync.refreshesPeriodically = false
+        let stopped = requests
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(requests, stopped)
+    }
+
+    @MainActor
+    func testFrameIdenticalToThePosterIsNeitherEncodedNorWrittenAgain() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one")]
+        let layer = CAMetalLayer(), center = NotificationCenter()
+        let encoder = CountingPosterEncoder()
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+                                            surfaces: { [DesktopPosterSurface(layer: layer, display: "1")] },
+                                            frameCenter: center, encode: { await encoder.encode($0) })
+        sync.start()
+        defer { sync.stop() }
+        let first = expectation(description: "Poster installed")
+        workspace.didWrite = { first.fulfill() }
+        post(Data([1]), layer: layer, center: center)
+        await fulfillment(of: [first], timeout: 2)
+
+        // A paused or still wallpaper answers a later capture with the same pixels.
+        workspace.didWrite = nil
+        post(Data([1]), layer: layer, center: center)
+        try await Task.sleep(for: .milliseconds(200))
+        let unchanged = await encoder.count
+        XCTAssertEqual(unchanged, 1)
+        XCTAssertEqual(workspace.writes, [one])
+
+        let changed = expectation(description: "Changed poster installed")
+        workspace.didWrite = { changed.fulfill() }
+        post(Data([2]), layer: layer, center: center)
+        await fulfillment(of: [changed], timeout: 2)
+        workspace.didWrite = nil
+        let encoded = await encoder.count
+        XCTAssertEqual(encoded, 2)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([2]))
+    }
+
+    @MainActor
+    func testIdenticalPixelsCanMoveToANewSpaceAfterItsFreshContextIsConfirmed() async throws {
+        let workspace = MemoryDesktopWorkspace()
+        workspace.pictures = [one: original("one"), two: original("two")]
+        let layer = CAMetalLayer(), center = NotificationCenter(), encoder = CountingPosterEncoder()
+        var scope = DesktopPosterScope.desktop(id: "one", context: "visit-a")
+        let sync = try DesktopWallpaperSync(folder: root, workspace: workspace,
+            surfaces: { [.init(layer: layer, display: "1")] }, frameCenter: center, scope: { _ in scope },
+            encode: { await encoder.encode($0) }, settleDelays: [])
+        sync.start(); defer { sync.stop() }
+        post(Data([7]), layer: layer, center: center, context: "visit-a")
+        try await waitUntil { workspace.writes == [self.one] }
+        scope = .desktop(id: "two", context: "visit-b")
+        sync.refresh(capture: false)
+        XCTAssertEqual(workspace.pictures[two], original("two"), "cached pixels need a response for the new visit")
+        post(Data([7]), layer: layer, center: center, context: "visit-b")
+        try await waitUntil { workspace.writes.contains(self.two) }
+        let encoded = await encoder.count
+        XCTAssertEqual(encoded, 1, "the accepted new context can reuse identical encoded pixels")
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([7]))
+    }
+
+    @MainActor
+    func testSettlingAndPeriodicCapturesUseTheCurrentSpaceContextAndHonorHold() async throws {
+        for periodic in [false, true] {
+            let workspace = MemoryDesktopWorkspace(), center = NotificationCenter(), layer = CAMetalLayer()
+            var scope = DesktopPosterScope.hold
+            let sync = try DesktopWallpaperSync(folder: root.appendingPathComponent(periodic ? "periodic" : "settling"),
+                workspace: workspace, surfaces: { [.init(layer: layer, display: "1")] }, frameCenter: center,
+                scope: { _ in scope }, settleDelays: periodic ? [] : [.milliseconds(40)], periodicInterval: .milliseconds(40))
+            var contexts: [String] = []
+            let observer = center.addObserver(forName: DesktopPosterNotification.request, object: layer, queue: .main) { note in
+                contexts.append(note.userInfo?["context"] as? String ?? "missing")
+            }
+            sync.start()
+            if periodic { sync.refreshesPeriodically = true } else { sync.presentationResumed() }
+            scope = .desktop(id: "two", context: "visit-b")
+            try await waitUntil { !contexts.isEmpty }
+            XCTAssertTrue(contexts.allSatisfy { $0 == "visit-b" })
+            scope = .hold
+            if !periodic { sync.presentationResumed() }
+            let count = contexts.count
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(contexts.count, count)
+            center.removeObserver(observer)
+            sync.stop()
+        }
     }
 
     @MainActor
@@ -990,27 +1144,39 @@ final class DesktopWallpaperTests: XCTestCase {
     }
 
     func testRendererPixelsKeepChannelsOrientationAndDimensions() throws {
-        let rgba = Data([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255])
-        let bgra = Data([0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255])
-        for (pixels, blueFirst) in [(rgba, false), (bgra, true)] {
-            let png = try DesktopPosterEncoder.png(pixels: pixels, width: 2, height: 2, bgra: blueFirst)
-            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
-            XCTAssertEqual(bitmap.pixelsWide, 2)
-            XCTAssertEqual(bitmap.pixelsHigh, 2)
-            let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
+        // Quadrants large enough that JPEG's chroma subsampling cannot blend
+        // their centres: red, green / blue, white.
+        let size = 32, half = size / 2
+        let colors: [[UInt8]] = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]]
+        for blueFirst in [false, true] {
+            var pixels = Data(capacity: size * size * 4)
+            for y in 0..<size {
+                for x in 0..<size {
+                    let rgb = colors[(y < half ? 0 : 2) + (x < half ? 0 : 1)]
+                    pixels.append(contentsOf: blueFirst ? [rgb[2], rgb[1], rgb[0], 255] : rgb + [255])
+                }
+            }
+            let jpeg = try DesktopPosterEncoder.jpeg(pixels: pixels, width: size, height: size, bgra: blueFirst)
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(jpeg as CFData, nil))
+            XCTAssertEqual(CGImageSourceGetType(source) as String?, UTType.jpeg.identifier)
             let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
             XCTAssertEqual(image.colorSpace?.name, CGColorSpace.sRGB)
-            for (x, y, expected) in [(0, 0, [255, 0, 0]), (1, 0, [0, 255, 0]), (0, 1, [0, 0, 255]), (1, 1, [255, 255, 255])] {
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            XCTAssertEqual(bitmap.pixelsWide, size)
+            XCTAssertEqual(bitmap.pixelsHigh, size)
+            for (x, y, expected) in [(8, 8, colors[0]), (24, 8, colors[1]), (8, 24, colors[2]), (24, 24, colors[3])] {
                 var samples = [Int](repeating: 0, count: 4)
                 bitmap.getPixel(&samples, atX: x, y: y)
-                XCTAssertEqual(Array(samples.prefix(3)), expected)
+                for (sample, wanted) in zip(samples.prefix(3), expected) {
+                    XCTAssertEqual(Double(sample), Double(wanted), accuracy: 24, "pixel \(x),\(y)")
+                }
             }
         }
     }
 
     func testEncoderRejectsInvalidSizesAndTruncatedPixels() {
         for (width, height, bytes) in [(0, 2, 0), (-1, 2, 0), (2, 2, 15), (2, 2, 17), (Int.max, 1, 0), (16_384, 16_384, 0)] {
-            XCTAssertThrowsError(try DesktopPosterEncoder.png(pixels: Data(count: bytes), width: width, height: height, bgra: false))
+            XCTAssertThrowsError(try DesktopPosterEncoder.jpeg(pixels: Data(count: bytes), width: width, height: height, bgra: false))
         }
     }
 }

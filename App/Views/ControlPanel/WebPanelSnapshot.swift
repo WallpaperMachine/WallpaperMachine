@@ -505,6 +505,7 @@ extension WebPanelController {
         ]
       },
       "keepWindowsOnWallpaperClick": !DesktopClickRevealPreference.isEnabled,
+      "refreshDesktopPicture": playback.refreshesDesktopPicturePeriodically,
       "hotkeys": hotKeyRows,
       "hideAfterActivating": hidesAfterActivating,
       "lockScreenEnabled": lock?.isRequested ?? false, "lockScreenAvailable": lock != nil,

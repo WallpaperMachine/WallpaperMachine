@@ -258,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 MainActor.assumeIsolated {
                     self?.syncPlaybackMonitors()
                     self?.presentationPolicy?.evaluate()
+                    self?.desktopWallpaperSync?.refreshesPeriodically = preferences.refreshesDesktopPicturePeriodically
                 }
             }
             let policy = WallpaperPresentationPolicy(
@@ -278,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                     self.nativeVideoHost?.setPresentationSuspended(hostsSuspended)
                     let leavingUnloaded = self.appliedGlobalPresentation == .unloaded
                         && presentation != .unloaded
+                    let resuming = presentation == .running && self.appliedGlobalPresentation != .running
                     self.wallpaperEnergy?.invalidate()
                     Task {
                         do {
@@ -294,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                                 try await store.setPresentationUnloadedAsync(true)
                             }
                             self.appliedGlobalPresentation = presentation
+                            if resuming { self.desktopWallpaperSync?.presentationResumed() }
                             // A playlist change that fell due while presentation was suspended
                             // happens now that it runs again.
                             self.automaticWallpapers?.scheduler.evaluate()
@@ -341,6 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                         do {
                             try await store.setDisplayPresentationSuspendedAsync(
                                 displayID: displayID, suspended: suspended)
+                            if !suspended { self.desktopWallpaperSync?.presentationResumed() }
                             // As on the global path, a change that fell due while this
                             // display was covered happens now that it shows again.
                             self.automaticWallpapers?.scheduler.evaluate()
@@ -824,6 +828,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             retainedDisplays: { [weak self] in self?.retainedSpacePosterDisplays() ?? [] },
             beforeDesktopChange: { [weak self] in self?.desktopSpaces?.refresh() })
         desktopWallpaperSync = sync
+        sync.canCapture = { [weak self] surface in
+            guard let policy = self?.presentationPolicy else { return true }
+            return !policy.isSuspended
+                && !(UInt32(surface.display).map(policy.suspendedDisplayIDs.contains) ?? false)
+        }
+        sync.refreshesPeriodically = PlaybackPreferences.shared.refreshesDesktopPicturePeriodically
         sync.start()
         sync.refresh()
     }

@@ -430,23 +430,34 @@ final class DownloadTelemetryTests: DownloaderTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let monitor = FixtureNetworkMonitor()
     monitor.received = 0
+    // Both limits run on this clock, so a slow launch or a late wakeup under load cannot use
+    // them up; only the steps below move it.
+    var clock = Date(timeIntervalSinceReferenceDate: 0)
     let downloader = WorkshopDownloader(
       sessionDirectory: root.appendingPathComponent("SteamSession"),
       runtimeProvider: ShellRuntimeProvider(), networkMonitor: monitor,
-      inactivityTimeout: 1, passTimeout: 1.5)
+      inactivityTimeout: 1, passTimeout: 1.5, now: { clock })
     downloader.start(
       item: item, username: "localtest", executable: root.appendingPathComponent("runtime/steamcmd"),
       library: root.appendingPathComponent("Library"), rememberSession: false, onImported: {})
+    /// Waits for the downloader's next byte reading, which it checks its limits against in the
+    /// same main-actor turn.
+    func nextCheck() async throws {
+      let readings = monitor.receivedReadings
+      try await waitUntil { monitor.receivedReadings > readings || !downloader.isRunning }
+    }
     do {
       try await waitUntil { monitor.startedPIDs.count == 1 }
-      // Wide margins: a hosted runner can wake a short sleep 100 ms late or more.
-      let silentUntil = Date().addingTimeInterval(3)
-      while Date() < silentUntil {
+      // Bytes land every 0.6 s, under the inactivity limit, for longer than both limits.
+      for _ in 0..<6 {
         monitor.received = (monitor.received ?? 0) + 1024
-        try await Task.sleep(for: .milliseconds(100))
+        try await nextCheck()
+        clock += 0.6
       }
+      try await nextCheck()
       XCTAssertTrue(downloader.isRunning, downloader.errorMessage ?? "")
       XCTAssertNil(downloader.errorMessage)
+      clock += 1.1
       try await waitUntil { !downloader.isRunning }
       XCTAssertNotNil(downloader.errorMessage)
       XCTAssertFalse(downloader.canRetryAuthentication)
