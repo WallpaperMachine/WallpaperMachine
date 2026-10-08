@@ -1006,21 +1006,31 @@ final class ControlPanelShellTests: ControlPanelTestCase {
         window.wallpaperUI.receive(Object.assign({}, base, { page: 'settings', welcomeSeen: true }));
         document.querySelector('#settings-content [data-section="library"]').click();
         const button = document.querySelector('#settings-content [data-action="openWelcome"]');
-        button.click();
-        const region = document.getElementById('welcome');
-        const reopened = !region.hidden && region.querySelector('.welcome-page').dataset.step === 'language';
-        const before = window.powerProbe.received.length;
-        region.querySelector('[data-action="go"][data-step="5"]').click();
-        const last = region.querySelector('.welcome-page').dataset.step;
-        region.querySelector('[data-action="finish"]').click();
-        await new Promise(resolve => setTimeout(resolve, 150));
-        return { hasButton: !!button, reopened, last, closed: region.hidden, snapshots: window.powerProbe.received.length - before };
+        const bridge = window.webkit.messageHandlers.native;
+        const original = bridge.postMessage;
+        const actions = [];
+        bridge.postMessage = message => { actions.push(message.action); return original.call(bridge, message); };
+        try {
+          button.click();
+          const region = document.getElementById('welcome');
+          const reopened = !region.hidden && region.querySelector('.welcome-page').dataset.step === 'language';
+          const before = window.powerProbe.received.length;
+          region.querySelector('[data-action="go"][data-step="5"]').click();
+          const last = region.querySelector('.welcome-page').dataset.step;
+          region.querySelector('[data-action="finish"]').click();
+          // Native can publish an unrelated background snapshot at any time. It must not
+          // reopen the guide, and is not evidence that closing it sent another request.
+          window.wallpaperUI.receive(Object.assign({}, window.powerProbe.received.at(-1), { welcomeSeen: true }));
+          await new Promise(resolve => setTimeout(resolve, 0));
+          return { hasButton: !!button, reopened, last, closed: region.hidden, actions, snapshots: window.powerProbe.received.length - before };
+        } finally { bridge.postMessage = original; }
         """) as? [String: Any]
       XCTAssertEqual(replay?["hasButton"] as? Bool, true, "Library & Steam offers the guide again")
       XCTAssertEqual(replay?["reopened"] as? Bool, true)
       XCTAssertEqual(replay?["last"] as? String, "start", "The step indicator jumps between pages")
       XCTAssertEqual(replay?["closed"] as? Bool, true)
-      XCTAssertEqual(replay?["snapshots"] as? Int, 0, "An already-seen guide closes without another round trip")
+      XCTAssertGreaterThanOrEqual(replay?["snapshots"] as? Int ?? 0, 1, "The replay tolerates unsolicited native snapshots")
+      XCTAssertEqual(replay?["actions"] as? [String], [], "An already-seen guide closes without another native request")
     }
   }
 

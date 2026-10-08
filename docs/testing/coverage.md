@@ -196,7 +196,10 @@ Swift tests cover, without starting the app:
   by submit clearing through the fake Steam runtime; and real native rejection
   of an anonymous download account with modal feedback, retained intent and
   late-error isolation after reopening. Non-onboarding page scenarios finish the
-  visible welcome flow first. These checks remain windowless; they do not prove
+  visible welcome flow first. Guide-replay assertions observe outgoing native
+  requests and inject an unrelated incoming snapshot: snapshot delivery is
+  asynchronous and cannot be used as a count of requests sent by closing the guide.
+  These checks remain windowless; they do not prove
   desktop presentation or animation smoothness.
   `ControlPanelWindowSizingTests` also exercises the native chrome offscreen at
   full-screen, half-screen and minimum panel sizes: navigation hit-testing below
