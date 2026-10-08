@@ -570,6 +570,8 @@ export default {
   'Keep windows in place when clicking the wallpaper': '按一下桌布時讓視窗保持原位',
   'Hide window after applying a wallpaper': '套用桌布後隱藏視窗',
   'Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.': '關閉 macOS 的「按一下背景圖片來顯示桌面」，讓可互動的桌布能接收到滑鼠點按。',
+  'Update the Mission Control picture every 5 minutes': '每 5 分鐘更新指揮中心中的畫面',
+  'Mission Control shows a still picture of the wallpaper, retaken when it starts, changes or resumes. This also retakes it while it plays. Not used while the lock screen is animated.': '指揮中心顯示的是桌布的靜態畫面，會在桌布開始、變更或恢復播放時重新擷取。開啟後，播放期間也會重新擷取。鎖定畫面動態桌布開啟時不使用。',
   'Animate lock screen': '鎖定畫面動態桌布',
   'Experimental': '實驗性',
   'Lock screen status': '鎖定畫面狀態',

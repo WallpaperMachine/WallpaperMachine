@@ -106,8 +106,8 @@ final class DesktopWallpaperLedger {
         let digests = posters.mapValues { Data(SHA256.hash(data: $0)) }
         for target in targets {
             do {
-                if let png = posters[target.display], liveDisplays.contains(target.display) {
-                    try apply(png: png, digest: digests[target.display]!, target: target,
+                if let image = posters[target.display], liveDisplays.contains(target.display) {
+                    try apply(image: image, digest: digests[target.display]!, target: target,
                               comparisons: &comparisons, fallbacks: fallbacks)
                 } else if !liveDisplays.contains(target.display) {
                     try restore(target: target, fallbacks: fallbacks)
@@ -139,13 +139,13 @@ final class DesktopWallpaperLedger {
         }
     }
 
-    func apply(png: Data, target: DesktopPictureTarget) throws {
+    func apply(image: Data, target: DesktopPictureTarget) throws {
         var comparisons: [URL: Bool] = [:]
-        try apply(png: png, digest: Data(SHA256.hash(data: png)), target: target,
+        try apply(image: image, digest: Data(SHA256.hash(data: image)), target: target,
                   comparisons: &comparisons, fallbacks: userWallpapers(targets: [target]))
     }
 
-    private func apply(png: Data, digest: Data, target: DesktopPictureTarget,
+    private func apply(image: Data, digest: Data, target: DesktopPictureTarget,
                        comparisons: inout [URL: Bool], fallbacks: [String: DesktopPicture]) throws {
         guard refusals[target, default: 0] < Self.refusalsBeforePause else { return }
         guard let current = try workspace.currentPicture(target: target) else {
@@ -169,11 +169,11 @@ final class DesktopWallpaperLedger {
             let matches: Bool
             if let cached = comparisons[current.url] { matches = cached }
             else {
-                matches = (try? Data(contentsOf: current.url)) == png
+                matches = (try? Data(contentsOf: current.url)) == image
                 comparisons[current.url] = matches
             }
             if matches { refusals[target] = nil; return }
-        } else if owned?.original == original, (try? Data(contentsOf: current.url)) == png {
+        } else if owned?.original == original, (try? Data(contentsOf: current.url)) == image {
             refusals[target] = nil
             return
         }
@@ -187,10 +187,12 @@ final class DesktopWallpaperLedger {
         hash.update(data: try encoder.encode(original))
         // Hash large pixels once per display, not once per Space.
         hash.update(data: digest)
-        let name = "poster-" + hash.finalize().map { String(format: "%02x", $0) }.joined() + ".png"
+        // Posters from before the switch to JPEG keep their .png names until pruned.
+        let name = "poster-" + hash.finalize().map { String(format: "%02x", $0) }.joined()
+            + "." + DesktopPosterEncoder.fileExtension
         let url = folder.appendingPathComponent(name)
         if !FileManager.default.fileExists(atPath: url.path) {
-            try png.write(to: url, options: .atomic)
+            try image.write(to: url, options: .atomic)
         }
         if entries[name] == nil {
             entries[name] = Entry(original: original, display: target.display)

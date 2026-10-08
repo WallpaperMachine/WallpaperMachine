@@ -216,7 +216,7 @@ Swift tests cover, without starting the app:
   Light wins over Dark, and reloads through the WebContent recovery path with
   saved customizations intact.
 - **Desktop posters** — synthetic renderer pixels and an in-memory workspace:
-  lossless PNG dimensions/channel order/orientation, malformed frames,
+  JPEG dimensions/channel order/orientation within lossy tolerance, malformed frames,
   synchronous frame requests (no Apply debounce), first-frame delivery to all
   Spaces without a Space-change event, stale old-layer completion, automatic
   retry, a desktop that keeps refusing posters left alone until a Space change
@@ -225,8 +225,10 @@ Swift tests cover, without starting the app:
   immutable frame URLs with reference-aware cleanup, bounded retention of the
   newest posters on a current-Space-fallback display and on one with an
   unreadable Space (whose failure is still reported), a Space change that
-  re-applies the existing poster without capturing a new one while a surface
-  without a poster still requests it, legacy journal migration,
+  applies the existing poster at once and asks for a fresh frame, settling
+  captures after a new wallpaper and after a resume, periodic captures only
+  while enabled and only for presenting displays, a frame identical to the
+  poster neither encoded nor written, legacy journal migration,
   relaunch recovery, external wallpaper changes, and write failures. Topology
   and native option/path translation use fixtures, including empty
   inherited/default native selections, rejected native acknowledgements, and
@@ -283,7 +285,8 @@ Swift tests cover, without starting the app:
   and a poster-handoff regression covering a pathless original, retention of its
   poster and recovery journal, and rejection of delayed encoding completions
   after suspension. `WallpaperPresentationAuthorityTests` covers both display/
-  host wake orders and preserves user pause across sleep/wake.
+  host wake orders, preserves user pause across sleep/wake, and lets an unlocked
+  lock-screen surface settle for `desktopSettleBudget` before it holds a frame.
   `LockScreenFrameBackingTests` composites real snapshot pixels under a Metal
   layer without a drawable and checks snapshot ownership across replacement.
   `LockScreenWallpaperServiceTests.testDisplayTopologyChangesDoNotClearSurvivingLockScreens`

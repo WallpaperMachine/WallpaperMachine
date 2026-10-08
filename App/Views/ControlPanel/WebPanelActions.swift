@@ -439,6 +439,8 @@ extension WebPanelController {
         try await store.setVerboseLoggingAsync(enabled: try request.boolean("value"))
       case "keepWindowsOnWallpaperClick":
         try DesktopClickRevealPreference.setEnabled(!(try request.boolean("value")))
+      case "refreshDesktopPicture":
+        playback.refreshesDesktopPicturePeriodically = try request.boolean("value")
       case "hideAfterActivating":
         defaults.set(try request.boolean("value"), forKey: Self.hideAfterActivatingKey)
       case "workshopUpdateChecks":

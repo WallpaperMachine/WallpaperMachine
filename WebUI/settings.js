@@ -335,7 +335,8 @@ function draw(view) {
   const general = group('general-language', t('Interface'), row('language', t('Language'), select('language', t('Language'), languageValue, languageOptions, 'data-language-setting', view.pending.has('language')), t('The interface and import picker switch at once. Quit and reopen the app to switch menus and other dialogs.')))
     + group('general-behavior', t('Startup & desktop'), settingToggle('launchAtLogin', 'Launch at login', !settings.launchAtLoginAvailable, !settings.launchAtLoginAvailable ? t('Move the app to Applications to enable.') : '')
       + settingToggle('hideAfterActivating', 'Hide window after applying a wallpaper')
-      + settingToggle('keepWindowsOnWallpaperClick', 'Keep windows in place when clicking the wallpaper', false, t('Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.')))
+      + settingToggle('keepWindowsOnWallpaperClick', 'Keep windows in place when clicking the wallpaper', false, t('Turns off macOS’s “Click wallpaper to reveal desktop” so clicks reach interactive wallpapers.'))
+      + settingToggle('refreshDesktopPicture', 'Update the Mission Control picture every 5 minutes', false, t('Mission Control shows a still picture of the wallpaper, retaken when it starts, changes or resumes. This also retakes it while it plays. Not used while the lock screen is animated.')))
     + group('general-shortcuts', t('Keyboard shortcuts'), (settings.hotkeys || []).map(hotkey => {
       const id = String(hotkey.id);
       const recording = view.recording === id;
