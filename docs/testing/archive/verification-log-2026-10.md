@@ -9,6 +9,17 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-07 — Keep web wallpaper animation running through transient occlusion
+
+- Desktop web pages now leave window occlusion to WallpaperPresentationPolicy through a guarded per-view WebKit selector; host detach and inactive suspension remain in place.
+- Before the fix, the new offscreen transient-occlusion regression failed because animation frames stopped while the host still allowed playback.
+- python3 scripts/test.py --only WebWallpaperSuspensionTests: 5 passed, 0 failed, 0 skipped after the fix.
+- python3 scripts/test.py: 268 Python tests passed; 1211 native tests passed, 0 failed, 14 skipped of 1225. Full gate run once.
+- Skipped: 11 native media/device cases, 2 live Workshop searches, and 1 live SteamCMD install; opt-in layers were not enabled.
+- The first targeted build hit the documented Finder metadata signing failure; clearing xattrs from Debug products let the unchanged command run.
+- The regression uses an unshown window with simulated occlusion. Real Show Desktop/Space animations and the original wallpaper were not exercised on the desktop.
+- No renderer changes, Release build, app installation/restart, settings mutation, commit, or push.
+
 ## 2026-10-07 — Automatic recovery from duplicate wallpaper extensions
 
 - Activation now validates and reconciles native extension registrations to the running app, preserving other app bundles and verifying the resulting registry.
