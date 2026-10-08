@@ -74,6 +74,8 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     @ObservationIgnored private let inactivityTimeout: TimeInterval
     /// How long one pass may run before it is stopped, once it has also stopped transferring.
     @ObservationIgnored private let passTimeout: TimeInterval
+    /// The clock both limits are measured on.
+    @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var failure: String?
     @ObservationIgnored private var receivesNetwork = false
     @ObservationIgnored private var networkStarted = false
@@ -88,11 +90,13 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     init(sessionDirectory: URL = ClientPaths.supportURL.appendingPathComponent("SteamSession", isDirectory: true),
          runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
          networkMonitor: (any ProcessNetworkMonitoring)? = nil, checkpointDirectory: URL? = nil,
-         inactivityTimeout: TimeInterval = 300, passTimeout: TimeInterval = 1800) {
+         inactivityTimeout: TimeInterval = 300, passTimeout: TimeInterval = 1800,
+         now: @escaping () -> Date = Date.init) {
         self.sessionDirectory = sessionDirectory
         self.checkpointDirectory = checkpointDirectory
         self.inactivityTimeout = inactivityTimeout
         self.passTimeout = passTimeout
+        self.now = now
         self.runtimeProvider = runtimeProvider
         self.networkMonitor = networkMonitor ?? ProcessNetworkMonitor()
         savedAccount = Self.readSavedAccount(at: sessionDirectory)
@@ -242,7 +246,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                 try Task.checkCancellation()
                 var passItemID = itemID
                 while true {
-                    let started = Date()
+                    let started = now()
                     var restarts = 0
                     repeat {
                         try Task.checkCancellation()
@@ -274,11 +278,11 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
                             } else {
                                 bytesPerSecond = nil
                             }
-                            let now = Date()
-                            let stalled = now.timeIntervalSince(lastActivity) > inactivityTimeout
+                            let checked = now()
+                            let stalled = checked.timeIntervalSince(lastActivity) > inactivityTimeout
                             // A long pass is cut short only once its bytes have stopped arriving too.
-                            let overlong = now.timeIntervalSince(started) > passTimeout
-                                && now.timeIntervalSince(lastTransferProgress ?? started) > inactivityTimeout
+                            let overlong = checked.timeIntervalSince(started) > passTimeout
+                                && checked.timeIntervalSince(lastTransferProgress ?? started) > inactivityTimeout
                             if failure != nil || stalled || overlong {
                                 if failure == nil {
                                     authenticationFailed = isAuthenticating
@@ -402,7 +406,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
             recentOutput = ""
             phase = .signingIn
             status = String(localized: "Waiting for Steam authentication…")
-            lastActivity = Date()
+            lastActivity = now()
         } catch {
             authenticationFailed = true
             failure = String(localized: "SteamCMD closed its login prompt. Retry signing in to start a new session.")
@@ -486,7 +490,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
         isAuthenticating = true
         receivesNetwork = false
         networkStarted = false
-        lastActivity = Date()
+        lastActivity = now()
         lastTransferProgress = nil
         transferMarks = [:]
         do {
@@ -523,7 +527,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
 
     private func consume(_ text: String) {
         guard isRunning else { return }
-        lastActivity = Date()
+        lastActivity = now()
         recentOutput += text.lowercased()
         // Keep only the incomplete line, not old prompts that can mask later failures.
         while let newline = recentOutput.firstIndex(where: { $0.isNewline }) {
@@ -743,7 +747,7 @@ final class WorkshopDownloader: SteamCMDDownloadActivity {
     private func noteTransfer(_ bytes: Int64?, on meter: TransferMeter) {
         guard let bytes, bytes > (transferMarks[meter] ?? 0) else { return }
         transferMarks[meter] = bytes
-        lastActivity = Date()
+        lastActivity = now()
         lastTransferProgress = lastActivity
     }
 

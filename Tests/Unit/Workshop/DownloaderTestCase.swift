@@ -329,6 +329,8 @@ final class FixtureNetworkMonitor: ProcessNetworkMonitoring {
   var value: Double?
   var received: Int64?
   var startedPIDs: [Int32] = []
+  /// How often the downloader has read `received`, so a test can wait for a reading.
+  private(set) var receivedReadings = 0
   private(set) var stopCount = 0
   private var running = false
 
@@ -339,7 +341,10 @@ final class FixtureNetworkMonitor: ProcessNetworkMonitoring {
 
   func rate(at time: TimeInterval) -> Double? { value }
 
-  func bytesReceived() -> Int64? { received }
+  func bytesReceived() -> Int64? {
+    receivedReadings += 1
+    return received
+  }
 
   func stop() async {
     if running { stopCount += 1 }
