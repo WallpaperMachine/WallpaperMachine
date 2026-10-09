@@ -9,6 +9,18 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-08 — Wallpaper history, playlist ordering and failure recovery
+
+- python3 scripts/test.py: exit 0; all 268 Python tests passed; native tests 1227 passed, 0 failed, 14 skipped of 1241. The full gate ran once after integration.
+- The 14 native skips were 11 opt-in NativeVideoPlayerMediaTests and 3 live Steam/Workshop network or installation tests; no real media or live-account coverage is claimed.
+- Targeted final run of ControlPanelPlaybackToolsTests and WallpaperActivationRecoveryTests: 21 passed, 0 failed, 0 skipped. Offscreen WebKit covered repeated keyboard moves, boundary focus fallback, drag sorting, stale-drag rejection, history order, escaped titles, current-state accessibility and target-only clearing.
+- History and playlist regressions cover persistence, bounded recent lists, repeated Previous, failed-apply preservation, exact reorder membership, cooldown expiry, cancellation, bounded fallback attempts and a newer manual command taking precedence.
+- python3 -m unittest scripts.tests.test_panel_localization: 5 passed. node --check succeeded for panel.js, settings.js and playlist-order.js. The Impeccable mechanical detector returned no findings for the changed WebUI targets; the scoped source review findings were resolved.
+- XcodeGen regenerated the project for WallpaperHistoryStore and its new test files. Local documentation link targets and git diff --check passed.
+- The first targeted build was blocked by com.apple.FinderInfo on disposable Debug products. Only that attribute was removed from build/Build/Products/Debug before the successful test runs.
+- Desktop playback, OS shortcut invocation, actual dragging in an on-screen window and VoiceOver were not exercised. Failure skipping handles errors returned by Apply; it does not diagnose a visual defect after a successful assignment.
+- No Release build, installation, app launch/restart, commit or push was requested or performed.
+
 ## 2026-10-07 — Keep web wallpaper animation running through transient occlusion
 
 - Desktop web pages now leave window occlusion to WallpaperPresentationPolicy through a guarded per-view WebKit selector; host detach and inactive suspension remain in place.

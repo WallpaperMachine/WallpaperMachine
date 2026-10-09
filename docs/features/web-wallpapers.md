@@ -159,9 +159,17 @@ a separate web view with its own handler.
   `WebWallpaperMouseRouting` forwards them only while the window the system
   would hit is below layer 0 (Finder's desktop, the system wallpaper, widgets),
   keeps a forwarded press's drags and release, and sends one exit when the
-  pointer leaves the desktop. Events are rebuilt in wallpaper-window
-  coordinates (`NSEvent.mouseEvent`; scroll wheels copy their `CGEvent`) and
-  replayed through the responder methods. Hover has no public entry point on
+  pointer leaves the desktop. The hit window is the one the window server
+  recorded in the event (`kCGMouseEventWindowUnderMousePointer`), so routing
+  makes no window-server call per move. A synchronous
+  `NSWindow.windowNumber(at:belowWindowWithWindowNumber:)` per move stalled the
+  main thread during Show Desktop, and with it the page's layer commits, which
+  WebKit applies on the main thread: the web wallpaper froze while scene
+  wallpapers, drawn on their own thread, kept running. Only a press or scroll
+  without the field still asks (scroll-wheel events may not carry it); a move
+  without it is dropped. Window layers are cached per window number. Events
+  are rebuilt in wallpaper-window coordinates (`NSEvent.mouseEvent`; scroll
+  wheels copy their `CGEvent`) and replayed through the responder methods. Hover has no public entry point on
   `WKWebView`, so it uses `_simulateMouseMove:`/`_simulateMouseExit:` when the
   running WebKit responds to them, and `WebWallpaperWindow` reports
   `isKeyWindow` as true because WebKit hit-tests hover only for active windows
@@ -395,7 +403,10 @@ and audible handoff require an authorized desktop/audio run.
 late-listener replay, pause composition, top-frame navigation lockdown, and
 forwarded clicks and right clicks reaching page listeners with the native
 context menu suppressed. `WebWallpaperMouseRoutingTests.swift` pins the
-desktop-only routing policy. `WebWallpaperLocalRequestTests.swift` covers
+desktop-only routing policy and that a move, press, drag or release carrying
+its window never queries the window server; the field's agreement with the
+synchronous query on real desktop events was checked by hand, not by a test.
+`WebWallpaperLocalRequestTests.swift` covers
 synchronous startup loaders, empty successful responses, async ready-state
 metadata, JSON/binary bodies, missing files, cancellation and request reuse.
 `WebWallpaperSuspensionTests.swift` also supplies occlusion changes through a

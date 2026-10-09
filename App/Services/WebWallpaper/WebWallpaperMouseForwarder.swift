@@ -102,6 +102,7 @@ final class WebWallpaperMouseForwarder: WebWallpaperPointerMonitoring {
     private var monitor: Any?
     private var routing = WebWallpaperMouseRouting()
     private var layers: [Int: Int] = [:]
+    private var reportedMissingWindow = false
 
     init(windows: @escaping @MainActor () -> [WebWallpaperWindow]) {
         self.windows = windows
@@ -126,9 +127,15 @@ final class WebWallpaperMouseForwarder: WebWallpaperPointerMonitoring {
     private func handle(_ event: NSEvent) {
         guard let kind = Self.kind(of: event) else { return }
         let screenPoint = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
+        guard let front = Self.frontWindow(of: event, kind: kind, hitTest: { [self] in
+            if !reportedMissingWindow {
+                reportedMissingWindow = true
+                AppLog.warn("web wallpaper pointer: events carry no window under the pointer; asking the window server")
+            }
+            return NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0)
+        }) else { return }
         let windows = windows()
         let under = windows.first { $0.frame.contains(screenPoint) }
-        let front = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0)
         let decision = routing.route(kind, wallpaperWindow: under?.windowNumber, frontWindow: front) { [self] in layer(of: $0) }
         switch decision {
         case .ignore:
@@ -166,6 +173,29 @@ final class WebWallpaperMouseForwarder: WebWallpaperPointerMonitoring {
             with: event.type, location: local, modifierFlags: event.modifierFlags, timestamp: event.timestamp,
             windowNumber: window.windowNumber, context: nil, eventNumber: event.eventNumber,
             clickCount: event.type == .mouseMoved ? 0 : event.clickCount, pressure: event.pressure)
+    }
+
+    /// The window a pointer event hits, as the window server recorded it when
+    /// it routed the event; nil drops the event.
+    ///
+    /// Asking again with `NSWindow.windowNumber(at:belowWindowWithWindowNumber:)`
+    /// is a synchronous window-server round trip on the main thread for every
+    /// move. During Show Desktop or a Space animation that round trip stalls,
+    /// and WebKit applies a page's layer commits on the main thread, so every
+    /// web wallpaper froze with it. The query remains only for a press or scroll
+    /// that arrives without the field; a move without it is dropped, since the
+    /// next move corrects hover, and drags and releases follow their press.
+    nonisolated static func frontWindow(
+        of event: NSEvent, kind: WebWallpaperMouseRouting.Kind, hitTest: () -> Int
+    ) -> Int? {
+        if let recorded = event.cgEvent?.getIntegerValueField(.mouseEventWindowUnderMousePointer), recorded > 0 {
+            return Int(recorded)
+        }
+        switch kind {
+        case .move: return nil
+        case .drag, .up: return 0
+        case .scroll, .down: return hitTest()
+        }
     }
 
     static func kind(of event: NSEvent) -> WebWallpaperMouseRouting.Kind? {

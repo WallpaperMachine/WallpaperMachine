@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-09 — Keep web wallpapers animating through Show Desktop pointer moves
+
+- Symptom: a web wallpaper (3747222633) froze briefly on every hot-corner Show Desktop; scene wallpapers did not. Unified logs showed no host suspension, WebKit activity-state change or poster capture at those moments.
+- Before evidence (installed v1.3.2, three Show Desktops, 3 s sample of app/WebContent/GPU each): app main thread spent 122/234/210 ms in NSWindow.windowNumber(at:) via SLSCopyWindowRoutingRecordsForScreenLocation from WebWallpaperMouseForwarder, 0 ms in the idle baseline; WebContent updateRendering samples fell 20–45% in the same windows.
+- Fix: routing reads the window the window server recorded in the event (kCGMouseEventWindowUnderMousePointer); only a press or scroll without it still queries, a move without it is dropped.
+- Hand probe on real global-monitor events: field 91 matched windowNumber(at:) in 1536 of 1540 events (4 were transient screenshot-tool windows), never 0. Field 92 skipped the menu bar for moves, so it was not used. No scroll events were captured.
+- python3 scripts/test.py --only WebWallpaperMouseRoutingTests: 6 passed (2 new); synthesized scroll events do not keep the field, so scrolls are covered by the fallback test.
+- python3 scripts/test.py: 267 Python tests passed; native 1315 passed, 0 failed, 14 skipped of 1329. Full gate run once.
+- Gap: smoothness after the fix on the real desktop is not yet measured; the same capture script must be re-run against a build that contains it.
+- Separate, unfixed: a web page assigned while its display is suspended loads detached, so its first reveal is a cold start (327 ms hidden content plus shader compiles on 2026-10-09 18:03:57).
+
 ## 2026-10-09 — v1.3.2 published release and import-helper recovery
 
 - Published [v1.3.2](https://github.com/WallpaperMachine/WallpaperMachine/releases/tag/v1.3.2), build 31, from `e278ae8f205e324835facd6f84c70e27f3d31cc7`; [Version run 37825423704](https://github.com/WallpaperMachine/WallpaperMachine/actions/runs/37825423704) passed every required job. Failed, unpublished v1.3.0/v1.3.1 tags were preserved; notes cover v1.2.6 through v1.3.2.
@@ -125,15 +136,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - python3 scripts/check_renderer.py: exit 0 with GPU and realtime checks enabled. All 12 generated pooled/isolated pixel pairs matched with no diagnostics; 8 projects completed two reload cycles. Four local-asset cases were skipped (2 text, 1 video, 1 native-Metal local-project case).
 - Localization checks and local documentation link checks passed. git diff --check passed excluding raw generator-owned UniFFI output, whose existing generator emits trailing whitespace; bindings were not edited manually.
 - Actual preview-window presentation, Scene/Video swapchain first frames in that window, OS visibility transitions and VoiceOver were not exercised. Web FPS is a cooperative host-property request; preview audio response and media integration are unavailable. No Release app, installation or desktop run was requested or delivered.
-
-## 2026-10-08 — Wallpaper history, playlist ordering and failure recovery
-
-- python3 scripts/test.py: exit 0; all 268 Python tests passed; native tests 1227 passed, 0 failed, 14 skipped of 1241. The full gate ran once after integration.
-- The 14 native skips were 11 opt-in NativeVideoPlayerMediaTests and 3 live Steam/Workshop network or installation tests; no real media or live-account coverage is claimed.
-- Targeted final run of ControlPanelPlaybackToolsTests and WallpaperActivationRecoveryTests: 21 passed, 0 failed, 0 skipped. Offscreen WebKit covered repeated keyboard moves, boundary focus fallback, drag sorting, stale-drag rejection, history order, escaped titles, current-state accessibility and target-only clearing.
-- History and playlist regressions cover persistence, bounded recent lists, repeated Previous, failed-apply preservation, exact reorder membership, cooldown expiry, cancellation, bounded fallback attempts and a newer manual command taking precedence.
-- python3 -m unittest scripts.tests.test_panel_localization: 5 passed. node --check succeeded for panel.js, settings.js and playlist-order.js. The Impeccable mechanical detector returned no findings for the changed WebUI targets; the scoped source review findings were resolved.
-- XcodeGen regenerated the project for WallpaperHistoryStore and its new test files. Local documentation link targets and git diff --check passed.
-- The first targeted build was blocked by com.apple.FinderInfo on disposable Debug products. Only that attribute was removed from build/Build/Products/Debug before the successful test runs.
-- Desktop playback, OS shortcut invocation, actual dragging in an on-screen window and VoiceOver were not exercised. Failure skipping handles errors returned by Apply; it does not diagnose a visual defect after a successful assignment.
-- No Release build, installation, app launch/restart, commit or push was requested or performed.

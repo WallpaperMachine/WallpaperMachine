@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import WallpaperMachine
@@ -66,5 +67,54 @@ final class WebWallpaperMouseRoutingTests: XCTestCase {
       "crossing to another display's wallpaper exits the previous page")
     routing.reset()
     XCTAssertEqual(route(&routing, .move, front: appWindow), .ignore)
+  }
+
+  // MARK: - front window
+
+  private func event(_ type: CGEventType, under window: Int64?) throws -> NSEvent {
+    let cgEvent = try XCTUnwrap(
+      type == .scrollWheel
+        ? CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 3, wheel2: 0, wheel3: 0)
+        : CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left))
+    if let window { cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: window) }
+    return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+  }
+
+  // A scroll-wheel event does not keep a mouse-event field set on it, so scrolls
+  // are covered by the fallback below.
+  func testTheWindowRecordedInTheEventIsUsedWithoutAskingTheWindowServer() throws {
+    for (type, kind) in [
+      (CGEventType.mouseMoved, WebWallpaperMouseRouting.Kind.move), (.leftMouseDown, .down(button: 0)),
+      (.leftMouseDragged, .drag(button: 0)), (.leftMouseUp, .up(button: 0)),
+    ] {
+      var asked = false
+      let front = WebWallpaperMouseForwarder.frontWindow(of: try event(type, under: 41), kind: kind) {
+        asked = true
+        return 7
+      }
+      XCTAssertEqual(front, 41, "\(kind)")
+      XCTAssertFalse(asked, "\(kind) must not block on a window-server query")
+    }
+  }
+
+  func testOnlyAPressOrScrollWithoutARecordedWindowAsksTheWindowServer() throws {
+    var asked = 0
+    let hitTest = { asked += 1; return 7 }
+    XCTAssertNil(
+      WebWallpaperMouseForwarder.frontWindow(of: try event(.mouseMoved, under: nil), kind: .move, hitTest: hitTest),
+      "a move without a window is dropped; the next move corrects hover")
+    XCTAssertEqual(
+      WebWallpaperMouseForwarder.frontWindow(
+        of: try event(.leftMouseDragged, under: nil), kind: .drag(button: 0), hitTest: hitTest), 0)
+    XCTAssertEqual(
+      WebWallpaperMouseForwarder.frontWindow(of: try event(.leftMouseUp, under: nil), kind: .up(button: 0), hitTest: hitTest),
+      0)
+    XCTAssertEqual(asked, 0, "moves, drags and releases never query")
+    XCTAssertEqual(
+      WebWallpaperMouseForwarder.frontWindow(
+        of: try event(.leftMouseDown, under: nil), kind: .down(button: 0), hitTest: hitTest), 7)
+    XCTAssertEqual(
+      WebWallpaperMouseForwarder.frontWindow(of: try event(.scrollWheel, under: nil), kind: .scroll, hitTest: hitTest), 7)
+    XCTAssertEqual(asked, 2)
   }
 }
