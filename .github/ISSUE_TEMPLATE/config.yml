@@ -1,0 +1,15 @@
+# The new-issue chooser. Blank issues stay on: the app's "Not working? Report on
+# GitHub" opens /issues/new with the title and body filled in (issueLink in
+# WebUI/panel.js), and with blank issues off GitHub would send it here instead,
+# losing both.
+blank_issues_enabled: true
+contact_links:
+  - name: Question or help
+    url: https://github.com/WallpaperMachine/WallpaperMachine/discussions/categories/q-a
+    about: Ask how to install, set up or use WallpaperMachine.
+  - name: Install guide
+    url: https://www.wallpapermachine.app/guides/install/
+    about: From the download to the first-run guide, including Open Anyway on first launch.
+  - name: Security vulnerability
+    url: https://github.com/WallpaperMachine/WallpaperMachine/security/advisories/new
+    about: Report it privately, never in a public issue. See SECURITY.md.

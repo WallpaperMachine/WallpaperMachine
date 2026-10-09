@@ -9,10 +9,12 @@ For how the pieces interact at runtime, see [architecture.md](architecture.md).
 AGENTS.md                          agent rules; authoritative for automated contributors
 CLAUDE.md -> AGENTS.md              Claude entry point; relative symlink, same rules
 CHANGELOG.md                       published versions, newest first; written by scripts/release_notes.py
+CODE_OF_CONDUCT.md                 conduct expected in the project's spaces and how it is enforced
 CONTRIBUTING.md                    contributor working agreement
 LICENSE                            GNU GPL version 2 text; the license of this repository's source (verbatim copy of upstream/renderer/LICENSE)
 LICENSING.md                       GPL-2.0-only policy, Supporter model, component licenses and distribution blockers
 README.md                          product overview after the website, build quickstart, FAQ, sponsor list (written by scripts/update_sponsors.py), documentation index
+SECURITY.md                        private vulnerability reporting, supported versions and scope
 SPONSORS.md                        Supporter pricing, benefits and other ways to help; follows the website's pricing page
 project.yml                        XcodeGen spec: the only source of truth for targets/settings/versions
 WallpaperMachine.xcodeproj/    generated from project.yml by xcodegen; committed, never hand-edited
@@ -76,7 +78,11 @@ build/                             Git-ignored: Xcode derived data and built pro
 .agents/ .claude/ .commandcode/    Git-ignored: machine-local agent harness state, rules and skills;
 .conductor/ .omo/ .omp/ .pi/       never committed (see AGENTS.md)
 .github/FUNDING.yml                the repository's Sponsor button; links the website's pricing page
-.github/workflows/                 CI: build.yml, release.yml, version.yml, warm-caches.yml, supporters.yml
+.github/ISSUE_TEMPLATE/            issue forms (bug report, feature request) and the chooser's links (config.yml);
+                                   blank issues stay on for the app's prefilled "Report on GitHub" link
+.github/pull_request_template.md   the pull-request description outline and checklist
+.github/workflows/                 CI: build.yml, release.yml, version.yml, warm-caches.yml, supporters.yml,
+                                   claude.yml and claude-code-review.yml
 .github/actions/prepare-build/     composite action: Xcode, Homebrew packages, LGPL FFmpeg and the build caches
 ```
 

@@ -5,6 +5,10 @@ panel), a sandboxed lock-screen ExtensionKit extension, and a vendored Rust/C++
 renderer. This page gets you running and points at the document that owns each
 topic; it does not repeat them.
 
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Found a
+vulnerability? Report it privately, as [SECURITY.md](SECURITY.md) describes, not in
+an issue.
+
 ## Setup
 
 Apple Silicon, macOS 15.6 or later, and a full Xcode 26 selected with

@@ -226,6 +226,16 @@ is the same with or without it. What it includes and how to become one:
 
 </details>
 
+<details>
+<summary><b>Where do I ask a question or suggest a feature?</b></summary>
+
+Questions go to [Discussions](https://github.com/WallpaperMachine/WallpaperMachine/discussions/categories/q-a),
+and ideas to a [feature request](https://github.com/WallpaperMachine/WallpaperMachine/issues/new?template=feature_request.yml).
+For a wallpaper that looks wrong, use **Not working? Report on GitHub** in its
+details. Security problems are reported privately: see [SECURITY.md](SECURITY.md).
+
+</details>
+
 ## Open source. Free to build.
 
 The complete source is here. It builds on a Mac with Apple silicon, Xcode 26 (macOS 15.6 or later), a
@@ -255,6 +265,8 @@ Working on the code: [CONTRIBUTING.md](CONTRIBUTING.md).
 | [docs/architecture.md](docs/architecture.md) | Runtime structure and module boundaries |
 | [docs/repository-layout.md](docs/repository-layout.md) | Directory map and where new code goes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributor working agreement |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | How we treat each other in issues, discussions and reviews |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability privately |
 | [docs/testing/README.md](docs/testing/README.md) | Test strategy, commands, evidence policy |
 | [docs/release.md](docs/release.md) | Versioning, release notes and the CI release pipeline |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each published version |

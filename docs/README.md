@@ -12,6 +12,8 @@ live under `testing/`.
 | [../README.md](../README.md) | What the app is, feature tour, FAQ, build quickstart, sponsor list; follows the website |
 | [../SPONSORS.md](../SPONSORS.md) | Supporter pricing and benefits for users; follows the website's pricing page, policy in LICENSING.md |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributor working agreement and day-to-day loop |
+| [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Conduct expected in issues, discussions, pull requests and reviews; how it is enforced |
+| [../SECURITY.md](../SECURITY.md) | Private vulnerability reporting, supported versions, scope, checking a download |
 | [build.md](build.md) | Toolchain, dependencies, build, package, install, troubleshooting |
 
 ## Reference

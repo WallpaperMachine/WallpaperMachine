@@ -1,0 +1,29 @@
+name: Feature request
+description: Something WallpaperMachine should do, or do differently.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search the existing issues first: a 👍 on one that
+        matches yours helps decide what comes next.
+
+        A Workshop wallpaper that doesn't look or behave as it does in Wallpaper Engine
+        is a **Wallpaper or app problem** report instead, with its Workshop ID.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The situation, and what gets in the way today. The problem matters more than the exact solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+      description: What you would expect to see or press. Sketches, and examples from other apps, are welcome.
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do now instead
+      description: A workaround, another app, or nothing yet.
