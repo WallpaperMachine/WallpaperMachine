@@ -1,7 +1,8 @@
-<!-- The banner is the website's share image (https://www.wallpapermachine.app/og-image.png).
-     When the website changes it, update the alt text below and the artwork credit at the end. -->
+<!-- The hero is six real WallpaperMachine renders on a macOS 27 desktop (menu bar and Dock drawn from
+     system assets), uploaded as a GitHub attachment. When it changes, update the alt text below and the
+     wallpaper credits at the end. -->
 <a href="https://www.wallpapermachine.app">
-  <img src="https://www.wallpapermachine.app/og-image.png" width="100%" alt="WallpaperMachine: “Wallpaper Engine. Meet your Mac.” over Chisaki, a scene wallpaper by 夜莺Night, hanging as a Mac’s desktop with its menu bar and Dock.">
+  <img src="https://github.com/user-attachments/assets/df92d34d-b718-4d58-b8e9-b002c4915516" width="100%" alt="A Mac desktop cycling through six live wallpapers played by WallpaperMachine: Chisaki over rippling water, Lucy on the Moon, a Red Bull F1 car in the snow, Firefly at dusk, Ellen at a rainy bus stop and Into The Abyss, under the macOS menu bar and Dock.">
 </a>
 
 <h3 align="center">Wallpaper Engine wallpapers, now on macOS.</h3>
@@ -310,6 +311,6 @@ Engine you own; the app bundles neither.
   <sub>
     Made for a more personal Mac.<br>
     An independent project. Not affiliated with Wallpaper Engine or Valve.<br>
-    Banner artwork: <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3632513108">千咲 · 不散的春之花</a> by 夜莺Night, Wuthering Waves artwork. All artwork rights remain with their owners.
+    Wallpapers shown: <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3632513108">千咲 · 不散的春之花</a> and <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3276911872">流萤 · 仲夏萤火之约</a> by 夜莺Night, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3521337568">Cyberpunk: Edgerunner-Lucy</a> by 凉粥, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3648679058">RedBull F1 2026</a> by a bad driver, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3288938880">绝区零 · 艾莲乔</a> by BIGDEECK and <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3626305963">Into The Abyss</a> by Blloopy. All artwork rights remain with their owners.
   </sub>
 </p>
