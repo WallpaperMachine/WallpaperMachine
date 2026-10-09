@@ -4,7 +4,7 @@
   <img src="https://www.wallpapermachine.app/og-image.png" width="100%" alt="WallpaperMachine: “Wallpaper Engine. Meet your Mac.” over Chisaki, a scene wallpaper by 夜莺Night, hanging as a Mac’s desktop with its menu bar and Dock.">
 </a>
 
-<h3 align="center">Wallpaper Engine wallpapers, live on your Mac.</h3>
+<h3 align="center">Wallpaper Engine wallpapers, now on macOS.</h3>
 
 <p align="center">
   A free, open-source Mac app that plays Wallpaper Engine scene, video and web wallpapers<br>
