@@ -1,8 +1,9 @@
 <!-- Follows the website's pricing page (https://www.wallpapermachine.app/pricing/) and the
      Supporter model in LICENSING.md; change them together. The price itself stays on the
-     website, which shows it per country. The sponsor list stays in README.md, which the
-     website and LICENSING.md promise Supporters a name and picture in; the Supporters
-     workflow rewrites it from the website's sponsor wall every hour (docs/release.md). -->
+     website, which shows it per country. The sponsor list stays in README.md (and its
+     translation README.zh-CN.md), which the website and LICENSING.md promise Supporters a
+     name and picture in; the Supporters workflow rewrites it from the website's sponsor
+     wall every hour (docs/release.md). -->
 
 # Sponsor WallpaperMachine
 

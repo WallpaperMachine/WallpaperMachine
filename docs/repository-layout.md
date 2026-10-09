@@ -14,6 +14,7 @@ CONTRIBUTING.md                    contributor working agreement
 LICENSE                            GNU GPL version 2 text; the license of this repository's source (verbatim copy of upstream/renderer/LICENSE)
 LICENSING.md                       GPL-2.0-only policy, Supporter model, component licenses and distribution blockers
 README.md                          product overview after the website, build quickstart, FAQ, sponsor list (written by scripts/update_sponsors.py), documentation index
+README.zh-CN.md                    README.md in 简体中文; change both together (same sponsor list block)
 SECURITY.md                        private vulnerability reporting, supported versions and scope
 SPONSORS.md                        Supporter pricing, benefits and other ways to help; follows the website's pricing page
 project.yml                        XcodeGen spec: the only source of truth for targets/settings/versions

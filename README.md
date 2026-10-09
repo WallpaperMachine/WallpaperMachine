@@ -1,6 +1,9 @@
-<!-- The hero is six real WallpaperMachine renders on a macOS 27 desktop (menu bar and Dock drawn from
+<!-- README.zh-CN.md is this page in 简体中文: change both together.
+     The hero is six real WallpaperMachine renders on a macOS 27 desktop (menu bar and Dock drawn from
      system assets), uploaded as a GitHub attachment. When it changes, update the alt text below and the
      wallpaper credits at the end. -->
+<p align="center"><sub><b>English</b>&ensp;·&ensp;<a href="README.zh-CN.md">简体中文</a></sub></p>
+
 <a href="https://www.wallpapermachine.app">
   <img src="https://github.com/user-attachments/assets/df92d34d-b718-4d58-b8e9-b002c4915516" width="100%" alt="A Mac desktop cycling through six live wallpapers played by WallpaperMachine: Chisaki over rippling water, Lucy on the Moon, a Red Bull F1 car in the snow, Firefly at dusk, Ellen at a rainy bus stop and Into The Abyss, under the macOS menu bar and Dock.">
 </a>

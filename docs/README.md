@@ -10,6 +10,7 @@ live under `testing/`.
 | Document | Purpose |
 |---|---|
 | [../README.md](../README.md) | What the app is, feature tour, FAQ, build quickstart, sponsor list; follows the website |
+| [../README.zh-CN.md](../README.zh-CN.md) | README.md in 简体中文; changes with it, wording follows the app's zh-Hans catalogs and the website's /zh/ pages |
 | [../SPONSORS.md](../SPONSORS.md) | Supporter pricing and benefits for users; follows the website's pricing page, policy in LICENSING.md |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributor working agreement and day-to-day loop |
 | [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | Conduct expected in issues, discussions, pull requests and reviews; how it is enforced |

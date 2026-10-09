@@ -241,7 +241,7 @@ Five workflows in `.github/workflows/`. Version, Build and Release grant
 `contents: write`; Build's publish job also needs `id-token: write` and
 `attestations: write` for its provenance attestation, and both callers pass those
 through, together with the repository's secrets (`secrets: inherit`). Warm caches
-only reads. Supporters writes only `README.md`, with `contents: write`, and reads
+only reads. Supporters writes only `README.md` and `README.zh-CN.md`, with `contents: write`, and reads
 Version's runs with `actions: read`. The macOS setup Build and Warm caches share
 lives in one composite action,
 [`.github/actions/prepare-build`](../.github/actions/prepare-build/action.yml).
@@ -461,24 +461,26 @@ publishes nothing.
 
 ### Supporters (`supporters.yml`)
 
-Keeps the [README's Supporter list](../README.md#thank-you-to-every-supporter) in
-step with the website's [sponsor wall](https://www.wallpapermachine.app/#sponsors).
+Keeps the [README's Supporter list](../README.md#thank-you-to-every-supporter), and
+the same list in its translation `README.zh-CN.md`, in step with the website's
+[sponsor wall](https://www.wallpapermachine.app/#sponsors).
 Every hour (and on demand from **Actions -> Supporters -> Run workflow**) it runs
 `python3 scripts/update_sponsors.py` on `main`, which reads the wall's JSON from
 `https://www.wallpapermachine.app/api/sponsors` (the website's
 `src/worker/sponsors.ts`) and rewrites the block between the `supporters:start`
-and `supporters:end` markers: the website's picture of the wall
+and `supporters:end` markers in both files: the website's picture of the wall
 (`/sponsors/wall`, drawn by its `src/worker/sponsor-card.ts`), linked to the wall,
 with every listed name and the count in its alt text. The picture's address carries
 the `version` the JSON gives (`?v=`), which changes whenever the wall does, names,
 pictures and count alike, so GitHub's image proxy fetches it again then and only
-then. When the block changed it commits `README.md` as
+then. When the block changed it commits both READMEs as
 `docs(readme): update the Supporter list` and pushes to `main`, starting again from
 the new `main` if that moved. It skips the hour while a Version run is queued or
 running, because Version's push of its bump commit does not retry. A wall that
-can't be read fails the run and leaves `README.md` as it was. Names are escaped, so
-a Supporter's chosen name never becomes a link, an image or markup; edit the list's
-wording in the script, not between the markers, where edits are overwritten.
+can't be read, or a README without its block, fails the run and leaves both READMEs
+as they were. Names are escaped, so a Supporter's chosen name never becomes a link,
+an image or markup; edit the list's wording in the script, not between the markers,
+where edits are overwritten.
 
 ### Release (`release.yml`)
 

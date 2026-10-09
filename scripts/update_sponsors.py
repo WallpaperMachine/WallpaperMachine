@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rewrite README.md's Supporter list from the website's sponsor wall.
+"""Rewrite the READMEs' Supporter list from the website's sponsor wall.
 
 The website lists every Supporter who turned the listing on in their account and
 still holds a purchase that was not refunded, earliest first, and counts the ones
@@ -8,19 +8,19 @@ list, names and months only, at /api/sponsors, with a version that changes whene
 the wall does, and draws the wall as one picture at /sponsors/wall: its portraits,
 names and months on the brand wallpaper. This reads the list and rewrites the block
 between the `supporters:start` and `supporters:end` markers under README.md's
-"Thank you. To every Supporter." heading: the picture, linked to the wall, at
-/sponsors/wall?v=<version>, so GitHub's image proxy fetches it again when the wall
-changes, with every listed name and the count in its alt text. A Supporter who
-turns the listing on, off, renames it or changes their picture is followed here
-too. Nothing outside the markers changes.
+"Thank you. To every Supporter." heading, and under its translation's in
+README.zh-CN.md: the picture, linked to the wall, at /sponsors/wall?v=<version>, so
+GitHub's image proxy fetches it again when the wall changes, with every listed name
+and the count in its alt text. A Supporter who turns the listing on, off, renames it
+or changes their picture is followed here too. Nothing outside the markers changes.
 
     python3 scripts/update_sponsors.py                       # read the live wall, rewrite the list
-    python3 scripts/update_sponsors.py --check               # exit 1 when the list is out of date
+    python3 scripts/update_sponsors.py --check               # exit 1 when a list is out of date
     python3 scripts/update_sponsors.py --input sponsors.json # a saved answer instead of the wall
 
 The Supporters workflow (.github/workflows/supporters.yml) runs it every hour and
-commits README.md when the list changed. A failed or malformed answer leaves
-README.md as it was.
+commits the READMEs when the list changed. A failed or malformed answer, or a README
+without its block, leaves every README as it was.
 """
 from __future__ import annotations
 
@@ -40,7 +40,8 @@ from lib.glyphs import markers
 from lib.paths import ROOT
 
 MARK = markers()
-README = ROOT / "README.md"
+# Every README that carries the list: the English page and its translation.
+READMES = (ROOT / "README.md", ROOT / "README.zh-CN.md")
 SOURCE = "https://www.wallpapermachine.app/api/sponsors"
 # The picture and the wall it links to, on the same site as the list.
 PICTURE_PATH = "/sponsors/wall"
@@ -113,7 +114,7 @@ def fetch_wall(source: str) -> Wall:
 
 
 def escape(name: str) -> str:
-    """A name as literal text inside README.md's HTML, attribute values included."""
+    """A name as literal text inside a README's HTML, attribute values included."""
     return SIGNIFICANT.sub(lambda match: f"&#{ord(match.group())};", name)
 
 
@@ -157,7 +158,7 @@ def render(wall: Wall, source: str = SOURCE) -> str:
 
 
 def rewrite(text: str, wall: Wall, source: str = SOURCE) -> str:
-    """README.md's text with its Supporter list replaced; ValueError without the markers."""
+    """A README's text with its Supporter list replaced; ValueError without the markers."""
     matches = BLOCK.findall(text)
     if len(matches) != 1:
         raise ValueError(f"expected one supporters:start … supporters:end block, found {len(matches)}")
@@ -168,7 +169,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", default=SOURCE, help=f"the sponsor wall's JSON (default {SOURCE})")
     parser.add_argument("--input", type=Path, help="read the wall from this JSON file instead of --source")
-    parser.add_argument("--check", action="store_true", help="change nothing; exit 1 when README.md is out of date")
+    parser.add_argument("--check", action="store_true", help="change nothing; exit 1 when a README is out of date")
     args = parser.parse_args()
 
     try:
@@ -176,21 +177,32 @@ def main() -> int:
             wall = parse_wall(json.loads(args.input.read_text(encoding="utf-8")))
         else:
             wall = fetch_wall(args.source)
-        before = README.read_text(encoding="utf-8")
-        after = rewrite(before, wall, args.source)
+        # Every README is rewritten in memory first, so one without its block
+        # leaves all of them as they were.
+        changes = []
+        for readme in READMES:
+            before = readme.read_text(encoding="utf-8")
+            try:
+                after = rewrite(before, wall, args.source)
+            except ValueError as error:
+                raise ValueError(f"{readme.name}: {error}") from error
+            if after != before:
+                changes.append((readme, after))
     except (OSError, ValueError, urllib.error.URLError) as error:
         print(f"{MARK.missing} Could not update the Supporter list: {error}", file=sys.stderr)
         return 1
 
     summary = f"{plural(len(wall.names), 'Supporter', 'Supporters')} listed, {wall.hidden:,} private"
-    if after == before:
-        print(f"{MARK.ok} README.md is up to date: {summary}.")
+    names = ", ".join(readme.name for readme, _ in changes)
+    if not changes:
+        print(f"{MARK.ok} The READMEs are up to date: {summary}.")
         return 0
     if args.check:
-        print(f"{MARK.warn} README.md is out of date: the wall has {summary}.")
+        print(f"{MARK.warn} Out of date: {names}; the wall has {summary}.")
         return 1
-    README.write_text(after, encoding="utf-8")
-    print(f"{MARK.step} README.md updated: {summary}.")
+    for readme, after in changes:
+        readme.write_text(after, encoding="utf-8")
+    print(f"{MARK.step} Updated {names}: {summary}.")
     return 0
 
 

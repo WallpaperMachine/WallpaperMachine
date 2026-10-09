@@ -2,13 +2,17 @@
 """Unit tests for scripts/update_sponsors.py."""
 from __future__ import annotations
 
+import contextlib
 import http.server
 import importlib.util
+import io
 import json
 import sys
+import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
@@ -137,8 +141,47 @@ class RewriteTests(unittest.TestCase):
             with self.subTest(blocks=text.count("supporters:start")), self.assertRaises(ValueError):
                 update_sponsors.rewrite(text, Wall((), 0, "v0"))
 
-    def test_the_repository_readme_has_the_block(self):
-        update_sponsors.rewrite(update_sponsors.README.read_text(encoding="utf-8"), Wall((), 0, "v0"))
+    def test_every_repository_readme_has_the_block(self):
+        for readme in update_sponsors.READMES:
+            with self.subTest(readme=readme.name):
+                update_sponsors.rewrite(readme.read_text(encoding="utf-8"), Wall((), 0, "v0"))
+
+
+class MainTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.wall = self.root / "wall.json"
+        self.wall.write_text(json.dumps({"supporters": [{"name": "Alice"}], "hidden": 0, "version": "v1"}), encoding="utf-8")
+
+    def readme(self, name, text=README):
+        path = self.root / name
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def main(self, readmes, *args):
+        argv = ["update_sponsors.py", "--input", str(self.wall), *args]
+        with mock.patch.object(update_sponsors, "READMES", tuple(readmes)), mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return update_sponsors.main()
+
+    def test_rewrites_every_readme(self):
+        readmes = [self.readme("README.md"), self.readme("README.zh-CN.md")]
+        self.assertEqual(self.main(readmes), 0)
+        for readme in readmes:
+            self.assertIn("Alice", readme.read_text(encoding="utf-8"))
+        self.assertEqual(self.main(readmes, "--check"), 0)
+
+    def test_a_readme_without_the_block_leaves_every_readme_as_it_was(self):
+        english, chinese = self.readme("README.md"), self.readme("README.zh-CN.md", "# 标题\n")
+        self.assertEqual(self.main([english, chinese]), 1)
+        self.assertEqual(english.read_text(encoding="utf-8"), README)
+
+    def test_check_reports_a_stale_readme_without_writing_it(self):
+        english = self.readme("README.md")
+        self.assertEqual(self.main([english], "--check"), 1)
+        self.assertEqual(english.read_text(encoding="utf-8"), README)
 
 
 class FetchTests(unittest.TestCase):
