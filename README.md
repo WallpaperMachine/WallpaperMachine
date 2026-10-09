@@ -4,26 +4,74 @@
   <img src="https://www.wallpapermachine.app/og-image.png" width="100%" alt="WallpaperMachine: “Wallpaper Engine. Meet your Mac.” over Chisaki, a scene wallpaper by 夜莺Night, hanging as a Mac’s desktop with its menu bar and Dock.">
 </a>
 
+<h3 align="center">Wallpaper Engine wallpapers, live on your Mac.</h3>
+
 <p align="center">
-  <b>Wallpaper Engine scene, video and web wallpapers, live on your Mac.</b><br>
-  Browse Steam Workshop and set one per display.
+  A free, open-source Mac app that plays Wallpaper Engine scene, video and web wallpapers<br>
+  on your desktop, straight from the Steam Workshop. For anyone who wanted Wallpaper Engine on a Mac.
 </p>
 
 <p align="center">
-  <sub>macOS 15 Sequoia or later&ensp;·&ensp;Apple silicon (M1 or later)&ensp;·&ensp;<a href="https://github.com/WallpaperMachine/WallpaperMachine/releases/latest">Free signed download</a></sub>
+  <a href="https://github.com/WallpaperMachine/WallpaperMachine/releases/latest"><img src="https://img.shields.io/github/v/release/WallpaperMachine/WallpaperMachine?label=version&color=0a84ff" alt="Latest version"></a>
+  <a href="https://github.com/WallpaperMachine/WallpaperMachine/actions/workflows/version.yml"><img src="https://img.shields.io/github/actions/workflow/status/WallpaperMachine/WallpaperMachine/version.yml?branch=main&label=build" alt="Build and release status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/WallpaperMachine/WallpaperMachine?color=blue" alt="License: GPL-2.0"></a>
+  <img src="https://img.shields.io/badge/macOS_15%2B-Apple_silicon-111111?logo=apple&logoColor=white" alt="macOS 15 or later on Apple silicon">
+  <a href="https://github.com/WallpaperMachine/WallpaperMachine/stargazers"><img src="https://img.shields.io/github/stars/WallpaperMachine/WallpaperMachine" alt="GitHub stars"></a>
 </p>
 
 <p align="center">
-  <a href="https://www.wallpapermachine.app">Website</a>&ensp;·&ensp;
-  <a href="https://www.wallpapermachine.app/guides/">Guides</a>&ensp;·&ensp;
+  <a href="https://www.wallpapermachine.app/download"><img src="https://img.shields.io/badge/Download_for_Mac-free-0a84ff?style=for-the-badge&logo=apple&logoColor=white" height="36" alt="Download for Mac, free"></a>
+  &ensp;
+  <a href="https://www.wallpapermachine.app/#app"><img src="https://img.shields.io/badge/Try_it_in_your_browser-live_demo-34c759?style=for-the-badge&logo=safari&logoColor=white" height="36" alt="Try the live demo in your browser"></a>
+</p>
+
+<p align="center">
+  <sub>macOS 15 Sequoia or later&ensp;·&ensp;Apple silicon (M1 or later)&ensp;·&ensp;<a href="https://github.com/WallpaperMachine/WallpaperMachine/releases/latest">Release notes and checksums</a></sub>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a>&ensp;·&ensp;
   <a href="#the-app">The app</a>&ensp;·&ensp;
+  <a href="#why-you-can-trust-it">Why trust it</a>&ensp;·&ensp;
   <a href="#good-to-know">FAQ</a>&ensp;·&ensp;
   <a href="#open-source-free-to-build">Build it</a>&ensp;·&ensp;
+  <a href="https://www.wallpapermachine.app/guides/">Guides</a>&ensp;·&ensp;
   <a href="docs/README.md">Documentation</a>&ensp;·&ensp;
   <a href="SPONSORS.md">Sponsor</a>
 </p>
 
-<br>
+<!-- The screenshot is the website's app poster (https://www.wallpapermachine.app/assets/media/app-panel-poster.webp).
+     When the website replaces it, update the alt text and caption below. -->
+<p align="center">
+  <img src="https://www.wallpapermachine.app/assets/media/app-panel-poster.webp" width="100%" alt="WallpaperMachine’s window on the Installed tab: a grid of Steam Workshop scene wallpapers, and the selected wallpaper’s preview, tags and options in the inspector beside it.">
+</p>
+
+<p align="center">
+  <sub>Your library on the left, the selected wallpaper’s options on the right. Press play and it becomes your desktop.</sub>
+</p>
+
+<p align="center">
+  If WallpaperMachine earns a place on your desktop, a ⭐ helps other Mac users discover it.
+</p>
+
+## Quick start
+
+1. **Download** the [free disk image](https://www.wallpapermachine.app/download) for the latest version.
+2. **Install**: open it and drag WallpaperMachine to Applications.
+3. **Open it.** The download isn't notarized yet, so macOS holds the first launch:
+   click **Open Anyway** in System Settings → Privacy & Security, once.
+
+A first-run guide takes it from there, and the app updates itself from then on.
+The [install guide](https://www.wallpapermachine.app/guides/install/) walks through
+every step with pictures.
+
+- **Works right away:** the bundled video wallpaper Aurora Drift, pixiv illustrations,
+  your own videos and pictures, and browsing the whole Workshop without signing in.
+- **With a Steam account that owns Wallpaper Engine:** Workshop downloads, and scene
+  wallpapers, which use shared resources from the Wallpaper Engine you own.
+
+Rather build it yourself? It takes two commands: see
+[Open source. Free to build.](#open-source-free-to-build)
 
 ## The app
 
@@ -53,6 +101,32 @@ or go to the previous or next wallpaper.
 | [**Automation**](docs/features/automation.md) | Weekday and time schedules, local sunrise/sunset calculations, light/dark appearance choices, experimental [desktop Space choices](docs/features/spaces.md), and temporary Focus wallpapers or playlists. Keyboard shortcuts, Shortcuts, Siri, Spotlight and links can control playback and apply wallpapers, saved playlists or property presets. |
 | [**Lock screen**](docs/features/lock-screen.md) | Video and scene wallpapers can animate the lock screen too. Experimental and off by default. |
 | [**Screen saver**](docs/features/lock-screen.md#use-wallpaper-as-screen-saver) | Use each display’s applied scene, video, web or still wallpaper as its screen saver. Independent of lock-screen animation; experimental on macOS 26+. |
+
+## Why you can trust it
+
+- **Open source, all of it.** The app, its renderer and its scene engine are all in
+  this repository under GPL-2.0. There is no closed core and no paid features: the app
+  is the same for everyone.
+- **Built in public.** Every release is built and tested by
+  [GitHub Actions](docs/release.md#build-buildyml) from a tagged commit, then
+  published with a SHA-256 checksum and a build provenance attestation. Check a
+  download came from this repository's workflow:
+  ```sh
+  gh attestation verify WallpaperMachine-*-arm64.dmg --repo WallpaperMachine/WallpaperMachine
+  ```
+- **No analytics, no tracking.** The app goes online only for what you ask of it:
+  Steam for the Workshop, pixiv when you open it, and GitHub for update checks.
+  Sign-ins and passwords stay on your Mac.
+- **Updates it can check.** The built-in updater installs only a disk image whose
+  SHA-256 matches the release; one it can't verify is
+  [refused, never installed unchecked](docs/release.md#what-the-in-app-updater-expects).
+- **Actively maintained.** New versions ship often, and every one is written up
+  in the [changelog](CHANGELOG.md), in English and 简体中文.
+- **Problems get a real path.** **Not working? Report on GitHub** in any
+  wallpaper's details opens a prefilled
+  [issue](https://github.com/WallpaperMachine/WallpaperMachine/issues), and
+  [diagnostics reports](docs/features/diagnostics.md) remove your home folder,
+  Mac user name and Steam account names before you share them.
 
 ## Rust core · Metal graphics
 
