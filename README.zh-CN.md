@@ -42,11 +42,11 @@
 </p>
 
 <p align="center">
-  <img src="https://www.wallpapermachine.app/assets/media/app-panel-poster.webp" width="100%" alt="WallpaperMachine 窗口的“已安装”标签页：左侧是 Steam 创意工坊场景壁纸的网格，旁边的检查器显示所选壁纸的预览、标签和选项。">
+  <img src="https://github.com/user-attachments/assets/1284cc37-34eb-4618-b4b1-efe7c2ce8127" width="100%" alt="WallpaperMachine 窗口的“已安装”标签页：左侧是合集、类型、年龄分级和标签筛选，中间是 Steam 创意工坊壁纸的网格，右侧检查器显示所选壁纸的预览、兼容性检查和选项。">
 </p>
 
 <p align="center">
-  <sub>左侧是你的壁纸库，右侧是所选壁纸的选项。按下播放，它就成为你的桌面。</sub>
+  <sub>左侧是筛选，中间是你的壁纸库，右侧是所选壁纸的选项。按下播放，它就成为你的桌面。</sub>
 </p>
 
 <p align="center">

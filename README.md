@@ -44,14 +44,15 @@
   <a href="SPONSORS.md">Sponsor</a>
 </p>
 
-<!-- The screenshot is the website's app poster (https://www.wallpapermachine.app/assets/media/app-panel-poster.webp).
-     When the website replaces it, update the alt text and caption below. -->
+<!-- The screenshot is a GitHub attachment, hosted by issue #37 ("README app screenshot"). When it
+     changes, upload the new one there and update the alt text and caption below, here and in
+     README.zh-CN.md. -->
 <p align="center">
-  <img src="https://www.wallpapermachine.app/assets/media/app-panel-poster.webp" width="100%" alt="WallpaperMachine’s window on the Installed tab: a grid of Steam Workshop scene wallpapers, and the selected wallpaper’s preview, tags and options in the inspector beside it.">
+  <img src="https://github.com/user-attachments/assets/1284cc37-34eb-4618-b4b1-efe7c2ce8127" width="100%" alt="WallpaperMachine’s window on the Installed tab: filters for collections, type, age rating and tags on the left, a grid of Steam Workshop wallpapers in the middle, and the selected wallpaper’s preview, compatibility check and options in the inspector on the right.">
 </p>
 
 <p align="center">
-  <sub>Your library on the left, the selected wallpaper’s options on the right. Press play and it becomes your desktop.</sub>
+  <sub>Filters on the left, your library in the middle, the selected wallpaper’s options on the right. Press play and it becomes your desktop.</sub>
 </p>
 
 <p align="center">
