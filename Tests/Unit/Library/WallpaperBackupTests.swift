@@ -464,7 +464,7 @@ final class WallpaperBackupTests: XCTestCase {
             $0.mode = .rotate
             $0.source = .collection
             $0.collectionID = collection.id
-            $0.interval = 15
+            $0.interval = 45
         }
         let plan = try playlists.savePlan(from: "display-one", name: "Night plan")
         let placement = try StillImagePlacement(x: 0.2, y: 0.7, zoom: 1.5)
