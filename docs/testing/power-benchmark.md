@@ -237,6 +237,20 @@ Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
   ramps after the change, with the panel open, the app drew 56–74 ms CPU per
   second against a 71 ms quiet median, the panel's WebContent did not rise,
   and the only display refresh was the first one after launch.
+- Dragging a scene property slider (2026-10-10, same Mac, Release build, panel
+  open, 40 s windows): every step applies an engine snapshot, which runs the
+  presentation policy, and pushes a page snapshot. Before, 30 drags over 17 s
+  put 141 main-thread samples into building page snapshots, 50 of them in
+  `ClientPaths.assetsURL` (up to four folder probes, 124 µs median per call
+  in a standalone loop), and 1 in `sessionIsLocked()` (52 µs median, 84 µs
+  p95). The lock read only adds up in bursts. After, over 18 drags, neither
+  ran under the snapshot or the policy. The folder is resolved when the panel
+  becomes key instead, which the desktop automation driving the drags
+  triggered on every drag (15 samples); a drag in the focused panel does not.
+  Coalition energy during the drags stayed within noise (app 119 vs 112 ms
+  CPU and 170 vs 156 mJ per second; coalition 552 vs 523 ms and 934 vs
+  923 mJ), and the after build also carried the lock-screen re-sync fix,
+  which removed another 123 samples from the same window.
 
 ## WindowServer's share
 
