@@ -93,10 +93,6 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         var muted = false
         var userPaused = false
         var presentationSuspended = false
-
-        /// The page pauses when the user paused playback or the presentation
-        /// policy suspended rendering; either alone is sufficient.
-        var isPaused: Bool { userPaused || presentationSuspended }
     }
 
     let webView: WKWebView
@@ -126,6 +122,16 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
     private(set) var hostSuspended = false
     /// Invalidates an in-flight suspension poster when the decision changes.
     private var suspensionGeneration: UInt64 = 0
+    /// True until the current document has drawn once. Detaching before then
+    /// leaves WebKit nothing parsed, laid out or compiled, so the first reveal
+    /// of a page assigned to a hidden display was a cold start behind an empty
+    /// poster. Such a page stays in its container, unpaused, until its first
+    /// frame (or `firstFrameTimeout`), and only then suspends.
+    private var awaitingFirstFrame = true
+    private var firstFrameTasks: [Task<Void, Never>] = []
+    /// Bounds the warm-up when WebKit produces no frame at all, for example
+    /// while the display is asleep.
+    static let firstFrameTimeout: Duration = .seconds(3)
     var onFailure: (@MainActor (String) -> Void)?
     var onLoaded: (@MainActor () -> Void)?
     var onLoading: (@MainActor () -> Void)?
@@ -285,6 +291,8 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         isLoaded = false
         documentGeneration += 1
         lastLoadFinished = nil
+        awaitingFirstFrame = true
+        cancelFirstFrameWait()
         forgetDocumentState()
         onLoading?()
         deliverAudioOutput()
@@ -299,6 +307,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         // down, so it cannot reach the blank page that replaces it.
         documentGeneration += 1
         isLoaded = false
+        cancelFirstFrameWait()
         forgetDocumentState()
         _ = WebWallpaperAudioOutput.apply(volume: committed.volume, muted: true, to: webView)
         messageProxy.page = nil
@@ -371,7 +380,9 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         self.container = container
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
-        guard !hostSuspended else { return }
+        // A hidden surface still hosts a document that has never drawn, so the
+        // warm-up below can run before it suspends.
+        guard !hostSuspended || awaitingFirstFrame else { return }
         container.addSubview(webView)
     }
 
@@ -401,7 +412,8 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
             // doing, so media the user had paused stays paused.
             webView.setAllMediaPlaybackSuspended(true)
             counters.record(.webMediaSuspended, for: surface)
-            captureDetachPoster(generation: generation)
+            // A document still warming up detaches once it has drawn.
+            if !warmingUp { captureDetachPoster(generation: generation) }
         } else {
             reattachWebView()
             webView.setAllMediaPlaybackSuspended(false)
@@ -419,7 +431,8 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         guard container != nil else { return }
         webView.takeSnapshot(with: nil) { [weak self] image, error in
             MainActor.assumeIsolated {
-                guard let self, self.suspensionGeneration == generation, self.hostSuspended else { return }
+                guard let self, self.suspensionGeneration == generation, self.hostSuspended,
+                      !self.warmingUp else { return }
                 if let error {
                     AppLog.debug("""
                         web wallpaper \(self.projectURL.lastPathComponent): \
@@ -455,6 +468,52 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         placeholder = nil
     }
 
+    /// A document that has not drawn yet and is in its container, where WebKit
+    /// will render it. A page with no container (the control panel's tests, a
+    /// preview) never warms up.
+    private var warmingUp: Bool { awaitingFirstFrame && isInWindowTree }
+
+    /// Waits for the document's first frame, then applies any suspension that
+    /// was held for it. Two animation frames: the first callback runs before
+    /// its frame is painted, the second only after that paint. The script is
+    /// not cancellable and never answers while WebKit draws nothing, so it
+    /// races the timeout instead of being awaited alone.
+    private func awaitFirstFrame() {
+        cancelFirstFrameWait()
+        guard warmingUp else {
+            awaitingFirstFrame = false
+            return
+        }
+        let generation = documentGeneration
+        let timeout = Self.firstFrameTimeout
+        firstFrameTasks = [
+            Task { @MainActor [weak self] in
+                _ = try? await self?.webView.callAsyncJavaScript(
+                    "await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))",
+                    arguments: [:], in: nil, contentWorld: .page)
+                self?.finishWarmUp(generation: generation)
+            },
+            Task { @MainActor [weak self, wait] in
+                guard (try? await wait(timeout)) != nil else { return }
+                self?.finishWarmUp(generation: generation)
+            },
+        ]
+    }
+
+    private func cancelFirstFrameWait() {
+        firstFrameTasks.forEach { $0.cancel() }
+        firstFrameTasks = []
+    }
+
+    private func finishWarmUp(generation: UInt64) {
+        guard documentGeneration == generation, awaitingFirstFrame else { return }
+        awaitingFirstFrame = false
+        cancelFirstFrameWait()
+        guard hostSuspended else { return }
+        deliverPaused()
+        captureDetachPoster(generation: suspensionGeneration)
+    }
+
     /// Whether the web view is currently in its window's view tree. WebKit's
     /// inactive scheduling policy keys off exactly this.
     var isInWindowTree: Bool { container != nil && webView.superview === container }
@@ -477,7 +536,10 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
 
     private func deliverPaused() {
         guard isLoaded else { return }
-        run("window.__mweWallpaperHost.setPaused(paused)", arguments: ["paused": committed.isPaused])
+        // Presentation suspension is withheld while the page warms up: a page
+        // that honours it would otherwise stop before its first frame.
+        let paused = committed.userPaused || (committed.presentationSuspended && !warmingUp)
+        run("window.__mweWallpaperHost.setPaused(paused)", arguments: ["paused": paused])
     }
 
     /// Replays the whole committed snapshot into a freshly loaded document. A
@@ -701,6 +763,7 @@ final class WebWallpaperPage: NSObject, WKNavigationDelegate {
         isLoaded = true
         lastLoadFinished = now()
         replayCommittedState()
+        awaitFirstFrame()
         // A document that already registered its listeners during load only
         // becomes deliverable now.
         refreshDemand()

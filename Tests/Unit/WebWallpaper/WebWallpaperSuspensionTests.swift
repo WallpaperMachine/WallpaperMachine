@@ -188,17 +188,28 @@ final class WebWallpaperSuspensionTests: XCTestCase {
     XCTAssertEqual(counters.snapshot().value(.pointerDelivered, for: surface), 2)
   }
 
-  func testSuspendingBeforeTheFirstLoadDoesNotAttachThePage() async throws {
+  /// A page assigned to a display that is already hidden used to detach before
+  /// WebKit had drawn anything, so its first reveal was a cold start behind an
+  /// empty poster. It now draws once (or times out) and then suspends.
+  func testAPageSuspendedBeforeItsFirstLoadDrawsOnceThenDetaches() async throws {
     let page = WebWallpaperPage(projectURL: project, entryFile: "index.html")
     page.setPresentationSuspended(true)
     let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+    container.wantsLayer = true
     page.attach(to: container)
-    XCTAssertFalse(
-      page.isInWindowTree,
-      "a surface that is already hidden must not start by rendering into a window")
+    XCTAssertTrue(page.isInWindowTree, "a document that has never drawn stays where WebKit renders it")
+
+    page.load()
+    try await waitUntilLoaded(page)
+    let generation = page.documentGeneration
+    try await poll(timeout: 8) { !page.isInWindowTree }
+    XCTAssertFalse(page.isInWindowTree, "the page suspends once its first frame is drawn")
+    XCTAssertTrue(container.subviews.contains { $0 is NSImageView })
+    XCTAssertEqual(page.documentGeneration, generation, "warming up must not reload the document")
 
     page.setPresentationSuspended(false)
     XCTAssertTrue(page.isInWindowTree)
+    XCTAssertFalse(container.subviews.contains { $0 is NSImageView })
   }
 
   // MARK: - helpers

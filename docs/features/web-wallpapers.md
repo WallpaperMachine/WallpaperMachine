@@ -126,6 +126,13 @@ a separate web view with its own handler.
   receives no pointer events. The document is never reloaded to suspend it, so
   its JavaScript state survives. How much WebKit then throttles the page is its
   own decision and has not been measured here.
+- A document that has not drawn yet is not detached. A page assigned to a
+  display that is already suspended stays in its container, and is not told it
+  is paused, until two animation frames have run (or
+  `WebWallpaperPage.firstFrameTimeout` passes, as it does while the display
+  sleeps); then it pauses and detaches behind a poster of that frame. Detaching
+  first left WebKit nothing parsed, painted or compiled, so the first reveal was
+  a cold start behind an empty poster.
 - While attached, a desktop page leaves window-occlusion decisions to
   `WallpaperPresentationPolicy`. A guarded per-view WebKit selector disables
   WebKit's independent window-occlusion check; otherwise even a brief Space or
