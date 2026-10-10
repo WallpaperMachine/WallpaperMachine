@@ -458,9 +458,6 @@
     "The control panel has closed." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "The control panel has closed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "コントロールパネルは閉じられました。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "控制面板已关闭。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "控制面板已關閉。"}}}
     },
-    "Assets folder not found" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Assets folder not found"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "assetsフォルダが見つかりません"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "未找到资源文件夹"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "找不到 assets 資料夾"}}}
-    },
     "macOS could not complete its SteamCMD security assessment. Retry after resolving the system security error; an explicit approval cannot bypass an assessment failure." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "macOS could not complete its SteamCMD security assessment. Retry after resolving the system security error; an explicit approval cannot bypass an assessment failure."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSはSteamCMDのセキュリティ評価を完了できませんでした。システムのセキュリティエラーを解決してから再試行してください。明示的に承認しても、評価の失敗を回避することはできません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 未能完成对 SteamCMD 的安全评估。请先解决系统安全错误再重试；手动批准无法跳过评估失败。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "macOS 無法完成 SteamCMD 的安全性評估。請先解決系統安全性錯誤再重試；即使手動核准，也無法略過評估失敗。"}}}
     },
@@ -2814,12 +2811,6 @@
     },
     "Steam did not produce complete scene assets. Confirm this account owns Wallpaper Engine and retry. Existing assets have not been changed." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Steam did not produce complete scene assets. Confirm this account owns Wallpaper Engine and retry. Existing assets have not been changed."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Steamから完全な共有シーンリソースを取得できませんでした。このアカウントがWallpaper Engineを所有していることを確認してから再試行してください。既存のリソースは変更されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "Steam 没有提供完整的场景资源。请确认此账户拥有 Wallpaper Engine 后重试，现有资源没有被改动。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "Steam 未產生完整的場景資源。請確認此帳號擁有 Wallpaper Engine 後重試。現有資源未被更動。"}}}
-    },
-    "Locate Wallpaper Engine assets" : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Locate Wallpaper Engine assets"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "Wallpaper Engineのリソースの場所を指定"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "选择 Wallpaper Engine 资源文件夹"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "指定 Wallpaper Engine 資源位置"}}}
-    },
-    "Choose the assets folder inside your legitimate Wallpaper Engine installation. These shared resources are required by many scenes." : {
-      "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "Choose the assets folder inside your legitimate Wallpaper Engine installation. These shared resources are required by many scenes."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "正規にインストールしたWallpaper Engine内のassetsフォルダを選択してください。多くのシーンでこれらの共有リソースが必要です。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请选择你已购买的 Wallpaper Engine 安装目录中的 assets 文件夹。很多场景壁纸都需要这些共享资源。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "請選擇你正版 Wallpaper Engine 安裝位置中的 assets 資料夾。許多場景都需要這些共用資源。"}}}
     },
     "This wallpaper is not a folder in the managed library. Nothing was deleted." : {
       "localizations" : {"en" : {"stringUnit" : {"state" : "translated", "value" : "This wallpaper is not a folder in the managed library. Nothing was deleted."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "この壁紙は管理対象のライブラリ内のフォルダではありません。何も削除されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "这张壁纸不是壁纸库中的文件夹，没有删除任何内容。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "此桌布不是受管理桌布庫中的資料夾。未刪除任何內容。"}}}

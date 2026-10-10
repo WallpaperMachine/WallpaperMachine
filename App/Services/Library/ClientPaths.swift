@@ -1,4 +1,3 @@
-import AppKit
 import Darwin
 import Foundation
 
@@ -87,26 +86,5 @@ enum ClientPaths {
         } else {
             try FileManager.default.moveItem(at: source, to: destination)
         }
-    }
-
-    static func selectAssetsFolder() -> Bool {
-        let panel = NSOpenPanel()
-        panel.title = String(localized: "Locate Wallpaper Engine assets")
-        panel.message = String(localized: "Choose the assets folder inside your legitimate Wallpaper Engine installation. These shared resources are required by many scenes.")
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return false }
-        let assets = hasSceneAssets(at: url) ? url : url.appendingPathComponent("assets")
-        do {
-            try configureAssetsFolder(at: assets)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = String(localized: "Assets folder not found")
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-            return false
-        }
-        return true
     }
 }
