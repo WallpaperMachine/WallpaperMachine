@@ -65,6 +65,7 @@ extension WebPanelController {
     _ = workshop.hasLoaded
     _ = workshop.errorMessage
     _ = workshop.sceneAssetsReady
+    _ = workshop.sceneAssetsURL
     _ = workshop.sceneAssetsFailure
     _ = workshop.downloadRequests
     _ = workshop.downloadPersistenceError
@@ -523,7 +524,7 @@ extension WebPanelController {
       "sceneAssetsWarning": workshop.sceneAssetsFailure as Any? ?? null,
       "concurrentDownloads": workshop.downloader.maximumConcurrentDownloads,
       "concurrentDownloadsMax": WorkshopDownloadManager.concurrentDownloadRange.upperBound,
-      "assetsPath": ClientPaths.assetsURL.path, "libraryPath": ClientPaths.libraryURL.path,
+      "assetsPath": workshop.sceneAssetsURL.path, "libraryPath": ClientPaths.libraryURL.path,
       "shaderCacheBytes": settings.storage.shaderCacheSizeBytes,
       "logBytes": settings.storage.logs.activeFileSizeBytes,
       "userAssetsPath": settings.userAssetsPath,

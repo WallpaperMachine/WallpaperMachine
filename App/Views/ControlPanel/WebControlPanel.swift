@@ -257,6 +257,11 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
             guard let self, let window = note.object as? NSWindow,
               window === self.webView?.window
             else { return }
+            // Assets Steam installed or someone removed while the panel was away show up
+            // when the user comes back to it.
+            if note.name == NSWindow.didBecomeKeyNotification {
+              self.workshop.refreshSceneAssetsReadiness()
+            }
             self.scheduleUpdate()
           }
         }

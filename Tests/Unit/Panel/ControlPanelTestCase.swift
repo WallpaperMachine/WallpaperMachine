@@ -285,7 +285,7 @@ final class PanelFixture {
       sessionDirectory: root.appendingPathComponent("session"), runtimeProvider: PanelRuntime())
     workshop = WorkshopStore(
       downloader: downloader, supportDirectory: root, defaults: defaults,
-      runtimeProvider: PanelRuntime(), sceneAssetsAvailable: { false })
+      runtimeProvider: PanelRuntime(), sceneAssetsAvailable: { _ in false })
     let image = try ControlPanelTestCase.gif(frames: 1, brightness: 0.6)
     let transport = PixivFixtureTransport(respondingToSession: { url, session in
       if url.host == "i.pximg.net" { return image }

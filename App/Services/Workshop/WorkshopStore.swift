@@ -65,10 +65,19 @@ final class WorkshopStore {
   private(set) var steamWebSession: SteamWebSession?
   private(set) var isSigningInToSteamWeb = false
   private(set) var sceneAssetsReady: Bool
-  @ObservationIgnored private let sceneAssetsAvailable: @MainActor () -> Bool
+  /// Where scene wallpapers read the shared assets from. Finding it probes up to four
+  /// folders, so it is found with the readiness, not for every page snapshot.
+  private(set) var sceneAssetsURL: URL
+  @ObservationIgnored private let sceneAssetsLocation: @MainActor () -> URL
+  @ObservationIgnored private let sceneAssetsAvailable: @MainActor (URL) -> Bool
 
+  /// Runs whenever the panel comes forward, so an assignment that changes nothing is
+  /// skipped: every assignment would wake this store's observers.
   func refreshSceneAssetsReadiness() {
-    sceneAssetsReady = sceneAssetsAvailable()
+    let url = sceneAssetsLocation()
+    let ready = sceneAssetsAvailable(url)
+    if url != sceneAssetsURL { sceneAssetsURL = url }
+    if ready != sceneAssetsReady { sceneAssetsReady = ready }
   }
   private(set) var items: [WorkshopItem] = []
   private(set) var page = 1
@@ -138,17 +147,19 @@ final class WorkshopStore {
     supportDirectory: URL = ClientPaths.supportURL, defaults: UserDefaults = ClientPreferences.defaults,
     runtimeProvider: any SteamCMDRuntimeProviding = SteamCMDRuntimeService(),
     updates: WorkshopUpdateStore? = nil,
-    sceneAssetsAvailable: @escaping @MainActor () -> Bool = {
-      ClientPaths.hasSceneAssets(at: ClientPaths.assetsURL)
-    }
+    sceneAssetsLocation: @escaping @MainActor () -> URL = { ClientPaths.assetsURL },
+    sceneAssetsAvailable: @escaping @MainActor (URL) -> Bool = { ClientPaths.hasSceneAssets(at: $0) }
   ) {
     self.service = service
     requestFile = supportDirectory.appendingPathComponent("Downloads/workshop-requests.json")
     self.downloader = downloader
     self.updates = updates ?? WorkshopUpdateStore(defaults: defaults)
     self.defaults = defaults
+    self.sceneAssetsLocation = sceneAssetsLocation
     self.sceneAssetsAvailable = sceneAssetsAvailable
-    sceneAssetsReady = sceneAssetsAvailable()
+    let assetsURL = sceneAssetsLocation()
+    sceneAssetsURL = assetsURL
+    sceneAssetsReady = sceneAssetsAvailable(assetsURL)
     if let saved = defaults.object(forKey: Self.concurrentDownloadsKey) as? Int {
       downloader.setMaximumConcurrentDownloads(saved)
     }

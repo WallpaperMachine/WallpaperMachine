@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import XCTest
 
 @testable import WallpaperMachine
@@ -881,6 +882,37 @@ final class WorkshopDownloadIntentTests: XCTestCase {
     XCTAssertEqual(fixture.store.downloader.download(for: video.id)?.account, "rightname")
   }
 
+  /// Finding the assets probes several folders, and every page snapshot shows where they
+  /// are, so they are found again only when the panel asks.
+  func testSceneAssetsAreFoundAgainOnlyOnRefresh() throws {
+    let managed = home.appendingPathComponent("SceneAssets", isDirectory: true)
+    let steam = home.appendingPathComponent("Steam/assets", isDirectory: true)
+    let probe = SceneAssetsProbe(location: managed)
+    let fixture = try makeFixture(
+      sceneAssetsLocation: { probe.lookups += 1; return probe.location },
+      sceneAssetsAvailable: { $0 == steam })
+    XCTAssertEqual(fixture.store.sceneAssetsURL, managed)
+    XCTAssertFalse(fixture.store.sceneAssetsReady)
+
+    // Steam installs Wallpaper Engine while the app runs.
+    probe.location = steam
+    for _ in 0..<10 { _ = fixture.store.sceneAssetsURL }
+    XCTAssertEqual(probe.lookups, 1, "reading where the assets are does not look again")
+    fixture.store.refreshSceneAssetsReadiness()
+    XCTAssertEqual(fixture.store.sceneAssetsURL, steam)
+    XCTAssertTrue(fixture.store.sceneAssetsReady, "readiness is judged on the folder just found")
+
+    let woke = ObservationFlag()
+    withObservationTracking {
+      _ = fixture.store.sceneAssetsURL
+      _ = fixture.store.sceneAssetsReady
+    } onChange: {
+      woke.value = true
+    }
+    fixture.store.refreshSceneAssetsReadiness()
+    XCTAssertFalse(woke.value, "coming back to the panel with nothing changed wakes no observer")
+  }
+
   func testSharedAssetsRequestNeedsConsentEvenWhenAssetsAreAlreadyInstalled() async throws {
     let fixture = try makeFixture(sceneAssetsReady: true)
     try await makeSetupReady(fixture)
@@ -1062,7 +1094,11 @@ final class WorkshopDownloadIntentTests: XCTestCase {
 
   /// The fixture runtime blocks on its PTY so queued jobs keep their real pending state, and
   /// scene assets readiness is injected so this machine's Steam install cannot change the ladder.
-  private func makeFixture(sceneAssetsReady: Bool = false) throws -> Fixture {
+  private func makeFixture(
+    sceneAssetsReady: Bool = false,
+    sceneAssetsLocation: @escaping @MainActor () -> URL = { ClientPaths.assetsURL },
+    sceneAssetsAvailable: (@MainActor (URL) -> Bool)? = nil
+  ) throws -> Fixture {
     let runtime = home.appendingPathComponent("runtime", isDirectory: true)
     try FileManager.default.createDirectory(at: runtime, withIntermediateDirectories: true)
     let executable = runtime.appendingPathComponent("steamcmd")
@@ -1073,8 +1109,8 @@ final class WorkshopDownloadIntentTests: XCTestCase {
       runtimeProvider: IntentRuntimeProvider())
     let store = WorkshopStore(
       downloader: downloader, supportDirectory: home, defaults: defaults,
-      runtimeProvider: IntentRuntimeProvider(),
-      sceneAssetsAvailable: { sceneAssetsReady })
+      runtimeProvider: IntentRuntimeProvider(), sceneAssetsLocation: sceneAssetsLocation,
+      sceneAssetsAvailable: sceneAssetsAvailable ?? { _ in sceneAssetsReady })
     let fixture = Fixture(
       store: store, bridge: BridgeStore(bridge: UnusedBridge(noPointer: .init())),
       executable: executable)
@@ -1117,3 +1153,14 @@ private struct IntentRuntimeProvider: SteamCMDRuntimeProviding {
 
 /// The retained-intent ladder never reaches the engine; a library refresh only runs after an import.
 private final class UnusedBridge: WallpaperBridge {}
+
+@MainActor
+private final class SceneAssetsProbe {
+  var location: URL
+  var lookups = 0
+  init(location: URL) { self.location = location }
+}
+
+private final class ObservationFlag: @unchecked Sendable {
+  var value = false
+}
