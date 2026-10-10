@@ -13,7 +13,7 @@ the mode:
 | Mode | Rows | What happens |
 | --- | --- | --- |
 | **Off** | — | The wallpaper changes only when the user changes it. |
-| **Rotate wallpapers** | **Wallpapers** (All wallpapers, Favorites, This display's list, or a local collection), **Order** (In order, Shuffle), **How often** (every 5, 10, 15 or 30 minutes, every hour, every 2, 3, 6 or 12 hours, every day) | After each interval the display moves to the next wallpaper. |
+| **Rotate wallpapers** | **Wallpapers** (All wallpapers, Favorites, This display's list, or a local collection), **Order** (In order, Shuffle), **How often** (every 5, 10, 15 or 30 minutes, every hour, every 2, 3, 6 or 12 hours, every day, or **Custom**: any whole number of minutes from 1 to 10,080, one week) | After each interval the display moves to the next wallpaper. |
 | **Day and night** | **Day wallpaper**, **Day starts at**, **Night wallpaper**, **Night starts at** | The day wallpaper takes over at the day time and the night wallpaper at the night time. |
 
 For weekday schedules, sunrise/sunset, system appearance or temporary Focus

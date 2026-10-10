@@ -621,6 +621,7 @@ extension WebPanelController {
       "dragSelectLearned": dragSelectLearned,
       "displays": displays,
       "playlists": playlistSnapshot, "playlistIntervals": DisplayPlaylist.intervals,
+      "playlistIntervalRange": [DisplayPlaylist.intervalRange.lowerBound, DisplayPlaylist.intervalRange.upperBound],
       "automation": wallpaperAutomationSnapshot(),
       "displayLayouts": displayLayoutsSnapshot(),
       "libraryOrganization": libraryOrganizationSnapshot(),
