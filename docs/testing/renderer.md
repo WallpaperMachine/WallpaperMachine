@@ -13,6 +13,7 @@ This file is long. Read the section you need rather than the whole file
 |---|---|
 | [`scripts/check_renderer.py`](#scriptscheck_rendererpy) | Running or changing the renderer check itself |
 | [Probes](#probes) | Driving `offscreen_scene_probe` and friends by hand; `WE_TEST_*` variables |
+|  [Metal compile across processes](#metal-compile-across-processes) | Measuring what a later launch compiles again; why a copied probe recompiles |
 | [Regression areas that must stay covered](#regression-areas-that-must-stay-covered) | Before changing renderer behaviour: the table names the test that guards each area |
 |  [Property bindings and alignment anchors](#property-bindings-and-alignment-anchors) | Property scripts, `origin`/`scale`/anchor maths |
 |  [Native writes from scripts, puppet layers and cursor coverage](#native-writes-from-scripts-puppet-layers-and-cursor-coverage) | SceneScript side effects, puppets, cursor hit tests |
@@ -215,6 +216,50 @@ capabilities. It uses private images and synthetic IOSurface-backed inputs and
 creates no window, surface, swapchain, audio device, or screenshot. Missing
 required GPU capabilities fail explicitly rather than skipping. Run the built
 executable directly from the renderer check build directory.
+
+### Metal compile across processes
+
+macOS keeps compiled Metal code under
+`$(getconf DARWIN_USER_CACHE_DIR)/<bundle id>/com.apple.metal/`, in a
+`libraries*` pair (compiled Metal source) and a `functions*` pair (compiled
+pipelines); the folder names above them differ by machine and macOS version. A
+bare executable has no bundle id and uses `com.apple.metal/` directly under that
+directory. Library entries are scoped by location — the bundle's path, or a bare
+executable's folder — while pipeline entries are keyed by content and shared.
+For measurements this means:
+
+- A probe run twice from the same folder compiles once. A byte-identical copy
+  in another folder compiles the Metal source again; renaming, re-signing,
+  touching or replacing the binary in the same folder does not.
+- To behave like the app, put the probe in a minimal bundle
+  (`Contents/MacOS/<name>` plus an `Info.plist` with a scratch
+  `CFBundleIdentifier`) so it gets a cache of its own. Never use
+  `app.wallpapermachine`, and delete only a scratch identifier's folder.
+- Measure per process, not per coalition: a probe started from a terminal
+  shares the terminal's coalition. `proc_pid_rusage` with `RUSAGE_INFO_V6`
+  (`ri_energy_nj`, CPU only) needs no privileges; read the probe's from its
+  zombie before reaping it, and poll each `MTLCompilerService`, of which macOS
+  starts one per client process.
+
+Lucy (3521337568), `WE_TEST_FRAMES=1`, bundled probe, CPU energy of the probe
+plus its `MTLCompilerService` (2026-10-10, M5 Pro, macOS 27.0.1, MoltenVK 1.4.2):
+
+| Condition | Energy | Wall |
+| --- | --- | --- |
+| First load, every cache cold | 35.4 J (21.6 J compiler) | 5.6 s |
+| Next process, same location | 2.0–2.2 J (none) | 0.7 s |
+| Same location, new `LC_UUID`, new `CFBundleVersion` or bundle replaced | 2.0–2.1 J (none) | 0.8 s |
+| Same bundle id, another location | 21.7 J (19.5 J compiler) | 4.1 s |
+| Compiled source missing only | 21.8–22.1 J (19.5–19.8 J compiler) | 3.5–3.8 s |
+| Compiled pipelines missing only | 4.1 J (1.9 J compiler) | 0.8–0.9 s |
+
+Lucy's entries survived 16 other wallpapers compiled after it and a second
+process holding the cache files while Lucy compiled; synthetic kernels survived
+a holder killed with SIGKILL and 3,400 entries (about 45 MB) written by one
+process. MoltenVK's
+pipeline cache stores the Metal source it generated, not compiled code, and no
+`MVK_CONFIG_*` setting adds a binary archive. A binary archive, on either
+backend, would hold only the pipeline row's share.
 
 ## Regression areas that must stay covered
 

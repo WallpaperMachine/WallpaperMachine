@@ -775,6 +775,23 @@ failure — the pipeline is compiled exactly as it was before, and the wallpaper
 loads. All of it is regenerable and all of it is removed by **Clear shader
 cache** in Storage; nothing you imported is stored there.
 
+Compatibility keeps no compiled Metal code of its own. MoltenVK's pipeline cache
+(`vk-pipeline-cache.bin`, beside the same scene's shaders) stores the Metal
+source MoltenVK generated, which saves translating it again but not compiling
+it; the compiled forms come from macOS's own Metal shader cache. That cache
+survives relaunching the app, rebuilding it, a new version number and a bundle
+replaced at the same path, but it keeps compiled Metal source per app location:
+a second copy of the app at another path — an installed copy beside a
+development build, say — compiles each wallpaper's shaders again the first time
+that copy loads it, once. Compiled pipelines are shared between copies. On Lucy
+(3521337568), with the offscreen probe on an M5 Pro under macOS 27.0.1, a load
+with every cache warm cost 2.0–2.2 J of CPU energy; with only the compiled
+source missing, 21.7–22.1 J, 19.5–19.8 J of it in `MTLCompilerService`; with
+only the pipelines missing, 4.1 J. The native backend's binary archive stores
+pipelines, so it covers the smaller part: both backends compile Metal source
+through the same per-location cache. Method and the full table are in
+[renderer testing](../testing/renderer.md#metal-compile-across-processes).
+
 Measured so far on one scene only — Workshop 3620484312, a 3840×2160 canvas on
 the built-in 3456×2234 display, with other applications running (numbers in the
 verification log). Native Metal used to start a render pass for every pass of

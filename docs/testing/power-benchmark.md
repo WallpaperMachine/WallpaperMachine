@@ -203,8 +203,11 @@ Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
   programs in 1.1 s at 6.8 W, then `MTLCompilerService` drew 4.5–6 W for
   2.5 s, 20 J in all. Lucy (3521337568) hit all 111 cached programs and the
   Vulkan pipeline cache, yet `MTLCompilerService` still drew 5.3 and 4.8 W for
-  2 s: the pipeline cache keeps no Metal binaries, so after an app launch
-  Metal compiles again unless its own cache still holds them. Yae Miko again
+  2 s. That launch ran the build in `build/Build/Products/Release`, and Lucy
+  had last been loaded by the copy in `/Applications`: macOS keeps compiled
+  Metal source per app location, so the second copy compiled it again, once.
+  A relaunch of the same copy does not (see
+  [renderer.md](renderer.md#metal-compile-across-processes)). Yae Miko again
   in the same process cost 1.4 J, a video 3 J and The Winter Nothingness
   (3796026374), every cache warm, 5.8 J. `WallpaperAgent` drew about 0.5 J
   after each desktop picture update. Separately, bursts of screen-parameter
@@ -407,6 +410,10 @@ saving                    = (old incremental - new incremental) / old incrementa
   or below the noise floor, do not report a percentage.
 - Warm shaders, caches and temperature first; report cold start, first decoded
   frame and first shader compile separately from the steady-state window.
+- Compare wallpaper switches only between runs of the same copy of the app (the
+  manifest's `executable`). macOS keeps compiled Metal source per app location,
+  so the first load of a wallpaper in another copy with the same bundle ID is a
+  cold load, even when the scene's shader and pipeline caches are warm.
 - Activity Monitor's Energy Impact is not watts, and GPU utilization is not
   energy.
 
