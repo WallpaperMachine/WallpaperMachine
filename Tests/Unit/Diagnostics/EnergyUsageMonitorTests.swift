@@ -1,10 +1,12 @@
+import Metal
 import XCTest
 
 @testable import WallpaperMachine
 
 /// The Performance readout turns the kernel's cumulative coalition counters into mean
 /// milliwatts. These cover the arithmetic, the coalitions it must leave out, the GPU
-/// contention flag, the averaging window, and that the private ABI still reads sanely.
+/// contention and native video flags, the averaging window, and that the private ABI
+/// still reads sanely.
 @MainActor
 final class EnergyUsageMonitorTests: XCTestCase {
   private let second: UInt64 = 1_000_000_000
@@ -167,6 +169,44 @@ final class EnergyUsageMonitorTests: XCTestCase {
     XCTAssertNil(monitor.snapshot["batteryPercentPerHour"])
   }
 
+  func testNativeVideoReadingsAreShownButNeitherGradedNorCompared() {
+    let monitor = EnergyUsageMonitor(
+      source: FixedSource(), interval: .seconds(3600), batteryWattHours: { 50 })
+    monitor.setActive(true)
+    defer { monitor.setActive(false) }
+    var native = false
+    monitor.nativeVideoPlaying = { native }
+    var time: UInt64 = 0
+    var energy: UInt64 = 0
+    func step(_ milliwatts: UInt64) {
+      time += 2
+      energy += milliwatts * 2_000_000
+      monitor.record(sample(at: time, own: [1: (energy, 0)]))
+    }
+    monitor.record(sample(at: 0, own: [1: (0, 0)]))
+    for _ in 0..<3 { step(800) }
+    monitor.settingChanged()
+    XCTAssertEqual(monitor.comparison?.before.totalMilliwatts ?? 0, 800, accuracy: 0.001)
+
+    // The change sent the video to macOS's player, whose work is charged elsewhere.
+    native = true
+    step(20)
+    step(20)
+    XCTAssertEqual(monitor.reading.totalMilliwatts, 20, accuracy: 0.001)
+    XCTAssertTrue(monitor.reading.nativeVideo)
+    XCTAssertNil(monitor.comparison, "a near-total saving that was never measured is not shown")
+    XCTAssertEqual(monitor.snapshot["nativeVideo"] as? Bool, true)
+    XCTAssertNil(monitor.snapshot["level"])
+    XCTAssertNil(monitor.snapshot["batteryPercentPerHour"])
+
+    native = false
+    for _ in 0..<3 { step(800) }
+    XCTAssertTrue(monitor.reading.nativeVideo, "the window still holds a native-video sample")
+    step(800)
+    XCTAssertFalse(monitor.reading.nativeVideo)
+    XCTAssertEqual(monitor.snapshot["level"] as? String, "medium")
+  }
+
   func testEnergyLevelBoundaries() {
     XCTAssertEqual(EnergyLevel(milliwatts: 499.9), .low)
     XCTAssertEqual(EnergyLevel(milliwatts: 500), .medium)
@@ -194,15 +234,19 @@ final class EnergyUsageMonitorTests: XCTestCase {
     XCTAssertNil(BatteryCapacity.wattHours(["BatteryInstalled": true, "Voltage": 12_000]))
   }
 
-  /// Guards the private struct layout: if a macOS update moved the fields, CPU energy
-  /// would read as zero or as some unrelated counter.
-  func testKernelCountersForThisProcessAdvanceWithCPUWork() throws {
-    // A virtual machine (the CI runners) reports no energy at all: the guest's
-    // coalitions read 0 nJ however busy it is.
+  /// A virtual machine (the CI runners) reports no energy at all: the guest's
+  /// coalitions read 0 nJ however busy it is.
+  private func skipInVirtualMachine() throws {
     var hypervisor: Int32 = 0
     var size = MemoryLayout<Int32>.size
     let virtualised = sysctlbyname("kern.hv_vmm_present", &hypervisor, &size, nil, 0) == 0 && hypervisor == 1
     try XCTSkipIf(virtualised, "energy counters are not modelled in a virtual machine")
+  }
+
+  /// Guards the private struct layout: if a macOS update moved the fields, CPU energy
+  /// would read as zero or as some unrelated counter.
+  func testKernelCountersForThisProcessAdvanceWithCPUWork() throws {
+    try skipInVirtualMachine()
     let source = try XCTUnwrap(
       CoalitionEnergySource(), "coalition accounting is expected on the deployment target")
     let before = try XCTUnwrap(source.sample())
@@ -218,6 +262,60 @@ final class EnergyUsageMonitorTests: XCTestCase {
     XCTAssertLessThan(reading.cpuMilliwatts, 200_000, "no Mac draws 200 W on the CPU")
     XCTAssertGreaterThanOrEqual(reading.gpuMilliwatts, 0)
     XCTAssertFalse(after.otherGPUTime.isEmpty, "other coalitions are listed")
+  }
+
+  /// The GPU half of the layout guard. macOS 27 appended five fields to the struct;
+  /// one inserted before `gpu_energy_nj` would turn the GPU figure into another counter.
+  func testKernelCountersForThisProcessAdvanceWithGPUWork() throws {
+    try skipInVirtualMachine()
+    let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
+    let library = try device.makeLibrary(
+      source: """
+        #include <metal_stdlib>
+        kernel void spin(device float *out [[buffer(0)]], uint i [[thread_position_in_grid]]) {
+          float x = i;
+          for (int j = 0; j < 2048; j++) x = metal::fma(x, 1.0001f, 0.37f);
+          out[i] = x;
+        }
+        """, options: nil)
+    let pipeline = try device.makeComputePipelineState(
+      function: try XCTUnwrap(library.makeFunction(name: "spin")))
+    let queue = try XCTUnwrap(device.makeCommandQueue())
+    let buffer = try XCTUnwrap(device.makeBuffer(length: 4 << 20, options: .storageModePrivate))
+    func dispatch(for seconds: TimeInterval) throws {
+      let end = Date().addingTimeInterval(seconds)
+      while Date() < end {
+        let commands = try XCTUnwrap(queue.makeCommandBuffer())
+        let encoder = try XCTUnwrap(commands.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(buffer, offset: 0, index: 0)
+        encoder.dispatchThreads(
+          MTLSize(width: 1 << 20, height: 1, depth: 1),
+          threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1))
+        encoder.endEncoding()
+        commands.commit()
+        commands.waitUntilCompleted()
+      }
+    }
+    let source = try XCTUnwrap(CoalitionEnergySource())
+    let before = try XCTUnwrap(source.sample())
+    // The kernel posts GPU energy to coalitions every half second, and a test host
+    // launched moments ago was seen to get its first posts late, so the GPU stays busy
+    // until a post has arrived.
+    var after = before
+    let deadline = Date().addingTimeInterval(5)
+    repeat {
+      try dispatch(for: 0.5)
+      after = try XCTUnwrap(source.sample())
+    } while EnergyUsageReading.between(before, after).gpuMilliwatts == 0 && Date() < deadline
+
+    let reading = EnergyUsageReading.between(before, after)
+    XCTAssertGreaterThan(reading.gpuMilliwatts, 10, "a busy GPU draws well above 10 mW")
+    XCTAssertLessThan(reading.gpuMilliwatts, 200_000, "no Mac draws 200 W on the GPU")
+    let gpuTime = { (sample: EnergyUsageSample) in
+      sample.own.values.reduce(0) { $0 + $1.gpuTimeNanoseconds }
+    }
+    XCTAssertGreaterThan(gpuTime(after), gpuTime(before), "GPU time advances with GPU work")
   }
 }
 

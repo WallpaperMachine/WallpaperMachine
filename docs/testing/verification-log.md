@@ -35,6 +35,17 @@ Playlists accept any whole number of minutes from 1 to 10,080 next to the preset
 - Native gate (`python3 scripts/test.py`, incl. new WebPanelPlaylistTests/PlaylistStoreTests cases) — not run: needs macOS/Xcode
 - WKWebView appearance in the real panel — unchecked; no Release build
 
+## 2026-10-10 — Energy readout: native video left out, macOS 27 ABI rechecked
+
+- Change: readings while a video is on the native player carry nativeVideo (no grade, battery share or comparison); the per-wallpaper recorder skips intervals with a presenting native-video display; ratings carry version 2 and a video's unversioned rating is hidden and replaced, not averaged.
+- Evidence for the fix: a stored rating of 0.18 mW over 4.4 h for a video wallpaper; GPU billed_to_me fields are 0 in all 818 coalitions; decoding 720p H.264 at ~1,700 fps charged ~2 W CPU and 0 GPU.
+- ABI on M5 Pro, macOS 27.0.1: struct coalition_resource_usage is 50 fields (5 appended); indices 8/11/41 unchanged. Saturating Metal load: coalition 16.85 W, all coalitions 17.56 W, IOReport GPU Energy 17.94 W.
+- Unchanged: the 0.25 contention threshold. A 60 fps probe read 91 mW alone and 162 mW at 21 % other GPU time (below the flag); documented, not retuned.
+- Tests: python3 scripts/test.py --only EnergyUsageMonitorTests --only WallpaperEnergyRatingsTests --only WebPanelEnergyUsageTests (23 passed); new GPU-counter guard failed once on a cold test host (0 mW after 0.8 s) and now waits up to 5 s for a post, then passed 4 runs.
+- Full gate: python3 scripts/test.py — 1319 passed, 0 failed, 14 skipped (opt-in media and network layers).
+- Page: node --check WebUI/settings.js; energyControl rendered in Node for native, native+contended, contended and normal readings. The panel itself was not opened (no desktop authorization).
+- Not verified: a native-video wallpaper end to end in the running app, and the hardware decoder's own energy (needs powermetrics/root).
+
 ## 2026-10-09 — Keep web wallpapers animating through Show Desktop pointer moves
 
 - Symptom: a web wallpaper (3747222633) froze briefly on every hot-corner Show Desktop; scene wallpapers did not. Unified logs showed no host suspension, WebKit activity-state change or poster capture at those moments.
@@ -121,16 +132,3 @@ Playlists accept any whole number of minutes from 1 to 10,080 next to the preset
 - Static review disposition `ship` for its single focus finding after correction and regression coverage. Rendered appearance and VoiceOver remain unverified; no additional visual inspection was authorized.
 - `git diff --check -- . ':!App/Bridge/Generated'` passed; existing generator-owned output from the preview batch is excluded. CLAUDE.md remains a relative symlink to AGENTS.md; no agent state was staged.
 - No renderer/bridge ABI changes in this batch, so prior renderer checks were not rerun. No desktop/windows/screenshots, real multi-monitor compositor/Spaces or Siri/Shortcuts run, Release rebuild, install, commit or push.
-
-## 2026-10-08 — Advanced wallpaper automation and Focus restoration
-
-- Added per-display weekday/time/sunrise/sunset and system-appearance choices, temporary Focus wallpaper/playlist overrides, and saved playlist/property preset Shortcuts and URLs.
-- `python3 scripts/test.py` — exit 0; 268 Python tests passed; native 1,270 passed, 0 failed, 14 skipped of 1,284. Full gate ran once for this batch; no renderer code changed in this batch.
-- Full native evidence: `artifacts/tests/Tests-20261008-194956-595159.xcresult`; log `Tests-20261008-194956-595159.log` (disposable local evidence).
-- Targeted automation/planner/store/Focus/panel/command/catalog tests — 35 passed. Offscreen automation editor and backup tests — 33 passed after correcting a test-fixture initializer argument order.
-- Covered DST and solar boundaries, persisted/manual precedence, Focus restoration and interrupted state, deleted saved plans, queued multi-field playlist edits, backup merge and rollback.
-- Offscreen WKWebView flows cover save/edit/cancel/delete, hidden invalid timing fields, local weekday errors/focus, appearance clearing, solar location save/clear and compact overflow.
-- Panel localization checks passed for English source plus Simplified Chinese, Traditional Chinese and Japanese; JavaScript syntax checks passed; 168 local documentation links resolved.
-- Impeccable detector returned `[]` on the three changed automation/settings UI sources. Static reviewer disposition `ship` for the three listed fixes, all resolved; rendered appearance and VoiceOver remain unchecked.
-- `git diff --check -- . ':!App/Bridge/Generated'` passed; generator-owned bindings from the preceding preview batch retain generator whitespace. `CLAUDE.md` remains a relative symlink to `AGENTS.md`.
-- No live Focus/appearance transitions, Siri/Shortcuts, desktop interaction, screenshots, permission prompts, Release rebuild, installation, commit or push. Existing corpus/runtime skips remain skipped, not passing asset evidence.

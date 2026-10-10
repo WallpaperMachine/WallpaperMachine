@@ -19,9 +19,13 @@ struct WallpaperEnergyContext: Equatable, Sendable {
   /// Energy is charged to the whole app, so it can be attributed only while exactly one
   /// wallpaper is presenting. Displays suspended on their own (covered by windows) do
   /// not count; a display with no wallpaper does not either.
+  ///
+  /// A display playing a video through macOS's native player rules the interval out:
+  /// the media engine decodes it and WindowServer draws it, and macOS charges neither
+  /// to this app, so it would be rated as almost free.
   static func resolve(
     assignments: [(display: String, wallpaper: String)], suspendedDisplays: Set<UInt32>,
-    frameRateCap: UInt32?, renderScale: Float,
+    nativeVideoDisplays: Set<UInt32> = [], frameRateCap: UInt32?, renderScale: Float,
     resolveDisplay: (String) -> UInt32? = { UInt32($0) }
   ) -> WallpaperEnergyContext? {
     var presenting: [(display: UInt32, wallpaper: String)] = []
@@ -30,6 +34,7 @@ struct WallpaperEnergyContext: Equatable, Sendable {
       // another wallpaper's work to the one display we happened to resolve.
       guard let display = resolveDisplay(assignment.display) else { return nil }
       if !suspendedDisplays.contains(display) {
+        if nativeVideoDisplays.contains(display) { return nil }
         presenting.append((display, assignment.wallpaper))
       }
     }
@@ -45,11 +50,17 @@ struct WallpaperEnergyContext: Equatable, Sendable {
 
 /// Mean power the app drew while one wallpaper played under `conditions`.
 struct WallpaperEnergyRating: Codable, Equatable, Sendable {
+  /// Ratings from another version are replaced, not averaged into. Version 1 (saved
+  /// without one) also credited video played by macOS's native player, which reads as
+  /// almost nothing, so a video wallpaper's version 1 rating is not shown.
+  static let currentVersion = 2
+
   var milliwatts: Double
   /// Measured time behind the mean.
   var seconds: Double
   var conditions: WallpaperEnergyConditions
   var updated: Date
+  var version: Int? = Self.currentVersion
 
   var level: EnergyLevel { EnergyLevel(milliwatts: milliwatts) }
 }
@@ -104,7 +115,9 @@ final class WallpaperEnergyRatings {
     let shownLevel = rating(for: id)?.level
     var entry = WallpaperEnergyRating(
       milliwatts: milliwatts, seconds: seconds, conditions: context.conditions, updated: now)
-    if let existing = entries[id], existing.conditions == context.conditions {
+    if let existing = entries[id], existing.conditions == context.conditions,
+      existing.version == entry.version
+    {
       let weight = min(existing.seconds, Self.weightCapSeconds)
       entry.milliwatts = (existing.milliwatts * weight + milliwatts * seconds) / (weight + seconds)
       entry.seconds = existing.seconds + seconds
@@ -121,8 +134,10 @@ final class WallpaperEnergyRatings {
   }
 
   /// What the panel shows for one wallpaper, or nil when it has no rating yet.
-  func snapshot(for id: String) -> [String: Any]? {
-    guard let rating = rating(for: id) else { return nil }
+  func snapshot(for id: String, kind: BridgeWallpaperKind) -> [String: Any]? {
+    guard let rating = rating(for: id),
+      kind != .video || rating.version == WallpaperEnergyRating.currentVersion
+    else { return nil }
     return [
       "level": rating.level.rawValue,
       "milliwatts": rating.milliwatts,
@@ -148,8 +163,8 @@ final class WallpaperEnergyRatings {
 /// Measures the app's energy in the background and credits it to the wallpaper playing.
 ///
 /// Every `interval` it asks `context` what is on screen. Nil (paused, suspended, more
-/// than one wallpaper, the panel open, a download running) takes no sample and breaks
-/// the chain. Otherwise it samples the coalition counters off the main thread, and an
+/// than one wallpaper, a native video, the panel open, a download running) takes no
+/// sample and breaks the chain. Otherwise it samples the coalition counters off the main thread, and an
 /// interval whose two ends saw the same context and whose GPU was not contended is
 /// recorded. Anything that changes presentation in between should call `invalidate()`,
 /// since a pause and resume inside one interval leaves both ends looking the same.

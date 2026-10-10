@@ -63,6 +63,44 @@ final class WallpaperEnergyRatingsTests: XCTestCase {
         assignments: [("1", "")], suspendedDisplays: [], frameRateCap: nil, renderScale: 1))
   }
 
+  func testNativeVideoOnAPresentingDisplayIsNotRated() {
+    XCTAssertNil(
+      WallpaperEnergyContext.resolve(
+        assignments: [("1", "a"), ("2", "a")], suspendedDisplays: [], nativeVideoDisplays: [2],
+        frameRateCap: nil, renderScale: 1),
+      "macOS charges a native video's decoding and drawing to no coalition of this app")
+    XCTAssertEqual(
+      WallpaperEnergyContext.resolve(
+        assignments: [("1", "a"), ("2", "a")], suspendedDisplays: [2], nativeVideoDisplays: [2],
+        frameRateCap: nil, renderScale: 1),
+      context("a"), "a covered display's native player is paused")
+  }
+
+  func testVersionOneVideoRatingsAreHiddenAndReplacedRatherThanAveraged() throws {
+    // Saved before native video was left out: a video may read as almost nothing.
+    let saved = """
+      {"video": {"milliwatts": 0.18, "seconds": 15759, "updated": 0,
+                 "conditions": {"displays": 1, "renderScale": 1}},
+       "scene": {"milliwatts": 757, "seconds": 1441, "updated": 0,
+                 "conditions": {"displays": 1, "renderScale": 1}}}
+      """
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data(saved.utf8).write(to: file)
+    let ratings = WallpaperEnergyRatings(file: file)
+    XCTAssertNil(ratings.snapshot(for: "video", kind: .video))
+    XCTAssertNotNil(ratings.snapshot(for: "scene", kind: .projectScene))
+
+    ratings.record(context("video"), milliwatts: 900, seconds: 120)
+    XCTAssertEqual(
+      ratings.entries["video"]?.milliwatts ?? 0, 900, accuracy: 0.001,
+      "the old figure is not averaged in")
+    XCTAssertNotNil(ratings.snapshot(for: "video", kind: .video))
+    ratings.flush()
+    XCTAssertEqual(
+      WallpaperEnergyRatings(file: file).entries["video"]?.version,
+      WallpaperEnergyRating.currentVersion)
+  }
+
   func testRatingAppearsAfterTwoMinutesAsATimeWeightedMean() throws {
     let ratings = WallpaperEnergyRatings(file: file)
     ratings.record(context(), milliwatts: 300, seconds: 30)

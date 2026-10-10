@@ -20,8 +20,9 @@ final class CoalitionEnergySource: EnergyUsageSource, @unchecked Sendable {
   private typealias ListCoalitions = @convention(c) (Int32, Int32, UnsafeMutableRawPointer?, Int32)
     -> Int32
 
-  /// `struct coalition_resource_usage` is 45 `uint64_t` fields; the kernel copies the
-  /// smaller of its size and ours, so fields a kernel lacks read as zero.
+  /// `struct coalition_resource_usage` was 45 `uint64_t` fields and macOS 27 appends
+  /// five more; the kernel copies the smaller of its size and ours, so fields a kernel
+  /// lacks read as zero and fields past ours are not read.
   private static let usageFields = 45
   private static let gpuTimeField = 8
   private static let cpuEnergyField = 11

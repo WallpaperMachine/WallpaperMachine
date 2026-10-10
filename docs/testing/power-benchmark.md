@@ -175,6 +175,29 @@ Findings from 2026-09 on an M5 Pro, macOS 26.6, checked against `powermetrics`:
   overstates an app sharing the GPU with a heavy load. The in-app readout uses
   it; see [features/performance.md](../features/performance.md#energy-use).
 
+Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
+
+- The kernel's `struct coalition_resource_usage` is now 50 fields: five were
+  appended after `swapins` (index 44). `energy` (11), `gpu_time` (8) and
+  `gpu_energy_nj` (41) did not move.
+- IOReport `Energy Model` `GPU Energy` (nJ) still advances unprivileged, but
+  its mJ channels (`CPU Energy`, `GPU0` and the rest) did not change over
+  25 s, so they no longer serve as a CPU reference.
+- Under a saturating Metal load the loading coalition was charged 16.85 W,
+  all coalitions 17.56 W and IOReport `GPU Energy` 17.94 W. At three load
+  levels each coalition's share of GPU energy matched its share of summed GPU
+  time within 0.1 point: the whole GPU's energy is split by busy time. A small
+  60 fps probe's own GPU time fell under load (0.063 to 0.021–0.033 of the
+  window) while its charge rose from 91 to 412 mW.
+- `gpu_energy_nj` reaches coalitions in batches every 500 ms, so a 2 s
+  window can be a quarter off and the readout's 6 s window about 8 %.
+- `gpu_energy_nj_billed_to_me` and `_billed_to_others` were 0 in all 818
+  coalitions after 15 hours of uptime: nobody's GPU work, WindowServer's
+  included, is billed back to the app it served. CPU billing is in use
+  (about 15 % of all CPU energy) but nets to about 1 % for this app.
+- Hardware video decoding is charged to no one: see
+  [features/performance.md](../features/performance.md#energy-use).
+
 ## WindowServer's share
 
 Findings from 2026-09-28 on an M3 Max, macOS 27.2, built-in XDR at 120 Hz in
