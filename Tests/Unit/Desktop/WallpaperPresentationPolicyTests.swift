@@ -15,6 +15,8 @@ private final class PolicyProbe {
     /// Displays whose working area other windows cover.
     var covered: Set<UInt32> = []
     var coveredAction: DesktopCoveredAction = .pause
+    /// Each screen's frame and working area.
+    var screenLayout = [NSRect(x: 0, y: 0, width: 1728, height: 1117), NSRect(x: 0, y: 0, width: 1728, height: 1084)]
 
     func setVisible(_ visible: Bool, display: UInt32 = 1) {
         if let index = surfaces.firstIndex(where: { $0.displayID == display }) {
@@ -48,6 +50,7 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
             isSessionLocked: { probe.sessionLocked },
             desktopCoveredAction: { probe.coveredAction },
             coveredDisplays: { probe.covered },
+            screenLayout: { probe.screenLayout },
             occlusionSettleDelay: settle,
             counters: counters,
             applyGlobal: { presentation, completion in
@@ -142,6 +145,25 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
         XCTAssertEqual(probe.displayDecisions(for: 1), [true])
         XCTAssertEqual(probe.displayDecisions(for: 2), [], "An uncovered display keeps running")
         XCTAssertEqual(probe.applied, [], "Covering is a per-display condition")
+    }
+
+    /// An XDR display posts a screen change for every frame of an EDR headroom ramp,
+    /// about 240 in two seconds, with every screen where it was.
+    func testOnlyAScreenChangeThatMovesAWorkingAreaIsEvaluated() {
+        let probe = PolicyProbe()
+        let policy = makePolicy(probe, settle: .zero)
+        policy.start()
+        defer { policy.stop() }
+
+        probe.covered = [1]
+        for _ in 0..<240 {
+            windowCenter.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        }
+        XCTAssertTrue(probe.appliedDisplays.isEmpty, "a screen change that moved nothing decides nothing")
+
+        probe.screenLayout[1].size.height = 1020
+        windowCenter.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(probe.displayDecisions(for: 1), [true], "the Dock appearing moves the working area")
     }
 
     func testKeepRunningIgnoresACoveredWorkingArea() {

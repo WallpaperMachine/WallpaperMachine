@@ -22,8 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var promptedUpdateVersion: String?
     private var displayChangeObserver: NSObjectProtocol?
     private lazy var displayRefresh = DisplayRefreshCoalescer { [weak self] in
-        guard let self else { return }
-        await self.refreshDisplaysFromSystemEvent()
+        guard let self else { return false }
+        return await self.refreshDisplaysFromSystemEvent()
     }
     private var desktopWallpaperSync: DesktopWallpaperSync?
     private var desktopMediaSession: DesktopMediaSession?
@@ -1529,23 +1529,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    private func refreshDisplaysFromSystemEvent() async {
+    /// Whether the bridge took the refresh.
+    private func refreshDisplaysFromSystemEvent() async -> Bool {
         guard let store,
               !shutdownInProgress,
               !shutdownComplete
         else {
-            return
+            return false
         }
 
+        let refreshed: Bool
         do {
             try await store.refreshDisplaysAsync()
             lastError = nil
             playbackSnapshotCurrent = true
+            refreshed = true
         } catch {
             lastError = error
             playbackSnapshotCurrent = false
+            refreshed = false
         }
         rebuildMenu()
+        return refreshed
     }
 
     /// The applied desktop Scenes that have consented to now-playing.

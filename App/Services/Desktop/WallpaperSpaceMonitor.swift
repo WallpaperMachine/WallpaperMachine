@@ -31,6 +31,9 @@ final class WallpaperSpaceMonitor {
     private let provider: Provider
     private let workspaceCenter: NotificationCenter?
     private let displayCenter: NotificationCenter?
+    private let displayConfiguration: @MainActor () -> DisplayConfiguration
+    /// The displays the last screen change found.
+    private var screenDisplays: DisplayConfiguration?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var retry: Task<Void, Never>?
     private var visits: [String: Visit]
@@ -38,9 +41,11 @@ final class WallpaperSpaceMonitor {
     private(set) var available = false
 
     init(defaults: UserDefaults? = nil, provider: @escaping Provider = { nil },
-         workspaceCenter: NotificationCenter? = nil, displayCenter: NotificationCenter? = nil) {
+         workspaceCenter: NotificationCenter? = nil, displayCenter: NotificationCenter? = nil,
+         displayConfiguration: @escaping @MainActor () -> DisplayConfiguration = DisplayConfiguration.current) {
         self.defaults = defaults; self.provider = provider
         self.workspaceCenter = workspaceCenter; self.displayCenter = displayCenter
+        self.displayConfiguration = displayConfiguration
         let data = defaults?.data(forKey: Self.visitsKey)
         let loaded = data.flatMap { $0.count <= 128 * 1024 ? try? JSONDecoder().decode([String: Visit].self, from: $0) : nil } ?? [:]
         visits = loaded.count <= 64 ? loaded.filter { !$0.key.isEmpty && $0.key.count <= 128
@@ -53,11 +58,13 @@ final class WallpaperSpaceMonitor {
                                (workspaceCenter, NSWorkspace.didWakeNotification),
                                (displayCenter, NSApplication.didChangeScreenParametersNotification)] {
             guard let center else { continue }
+            let screens = name == NSApplication.didChangeScreenParametersNotification
             let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
+                MainActor.assumeIsolated { screens ? self?.screensChanged() : self?.refresh() }
             }
             observers.append((center, observer))
         }
+        screenDisplays = displayConfiguration()
         refresh()
     }
 
@@ -68,6 +75,16 @@ final class WallpaperSpaceMonitor {
     }
 
     func refresh() { retry?.cancel(); retry = nil; read(attempt: 0) }
+
+    /// Each read is a round trip to the window server, and an XDR display posts a screen
+    /// change for every frame of an EDR headroom ramp. Only a display that came, went or
+    /// moved can change which Spaces belong to which display.
+    private func screensChanged() {
+        let current = displayConfiguration()
+        guard current != screenDisplays else { return }
+        screenDisplays = current
+        refresh()
+    }
 
     private func read(attempt: Int) {
         let next = provider()

@@ -67,14 +67,34 @@ final class WallpaperSpaceMonitorTests: XCTestCase {
     func testSpaceAndScreenNotificationsRefreshAndStopUnsubscribes() {
         let workspace = NotificationCenter(), display = NotificationCenter()
         var reads = 0
-        let monitor = WallpaperSpaceMonitor(provider: { reads += 1; return [:] }, workspaceCenter: workspace, displayCenter: display)
+        var displays = DisplayConfiguration(displays: [])
+        let monitor = WallpaperSpaceMonitor(provider: { reads += 1; return [:] }, workspaceCenter: workspace,
+                                            displayCenter: display, displayConfiguration: { displays })
         monitor.start()
         XCTAssertEqual(reads, 1)
         workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        displays.displays.append(.init(id: 2, frame: CGRect(x: 1728, y: 0, width: 1920, height: 1080), scale: 1, refreshRate: 60))
         display.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         XCTAssertEqual(reads, 3)
         monitor.stop()
         workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         XCTAssertEqual(reads, 3)
+    }
+
+    /// Every read is a window-server round trip, and an XDR display posts a screen change
+    /// for each frame of an EDR headroom ramp with every display where it was.
+    func testOnlyAScreenChangeThatMovesADisplayRereadsTheSpaces() {
+        let display = NotificationCenter()
+        var configuration = DisplayConfiguration(displays: [])
+        var reads = 0
+        let monitor = WallpaperSpaceMonitor(provider: { reads += 1; return [:] }, displayCenter: display,
+                                            displayConfiguration: { configuration })
+        monitor.start(); defer { monitor.stop() }
+        XCTAssertEqual(reads, 1)
+        for _ in 0..<240 { display.post(name: NSApplication.didChangeScreenParametersNotification, object: nil) }
+        XCTAssertEqual(reads, 1)
+        configuration.displays.append(.init(id: 2, frame: CGRect(x: 1728, y: 0, width: 1920, height: 1080), scale: 1, refreshRate: 60))
+        display.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(reads, 2)
     }
 }

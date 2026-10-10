@@ -210,6 +210,27 @@ Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
   after each desktop picture update. Separately, bursts of screen-parameter
   changes (`display refresh: N screen changes … merged` in the log) cost the
   app and the panel's WebContent about 12 J over 3 s each.
+- Those bursts were EDR headroom ramps (2026-10-10, M5 Pro, macOS 27.0.1,
+  built-in XDR). Whenever something requests EDR (a menu-bar system banner,
+  HDR content) `corebrightnessd` ramps headroom between 1.0 and 1.2 over 2 s,
+  and AppKit posts `didChangeScreenParametersNotification` for every frame:
+  241 per ramp, one to three ramps a minute that session, with nothing but
+  `maximumExtendedDynamicRangeColorComponentValue` changed. Each ran a full
+  display refresh, so with Settings open one ramp measured 0.6 + 6.5 + 5.2 J
+  (app 3.3 W and 712 ms CPU per second, WebContent 3.2 W and 831 ms), and
+  WebKit logged 252 snapshot pushes. A 2 s `sample` of the app's main thread
+  during a ramp had 580 samples on CPU: 379 in the lock-screen service's
+  re-sync after each snapshot (it rereads the system wallpaper store and
+  rewrites its journal with `fsync`), 90 building the page snapshot, 33 in
+  the display refresh itself and 15 rebuilding the status menu. Another 233
+  waited on the window server in `sessionIsLocked()`
+  (`CGSessionCopyCurrentDictionary`, which the presentation policy calls once
+  for the notification and once after each refresh). With the panel closed
+  the lock-screen re-sync was 644 of 745 on-CPU samples, and a ramp cost
+  0.9–3.8 J and 0.9–1.9 s of app CPU. WebContent spent 398 of 459 busy
+  samples in the pushed render. Screen changes that leave the displays and
+  working areas as they were now do none of this; see
+  [renderer.md](renderer.md#regression-areas-that-must-stay-covered).
 
 ## WindowServer's share
 

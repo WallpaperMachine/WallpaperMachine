@@ -256,7 +256,14 @@ Swift keeps the *system* wallpaper consistent with that window:
   System audio capture follows visible consumers — a presenting scene with audio response
   enabled — rather than the global pause flag.
 - Screen-parameter changes refresh displays through `DisplayRefreshCoalescer`: one refresh runs
-  at a time and a burst that arrives meanwhile, as a waking display posts, gets one more. A
+  at a time and a burst that arrives meanwhile gets one more. A change that leaves
+  `DisplayConfiguration` (AppKit's in-process copy of what `DisplayDesc::all()` reads from
+  CoreGraphics: the screens in order, main first, and each one's display ID, frame, backing
+  scale and refresh rate) as the last successful refresh read it refreshes nothing. An XDR display posts one change per frame of an EDR headroom ramp (241 in
+  two seconds whenever a menu-bar banner or HDR content raises or drops headroom), and each used
+  to run a bridge refresh, republish every snapshot and push the whole control panel. The Space
+  monitor rereads Spaces only when `DisplayConfiguration` moved, and the presentation policy
+  re-evaluates only when a screen frame or working area moved. A
   refresh reopens a scene only when its saved configuration changed. The frame-rate ceiling, the
   transient mute, pause and the gating of system-audio capture are applied live and never count
   as a different wallpaper; a scene's own audio-response switch follows the saved setting even
