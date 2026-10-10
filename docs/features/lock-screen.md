@@ -264,14 +264,21 @@ immutable publication, while identical scene records keep the current revision
 and do not reload the extension. No intermediate empty assignment is required.
 
 Recovery entries represent the last successful journal commit. Repeated checks
-  do not rewrite an unchanged journal, but still read the actual system store to
-  detect new Spaces and external selections. Unchanged inputs skip the
-  compatibility check. A revision-only store update may
-still require a wallpaper-service reload without rewriting the journal. The
-recovery union is persisted before changing the store, and pruned only after a
-successful reload; failed writes, reloads or journal removal retain recovery
-information for retry. A malformed saved linked or inherited baseline fails
-recovery before changing the store or removing the journal.
+do not rewrite an unchanged journal: saved baselines keep their journaled bytes,
+because encoding an equal property list again can order its keys differently.
+A check that changed nothing is not repeated until its displays or revision
+change or the system store is written again. New Spaces, choices made in System
+Settings and wallpaper-service reloads all rewrite the store, so the check
+compares only the store file's inode, size, and modification and change times;
+it rereads the store only after one of them moves. Before 2026-10-10 every
+two-second check reread the store and rewrote the journal: 8–12 ms of
+main-thread CPU with 45 Spaces. Unchanged inputs skip the compatibility check.
+A revision-only store update may still require a wallpaper-service reload
+without rewriting the journal. The recovery union is persisted before changing
+the store, and pruned only after a successful reload; failed writes, reloads or
+journal removal retain recovery information for retry. A malformed saved linked
+or inherited baseline fails recovery before changing the store or removing the
+journal.
 
 macOS copies the extension's selection into the fallbacks it reloads
 (`SystemDefault` and each Space's `Default`), and a Space created while the

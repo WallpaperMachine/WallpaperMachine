@@ -29,6 +29,14 @@ final class LockScreenWallpaperSelection {
     var ownedFields: Set<String> { Set(fields ?? ["Desktop", "Idle"]) }
   }
 
+  /// A check that found nothing to change, and the store version it read.
+  private struct Settled: Equatable {
+    var desktopDisplays: Set<String>
+    var screenSaverDisplays: Set<String>
+    var revision: String?
+    var store: [Int]
+  }
+
   private static var lastReloadSignal: Date?
   private static let globalPath = ["AllSpacesAndDisplays"]
 
@@ -39,6 +47,7 @@ final class LockScreenWallpaperSelection {
   private var entries: [Entry] = []
   private var hasPersistedJournal = false
   private var restartPending = false
+  private var settled: Settled?
 
   convenience init(folder: URL) {
     self.init(
@@ -88,6 +97,16 @@ final class LockScreenWallpaperSelection {
   ) throws {
     let displays = desktopDisplays.union(screenSaverDisplays)
     if displays.isEmpty && entries.isEmpty && !restartPending { return }
+    // With the same request and journal, only the store can change the outcome, and
+    // everything that matters rewrites it: a new Space, a choice made in System
+    // Settings, a WallpaperAgent reload. Until then a settled check would repeat itself.
+    let request = Self.storeVersion(storeURL).map {
+      Settled(
+        desktopDisplays: desktopDisplays, screenSaverDisplays: screenSaverDisplays,
+        revision: revision, store: $0)
+    }
+    if !restartPending, let request, request == settled { return }
+    settled = nil
     let bytes = try Data(contentsOf: storeURL)
     guard
       var root = try PropertyListSerialization.propertyList(from: bytes, format: nil)
@@ -148,7 +167,8 @@ final class LockScreenWallpaperSelection {
             merged[key] = original[key]
           }
         }
-        recovery[index].original = try Self.encode(merged)
+        recovery[index].original =
+          entry.path == Self.globalPath ? entry.original : try Self.encode(merged)
         recovery[index].fields = recovery[index].ownedFields.union(entry.ownedFields).sorted()
         originals[entry.path] = merged
       } else {
@@ -289,12 +309,16 @@ final class LockScreenWallpaperSelection {
         } else {
           originalData = try Self.encode(original)
         }
+        // Both baselines are set only when a path is first taken over; keep the
+        // journaled bytes, which re-encoding could reorder.
         let entry = Entry(
           path: path, original: originalData,
           created: prior?.created ?? (existing == nil), observeOnly: observeOnly,
           fields: desired.sorted(), typeOwned: typeOwned,
-          linkedOriginal: try linkedOriginal.map { try Self.encode($0) },
-          inheritedOriginal: try inheritedOriginal.map { try Self.encode($0) })
+          linkedOriginal: try prior.map(\.linkedOriginal)
+            ?? linkedOriginal.map { try Self.encode($0) },
+          inheritedOriginal: try prior.map(\.inheritedOriginal)
+            ?? inheritedOriginal.map { try Self.encode($0) })
         if !added.isEmpty { try record(entry, original: original) }
         retained.append(entry)
       }
@@ -361,8 +385,11 @@ final class LockScreenWallpaperSelection {
         }
       }
       if !activeFields.isEmpty {
+        let kept = globalEntry.flatMap {
+          (originals[$0.path] as NSDictionary?) == (original as NSDictionary) ? $0.original : nil
+        }
         let entry = Entry(
-          path: Self.globalPath, original: try Self.encode(original),
+          path: Self.globalPath, original: try kept ?? Self.encode(original),
           created: globalEntry?.created ?? (global == nil), fields: activeFields.sorted(),
           typeOwned: false, globalWasPresent: wasPresent)
         try record(entry, original: original)
@@ -421,7 +448,9 @@ final class LockScreenWallpaperSelection {
       try reload()
       restartPending = false
     }
+    let unchanged = !changed && retained == entries
     try persistEntries(retained)
+    if unchanged { settled = request }
   }
 
   private func persistEntries(_ next: [Entry]) throws {
@@ -561,8 +590,22 @@ final class LockScreenWallpaperSelection {
     return choices[0]["Provider"] as? String == LockScreenConfiguration.extensionIdentifier
   }
 
+  /// Swift dictionaries iterate in a per-instance order, so equal values can encode to
+  /// different bytes. Compare decoded values, or keep bytes already journaled.
   private static func encode(_ value: Any) throws -> Data {
     try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
+  }
+
+  /// Identifies one version of a file: an atomic replacement gets a new inode, and any
+  /// write moves the change time, which user space cannot set back.
+  private static func storeVersion(_ url: URL) -> [Int]? {
+    var info = stat()
+    guard stat(url.path, &info) == 0 else { return nil }
+    return [
+      Int(info.st_dev), Int(truncatingIfNeeded: info.st_ino), Int(info.st_size),
+      info.st_mtimespec.tv_sec, info.st_mtimespec.tv_nsec,
+      info.st_ctimespec.tv_sec, info.st_ctimespec.tv_nsec,
+    ]
   }
 
   private static func node(_ root: [String: Any], path: [String]) -> [String: Any]? {

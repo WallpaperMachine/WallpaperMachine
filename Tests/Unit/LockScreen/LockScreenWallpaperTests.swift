@@ -862,6 +862,83 @@ final class LockScreenWallpaperTests: XCTestCase {
   }
 
   @MainActor
+  func testUnrelatedStoreWritesNeverRewriteJournaledBaselines() throws {
+    // A suppressed global override, a separated linked display and a synthesized
+    // Space display each journal a multi-key baseline.
+    var original = fixture()
+    original["AllSpacesAndDisplays"] = [
+      "Type": "individual", "Desktop": choice("global-desktop"), "Idle": choice("default"),
+      "Unrelated": "keep",
+    ]
+    original["Displays"] = ["one": node("display-one"), "two": linkedDefault()]
+    var spaces = try XCTUnwrap(original["Spaces"] as? [String: Any])
+    spaces["space-b"] = ["Default": node("default-b"), "Displays": [String: Any]()]
+    original["Spaces"] = spaces
+    try write(original)
+    var writes = 0
+    var reloads = 0
+    let selection = LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: { reloads += 1 },
+      persistJournal: { url, data in
+        try LockScreenWallpaperSelection.persistJournalFile(url, data)
+        writes += 1
+      })
+    try selection.synchronize(
+      desktopDisplays: ["one", "two"], screenSaverDisplays: ["one", "two"], revision: "same")
+    let journalBytes = try Data(contentsOf: journal)
+    XCTAssertEqual(writes, 1)
+    for check in 0..<20 {
+      var external = try readStore()
+      external["Unrelated"] = "external write \(check)"
+      try write(external)
+      try selection.synchronize(
+        desktopDisplays: ["one", "two"], screenSaverDisplays: ["one", "two"], revision: "same")
+    }
+    XCTAssertEqual(writes, 1, "An unchanged selection must not rewrite its journal")
+    XCTAssertEqual(reloads, 1)
+    XCTAssertEqual(try Data(contentsOf: journal), journalBytes)
+    let current = try readStore()["Unrelated"]
+    try selection.synchronize(desktopDisplays: [], screenSaverDisplays: [])
+    original["Unrelated"] = current
+    XCTAssertEqual(try readStore() as NSDictionary, original as NSDictionary)
+  }
+
+  @MainActor
+  func testSettledCheckStillReactsToEveryLaterStoreWrite() throws {
+    try write(fixture())
+    var reloads = 0
+    let selection = LockScreenWallpaperSelection(
+      storeURL: store, journalURL: journal, reload: { reloads += 1 })
+    func check() throws {
+      try selection.synchronize(desktopDisplays: ["one"], screenSaverDisplays: ["one"], revision: "same")
+    }
+    try check()
+    try check()
+    XCTAssertEqual(reloads, 1)
+    // macOS replaces the store when a Space is created.
+    var created = try readStore()
+    var spaces = try XCTUnwrap(created["Spaces"] as? [String: Any])
+    spaces["space-b"] = ["Default": node("default-b"), "Displays": [String: Any]()]
+    created["Spaces"] = spaces
+    try write(created)
+    try check()
+    try check()
+    XCTAssertEqual(reloads, 2)
+    let space = try XCTUnwrap((try readStore()["Spaces"] as? [String: [String: Any]])?["space-b"])
+    XCTAssertEqual(
+      provider(try XCTUnwrap((space["Displays"] as? [String: [String: Any]])?["one"]), key: "Desktop"),
+      LockScreenConfiguration.extensionIdentifier)
+    // System Settings may write in place, keeping the file's inode.
+    var external = try readStore()
+    var displays = try XCTUnwrap(external["Displays"] as? [String: [String: Any]])
+    displays["one"]?["Desktop"] = choice("user-selected")
+    external["Displays"] = displays
+    try PropertyListSerialization.data(fromPropertyList: external, format: .binary, options: 0)
+      .write(to: store)
+    XCTAssertThrowsError(try check())
+  }
+
+  @MainActor
   func testInvalidLinkedOriginalPreservesStoreAndRecoveryJournal() throws {
     try assertInvalidBaselinePreservesRecovery(field: "linkedOriginal", linked: true)
   }

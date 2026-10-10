@@ -312,6 +312,9 @@ final class LockScreenWallpaperService {
         lastScreenSaverRequested == screenSaverRequested
       {
         try checkReadinessFailures(published)
+        // New Spaces and choices made in System Settings change only the system store.
+        // The selection takes over the former and reports the latter, rereading the
+        // store only after something wrote it.
         try applySelection(published, inputs: inputs)
         updateStatuses(published, hasWebWallpapers: lastHasWebWallpapers)
         return
