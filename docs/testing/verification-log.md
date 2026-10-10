@@ -25,6 +25,14 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-10 — Energy readout: static loading notice replaces switch detection
+
+- Change: the loading flag (switch detection, hidden grade and comparison) is removed; the Energy use row now always notes that right after a wallpaper is applied the figures include loading it. Per-wallpaper ratings still start no interval within 8 s of a presentation change.
+- Why: the user saw the flag miss a second apply. The readout samples only while Settings is open, so a switch made from another page, or a re-apply of the same wallpaper, was never seen.
+- Tests: targeted EnergyUsageMonitorTests, WallpaperEnergyRatingsTests, WebPanelEnergyUsageTests (24 passed); test_panel_localization OK; node --check WebUI/settings.js.
+- Full gate: python3 scripts/test.py — 1320 passed, 0 failed, 14 skipped (opt-in media and network layers).
+- Not verified: the note in the running panel (no screenshot taken).
+
 ## 2026-10-10 — Energy readout: wallpaper loading flagged, measured switch cost
 
 - Change: readings whose window holds a sample within 8 s of a display's wallpaper changing (or of a rendering setting change) carry loading: shown with a note, no grade, battery share or comparison; a switch drops a comparison in progress. The rating recorder starts no interval within 8 s of a presentation change.
@@ -118,16 +126,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Offscreen WKWebView tests cover choice save, UUID-preserving reorder, current-desktop accessible name, unavailable mode/native validation, orphan removal and final-orphan focus. One Impeccable detector invocation returned `[]`; source-only reviewer disposition `ship` for its single corrected focus finding.
 - Localization and JS syntax checks passed; 192 local documentation links resolved; diff check passed excluding generator-owned bindings. Upstream provenance updated, notices retained, CLAUDE.md remains a relative AGENTS.md symlink; no agent state staged.
 - No desktop/window/screenshot, actual Mission Control/Space/Focus transitions, visible layout, VoiceOver, installed-app test, install/restart, commit or push. Inactive Spaces retain posters, not resident renderer instances; brief reload transitions and animated-lock-screen incompatibility are documented.
-
-## 2026-10-08 — Multi-display wallpaper layouts, copy and swap
-
-- Added saved per-display wallpaper arrangements, independent-display copy/swap, a searchable Shortcuts layout action, URL routing and backup merge support. Separate live per-Space assignments remain unimplemented.
-- `python3 scripts/test.py` — exit 0; 268 Python tests passed; native 1,290 passed, 0 failed, 14 skipped of 1,304. Full gate ran once for this batch.
-- Native evidence: `artifacts/tests/Tests-20261008-230934-164642.xcresult`, log `Tests-20261008-230934-164642.log` (disposable local evidence). Existing live Workshop/SteamCMD and native-media skips remain skipped.
-- Targeted core/store/BridgeStore integration tests — 15 passed; panel/backup/integration/command/catalog run — 44 passed; final focus-boundary panel/store run — 7 passed. A test fixture return type was corrected before these successful runs.
-- Checked complete preflight, copy/swap from original assignments, failure after mutation, restoring empty destinations, preserving unexpected external choices, cancellation cleanup, clean-editor admission, net history and newer queued user commands.
-- Offscreen WKWebView tests cover save/rename/apply/delete, copy/swap and recovery errors, escaped names, missing-screen eligibility, Escape/focus return, English/Chinese/Japanese at 760 points and saving the 64th layout.
-- Panel/native localization coverage and JavaScript syntax checks passed; 160 local documentation links resolved. Impeccable detector returned `[]` once on this batch's changed JS/CSS.
-- Static review disposition `ship` for its single focus finding after correction and regression coverage. Rendered appearance and VoiceOver remain unverified; no additional visual inspection was authorized.
-- `git diff --check -- . ':!App/Bridge/Generated'` passed; existing generator-owned output from the preview batch is excluded. CLAUDE.md remains a relative symlink to AGENTS.md; no agent state was staged.
-- No renderer/bridge ABI changes in this batch, so prior renderer checks were not rerun. No desktop/windows/screenshots, real multi-monitor compositor/Spaces or Siri/Shortcuts run, Release rebuild, install, commit or push.

@@ -172,6 +172,10 @@ final class WallpaperEnergyRatings {
 final class WallpaperEnergyRecorder {
   /// One sample costs about 3 ms of kernel calls; every 30 s that is 0.01 % of a core.
   nonisolated static let defaultInterval: Duration = .seconds(30)
+  /// How long after a presentation change no interval starts. On an M5 Pro a scene's
+  /// first load drew 6–7 W for 2–4 s while its shaders compiled (10–22 J); a load with
+  /// every cache warm cost about 1.5 J.
+  nonisolated static let loadingNanoseconds: UInt64 = 8_000_000_000
 
   private let source: EnergyUsageSource?
   private let ratings: WallpaperEnergyRatings
@@ -235,7 +239,7 @@ final class WallpaperEnergyRecorder {
       return
     }
     // Compiling shaders and decoding textures is what loading costs, not playing.
-    if let changedAt, sample.uptimeNanoseconds < changedAt + EnergyUsageReading.loadingNanoseconds {
+    if let changedAt, sample.uptimeNanoseconds < changedAt + Self.loadingNanoseconds {
       previous = nil
       return
     }

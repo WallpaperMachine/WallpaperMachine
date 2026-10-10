@@ -218,11 +218,6 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     self.energyUsage.nativeVideoPlaying = { [weak self] in
       self?.store.settingsSnapshot.videoBackends.contains { $0.backend == "native" } ?? false
     }
-    self.energyUsage.shownWallpapers = { [weak self] in
-      Dictionary(
-        (self?.store.monitorInformationSnapshot.rows ?? []).map { ($0.displayId, $0.wallpaperId) },
-        uniquingKeysWith: { first, _ in first })
-    }
     self.backup.onChange = { [weak self] in self?.scheduleUpdate() }
     self.compatibility.onChange = { [weak self] in self?.scheduleUpdate() }
   }

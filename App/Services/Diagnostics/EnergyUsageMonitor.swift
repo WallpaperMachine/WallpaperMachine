@@ -55,10 +55,6 @@ struct EnergyUsageReading: Equatable {
   /// GPU figure is flagged. The same Mac measured about 0.15 with only the desktop,
   /// a browser and this app running and 0.4 or more beside any sizeable GPU load.
   static let contentionThreshold = 0.25
-  /// How long after a wallpaper switch, or a setting change that may reload one, samples
-  /// count as `loading`. On an M5 Pro a scene's first load drew 6–7 W for 2–4 s while
-  /// its shaders compiled (10–22 J); a load with every cache warm cost about 1.5 J.
-  static let loadingNanoseconds: UInt64 = 8_000_000_000
 
   var status: Status
   var cpuMilliwatts = 0.0
@@ -68,16 +64,13 @@ struct EnergyUsageReading: Equatable {
   /// engine decodes it and WindowServer draws it, and macOS charges neither to any of
   /// this app's coalitions, so the figure leaves most of that video's cost out.
   var nativeVideo = false
-  /// The window includes a wallpaper loading, which costs far more for a few seconds
-  /// than playing it does.
-  var loading = false
   /// Length of the window the means cover.
   var seconds = 0.0
 
   var totalMilliwatts: Double { cpuMilliwatts + gpuMilliwatts }
-  /// A ready figure that neither GPU contention, native video nor loading qualifies, so
-  /// it can be graded and compared.
-  var isComparable: Bool { status == .ready && !gpuContended && !nativeVideo && !loading }
+  /// A ready figure that neither GPU contention nor native video qualifies, so it can
+  /// be graded and compared.
+  var isComparable: Bool { status == .ready && !gpuContended && !nativeVideo }
 
   static let measuring = EnergyUsageReading(status: .measuring)
   static let unavailable = EnergyUsageReading(status: .unavailable)
@@ -121,7 +114,6 @@ struct EnergyUsageReading: Equatable {
       "gpuMilliwatts": gpuMilliwatts,
       "gpuContended": gpuContended,
       "nativeVideo": nativeVideo,
-      "loading": loading,
       "seconds": seconds,
     ]
   }
@@ -142,9 +134,7 @@ struct EnergyUsageComparison: Equatable {
 /// intervals, since the kernel posts GPU energy in batches about half a second apart.
 ///
 /// `settingChanged()` starts a fresh window and keeps the last settled reading as the
-/// "before" half of a comparison, so the page can show what a change did. Readings
-/// whose window holds the seconds after a switch or such a change are flagged
-/// `loading`: they show what loading costs, not what the wallpaper does.
+/// "before" half of a comparison, so the page can show what a change did.
 @MainActor
 final class EnergyUsageMonitor {
   nonisolated static let defaultInterval: Duration = .seconds(2)
@@ -156,9 +146,6 @@ final class EnergyUsageMonitor {
   /// Whether a video is playing through macOS's native player now. Asked once per
   /// sample; a reading whose window holds such a sample is flagged `nativeVideo`.
   var nativeVideoPlaying: @MainActor () -> Bool = { false }
-  /// The wallpaper each display shows, by display. Asked once per sample; a change is a
-  /// switch, and samples taken while the new wallpaper loads are flagged `loading`.
-  var shownWallpapers: @MainActor () -> [String: String] = { [:] }
   private(set) var reading = EnergyUsageReading.measuring
   private(set) var comparison: EnergyUsageComparison?
   var isActive: Bool { task != nil }
@@ -166,7 +153,6 @@ final class EnergyUsageMonitor {
   private struct Recorded {
     var sample: EnergyUsageSample
     var nativeVideo: Bool
-    var loading: Bool
   }
 
   private let source: EnergyUsageSource?
@@ -175,9 +161,6 @@ final class EnergyUsageMonitor {
   /// Read once per activation; a battery's full charge moves over months, not minutes.
   private var batteryCapacity: Double?
   private var samples: [Recorded] = []
-  private var lastShown: [String: String]?
-  /// Uptime of the last switch or rendering setting change.
-  private var loadStarted: UInt64?
   private var task: Task<Void, Never>?
 
   init(
@@ -218,15 +201,11 @@ final class EnergyUsageMonitor {
       task = nil
       samples.removeAll()
       comparison = nil
-      lastShown = nil
-      loadStarted = nil
       return
     }
     guard task == nil else { return }
     samples.removeAll()
     comparison = nil
-    lastShown = nil
-    loadStarted = nil
     guard let source else {
       publish(.unavailable)
       return
@@ -245,9 +224,8 @@ final class EnergyUsageMonitor {
   }
 
   /// A setting that changes rendering work was applied. The window restarts so the next
-  /// settled reading covers only the new setting, and since several such settings reload
-  /// the wallpaper, the samples that follow count as loading. A second change before the
-  /// first one settled keeps the original "before", so the comparison spans both.
+  /// settled reading covers only the new setting. A second change before the first one
+  /// settled keeps the original "before", so the comparison spans both.
   func settingChanged() {
     guard isActive else { return }
     if comparison?.after != nil || comparison == nil {
@@ -255,8 +233,6 @@ final class EnergyUsageMonitor {
         samples.count == Self.windowSamples && reading.isComparable
         ? EnergyUsageComparison(before: reading) : nil
     }
-    // The last sample is at most one interval before the change, on the samples' clock.
-    if let last = samples.last { loadStarted = last.sample.uptimeNanoseconds }
     samples.removeAll()
     reading = .measuring
     onChange?()
@@ -270,21 +246,7 @@ final class EnergyUsageMonitor {
       publish(.unavailable)
       return
     }
-    let shown = shownWallpapers()
-    if let lastShown, lastShown != shown {
-      loadStarted = sample.uptimeNanoseconds
-      // The comparison was about a setting, not about another wallpaper.
-      if comparison != nil {
-        comparison = nil
-        onChange?()
-      }
-    }
-    lastShown = shown
-    let loading = loadStarted.map {
-      sample.uptimeNanoseconds < $0 + EnergyUsageReading.loadingNanoseconds
-    } ?? false
-    samples.append(
-      Recorded(sample: sample, nativeVideo: nativeVideoPlaying(), loading: loading))
+    samples.append(Recorded(sample: sample, nativeVideo: nativeVideoPlaying()))
     if samples.count > Self.windowSamples { samples.removeFirst(samples.count - Self.windowSamples) }
     guard let first = samples.first, samples.count > 1 else {
       publish(.measuring)
@@ -292,7 +254,6 @@ final class EnergyUsageMonitor {
     }
     var value = EnergyUsageReading.between(first.sample, sample)
     value.nativeVideo = samples.contains(where: \.nativeVideo)
-    value.loading = samples.contains(where: \.loading)
     if value.nativeVideo, comparison != nil {
       // The native video's own work is not counted, so the change can never be measured;
       // switching to the native player would otherwise read as a near-total saving.

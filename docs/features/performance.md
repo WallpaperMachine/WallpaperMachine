@@ -49,18 +49,13 @@ the kernel's resource-coalition accounting (`CoalitionEnergySource`,
   dropped, since switching a video to the native player would otherwise read
   as a near-total saving. A window that held a native-video sample stays
   flagged until it has aged out.
-- **Loading.** Loading a wallpaper costs far more for a few seconds than
-  playing it: on an M5 Pro a scene's first load drew 6–7 W for 2–4 s while
-  its shaders compiled (10–22 J, most of it in `MTLCompilerService`), and a
-  load with every cache warm about 1.5 J. A sample taken within 8 s
-  (`EnergyUsageReading.loadingNanoseconds`) of seeing a display's wallpaper
-  change, or of a rendering setting change, which may reload it, is flagged;
-  a reading whose window holds one carries `loading`, the row reads
-  **Includes wallpaper loading** with a note, and there is no grade, battery
-  share or comparison. The monitor learns what each display shows from
-  `monitorInformationSnapshot` once per sample, so switches from the menu bar,
-  links, playlists and automations count too. A switch drops a comparison in
-  progress, since the after figure would describe another wallpaper.
+- **Loading.** The row's note says that right after a wallpaper is applied the
+  figures include loading it. On an M5 Pro a scene's first load drew 6–7 W for
+  2–4 s while its shaders compiled (10–22 J, most of it in `MTLCompilerService`)
+  and a load with every cache warm about 1.5 J, so for a few seconds the
+  figures and grade describe the load, not the wallpaper. The readout does not
+  detect switches: it samples only while Settings is open, so a switch made
+  from another page has already started when it begins.
 - **How GPU energy is shared out.** The kernel splits the whole GPU's energy
   between coalitions by GPU time. When other apps keep the GPU busy, this app's
   frames run at their clock and share the GPU for longer, so the figure charged
@@ -87,12 +82,11 @@ the kernel's resource-coalition accounting (`CoalitionEnergySource`,
   scale, battery mode and quality, video backend, scene renderer and the scene
   and experimental switches) calls `EnergyUsageMonitor.settingChanged()` once
   the engine has accepted it. The window restarts, the row reads **Measuring…**
-  with the last settled figure as **Before it**, and once four samples under
-  the new setting form a window that is neither contended nor loading (about
-  14 s after the change) it reads **Before your change: … Now: … (−N%)**. A
-  second change before the first settled keeps the original "before". Without
-  a settled figure at the moment of the change there is no comparison. Leaving
-  Settings or switching wallpaper drops it.
+  with the last settled figure as **Before it**, and once four uncontended
+  samples under the new setting exist it reads **Before your change: … Now: …
+  (−N%)**. A second change before the first settled keeps the original
+  "before". Without a settled, uncontended figure at the moment of the change
+  there is no comparison. Leaving Settings drops it.
 - **Cost.** One sample is about 3 ms of kernel calls (every coalition on the
   Mac is read for the contention check), taken off the main thread. Sampling
   runs only while the panel window is visible with Settings open; otherwise no
