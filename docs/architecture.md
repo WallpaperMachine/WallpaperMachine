@@ -242,6 +242,10 @@ Swift keeps the *system* wallpaper consistent with that window:
   display sleep pauses (`setPresentationSuspended`) or stops and frees renderer memory
   (`setPresentationUnloaded`) per `PlaybackPreferences.displaySleepAction`; session lock, an active
   pause rule, or other-app audio set to pause suspend; an active stop rule unloads.
+  The lock state comes from `CGSessionCopyCurrentDictionary`, a synchronous window-server round
+  trip, and the policy evaluates after every snapshot the engine applies, so it asks only at start,
+  on `com.apple.screenIsLocked`/`Unlocked`, on display wake and on a user switch, and at every
+  evaluation while the session counts as locked, so a missed unlock cannot keep it suspended.
   `AppRuleMonitor` and `OtherAudioMonitor` feed those conditions, and wallpaper audio is suppressed
   separately (`setAudioSuppressed`) for a mute rule or other-app audio set to mute. Occlusion stays
   per display via `setDisplayPresentationSuspended`, so one covered screen stops only its own

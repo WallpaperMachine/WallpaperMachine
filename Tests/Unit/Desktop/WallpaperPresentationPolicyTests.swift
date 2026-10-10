@@ -12,6 +12,8 @@ private final class PolicyProbe {
         WallpaperSurfaceVisibility(displayID: 1, isVisible: true)
     ]
     var sessionLocked = false
+    /// Window-server round trips spent asking for `sessionLocked`.
+    var lockReads = 0
     /// Displays whose working area other windows cover.
     var covered: Set<UInt32> = []
     var coveredAction: DesktopCoveredAction = .pause
@@ -47,7 +49,10 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
             lockCenter: lockCenter,
             windowCenter: windowCenter,
             surfaces: { probe.surfaces },
-            isSessionLocked: { probe.sessionLocked },
+            isSessionLocked: {
+                probe.lockReads += 1
+                return probe.sessionLocked
+            },
             desktopCoveredAction: { probe.coveredAction },
             coveredDisplays: { probe.covered },
             screenLayout: { probe.screenLayout },
@@ -90,6 +95,90 @@ final class WallpaperPresentationPolicyTests: XCTestCase {
         probe.sessionLocked = true
         lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
         XCTAssertEqual(probe.applied, [true], "The lock screen hides the desktop even when its windows report visible")
+    }
+
+    /// Asking is a window-server round trip, and the app evaluates after every snapshot
+    /// the engine applies: dragging a property slider must not ask each time.
+    func testTheLockStateIsAskedOnlyWhenItCanHaveChanged() {
+        let probe = PolicyProbe()
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+        let readsAtStart = probe.lockReads
+
+        for _ in 0..<100 { policy.evaluate() }
+        windowCenter.post(name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        XCTAssertEqual(probe.lockReads, readsAtStart, "snapshots and occlusion changes do not lock the session")
+
+        probe.sessionLocked = true
+        lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        probe.sessionLocked = false
+        lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        XCTAssertEqual(probe.applied, [true, false])
+        let readsAfterUnlock = probe.lockReads
+        for _ in 0..<100 { policy.evaluate() }
+        XCTAssertEqual(probe.lockReads, readsAfterUnlock, "an unlocked session is not asked again")
+    }
+
+    func testASessionLockedBeforeStartIsSuspendedFromTheStart() {
+        let probe = PolicyProbe()
+        probe.sessionLocked = true
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+        XCTAssertEqual(probe.applied, [true], "a lock that posted before start() is still a lock")
+
+        probe.sessionLocked = false
+        lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        XCTAssertEqual(probe.applied, [true, false])
+    }
+
+    /// A lock taken as the displays went to sleep may have posted nothing this process saw.
+    func testWakingDisplaysAskForTheLockStateAgain() {
+        let probe = PolicyProbe()
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+
+        workspaceCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        probe.sessionLocked = true
+        workspaceCenter.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertEqual(probe.applied, [true], "the lock screen after wake keeps the wallpaper suspended")
+        XCTAssertTrue(policy.isSuspended)
+
+        probe.sessionLocked = false
+        lockCenter.post(name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        XCTAssertEqual(probe.applied, [true, false])
+    }
+
+    func testSwitchingUsersAsksForTheLockStateAgain() {
+        let probe = PolicyProbe()
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+
+        probe.sessionLocked = true
+        workspaceCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        XCTAssertEqual(probe.applied, [true], "a session switched away from is locked behind the login window")
+
+        probe.sessionLocked = false
+        workspaceCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        XCTAssertEqual(probe.applied, [true, false], "switching back resumes")
+    }
+
+    /// While the session counts as locked every evaluation asks again, so an unlock this
+    /// process never heard about cannot leave the wallpaper suspended.
+    func testAMissedUnlockClearsAtTheNextEvaluation() {
+        let probe = PolicyProbe()
+        let policy = makePolicy(probe)
+        policy.start()
+        defer { policy.stop() }
+
+        probe.sessionLocked = true
+        lockCenter.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        probe.sessionLocked = false
+        policy.evaluate()
+        XCTAssertEqual(probe.applied, [true, false])
     }
 
     func testFullOcclusionSuspendsOnlyAfterTheSettleDelay() async throws {
