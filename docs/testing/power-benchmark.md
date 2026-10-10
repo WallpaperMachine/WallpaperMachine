@@ -230,7 +230,10 @@ Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
   0.9–3.8 J and 0.9–1.9 s of app CPU. WebContent spent 398 of 459 busy
   samples in the pushed render. Screen changes that leave the displays and
   working areas as they were now do none of this; see
-  [renderer.md](renderer.md#regression-areas-that-must-stay-covered).
+  [renderer.md](renderer.md#regression-areas-that-must-stay-covered). Three
+  ramps after the change, with the panel open, the app drew 56–74 ms CPU per
+  second against a 71 ms quiet median, the panel's WebContent did not rise,
+  and the only display refresh was the first one after launch.
 
 ## WindowServer's share
 
