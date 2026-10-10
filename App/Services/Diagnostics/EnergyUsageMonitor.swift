@@ -60,13 +60,17 @@ struct EnergyUsageReading: Equatable {
   var cpuMilliwatts = 0.0
   var gpuMilliwatts = 0.0
   var gpuContended = false
+  /// A video was playing through macOS's native player during the window. The media
+  /// engine decodes it and WindowServer draws it, and macOS charges neither to any of
+  /// this app's coalitions, so the figure leaves most of that video's cost out.
+  var nativeVideo = false
   /// Length of the window the means cover.
   var seconds = 0.0
 
   var totalMilliwatts: Double { cpuMilliwatts + gpuMilliwatts }
-  /// A ready figure the GPU contention flag does not qualify, so it can be graded
-  /// and compared.
-  var isComparable: Bool { status == .ready && !gpuContended }
+  /// A ready figure that neither GPU contention nor native video qualifies, so it can
+  /// be graded and compared.
+  var isComparable: Bool { status == .ready && !gpuContended && !nativeVideo }
 
   static let measuring = EnergyUsageReading(status: .measuring)
   static let unavailable = EnergyUsageReading(status: .unavailable)
@@ -109,6 +113,7 @@ struct EnergyUsageReading: Equatable {
       "cpuMilliwatts": cpuMilliwatts,
       "gpuMilliwatts": gpuMilliwatts,
       "gpuContended": gpuContended,
+      "nativeVideo": nativeVideo,
       "seconds": seconds,
     ]
   }
@@ -138,16 +143,24 @@ final class EnergyUsageMonitor {
 
   /// Called on the main actor whenever `reading` or `comparison` changes.
   var onChange: (@MainActor () -> Void)?
+  /// Whether a video is playing through macOS's native player now. Asked once per
+  /// sample; a reading whose window holds such a sample is flagged `nativeVideo`.
+  var nativeVideoPlaying: @MainActor () -> Bool = { false }
   private(set) var reading = EnergyUsageReading.measuring
   private(set) var comparison: EnergyUsageComparison?
   var isActive: Bool { task != nil }
+
+  private struct Recorded {
+    var sample: EnergyUsageSample
+    var nativeVideo: Bool
+  }
 
   private let source: EnergyUsageSource?
   private let interval: Duration
   private let batteryWattHours: @MainActor () -> Double?
   /// Read once per activation; a battery's full charge moves over months, not minutes.
   private var batteryCapacity: Double?
-  private var samples: [EnergyUsageSample] = []
+  private var samples: [Recorded] = []
   private var task: Task<Void, Never>?
 
   init(
@@ -233,13 +246,22 @@ final class EnergyUsageMonitor {
       publish(.unavailable)
       return
     }
-    samples.append(sample)
+    samples.append(Recorded(sample: sample, nativeVideo: nativeVideoPlaying()))
     if samples.count > Self.windowSamples { samples.removeFirst(samples.count - Self.windowSamples) }
     guard let first = samples.first, samples.count > 1 else {
       publish(.measuring)
       return
     }
-    let value = EnergyUsageReading.between(first, sample)
+    var value = EnergyUsageReading.between(first.sample, sample)
+    value.nativeVideo = samples.contains(where: \.nativeVideo)
+    if value.nativeVideo, comparison != nil {
+      // The native video's own work is not counted, so the change can never be measured;
+      // switching to the native player would otherwise read as a near-total saving.
+      comparison = nil
+      reading = value
+      onChange?()
+      return
+    }
     if var pending = comparison, pending.after == nil, samples.count == Self.windowSamples,
       value.isComparable
     {

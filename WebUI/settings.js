@@ -223,8 +223,12 @@ function energyControl(escapeHTML) {
   const comparison = note('energy-comparison', comparisonNote(reading.comparison), 'settings-energy-comparison');
   if (reading.status !== 'ready') return `${status(t('Measuring…'))}${comparison}`;
   const figures = `<dl class="settings-energy-breakdown"><div><dt>${escapeHTML(t('CPU'))}</dt><dd>${escapeHTML(milliwatts(reading.cpuMilliwatts))}</dd></div><div><dt>${escapeHTML(t('GPU'))}</dt><dd>${escapeHTML(milliwatts(reading.gpuMilliwatts))}</dd></div></dl>`;
+  // Native video is decoded and drawn by macOS outside this app's accounting, so the
+  // figures are partial and are neither graded nor compared.
+  const contention = reading.gpuContended ? note('energy-contention', t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.')) : '';
+  if (reading.nativeVideo) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('Native video not counted'))}${figures}</div>${note('energy-native-video', t('macOS decodes and draws videos played with Native video and charges none of that to this app, so these figures leave most of it out. The grade and any comparison are off while one plays.'))}${contention}${comparison}`;
   // A contended window has no grade: its GPU figure includes other apps' clock.
-  if (reading.gpuContended) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('GPU shared with other apps'))}${figures}</div>${note('energy-contention', t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.'))}${comparison}`;
+  if (reading.gpuContended) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('GPU shared with other apps'))}${figures}</div>${contention}${comparison}`;
   const total = Number(reading.cpuMilliwatts) + Number(reading.gpuMilliwatts);
   const level = energyLevelLabel(reading.level);
   return `<div class="settings-energy-overview" data-key="energy-overview"><div class="settings-energy-total"><span class="settings-energy-power">${escapeHTML(milliwatts(total))}</span>${level ? `<span class="settings-energy-level" data-level="${escapeHTML(reading.level)}">${escapeHTML(level)}</span>` : ''}</div>${figures}</div>${note('energy-battery', batteryShare(reading.batteryPercentPerHour))}${comparison}`;
@@ -447,7 +451,7 @@ function draw(view) {
     row('energy-use', t('This app, last few seconds'), energyControl(e), '', 'settings-readout settings-energy')
     + disclosure('energy-method', t('How it’s measured'), paragraphs(
       t('macOS shares GPU energy between apps by GPU time.'),
-      t('Includes the control panel, video decoding and the lock screen. Screen compositing, memory and the display itself are not included.'),
+      t('Includes the control panel, the lock screen and the CPU side of video decoding. Screen compositing, the hardware video decoder, videos played with Native video, memory and the display itself are not included.'),
       t('Low: below 0.5 W. Medium: 0.5 W to below 2 W. High: 2 W or more.'),
       t('Change a quality setting below to compare energy use.')), 'settings-energy-help'));
   const playback = group('performance-playback', t('Playback'),

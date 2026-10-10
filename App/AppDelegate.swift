@@ -546,8 +546,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     /// Nil whenever the app's energy is not one wallpaper's: playback paused or suspended
     /// (display sleep, lock, app rules, Low Power Mode, heat, a Focus filter, other audio,
     /// battery pause), the panel on screen
-    /// with its WebKit work, or a download running SteamCMD inside the app's coalition or
-    /// fetching a pixiv original in the app itself.
+    /// with its WebKit work, a download running SteamCMD inside the app's coalition or
+    /// fetching a pixiv original in the app itself, or a video on the native player,
+    /// whose decoding and drawing macOS charges to no coalition of this app.
     private func wallpaperEnergyContext() -> WallpaperEnergyContext? {
         guard let store, let policy = presentationPolicy, !shutdownInProgress,
               previewWindow == nil,
@@ -573,6 +574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 (display: $0.displayId, wallpaper: $0.wallpaperId)
             },
             suspendedDisplays: policy.suspendedDisplayIDs,
+            nativeVideoDisplays: nativeVideoHost?.activeDisplayIDs ?? [],
             frameRateCap: cap, renderScale: settings.renderScale,
             resolveDisplay: { liveDisplays[$0] })
     }

@@ -25,6 +25,17 @@ move the oldest entries verbatim into
 (or a new dated archive file) first, and promote anything durable before it
 goes. Trimming is allowed; editing an entry's recorded result is not.
 
+## 2026-10-10 — Energy readout: native video left out, macOS 27 ABI rechecked
+
+- Change: readings while a video is on the native player carry nativeVideo (no grade, battery share or comparison); the per-wallpaper recorder skips intervals with a presenting native-video display; ratings carry version 2 and a video's unversioned rating is hidden and replaced, not averaged.
+- Evidence for the fix: a stored rating of 0.18 mW over 4.4 h for a video wallpaper; GPU billed_to_me fields are 0 in all 818 coalitions; decoding 720p H.264 at ~1,700 fps charged ~2 W CPU and 0 GPU.
+- ABI on M5 Pro, macOS 27.0.1: struct coalition_resource_usage is 50 fields (5 appended); indices 8/11/41 unchanged. Saturating Metal load: coalition 16.85 W, all coalitions 17.56 W, IOReport GPU Energy 17.94 W.
+- Unchanged: the 0.25 contention threshold. A 60 fps probe read 91 mW alone and 162 mW at 21 % other GPU time (below the flag); documented, not retuned.
+- Tests: python3 scripts/test.py --only EnergyUsageMonitorTests --only WallpaperEnergyRatingsTests --only WebPanelEnergyUsageTests (23 passed); new GPU-counter guard failed once on a cold test host (0 mW after 0.8 s) and now waits up to 5 s for a post, then passed 4 runs.
+- Full gate: python3 scripts/test.py — 1319 passed, 0 failed, 14 skipped (opt-in media and network layers).
+- Page: node --check WebUI/settings.js; energyControl rendered in Node for native, native+contended, contended and normal readings. The panel itself was not opened (no desktop authorization).
+- Not verified: a native-video wallpaper end to end in the running app, and the hardware decoder's own energy (needs powermetrics/root).
+
 ## 2026-10-09 — Keep web wallpapers animating through Show Desktop pointer moves
 
 - Symptom: a web wallpaper (3747222633) froze briefly on every hot-corner Show Desktop; scene wallpapers did not. Unified logs showed no host suspension, WebKit activity-state change or poster capture at those moments.
@@ -124,15 +135,3 @@ goes. Trimming is allowed; editing an entry's recorded result is not.
 - Impeccable detector returned `[]` on the three changed automation/settings UI sources. Static reviewer disposition `ship` for the three listed fixes, all resolved; rendered appearance and VoiceOver remain unchecked.
 - `git diff --check -- . ':!App/Bridge/Generated'` passed; generator-owned bindings from the preceding preview batch retain generator whitespace. `CLAUDE.md` remains a relative symlink to `AGENTS.md`.
 - No live Focus/appearance transitions, Siri/Shortcuts, desktop interaction, screenshots, permission prompts, Release rebuild, installation, commit or push. Existing corpus/runtime skips remain skipped, not passing asset evidence.
-
-## 2026-10-08 — Independent live wallpaper preview
-
-- Added an explicit preview window for installed Scene, Video and Web wallpapers. Read-only draft export, independent playback, mute by default, reload, scoped pointer input and close/replacement cleanup leave desktop assignments and history unchanged.
-- python3 scripts/build.py --renderer-only: exit 0; regenerated UniFFI bindings for wallpaper_preview. project.yml and XcodeGen include the existing renderer C header for the app and hosted tests; no vendored C++ behavior changed.
-- python3 scripts/test.py: final exit 0; all 268 Python tests passed; native tests 1242 passed, 0 failed, 14 skipped of 1256. An earlier gate stopped at CodeSign because com.apple.FinderInfo returned on disposable Debug output; only that attribute was removed before rerunning.
-- The 14 native skips remain opt-in real-media, live Steam installation and live Workshop network cases. Preview regressions use isolated fixtures/offscreen views and cover drafts, path bounds, storage isolation, mute, cancellation, generation fences, readiness timeout, pointer mapping and the inspector action.
-- WallpaperPreviewLayoutTests checks the 480-point NSView content in English, Chinese and Japanese without an NSWindow; controls fit and errors retain a full-width selectable row and complete tooltip. Scoped static UI review findings were resolved; the WebUI mechanical detector returned no findings.
-- python3 scripts/check_rust.py: exit 0 for core, bridge, core-integration and shader groups. Six desktop/corpus cases were explicitly excluded and three asset-dependent shader checks reported skips; those surfaces remain unverified.
-- python3 scripts/check_renderer.py: exit 0 with GPU and realtime checks enabled. All 12 generated pooled/isolated pixel pairs matched with no diagnostics; 8 projects completed two reload cycles. Four local-asset cases were skipped (2 text, 1 video, 1 native-Metal local-project case).
-- Localization checks and local documentation link checks passed. git diff --check passed excluding raw generator-owned UniFFI output, whose existing generator emits trailing whitespace; bindings were not edited manually.
-- Actual preview-window presentation, Scene/Video swapchain first frames in that window, OS visibility transitions and VoiceOver were not exercised. Web FPS is a cooperative host-property request; preview audio response and media integration are unavailable. No Release app, installation or desktop run was requested or delivered.

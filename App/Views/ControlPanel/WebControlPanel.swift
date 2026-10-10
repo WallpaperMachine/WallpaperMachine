@@ -214,6 +214,10 @@ final class WebPanelController: NSObject, WKNavigationDelegate {
     super.init()
     self.libraryMetrics.onChange = { [weak self] in self?.scheduleUpdate() }
     self.energyUsage.onChange = { [weak self] in self?.pushEnergyUsage() }
+    // What the engine routed to the native player: the report Settings shows as In use now.
+    self.energyUsage.nativeVideoPlaying = { [weak self] in
+      self?.store.settingsSnapshot.videoBackends.contains { $0.backend == "native" } ?? false
+    }
     self.backup.onChange = { [weak self] in self?.scheduleUpdate() }
     self.compatibility.onChange = { [weak self] in self?.scheduleUpdate() }
   }

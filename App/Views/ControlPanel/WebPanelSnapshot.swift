@@ -279,7 +279,8 @@ extension WebPanelController {
         "size": metrics[entry.id]?.size as Any? ?? null,
         "addedAt": metrics[entry.id]?.addedAt.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,
         // Measured in the background while the wallpaper played alone; null until rated.
-        "energy": store.wallpaperEnergyRatings?.snapshot(for: entry.id) as Any? ?? null,
+        "energy": store.wallpaperEnergyRatings?.snapshot(for: entry.id, kind: entry.kind) as Any?
+          ?? null,
         // When the Workshop has a newer version: when its author last changed it.
         "updateAvailable": updates[entry.id] != nil,
         "updatedAt": updates[entry.id]?.timeUpdated.map { $0.timeIntervalSince1970 * 1000 } as Any? ?? null,

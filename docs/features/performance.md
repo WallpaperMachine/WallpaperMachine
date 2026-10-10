@@ -32,12 +32,23 @@ the kernel's resource-coalition accounting (`CoalitionEnergySource`,
 
 - **What is counted.** The app's own coalition, which macOS also charges for
   the XPC services the app starts: the panel's WebKit processes, the video
-  decoder service and the audio helper. The lock-screen extension runs in a
-  coalition of its own and is added when a process from this bundle's
+  decoder service's CPU work and the audio helper. The lock-screen extension
+  runs in a coalition of its own and is added when a process from this bundle's
   `Contents/Extensions` is running.
 - **What is not.** WindowServer compositing the wallpaper (measured at about
-  0.2 W of GPU beside a 0.59 W scene), DRAM and the display panel. macOS
-  charges none of them to the app.
+  0.2 W of GPU beside a 0.59 W scene), the hardware video decoder, DRAM and the
+  display panel. macOS charges none of them to any app: decoding 720p H.264 at
+  1,700 frames a second added about 2 W of CPU to the decoding coalition and
+  nothing to its GPU energy or to the whole GPU's.
+- **Native video.** A video on the native player (**Native video preferred**)
+  is decoded by the media engine and drawn by WindowServer, so almost none of
+  its cost reaches the app: a video wallpaper rated that way read 0.18 mW. While
+  the engine's **In use now** report lists a `native` video, readings carry
+  `nativeVideo`, the row reads **Native video not counted** with a note, and
+  there is no grade, battery share or comparison; a comparison in progress is
+  dropped, since switching a video to the native player would otherwise read
+  as a near-total saving. A window that held a native-video sample stays
+  flagged until it has aged out.
 - **How GPU energy is shared out.** The kernel splits the whole GPU's energy
   between coalitions by GPU time. When other apps keep the GPU busy, this app's
   frames run at their clock and share the GPU for longer, so the figure charged
@@ -46,7 +57,9 @@ the kernel's resource-coalition accounting (`CoalitionEnergySource`,
   coalitions together occupy 25 % or more of the window
   (`EnergyUsageReading.contentionThreshold`), the readout says the GPU figure
   reads high and gives no grade, battery share or comparison until the GPU is
-  free (`EnergyUsageReading.isComparable`).
+  free (`EnergyUsageReading.isComparable`). Below the threshold a figure can
+  still read high: a 60 fps probe drawing 91 mW alone read 162 mW while other
+  coalitions kept the GPU busy for 21 % of the window.
 - **Grade.** `EnergyLevel` in Swift owns the thresholds: **Low** under 0.5 W,
   **Medium** under 2 W, **High** at 2 W or more, of CPU plus GPU. A MacBook Air
   doing light work draws roughly 3–5 W in total, so these read as about a tenth
@@ -78,8 +91,9 @@ the kernel's resource-coalition accounting (`CoalitionEnergySource`,
   `afterMilliwatts`) when they apply.
 - **Unavailable.** The interfaces are private libsystem exports resolved with
   `dlsym`. If a macOS release removes one, the row reads **Unavailable on this
-  Mac**. `EnergyUsageMonitorTests` checks that CPU work in the test host moves
-  the CPU counter, which catches a moved struct field.
+  Mac**. `EnergyUsageMonitorTests` checks that CPU work and Metal compute work
+  in the test host move the CPU and GPU counters, which catches a moved struct
+  field.
 
 The accounting was checked against `powermetrics` and IOReport: the sum over
 all coalitions matched the whole GPU within 5 % at idle and 6–9 % under load.
@@ -99,8 +113,10 @@ app delegate and reachable from the panel as `BridgeStore.wallpaperEnergyRatings
   delegate for a `WallpaperEnergyContext`. There is none, and no sample is taken,
   unless playback is playing, presentation is running (not display sleep, lock,
   app rule or other-audio pause), no download is running SteamCMD, the panel
-  window is not on screen, and exactly one wallpaper is assigned across the
-  displays that are not suspended by occlusion. Stable `primary` and `identity:`
+  window is not on screen, exactly one wallpaper is assigned across the
+  displays that are not suspended by occlusion, and none of those displays
+  plays a video on the native player (`NativeVideoWallpaperHost.activeDisplayIDs`),
+  whose cost macOS does not charge to the app. Stable `primary` and `identity:`
   selectors are resolved to connected physical display IDs first; an unknown
   mapping prevents attribution for that interval. Energy is charged to the whole
   app, so two different wallpapers cannot be told apart. An interval is
@@ -116,7 +132,11 @@ app delegate and reachable from the panel as `BridgeStore.wallpaperEnergyRatings
   rating is shown after two minutes of credited time.
 - **Storage.** `<support>/EnergyRatings.json`, keyed by wallpaper id. It is
   saved when a rating first appears or changes grade, at most every ten minutes
-  otherwise, and on quit. An unreadable file is logged and starts empty.
+  otherwise, and on quit. An unreadable file is logged and starts empty. Each
+  rating carries `version` (`WallpaperEnergyRating.currentVersion`); one from
+  another version is replaced by the next measurement, not averaged with it.
+  Ratings saved without a version may have credited native video playback, so
+  a video wallpaper's is not shown.
 - **Cost.** One coalition sample (about 3 ms of kernel calls) every 30 seconds
   while a single wallpaper plays; only a state check otherwise.
 - **What it is not.** The figure includes everything in the app's coalition at
