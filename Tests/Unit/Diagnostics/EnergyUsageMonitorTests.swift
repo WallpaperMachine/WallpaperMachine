@@ -123,6 +123,8 @@ final class EnergyUsageMonitorTests: XCTestCase {
     XCTAssertNil(monitor.comparison, "two samples are not a settled window to compare with")
 
     for _ in 0..<4 { step(1_000) }
+    XCTAssertTrue(monitor.reading.loading, "the change may have reloaded the wallpaper")
+    for _ in 0..<3 { step(1_000) }
     monitor.settingChanged()
     XCTAssertEqual(monitor.reading.status, .measuring, "the old figure is not the new setting's")
     XCTAssertEqual(monitor.comparison?.before.totalMilliwatts ?? 0, 1_000, accuracy: 0.001)
@@ -135,11 +137,12 @@ final class EnergyUsageMonitorTests: XCTestCase {
       monitor.comparison?.before.totalMilliwatts ?? 0, 1_000, accuracy: 0.001,
       "a second change before the first settled compares with the state before both")
 
-    for _ in 0..<3 { step(250) }
+    for _ in 0..<4 { step(250) }
+    XCTAssertNil(monitor.comparison?.after, "a full window that still holds the reload")
     step(250, busy: 6 * second)
+    step(250)
+    step(250)
     XCTAssertNil(monitor.comparison?.after, "a full window beside a busy GPU is not the answer")
-    for _ in 0..<2 { step(250) }
-    XCTAssertNil(monitor.comparison?.after, "the busy interval is still inside the window")
     step(250)
     XCTAssertEqual(monitor.comparison?.after?.totalMilliwatts ?? 0, 250, accuracy: 0.001)
 
@@ -204,7 +207,60 @@ final class EnergyUsageMonitorTests: XCTestCase {
     XCTAssertTrue(monitor.reading.nativeVideo, "the window still holds a native-video sample")
     step(800)
     XCTAssertFalse(monitor.reading.nativeVideo)
+    step(800)
+    XCTAssertEqual(
+      monitor.snapshot["level"] as? String, "medium", "and the reload after the change has passed")
+  }
+
+  func testReadingsAfterAWallpaperSwitchAreShownAsLoadingUntilItHasPassed() {
+    let monitor = EnergyUsageMonitor(source: FixedSource(), interval: .seconds(3600))
+    monitor.setActive(true)
+    defer { monitor.setActive(false) }
+    var shown = ["1": "a"]
+    monitor.shownWallpapers = { shown }
+    var time: UInt64 = 0
+    var energy: UInt64 = 0
+    func step(_ milliwatts: UInt64) {
+      time += 2
+      energy += milliwatts * 2_000_000
+      monitor.record(sample(at: time, own: [1: (energy, 0)]))
+    }
+    monitor.record(sample(at: 0, own: [1: (0, 0)]))
+    for _ in 0..<3 { step(500) }
     XCTAssertEqual(monitor.snapshot["level"] as? String, "medium")
+
+    // Compiling the new wallpaper's shaders drew 6–7 W on an M5 Pro.
+    shown = ["1": "b"]
+    step(6_000)
+    XCTAssertEqual(monitor.reading.status, .ready, "the figures are still shown")
+    XCTAssertTrue(monitor.reading.loading)
+    XCTAssertEqual(monitor.snapshot["loading"] as? Bool, true)
+    XCTAssertNil(monitor.snapshot["level"], "a load is not what the wallpaper costs to play")
+
+    // Samples count as loading for 8 s from the one that saw the switch.
+    for _ in 0..<6 { step(500) }
+    XCTAssertTrue(monitor.reading.loading, "the window still holds a loading sample")
+    step(500)
+    XCTAssertFalse(monitor.reading.loading)
+    XCTAssertEqual(monitor.snapshot["level"] as? String, "medium")
+  }
+
+  func testAWallpaperSwitchDropsAComparisonInProgress() {
+    let monitor = EnergyUsageMonitor(source: FixedSource(), interval: .seconds(3600))
+    monitor.setActive(true)
+    defer { monitor.setActive(false) }
+    var shown = ["1": "a"]
+    monitor.shownWallpapers = { shown }
+    monitor.record(sample(at: 0, own: [1: (0, 0)]))
+    for seconds in [2, 4, 6] as [UInt64] {
+      monitor.record(sample(at: seconds, own: [1: (seconds * 1_000_000_000, 0)]))
+    }
+    monitor.settingChanged()
+    XCTAssertNotNil(monitor.comparison)
+
+    shown = ["1": "b"]
+    monitor.record(sample(at: 8, own: [1: (8_000_000_000, 0)]))
+    XCTAssertNil(monitor.comparison, "another wallpaper is not the effect of the setting")
   }
 
   func testEnergyLevelBoundaries() {

@@ -197,6 +197,19 @@ Rechecked 2026-10-10 on an M5 Pro, macOS 27.0.1, without root:
   (about 15 % of all CPU energy) but nets to about 1 % for this app.
 - Hardware video decoding is charged to no one: see
   [features/performance.md](../features/performance.md#energy-use).
+- What a switch costs, per second per process, on the primary display while
+  windows covered it (so no frames were drawn): Yae Miko's first load
+  (3013702957), whose shader cache folder did not exist yet, compiled 42
+  programs in 1.1 s at 6.8 W, then `MTLCompilerService` drew 4.5–6 W for
+  2.5 s, 20 J in all. Lucy (3521337568) hit all 111 cached programs and the
+  Vulkan pipeline cache, yet `MTLCompilerService` still drew 5.3 and 4.8 W for
+  2 s: the pipeline cache keeps no Metal binaries, so after an app launch
+  Metal compiles again unless its own cache still holds them. Yae Miko again
+  in the same process cost 1.4 J, a video 3 J and The Winter Nothingness
+  (3796026374), every cache warm, 5.8 J. `WallpaperAgent` drew about 0.5 J
+  after each desktop picture update. Separately, bursts of screen-parameter
+  changes (`display refresh: N screen changes … merged` in the log) cost the
+  app and the panel's WebContent about 12 J over 3 s each.
 
 ## WindowServer's share
 

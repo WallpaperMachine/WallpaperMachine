@@ -178,6 +178,8 @@ final class WallpaperEnergyRecorder {
   private let interval: Duration
   private let context: @MainActor () -> WallpaperEnergyContext?
   private var previous: (sample: EnergyUsageSample, context: WallpaperEnergyContext)?
+  /// Uptime of the last presentation change, on the samples' clock.
+  private var changedAt: UInt64?
   private var task: Task<Void, Never>?
 
   var isRunning: Bool { task != nil }
@@ -218,15 +220,22 @@ final class WallpaperEnergyRecorder {
     ratings.flush()
   }
 
-  /// Presentation changed; the interval in progress must not be credited to anyone.
-  func invalidate() {
+  /// Presentation changed; the interval in progress must not be credited to anyone, and
+  /// the next one starts only once a wallpaper that may be loading has had time to.
+  func invalidate(at uptime: UInt64 = DispatchTime.now().uptimeNanoseconds) {
     previous = nil
+    changedAt = uptime
   }
 
   /// Credits the interval since the previous sample when both ends agree. Nil means the
   /// counters could not be read.
   func record(_ sample: EnergyUsageSample?, context: WallpaperEnergyContext) {
     guard let sample else {
+      previous = nil
+      return
+    }
+    // Compiling shaders and decoding textures is what loading costs, not playing.
+    if let changedAt, sample.uptimeNanoseconds < changedAt + EnergyUsageReading.loadingNanoseconds {
       previous = nil
       return
     }

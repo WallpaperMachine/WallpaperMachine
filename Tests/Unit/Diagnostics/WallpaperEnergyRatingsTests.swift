@@ -176,7 +176,7 @@ final class WallpaperEnergyRatingsTests: XCTestCase {
     recorder.record(sample(at: 120, joules: 90), context: b)
     XCTAssertNil(ratings.entries["b"], "the interval straddled a wallpaper change")
 
-    recorder.invalidate()
+    recorder.invalidate(at: 150 * second)
     recorder.record(sample(at: 180, joules: 150), context: b)
     XCTAssertNil(ratings.entries["b"], "a pause inside the interval invalidated it")
 
@@ -190,5 +190,19 @@ final class WallpaperEnergyRatingsTests: XCTestCase {
     recorder.record(sample(at: 360, joules: 222, otherBusy: 30 * second), context: b)
     XCTAssertEqual(ratings.entries["b"]?.milliwatts ?? 0, 200, accuracy: 0.001)
     XCTAssertEqual(ratings.entries["a"]?.seconds ?? 0, 60, accuracy: 0.001)
+  }
+
+  func testRecorderLetsAWallpaperFinishLoadingBeforeAnIntervalStarts() {
+    let ratings = WallpaperEnergyRatings(file: file)
+    let recorder = WallpaperEnergyRecorder(source: nil, ratings: ratings) { nil }
+    let a = context("a")
+
+    recorder.invalidate(at: 0)
+    recorder.record(sample(at: 2, joules: 0), context: a)
+    recorder.record(sample(at: 32, joules: 30), context: a)
+    XCTAssertNil(ratings.entries["a"], "an interval starting 2 s after the switch holds the load")
+
+    recorder.record(sample(at: 62, joules: 45), context: a)
+    XCTAssertEqual(ratings.entries["a"]?.milliwatts ?? 0, 500, accuracy: 0.001)
   }
 }

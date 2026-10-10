@@ -223,12 +223,15 @@ function energyControl(escapeHTML) {
   const comparison = note('energy-comparison', comparisonNote(reading.comparison), 'settings-energy-comparison');
   if (reading.status !== 'ready') return `${status(t('Measuring…'))}${comparison}`;
   const figures = `<dl class="settings-energy-breakdown"><div><dt>${escapeHTML(t('CPU'))}</dt><dd>${escapeHTML(milliwatts(reading.cpuMilliwatts))}</dd></div><div><dt>${escapeHTML(t('GPU'))}</dt><dd>${escapeHTML(milliwatts(reading.gpuMilliwatts))}</dd></div></dl>`;
-  // Native video is decoded and drawn by macOS outside this app's accounting, so the
-  // figures are partial and are neither graded nor compared.
-  const contention = reading.gpuContended ? note('energy-contention', t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.')) : '';
-  if (reading.nativeVideo) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('Native video not counted'))}${figures}</div>${note('energy-native-video', t('macOS decodes and draws videos played with Native video and charges none of that to this app, so these figures leave most of it out. The grade and any comparison are off while one plays.'))}${contention}${comparison}`;
-  // A contended window has no grade: its GPU figure includes other apps' clock.
-  if (reading.gpuContended) return `<div class="settings-energy-overview" data-key="energy-overview">${status(t('GPU shared with other apps'))}${figures}</div>${contention}${comparison}`;
+  // A qualified window has no grade. Native video is decoded and drawn by macOS outside
+  // this app's accounting; loading a wallpaper briefly costs far more than playing it;
+  // a contended GPU figure includes other apps' clock.
+  const flags = [
+    [reading.nativeVideo, t('Native video not counted'), 'energy-native-video', t('macOS decodes and draws videos played with Native video and charges none of that to this app, so these figures leave most of it out. The grade and any comparison are off while one plays.')],
+    [reading.loading, t('Includes wallpaper loading'), 'energy-loading', t('Loading a wallpaper after a switch or a setting change costs extra for a few seconds, and these figures include it. The grade and any comparison wait until it has passed.')],
+    [reading.gpuContended, t('GPU shared with other apps'), 'energy-contention', t('Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.')],
+  ].filter(([on]) => on);
+  if (flags.length) return `<div class="settings-energy-overview" data-key="energy-overview">${status(flags[0][1])}${figures}</div>${flags.map(([, , key, text]) => note(key, text)).join('')}${comparison}`;
   const total = Number(reading.cpuMilliwatts) + Number(reading.gpuMilliwatts);
   const level = energyLevelLabel(reading.level);
   return `<div class="settings-energy-overview" data-key="energy-overview"><div class="settings-energy-total"><span class="settings-energy-power">${escapeHTML(milliwatts(total))}</span>${level ? `<span class="settings-energy-level" data-level="${escapeHTML(reading.level)}">${escapeHTML(level)}</span>` : ''}</div>${figures}</div>${note('energy-battery', batteryShare(reading.batteryPercentPerHour))}${comparison}`;

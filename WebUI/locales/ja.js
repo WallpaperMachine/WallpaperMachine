@@ -775,6 +775,8 @@ export default {
   'GPU shared with other apps': 'ほかのAppとGPUを共有中',
   'Native video not counted': 'ネイティブビデオは計測対象外',
   'macOS decodes and draws videos played with Native video and charges none of that to this app, so these figures leave most of it out. The grade and any comparison are off while one plays.': 'ネイティブビデオで再生するビデオはmacOSがデコードと描画を行い、その分はこのAppに計上されないため、これらの値にはその大部分が含まれません。再生中は評価と比較を行いません。',
+  'Includes wallpaper loading': '壁紙の読み込みを含む',
+  'Loading a wallpaper after a switch or a setting change costs extra for a few seconds, and these figures include it. The grade and any comparison wait until it has passed.': '壁紙の切り替えや設定の変更後、壁紙の読み込みには数秒間余分にエネルギーがかかり、これらの値にはその分が含まれます。読み込みが終わるまで、評価と比較は保留されます。',
   'Other apps are keeping the GPU busy, so the GPU figure reads higher than this app’s own share. The grade and any comparison wait until the GPU is free.': 'ほかのAppがGPUを使用しているため、GPUの値がこのApp自身の使用分より高く表示されています。GPUが空くまで、評価と比較は保留されます。',
   'Low energy use': 'エネルギー使用量：低',
   'Medium energy use': 'エネルギー使用量：中',
