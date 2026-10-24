@@ -12,6 +12,8 @@ enum SettingsSwitchKey: String, CaseIterable, Sendable {
   /// Different wallpaper for each desktop, on the display the Library applies wallpapers to: the
   /// same switch as that display's card in Settings › Displays and the toolbar's display menu.
   case desktopWallpapers
+  /// The What's New window after an update, the opposite of its Don't Show Again.
+  case showWhatsNewAfterUpdates
 }
 
 /// What the Settings views read and send beyond the typed values: the saved state of a switch, the
@@ -37,6 +39,7 @@ extension PanelController {
     case .sceneOnDemand: store.settingsSnapshot.sceneOnDemandEnabled
     case .sceneVideoPlaneSampling: store.settingsSnapshot.sceneVideoPlaneSamplingEnabled
     case .desktopWallpapers: automationState(for: targetDisplayID).mode == .spaces
+    case .showWhatsNewAfterUpdates: showsWhatsNewAfterUpdates
     }
   }
 
@@ -81,6 +84,7 @@ extension PanelController {
     case .sceneOnDemand: try await setSceneOnDemand(on)
     case .desktopWallpapers: try await setDesktopWallpapers(on, display: targetDisplayID)
     case .sceneVideoPlaneSampling: try await setSceneVideoPlaneSampling(on)
+    case .showWhatsNewAfterUpdates: try await setShowsWhatsNewAfterUpdates(on)
     }
   }
 }

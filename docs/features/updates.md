@@ -2,7 +2,8 @@
 
 The app updates itself from the repository's latest GitHub Release: it checks on
 its own, downloads and restart-installs only after the user confirms, and after an
-update shows that version's release notes once in a separate window. This page is
+update shows that version's release notes once in a separate window, which also
+shows the whole bundled history on request. This page is
 what the app does; what the Build workflow publishes for it to read (manifest,
 notes marker, signing, assets) is in
 [release](../release.md#what-the-in-app-updater-expects).
@@ -100,6 +101,11 @@ emphasis markers and inline-code backticks are removed, a trailing commit
 reference is dropped and the **Full changelog** compare link is skipped. The
 release body is English only, so the lines are English; section titles the panel
 knows (**New**, **Fixed**, and so on) are translated.
+
+Below it, **Show What’s New after updates** switches the post-update window on or
+off (the window's **Don’t Show Again** turns it off; this switch is the way back,
+and **Reset all settings** turns it on again), and **Release history › Show** opens
+the [release history](#release-history).
 
 ## Downloading
 
@@ -199,10 +205,16 @@ does not change the interface language. Notes come from the bundled
 generation and translation are owned by
 [the release pipeline](../release.md#release-notes-and-the-changelog).
 
-**Don’t show this window after updates** saves immediately and suppresses all
-future automatic post-update windows; it does not disable update checks or hide
-the release notes in Settings → About. Closing the window, including Command-W,
-leaves WallpaperMachine running. Ordinary relaunches, fresh installs, downgrades
+When the bundled history has releases older than the ones announced, **Show
+Earlier Releases** adds them below, newest first, and scrolls to the first of them;
+**Hide Earlier Releases** takes them away again. A translation switch keeps
+whichever set is shown.
+
+**Don’t Show Again** saves immediately, closes the window and suppresses all future
+automatic post-update windows; it does not disable update checks, hide the release
+notes in Settings → About or hide the release history. Settings → About → **Show
+What’s New after updates** turns them back on. Closing the window, including
+Command-W, leaves WallpaperMachine running. Ordinary relaunches, fresh installs, downgrades
 and returning to an already announced version do not show the window.
 
 `WhatsNewStore` persists the highest announced version
@@ -222,3 +234,15 @@ An explicitly present Korean block must have notes even in older releases. A
 `## Unreleased`, a `##` line inside notes, a missing translation, a duplicate
 version or an unknown, repeated or misordered language heading fails the whole
 file and the window does not appear (publishing rejects that file first).
+
+### Release history
+
+Settings → About → **Release history › Show** opens the same window as **Release
+History**, listing every bundled release up to the installed version, newest first,
+with the same translation tabs and the installed version's banner. It has only
+**Close**: no **Don’t Show Again** and no earlier releases to add. Opening it records
+nothing, so it never consumes or replaces a pending post-update announcement, and it
+works whether or not the post-update window is suppressed. While a What's New window
+is already open, the history replaces its contents in place, keeping its size and
+position. `AppUpdateStore.showReleaseHistory` is the app's hook for the panel; a
+panel without it (tests) disables the button.

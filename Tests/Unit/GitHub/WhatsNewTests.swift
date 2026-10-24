@@ -32,20 +32,80 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
     }
 
-    func testCheckboxImmediatelySuppressesFutureVersionsAcrossStoreReloads() throws {
+    func testDontShowAgainClosesAndSuppressesFutureVersionsAcrossStoreReloads() throws {
         let history = try history()
         _ = store("1.0.0").announcement(history: history, existingUser: false)
         let current = store("1.1.0")
         let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        var closed = 0
+        let controller = WhatsNewViewController(
+            announcement: announcement, preferences: current, initialLanguage: .english, close: { closed += 1 })
+        _ = controller.view
+        try XCTUnwrap(controller.dontShowAgainButton).performClick(nil)
+        XCTAssertEqual(closed, 1)
+        XCTAssertTrue(store("2.0.0").isSuppressed)
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
+        XCTAssertNil(store("2.0.0").announcement(history: history, existingUser: true))
+        store("2.0.0").isSuppressed = false
+        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true), "Suppressed versions still advance the high-water mark")
+        XCTAssertNotNil(store("2.1.0").announcement(history: try AppReleaseHistory(markdown: entry("2.1.0")), existingUser: true),
+                        "Turning it back on announces the next update")
+    }
+
+    func testEarlierReleasesAreAddedOnRequestBelowTheAnnouncedOnes() throws {
+        let history = try history()
+        _ = store("1.1.0").announcement(history: history, existingUser: false)
+        let current = store("1.2.0")
+        let announcement = try XCTUnwrap(current.announcement(history: history, existingUser: true))
+        XCTAssertEqual(announcement.releases.map(\.version.display), ["1.2.0"])
+        XCTAssertEqual(announcement.earlierReleases.map(\.version.display), ["1.1.0", "1.0.0"],
+                       "Earlier means older than the announced releases, never a future one")
         let controller = WhatsNewViewController(
             announcement: announcement, preferences: current, initialLanguage: .english, close: {})
         _ = controller.view
-        controller.suppressionCheckbox.performClick(nil)
-        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true))
-        XCTAssertNil(store("2.0.0").announcement(history: history, existingUser: true))
-        controller.suppressionCheckbox.performClick(nil)
-        XCTAssertFalse(store("2.0.0").isSuppressed)
-        XCTAssertNil(store("1.2.0").announcement(history: history, existingUser: true), "Suppressed versions still advance the high-water mark")
+        let announced = controller.notesView.string
+        XCTAssertFalse(announced.contains("1.1.0"))
+        let earlier = try XCTUnwrap(controller.earlierReleasesButton)
+        earlier.performClick(nil)
+        let all = controller.notesView.string
+        XCTAssertTrue(all.hasPrefix(announced), "The announced releases stay first")
+        XCTAssertLessThan(try XCTUnwrap(all.range(of: "1.1.0")?.lowerBound), try XCTUnwrap(all.range(of: "1.0.0")?.lowerBound))
+        XCTAssertFalse(all.contains("2.0.0"))
+        select(.chinese, in: controller)
+        XCTAssertTrue(controller.notesView.string.contains("1.0.0"), "A translation switch keeps them")
+        select(.english, in: controller)
+        earlier.performClick(nil)
+        XCTAssertEqual(controller.notesView.string, announced)
+
+        let first = try XCTUnwrap(WhatsNewStore(defaults: try TemporaryDefaults.make(for: self).defaults, currentVersion: "1.0.0")
+            .announcement(history: history, existingUser: true))
+        let none = WhatsNewViewController(announcement: first, preferences: current, initialLanguage: .english, close: {})
+        _ = none.view
+        XCTAssertNil(none.earlierReleasesButton, "Nothing older, nothing to add")
+    }
+
+    func testReleaseHistoryListsEveryReachedReleaseAndRecordsNothing() throws {
+        let history = try history()
+        _ = store("1.0.0").announcement(history: history, existingUser: false)
+        let current = store("1.2.0")
+        let full = try XCTUnwrap(current.releaseHistory(history))
+        XCTAssertEqual(full.kind, .history)
+        XCTAssertEqual(full.releases.map(\.version.display), ["1.2.0", "1.1.0", "1.0.0"])
+        current.didPresent(full)
+        XCTAssertNotNil(store("1.2.0").announcement(history: history, existingUser: true),
+                        "Reading the history is not the update's announcement")
+        current.isSuppressed = true
+        XCTAssertNotNil(current.releaseHistory(history), "Don't Show Again does not hide the history")
+
+        var closed = 0
+        let controller = WhatsNewViewController(
+            announcement: full, preferences: current, initialLanguage: .english, close: { closed += 1 })
+        _ = controller.view
+        XCTAssertNil(controller.dontShowAgainButton)
+        XCTAssertNil(controller.earlierReleasesButton)
+        for version in ["1.2.0", "1.1.0", "1.0.0"] { XCTAssertTrue(controller.notesView.string.contains(version), version) }
+        XCTAssertFalse(controller.notesView.string.contains("2.0.0"))
+        XCTAssertNil(store("0.9.0").releaseHistory(history), "A copy older than every release has none")
     }
 
     func testLanguageSelectionReplacesAllReleaseTranslationsAndCanSwitchBack() throws {

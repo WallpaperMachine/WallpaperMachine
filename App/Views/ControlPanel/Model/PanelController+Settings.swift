@@ -61,6 +61,14 @@ extension PanelController {
     }
   }
 
+  /// `showWhatsNewAfterUpdates`: turns the post-update window on again, or off as its button does.
+  func setShowsWhatsNewAfterUpdates(_ shows: Bool) async throws {
+    try await change {
+      WhatsNewStore(defaults: defaults).isSuppressed = !shows
+      refreshSystemReadings()
+    }
+  }
+
   /// Takes the readings nothing notifies the app about again: the battery charge and the preferences
   /// that live outside the stores. Views call it when the panel appears and when the window becomes key,
   /// and the setters that write those preferences call it themselves.

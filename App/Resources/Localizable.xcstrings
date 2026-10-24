@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Don’t Show Again" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "다시 표시 안 함"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Don’t Show Again"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "今後表示しない"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "不再显示"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "不再顯示"}}}
+    },
+    "Every release up to this version" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "이 버전까지의 모든 릴리스"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Every release up to this version"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "このバージョンまでのすべてのリリース"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "截至此版本的所有版本"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "截至此版本的所有版本"}}}
+    },
+    "Hide Earlier Releases" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "이전 릴리스 숨기기"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Hide Earlier Releases"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "以前のリリースを隠す"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "隐藏更早的版本"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "隱藏更早的版本"}}}
+    },
+    "Opens the new version’s release notes once, on its first launch." : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "새 버전을 처음 실행할 때 릴리스 노트를 한 번 엽니다."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "新しいバージョンを初めて起動したときに、リリースノートを一度だけ開きます。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "新版本首次启动时打开一次它的更新说明。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "新版本首次啟動時開啟一次它的更新說明。"}}}
+    },
+    "Release History" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "릴리스 기록"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Release History"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リリース履歴"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新历史"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新歷史"}}}
+    },
+    "Release history" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "릴리스 기록"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リリース履歴"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新历史"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新歷史"}}}
+    },
     "Restore recovery could not find the copies it set aside. The restore folder has been kept and nothing has been deleted." : {
       "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "복원을 바로잡는 중에 따로 보관해 둔 사본을 찾을 수 없습니다. 복원 폴더는 그대로 유지되었으며 아무것도 삭제되지 않았습니다."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "復元の修復で、取り置いたコピーが見つかりませんでした。復元用フォルダは保持されており、何も削除されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "修复恢复时找不到预先留存的副本。恢复文件夹已保留，没有任何内容被删除。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "修復回復時找不到預先留存的副本。回復檔案夾已保留，沒有任何內容被刪除。"}}}
     },
@@ -9,6 +27,21 @@
     },
     "Restore recovery needs the drive that holds the wallpaper library. Connect it and open WallpaperMachine again; nothing has been deleted." : {
       "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "복원을 바로잡으려면 배경화면 보관함이 있는 드라이브가 필요합니다. 드라이브를 연결하고 WallpaperMachine을 다시 여세요. 아무것도 삭제되지 않았습니다."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "復元の修復には壁紙ライブラリがあるドライブが必要です。ドライブを接続して、もう一度WallpaperMachineを開いてください。何も削除されていません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "修复恢复需要存放壁纸库的磁盘。请连接它，然后重新打开 WallpaperMachine；没有任何内容被删除。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "修復回復需要存放桌布庫的磁碟。請連接它，然後重新開啟 WallpaperMachine；沒有任何內容被刪除。"}}}
+    },
+    "Show" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "보기"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "显示"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "顯示"}}}
+    },
+    "Show Earlier Releases" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "이전 릴리스 보기"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Show Earlier Releases"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "以前のリリースを表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "显示更早的版本"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "顯示更早的版本"}}}
+    },
+    "Show What’s New after updates" : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "업데이트 후 새로운 기능 표시"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "アップデート後に新機能を表示"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新后显示更新内容"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新後顯示更新內容"}}}
+    },
+    "The release notes of every version up to this one, as shipped with the app." : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "앱에 포함된, 이 버전까지의 모든 버전의 릴리스 노트입니다."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "アプリに同梱されている、このバージョンまでのすべてのバージョンのリリースノートです。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "随应用附带的、截至此版本的每个版本的更新说明。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "隨應用程式附帶的、截至此版本的每個版本的更新說明。"}}}
+    },
+    "Turn it back on in Settings › About." : {
+      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "설정 › 정보에서 다시 켤 수 있습니다."}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Turn it back on in Settings › About."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "「設定」›「情報」でもう一度オンにできます。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "可以在“设置 › 关于”中重新打开。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "可以在「設定 › 關於」中重新開啟。"}}}
     },
     "WallpaperMachine could not read where your wallpaper library is kept." : {
       "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachine이 배경화면 보관함이 저장된 위치를 읽지 못했습니다."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachineは壁紙ライブラリの保存場所を読み取れませんでした。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachine 无法读取壁纸库的存放位置。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "WallpaperMachine 無法讀取桌布庫的存放位置。"}}}
@@ -669,9 +702,6 @@
     },
     "Release notes language" : {
       "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "릴리스 노트 언어"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Release notes language"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "リリースノートの言語"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "更新说明语言"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "更新說明語言"}}}
-    },
-    "Don’t show this window after updates" : {
-      "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "업데이트 후 이 윈도우 표시 안 함"}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "Don’t show this window after updates"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "アップデート後にこのウインドウを表示しない"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "以后更新时不再显示此窗口"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "以後更新時不再顯示此視窗"}}}
     },
     "macOS could not complete its SteamCMD security assessment. Retry after resolving the system security error; an explicit approval cannot bypass an assessment failure." : {
       "localizations" : {"ko" : {"stringUnit" : {"state" : "translated", "value" : "macOS에서 SteamCMD 보안 평가를 완료하지 못했습니다. 시스템 보안 오류를 해결한 후 다시 시도하세요. 명시적으로 승인해도 평가 실패를 우회할 수 없습니다."}}, "en" : {"stringUnit" : {"state" : "translated", "value" : "macOS could not complete its SteamCMD security assessment. Retry after resolving the system security error; an explicit approval cannot bypass an assessment failure."}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "macOSはSteamCMDのセキュリティ評価を完了できませんでした。システムのセキュリティエラーを解決してから再試行してください。明示的に承認しても、評価の失敗を回避することはできません。"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "macOS 未能完成对 SteamCMD 的安全评估。请先解决系统安全错误再重试；手动批准无法跳过评估失败。"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "macOS 無法完成 SteamCMD 的安全性評估。請先解決系統安全性錯誤再重試；即使手動核准，也無法略過評估失敗。"}}}

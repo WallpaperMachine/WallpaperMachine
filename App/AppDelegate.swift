@@ -127,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 }
             }
         AppLog.info("startup: didFinishLaunching start")
+        appUpdater.showReleaseHistory = { [weak self] in self?.showReleaseHistory() }
         do {
             try ClientPaths.prepare()
             let created = try BridgeStore()
@@ -2147,30 +2148,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             guard let announcement = whatsNewStore.announcement(
                 history: history, existingUser: PanelPreferences.welcomeSeen()
             ) else { return }
-            let window = NSWindow(
-                contentRect: NSRect(origin: .zero, size: WhatsNewViewController.defaultContentSize),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered, defer: false)
-            window.title = String(localized: "What’s New")
-            window.isReleasedWhenClosed = false
-            window.delegate = self
-            window.contentViewController = WhatsNewViewController(
-                announcement: announcement, preferences: whatsNewStore,
-                initialLanguage: AppLanguageStore.shared.effective,
-                close: { [weak window] in window?.performClose(nil) })
-            window.contentMinSize = NSSize(width: 600, height: 480)
-            // Installing a controller can resize the window to its content view's fitting size.
-            window.setContentSize(WhatsNewViewController.defaultContentSize)
-            window.center()
-            ControlPanelWindow.moveToActiveSpace(window)
-            whatsNewWindow = window
-            NSApp.setActivationPolicy(.regular)
-            ControlPanelWindow.bringForward(window)
-            NSApp.activate(ignoringOtherApps: true)
+            presentWhatsNew(announcement)
             whatsNewStore.didPresent(announcement)
         } catch {
             AppLog.error("Bundled release history could not load: \(error.localizedDescription)")
         }
+    }
+
+    /// Settings › About › Release history: every bundled release, in the What's New window. An open
+    /// window, the post-update one included, shows the history in place.
+    private func showReleaseHistory() {
+        guard !shutdownInProgress else { return }
+        do {
+            guard let announcement = whatsNewStore.releaseHistory(try AppReleaseHistory()) else { return }
+            presentWhatsNew(announcement)
+        } catch {
+            AppLog.error("Bundled release history could not load: \(error.localizedDescription)")
+        }
+    }
+
+    private func presentWhatsNew(_ announcement: WhatsNewStore.Announcement) {
+        let window: NSWindow
+        if let open = whatsNewWindow {
+            window = open
+        } else {
+            window = NSWindow(
+                contentRect: NSRect(origin: .zero, size: WhatsNewViewController.defaultContentSize),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.contentMinSize = NSSize(width: 600, height: 480)
+        }
+        window.title = announcement.kind == .history
+            ? String(localized: "Release History") : String(localized: "What’s New")
+        let frame = window.frame
+        window.contentViewController = WhatsNewViewController(
+            announcement: announcement, preferences: whatsNewStore,
+            initialLanguage: AppLanguageStore.shared.effective,
+            close: { [weak window] in window?.performClose(nil) })
+        // Installing a controller can resize the window to its content view's fitting size.
+        if whatsNewWindow == nil {
+            window.setContentSize(WhatsNewViewController.defaultContentSize)
+            window.center()
+            ControlPanelWindow.moveToActiveSpace(window)
+            whatsNewWindow = window
+        } else {
+            window.setFrame(frame, display: true)
+        }
+        NSApp.setActivationPolicy(.regular)
+        ControlPanelWindow.bringForward(window)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showControlPanel(selection: SidebarSelection) {

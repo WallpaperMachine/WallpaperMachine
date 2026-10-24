@@ -1,6 +1,7 @@
 import AppKit
 
-/// A native, nonmodal reading window with a choice of release-note translation.
+/// A native, nonmodal reading window with a choice of release-note translation: the releases an
+/// update brought, or the whole bundled history when Settings › About asks for it.
 @MainActor
 final class WhatsNewViewController: NSViewController {
     static let defaultContentSize = NSSize(width: 760, height: 800)
@@ -9,7 +10,10 @@ final class WhatsNewViewController: NSViewController {
     private let close: () -> Void
     private let initialLanguage: AppLanguage
     private let bannerImage: (AppReleaseHistory.Banner) -> NSImage?
-    private(set) var suppressionCheckbox: NSButton!
+    /// Turns off the post-update window for good and closes it. Absent from the history window.
+    private(set) var dontShowAgainButton: NSButton?
+    /// Adds and removes the releases before the announced ones. Absent when there are none.
+    private(set) var earlierReleasesButton: NSButton?
     private(set) var notesView: NSTextView!
     private(set) var languageControl: NSSegmentedControl!
     /// The current release's banner, when it has one the bundle can show.
@@ -17,6 +21,7 @@ final class WhatsNewViewController: NSViewController {
     /// Each translation's banner and its picture, loaded once for this announcement.
     private var banners: [AppReleaseHistory.Language: (banner: AppReleaseHistory.Banner, image: NSImage)] = [:]
     private var bannerAspect: NSLayoutConstraint?
+    private(set) var showsEarlierReleases = false
 
     init(announcement: WhatsNewStore.Announcement, preferences: WhatsNewStore,
          initialLanguage: AppLanguage,
@@ -40,12 +45,15 @@ final class WhatsNewViewController: NSViewController {
 
     override func loadView() {
         view = NSView(frame: NSRect(origin: .zero, size: Self.defaultContentSize))
-        let title = NSTextField(labelWithString: String(localized: "What’s New"))
+        let isHistory = announcement.kind == .history
+        let title = NSTextField(labelWithString: isHistory ? String(localized: "Release History") : String(localized: "What’s New"))
         title.font = .systemFont(ofSize: 24, weight: .bold)
         let version = NSTextField(labelWithString: "WallpaperMachine \(announcement.currentVersion)")
         version.font = .systemFont(ofSize: 15, weight: .medium)
         let detail: String
-        if let previous = announcement.previousVersion {
+        if isHistory {
+            detail = String(localized: "Every release up to this version")
+        } else if let previous = announcement.previousVersion {
             detail = String(localized: "Changes since version \(previous)")
         } else {
             detail = String(localized: "Changes in this version")
@@ -83,16 +91,28 @@ final class WhatsNewViewController: NSViewController {
         notesView.setAccessibilityLabel(String(localized: "Release notes"))
         scroll.documentView = notesView
 
-        suppressionCheckbox = NSButton(
-            checkboxWithTitle: String(localized: "Don’t show this window after updates"),
-            target: self, action: #selector(changeSuppression))
-        suppressionCheckbox.state = preferences.isSuppressed ? .on : .off
-        suppressionCheckbox.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let footer = NSStackView()
+        footer.orientation = .horizontal
+        footer.spacing = 12
+        if !isHistory, !announcement.earlierReleases.isEmpty {
+            let earlier = NSButton(title: String(localized: "Show Earlier Releases"), target: self,
+                                   action: #selector(toggleEarlierReleases))
+            footer.addView(earlier, in: .leading)
+            earlierReleasesButton = earlier
+        }
+        if !isHistory {
+            let dontShow = NSButton(title: String(localized: "Don’t Show Again"), target: self,
+                                    action: #selector(dontShowAgain))
+            dontShow.toolTip = String(localized: "Turn it back on in Settings › About.")
+            footer.addView(dontShow, in: .trailing)
+            dontShowAgainButton = dontShow
+        }
         let closeButton = NSButton(title: String(localized: "Close"), target: self, action: #selector(closeWindow))
         closeButton.keyEquivalent = "\r"
+        footer.addView(closeButton, in: .trailing)
         let divider = NSBox()
         divider.boxType = .separator
-        for child in [header, languageControl!, scroll, divider, suppressionCheckbox!, closeButton] {
+        for child in [header, languageControl!, scroll, divider, footer] {
             child.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(child)
         }
@@ -147,12 +167,10 @@ final class WhatsNewViewController: NSViewController {
             scroll.bottomAnchor.constraint(equalTo: divider.topAnchor, constant: -16),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            suppressionCheckbox.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 16),
-            suppressionCheckbox.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            suppressionCheckbox.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
-            closeButton.centerYAnchor.constraint(equalTo: suppressionCheckbox.centerYAnchor),
-            closeButton.leadingAnchor.constraint(greaterThanOrEqualTo: suppressionCheckbox.trailingAnchor, constant: 20),
-            closeButton.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            footer.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 16),
+            footer.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
         ])
     }
 
@@ -166,8 +184,14 @@ final class WhatsNewViewController: NSViewController {
         AppReleaseHistory.Language(rawValue: languageControl.selectedSegment) ?? .english
     }
 
+    /// The history window shows everything; the update window adds the earlier releases on request.
+    private var shownReleases: [AppReleaseHistory.Entry] {
+        announcement.kind == .history || showsEarlierReleases
+            ? announcement.releases + announcement.earlierReleases : announcement.releases
+    }
+
     private func updateNotes() {
-        notesView.textStorage?.setAttributedString(Self.notesText(announcement, language: selectedLanguage))
+        notesView.textStorage?.setAttributedString(Self.notesText(shownReleases, language: selectedLanguage))
     }
 
     /// Resolve the selected banner after loading, so an unreadable file also falls back.
@@ -183,13 +207,35 @@ final class WhatsNewViewController: NSViewController {
         bannerAspect?.isActive = true
     }
 
-    @objc private func changeSuppression() {
-        preferences.isSuppressed = suppressionCheckbox.state == .on
+    @objc private func toggleEarlierReleases() {
+        // The announced releases render first and unchanged, so their length is where the rest begin.
+        let announcedLength = notesView.string.utf16.count
+        showsEarlierReleases.toggle()
+        earlierReleasesButton?.title = showsEarlierReleases
+            ? String(localized: "Hide Earlier Releases") : String(localized: "Show Earlier Releases")
+        updateNotes()
+        if showsEarlierReleases { scrollNotes(to: announcedLength) }
+    }
+
+    /// Brings the line at `location` to the top of the notes.
+    private func scrollNotes(to location: Int) {
+        guard let layout = notesView.layoutManager, let container = notesView.textContainer,
+              location < notesView.string.utf16.count else { return }
+        layout.ensureLayout(for: container)
+        let glyphs = layout.glyphRange(forCharacterRange: NSRange(location: location, length: 1),
+                                       actualCharacterRange: nil)
+        let line = layout.boundingRect(forGlyphRange: glyphs, in: container)
+        notesView.scroll(NSPoint(x: 0, y: line.minY + notesView.textContainerOrigin.y))
+    }
+
+    @objc private func dontShowAgain() {
+        preferences.isSuppressed = true
+        close()
     }
 
     @objc private func closeWindow() { close() }
 
-    private static func notesText(_ announcement: WhatsNewStore.Announcement,
+    private static func notesText(_ releases: [AppReleaseHistory.Entry],
                                   language: AppReleaseHistory.Language) -> NSAttributedString {
         let text = NSMutableAttributedString(string: "")
         func paragraph(before: CGFloat, after: CGFloat, indent: CGFloat = 0) -> NSParagraphStyle {
@@ -225,7 +271,7 @@ final class WhatsNewViewController: NSViewController {
                 .font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
             ]))
         }
-        for release in announcement.releases {
+        for release in releases {
             append(release.version.display, size: 20, weight: .semibold, before: text.length == 0 ? 0 : 24)
             let notes = release.notes(language: language)
             for section in notes.sections {

@@ -100,6 +100,28 @@ final class AboutSettingsTests: SettingsBTestCase {
     await panel.shutdown()
   }
 
+  /// The switch is the way back from the window's Don't Show Again, which writes the same value
+  /// outside the panel; Release history opens the window through the app, and only where it can.
+  func testWhatsNewSwitchFollowsTheWindowAndReleaseHistoryOpensThroughTheApp() async throws {
+    try await withPanel { panel in
+      let controller = panel.controller
+      XCTAssertTrue(controller.isSwitchOn(.showWhatsNewAfterUpdates), "on until turned off")
+      WhatsNewStore(defaults: panel.defaults).isSuppressed = true
+      controller.refreshSystemReadings()
+      XCTAssertFalse(controller.isSwitchOn(.showWhatsNewAfterUpdates), "Don't Show Again shows here")
+      try await controller.setSwitch(.showWhatsNewAfterUpdates, to: true)
+      XCTAssertFalse(WhatsNewStore(defaults: panel.defaults).isSuppressed, "and the switch undoes it")
+      XCTAssertTrue(controller.isSwitchOn(.showWhatsNewAfterUpdates))
+
+      XCTAssertFalse(controller.offersReleaseHistory, "a panel without the app has no window to open")
+      let opened = SettingsCallCounter()
+      controller.updater.showReleaseHistory = { opened.bump() }
+      XCTAssertTrue(controller.offersReleaseHistory)
+      try await controller.showReleaseHistory()
+      XCTAssertEqual(opened.count, 1)
+    }
+  }
+
   func testTheVersionRowsReadTheBundleAndTheProductHasAnIconForEveryDockChoice() async throws {
     try await withPanel { panel in
       let info = panel.controller.aboutInfo

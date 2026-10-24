@@ -24,6 +24,7 @@ final class PanelSettingsResetTests: PanelTestCase {
     try await withRecordingPanel { panel, bridge in
       let controller = panel.controller
       try await controller.setHidesAfterActivating(true)
+      try await controller.setShowsWhatsNewAfterUpdates(false)
       try controller.setThemeAccent("#ff0000")
       try await controller.setHotKey(.togglePlayback, keyCode: 35, modifierFlags: [.command, .option])
       try await controller.setDesktopCoveredAction(.keepRunning)
@@ -44,6 +45,7 @@ final class PanelSettingsResetTests: PanelTestCase {
       try await controller.resetAllSettings()
 
       XCTAssertFalse(controller.generalSettings.hidesAfterActivating)
+      XCTAssertTrue(controller.showsWhatsNewAfterUpdates)
       XCTAssertEqual(controller.themePreferences, AppThemePreferences())
       XCTAssertNil(controller.hotKeys.bindings[.togglePlayback])
       XCTAssertEqual(controller.playback.desktopCoveredAction, .pause)

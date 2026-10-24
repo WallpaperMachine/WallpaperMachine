@@ -243,7 +243,9 @@ the rest opens in a popover from the ⓘ beside the title.
   `project.yml`) and the Git revision. **Check for Updates** reads the latest GitHub
   Release; download and restart-install happen only after confirmation (see
   [updates](updates.md)). The application menu item **Check for Updates…** opens
-  this section. **Spread the word** has **Share WallpaperMachine…** and **Star on
+  this section. **Show What’s New after updates** and **Release history** switch the
+  post-update window on or off and open every bundled release's notes
+  ([release history](updates.md#release-history)). **Spread the word** has **Share WallpaperMachine…** and **Star on
   GitHub** ([one-time prompts](first-run.md#star-prompt-the-performance-data-question-and-the-subscriptions-offer)).
 - **Storage** opens with **Wallpaper library location**: where the installed
   wallpapers and downloads are kept, **Show in Finder**, **Move…** to another folder

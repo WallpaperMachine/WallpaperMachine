@@ -57,6 +57,7 @@ extension PanelController {
       await attempt { try await store.setLaunchAtLoginAsync(enabled: false) }
     }
     defaults.removeObject(forKey: PanelPreferences.hideAfterActivatingKey)
+    defaults.removeObject(forKey: WhatsNewStore.suppressedKey)
     if appLanguage.preference != AppLanguageStore.systemChoice {
       await attempt { try await setLanguage(nil) }
     }

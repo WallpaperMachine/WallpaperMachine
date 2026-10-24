@@ -12,6 +12,8 @@ final class AppUpdateStore {
     /// When the last check was refused by GitHub's anonymous rate limit, the time it lifts.
     /// Checks before then fail locally, so retries can't keep the shared quota exhausted.
     private(set) var rateLimitedUntil: Date?
+    /// Opens the bundled release history; the app sets it. Without it About offers no button.
+    @ObservationIgnored var showReleaseHistory: (@MainActor () -> Void)?
     @ObservationIgnored private let currentVersion: String
     @ObservationIgnored private let client: any AppUpdateClient
     @ObservationIgnored private let installer: any AppUpdateInstalling

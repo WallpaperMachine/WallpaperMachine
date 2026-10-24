@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Settings › About: the product, its version, updates with the notes of the latest release, and who
-/// built what on what.
+/// Settings › About: the product, its version, updates with the notes of the latest release and of
+/// every release this copy shipped with, and who built what on what.
 struct AboutSettingsSection: View {
   private static let versions = SettingsItem.Group("versions")
   private static let updates = SettingsItem.Group("updates", title: "Updates")
@@ -29,6 +29,14 @@ struct AboutSettingsSection: View {
     ])
   static let updateNotes = SettingsItem(
     id: "about.update-notes", section: .about, group: updates, title: "What’s new")
+  static let whatsNewAfterUpdates = SettingsItem(
+    id: "about.whats-new-after-updates", section: .about, group: updates,
+    title: "Show What’s New after updates",
+    note: "Opens the new version’s release notes once, on its first launch.")
+  static let releaseHistory = SettingsItem(
+    id: "about.release-history", section: .about, group: updates, title: "Release history",
+    note: "The release notes of every version up to this one, as shipped with the app.",
+    keywords: ["Show"])
   static let updateFootnote = SettingsItem(
     id: "about.update-footnote", section: .about, group: updates, title: "Updates",
     note:
@@ -46,8 +54,8 @@ struct AboutSettingsSection: View {
   )
 
   static let items = [
-    appVersion, gitRevision, updateStatus, updateActions, updateNotes, updateFootnote, shareApp,
-    creditsItem,
+    appVersion, gitRevision, updateStatus, updateActions, updateNotes, whatsNewAfterUpdates,
+    releaseHistory, updateFootnote, shareApp, creditsItem,
   ]
 
   @Environment(PanelController.self) private var controller
@@ -216,6 +224,21 @@ private struct AboutUpdatesRows: View {
     }
     actions(presentation, controls)
     if presentation.hasNotes { notes(presentation) }
+    SettingsRow(AboutSettingsSection.whatsNewAfterUpdates) {
+      SettingsSwitchControl(key: .showWhatsNewAfterUpdates)
+    }
+    SettingsRow(AboutSettingsSection.releaseHistory) {
+      // Opening a window never touches the renderer, so it does not wait for the Mac either.
+      SettingsActionButton(
+        "Show",
+        isDisabled: !controller.offersReleaseHistory
+          || controller.isBusy(PanelActionCoordinator.key("showReleaseHistory"))
+      ) {
+        controller.launch(PanelActionCoordinator.key("showReleaseHistory")) {
+          try await controller.showReleaseHistory()
+        }
+      }
+    }
     DisplaysItemNote(item: AboutSettingsSection.updateFootnote)
   }
 

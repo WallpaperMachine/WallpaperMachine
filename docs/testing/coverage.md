@@ -463,7 +463,10 @@ running app.
   full-screen app, are on [manual-smoke.md](manual-smoke.md).
 
 `WhatsNewTests` — what a launch announces across fresh installs, upgrades that
-skip versions, downgrades and language choice. Not covered: a live release
+skip versions, downgrades and language choice; **Don’t Show Again**, the earlier
+releases added on request, and the release history recording nothing.
+`AboutSettingsTests` covers the switch that undoes Don't Show Again and the
+Release history button's hook. Not covered: a live release
 check, the published disk image and replacing the app in Applications; these are
 on [manual-smoke.md](manual-smoke.md).
 

@@ -25,6 +25,21 @@ extension PanelController {
     try await run(.immediate) { updater.openReleases() }
   }
 
+  /// Whether the What's New window opens after an update. Reads the preferences counter first: the
+  /// window's Don't Show Again writes the same value outside the panel.
+  var showsWhatsNewAfterUpdates: Bool {
+    _ = systemReadingsRevision
+    return !WhatsNewStore(defaults: defaults).isSuppressed
+  }
+
+  /// Whether this app can show the bundled release history; About offers it only then.
+  var offersReleaseHistory: Bool { updater.showReleaseHistory != nil }
+
+  /// `showReleaseHistory`: every release this copy shipped with, in the What's New window.
+  func showReleaseHistory() async throws {
+    try await run(.immediate) { updater.showReleaseHistory?() }
+  }
+
   /// `revealDownloadedUpdate`: the downloaded disk image in Finder.
   func revealDownloadedUpdate() async throws {
     try await run(.immediate) { updater.revealDownloadedUpdate() }
