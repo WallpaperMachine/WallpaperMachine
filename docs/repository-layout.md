@@ -158,7 +158,7 @@ ThirdParty/                        vendored third-party code only, each item und
                                    code is only in Git history)
 artifacts/                         Git-ignored: all test and verification evidence
 build/                             Git-ignored: Xcode derived data and built products only
-.github/FUNDING.yml                the repository's Sponsor button; links the website's pricing page
+.github/FUNDING.yml                the repository's Sponsor button; links MMFoundation's Open Collective
 .github/ISSUE_TEMPLATE/            issue forms (bug report, feature request) and the chooser's links (config.yml);
                                    blank issues stay on for the prefilled link of app versions up to 1.6.0
 .github/pull_request_template.md   the pull-request description outline and checklist
