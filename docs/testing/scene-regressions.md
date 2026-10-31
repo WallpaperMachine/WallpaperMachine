@@ -3231,8 +3231,10 @@ texture entrances are not decoded-image or native-rendering evidence.
   `TextParseScene.ALayersGlyphsAreDrawnFromItsAtlasThroughTheFontShader` (slot 1 reads the
   layer's R8 atlas, one quad per inked glyph), `TextRuntimeScene.APumpedChangeRewritesTheGlyphsUnderTheSameAtlas`
   and `.AHiddenLayerWaitsUntilItIsShown` (the quads follow the text, the atlas keeps its name and
-  nothing is rebuilt), `TextObjectRuntime.MsdfCellsAreThirtyTwoPixelsToTheEmWithATwelvePixelMargin`
-  and `.AClockDoesNotRegenerateItsDigitCells` (G-F6, G-F16), `.AnEmojiIsAColourGlyphFromTheColourAtlas`,
+  nothing is rebuilt), `TextObjectRuntime.MsdfCellsAreThirtyTwoPixelsToTheEmWithATwelvePixelMargin`,
+  `.PostScriptOutlineFacesOrientTheirMsdfContours` and `.AClockDoesNotRegenerateItsDigitCells`
+  (G-F6, G-F16; `msdfgen::Shape::orientContours` normalises PostScript/CFF `.otf` and CJK
+  contour winding before distance-field generation), `.AnEmojiIsAColourGlyphFromTheColourAtlas`,
   `.AZwjSequenceIsOneColourGlyph`, `TextParseScene.TheAssetsTwemojiIsReadOnceAndSharedByEveryLayer`
   and `MetalSceneDraw.AnEmojiIsDrawnInItsOwnColours` (colour glyphs, `basefontrgba`);
   `TextParseScene.DepthtestSelectsTheDepthFontMaterialsInAPerspectiveScene`,

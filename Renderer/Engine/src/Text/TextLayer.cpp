@@ -1482,6 +1482,10 @@ bool MakeCell(GlyphAtlas& atlas, FaceChain& faces, uint8_t face_index, uint32_t 
         msdfgen::destroyFont(font);
         if (! loaded || shape.contours.empty()) return true;
         shape.normalize();
+        // PostScript/CFF (.otf) outlines wind outer contours counter-clockwise, opposite to
+        // TrueType; orientContours (sub_140281900 in sub_1401AE080, G-F6) normalises contour
+        // winding before colouring and generating the distance field.
+        shape.orientContours();
         msdfgen::edgeColoringSimple(shape, 3.0);
         const auto bounds = shape.getBounds();
         if (! (bounds.r > bounds.l) || ! (bounds.t > bounds.b)) return true;

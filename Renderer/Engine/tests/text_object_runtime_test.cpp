@@ -5277,6 +5277,43 @@ TEST(TextObjectRuntime, MsdfCellsAreThirtyTwoPixelsToTheEmWithATwelvePixelMargin
     EXPECT_EQ(bytes[3], 255u) << "alpha is 255";
 }
 
+TEST(TextObjectRuntime, PostScriptOutlineFacesOrientTheirMsdfContours) {
+    // OpenType CFF (.otf) and CJK faces store outer contours in PostScript winding order,
+    // opposite to TrueType. Wallpaper Engine calls msdfgen::Shape::orientContours (sub_140281900
+    // in sub_1401AE080, G-F6) before colouring and generating the MSDF cell so that the margin
+    // around the glyph stays outside (< 128) and the stroke interior stays inside (> 128).
+    std::size_t tested = 0;
+    for (const char* family : { "Apple SD Gothic Neo", "PingFang SC" }) {
+        SCOPED_TRACE(family);
+        auto state = FamilyState("H", family);
+        if (! state) continue;
+        ++tested;
+        state->msdf = true;
+        ResetTextAtlasesForTests();
+        const auto build = BuildTextGlyphs(*state);
+        ASSERT_TRUE(build.distance_field);
+        ASSERT_EQ(build.glyphs.size(), 1u);
+        ASSERT_TRUE(build.atlas.rgba);
+        const auto& quad  = build.glyphs[0];
+        const auto& bytes = *build.atlas.bytes;
+        const auto  texel = [&](float u, float v) {
+            const auto x = static_cast<std::size_t>(u * build.atlas.width);
+            const auto y = static_cast<std::size_t>(v * build.atlas.height);
+            const uint8_t* p = &bytes[(y * build.atlas.width + x) * 4u];
+            return std::max(std::min(p[0], p[1]), std::min(std::max(p[0], p[1]), p[2]));
+        };
+        const float half_px = 0.5f / static_cast<float>(build.atlas.width);
+        EXPECT_LT(texel(quad.u0 + half_px, quad.v0 + half_px), 100);
+        EXPECT_LT(texel(quad.u1 - half_px, quad.v0 + half_px), 100);
+        EXPECT_LT(texel(quad.u0 + half_px, quad.v1 - half_px), 100);
+        EXPECT_LT(texel(quad.u1 - half_px, quad.v1 - half_px), 100);
+        const float stem_u = quad.u0 + (12.0f + 2.0f) / static_cast<float>(build.atlas.width);
+        const float mid_v  = (quad.v0 + quad.v1) * 0.5f;
+        EXPECT_GT(texel(stem_u, mid_v), 128);
+    }
+    if (tested == 0u) GTEST_SKIP() << "no PostScript-outline CJK face is installed";
+}
+
 TEST(TextObjectRuntime, AClockDoesNotRegenerateItsDigitCells) {
     // The atlas persists for the font, size and kind across layouts (G-F16).
     auto state = HelveticaState("12:34", 40.0f);
