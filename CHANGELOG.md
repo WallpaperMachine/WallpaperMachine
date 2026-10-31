@@ -12,6 +12,125 @@ app's update window shows the sections of every version newer than the installed
 one, in the app's language; the GitHub Release body repeats only the English notes.
 See [docs/release.md](docs/release.md) for how a version is cut.
 
+## [1.7.1](https://github.com/MMFoundation/WallpaperMachine/compare/v1.6.6...v1.7.1) (2026-10-31)
+
+### English
+
+![WallpaperMachine 1.7.1](Resources/ReleaseBanners/1.7.1.jpg)
+
+This release brings Wallpaper Engine scenes much closer to how they look there, from lighting and text to puppets and particles, and adds scene quality and per-wallpaper settings. Version 1.7.1 replaces the unpublished 1.7.0
+
+#### Highlights
+
+- Scene wallpapers now show lights, shadows, reflections and volumetric light shafts and fog the way Wallpaper Engine draws them ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- Pick scene quality in Settings → Performance and tune each wallpaper with Wallpaper Engine's own colour, filter, flip, parallax and speed options ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- Text in scenes gets proper kerning, ligatures, outlines, shadows and colour emoji, so clocks and captions look as intended ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- Puppets, 3D models and particle effects move much more like they do in Wallpaper Engine ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c), [6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- Signed in to Steam, Workshop search now shows the same wallpapers Steam shows your account, including age-rated ones ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+
+#### Features
+
+- Settings → Performance now offers Wallpaper Engine's scene quality settings for antialiasing, shadows, volumetrics, reflections and post-processing, and shows the quality in effect ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- Adjust colours, image filter, flip, mouse parallax and playback rate for each scene or video wallpaper, with changes shown on the desktop, in the preview and on the lock screen ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- On an HDR display, the Display HDR quality draws scene bloom and highlights brighter than standard white ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### Improvements
+
+- Scenes are lit as in Wallpaper Engine, with shadows, planar reflections, volumetric light and fog, and scripted ambient light, skylight and fog that change every frame ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- Text layers now handle kerning, ligatures and complex scripts, draw outlines, blur, shadows and colour emoji, and borrow missing characters from Wallpaper Engine's fallback fonts ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- Puppets and 3D models blend their animations, follow IK chains, swing ropes in gravity and wind, run bone physics and keep blinking as Wallpaper Engine shows them ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c))
+- Particle effects match Wallpaper Engine 2.8 more closely, with its noise, turbulence, vortices, flocking, cursor-following control points and rope trails ([6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- More scripted scenes work, with more of Wallpaper Engine 2.8's scripting, script data saved per wallpaper and display, and clicks handled as in Wallpaper Engine ([1ea87c3](https://github.com/MMFoundation/WallpaperMachine/commit/1ea87c3a4b118bf86249aaa8d3d8be8750edf7d4))
+- Volume textures and every Wallpaper Engine texture format now load in scenes, and textures look sharper at steep angles ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- Scenes with unusual shaders keep playing: more of them now translate, and one that cannot compile shows Wallpaper Engine's fallback instead of stopping the scene ([ca70c04](https://github.com/MMFoundation/WallpaperMachine/commit/ca70c04d2d54bd63ff67d242a2f28a08484d065e), [b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### Bug Fixes
+
+- Workshop search no longer shows far fewer Questionable and Mature wallpapers than Steam when you are signed in to Steam on the Steam Workshop page ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+- With a video wallpaper, the menu bar and Mission Control no longer show the previous picture for up to 15 seconds after it loads ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- Removing a video wallpaper from a display now brings back your own desktop picture instead of leaving the video's last frame ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- Media wallpapers that fade in each album cover, such as Music Visualizer | iOS Style, show the cover again instead of an empty grey square ([59eb679](https://github.com/MMFoundation/WallpaperMachine/commit/59eb6791f12ba70f2ec078a2001dd6c57bb0bf87))
+
+Thanks to [@Hoshino-Yumetsuki](https://github.com/Hoshino-Yumetsuki) for contributing to this release.
+
+### 简体中文
+
+![WallpaperMachine 1.7.1](Resources/ReleaseBanners/1.7.1.zh-Hans.jpg)
+
+本版本让 Wallpaper Engine 场景的呈现更接近原版，从光照、文字到人偶和粒子都有改进，并新增场景画质和单张壁纸设置。1.7.1 版取代了未发布的 1.7.0 版
+
+#### 亮点
+
+- 场景壁纸现在会像 Wallpaper Engine 一样呈现灯光、阴影、反射以及体积光束和雾效 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 可在“设置 → 性能”中选择场景画质，并用 Wallpaper Engine 自带的色彩、滤镜、翻转、视差和速度选项单独调整每张壁纸 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- 场景中的文字现在有正确的字距、连字、描边、阴影和彩色表情符号，时钟和标题显示得与原作一致 ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- 人偶、3D 模型和粒子效果的动态与 Wallpaper Engine 中更加接近 ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c), [6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- 登录 Steam 后，创意工坊搜索结果将与 Steam 向你的账户显示的内容一致，包括有年龄分级的壁纸 ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+
+#### 新功能
+
+- “设置 → 性能”新增 Wallpaper Engine 的场景画质设置，包括抗锯齿、阴影、体积效果、反射和后期处理，并显示当前生效的画质 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- 可为每张场景或视频壁纸单独调整色彩、图像滤镜、翻转、鼠标视差和播放速率，效果会同步到桌面、预览和锁定屏幕 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- 在 HDR 显示器上，Display HDR 画质会让场景的泛光和高光超出标准白色的亮度 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### 改进
+
+- 场景光照与 Wallpaper Engine 一致，支持阴影、平面反射、体积光和雾效，脚本控制的环境光、天空光和雾也会逐帧变化 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 文字图层现在支持字距调整、连字和复杂文字，可绘制描边、模糊、阴影和彩色表情符号，缺失的字符会从 Wallpaper Engine 的备用字体中补齐 ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- 人偶和 3D 模型会像在 Wallpaper Engine 中一样混合动画、遵循 IK 链、让绳索随重力和风摆动、运行骨骼物理并保持眨眼 ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c))
+- 粒子效果更贴近 Wallpaper Engine 2.8，包括噪波、湍流、漩涡、群集、跟随光标的控制点和绳状拖尾 ([6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- 更多带脚本的场景可以正常运行：支持更多 Wallpaper Engine 2.8 脚本功能，脚本数据按壁纸和显示器保存，点击处理方式与 Wallpaper Engine 一致 ([1ea87c3](https://github.com/MMFoundation/WallpaperMachine/commit/1ea87c3a4b118bf86249aaa8d3d8be8750edf7d4))
+- 场景现在可以加载体积纹理和各种 Wallpaper Engine 纹理格式，倾斜角度下的纹理也更清晰 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 使用特殊着色器的场景可以继续播放：更多着色器可被转换，无法编译的会改用 Wallpaper Engine 的备用着色器，而不会让场景停住 ([ca70c04](https://github.com/MMFoundation/WallpaperMachine/commit/ca70c04d2d54bd63ff67d242a2f28a08484d065e), [b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### 问题修复
+
+- 在 Steam 创意工坊页面登录 Steam 后，搜索结果中的“存疑”和“成人”分级壁纸不会再比 Steam 上少很多 ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+- 使用视频壁纸时，菜单栏和调度中心不会再在壁纸加载后最多 15 秒内仍显示之前的图片 ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- 从显示器移除视频壁纸后会恢复你自己的桌面图片，而不再残留视频的最后一帧 ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- 逐首淡入专辑封面的媒体壁纸（如 Music Visualizer | iOS Style）现在会显示封面，而不是空白的灰色方块 ([59eb679](https://github.com/MMFoundation/WallpaperMachine/commit/59eb6791f12ba70f2ec078a2001dd6c57bb0bf87))
+
+感谢 [@Hoshino-Yumetsuki](https://github.com/Hoshino-Yumetsuki) 为本版本做出的贡献。
+
+### 한국어
+
+![WallpaperMachine 1.7.1](Resources/ReleaseBanners/1.7.1.ko.jpg)
+
+이번 릴리스는 조명과 텍스트부터 퍼핏과 파티클까지 Wallpaper Engine 장면을 원래 모습에 훨씬 가깝게 보여 주며, 장면 품질 설정과 배경화면별 설정을 추가합니다. 1.7.1 버전은 공개되지 않은 1.7.0 버전을 대체합니다
+
+#### 주요 변경 사항
+
+- 이제 장면 배경화면에 Wallpaper Engine과 같은 방식으로 조명, 그림자, 반사, 볼류메트릭 광선과 안개가 표시됩니다 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 설정 → 성능에서 장면 품질을 고르고 Wallpaper Engine 고유의 색상, 필터, 뒤집기, 시차, 속도 옵션으로 배경화면마다 따로 조정할 수 있습니다 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- 장면 속 텍스트에 올바른 자간, 합자, 외곽선, 그림자, 컬러 이모지가 적용되어 시계와 문구가 원래 의도대로 보입니다 ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- 퍼핏, 3D 모델, 파티클 효과가 Wallpaper Engine에서와 훨씬 비슷하게 움직입니다 ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c), [6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- Steam에 로그인하면 창작마당 검색 결과가 연령 등급 항목을 포함해 Steam이 내 계정에 보여 주는 것과 같아집니다 ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+
+#### 새로운 기능
+
+- 설정 → 성능에 안티앨리어싱, 그림자, 볼류메트릭, 반사, 후처리를 위한 Wallpaper Engine 장면 품질 설정이 추가되고 현재 적용된 품질이 표시됩니다 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- 장면 및 동영상 배경화면마다 색상, 이미지 필터, 뒤집기, 마우스 시차, 재생 속도를 조정할 수 있으며 데스크탑, 미리보기, 잠금 화면에 반영됩니다 ([3769014](https://github.com/MMFoundation/WallpaperMachine/commit/37690143757a61859875ff5e6f1cd03538c21b02))
+- HDR 디스플레이에서 Display HDR 품질을 사용하면 장면의 블룸과 하이라이트가 표준 흰색보다 밝게 표시됩니다 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### 개선 사항
+
+- 장면이 Wallpaper Engine처럼 조명되며 그림자, 평면 반사, 볼류메트릭 조명과 안개, 매 프레임 바뀌는 스크립트 제어 주변광, 하늘광, 안개가 표시됩니다 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 텍스트 레이어가 자간, 합자, 복잡한 문자 체계를 처리하고 외곽선, 흐림, 그림자, 컬러 이모지를 그리며 없는 글자는 Wallpaper Engine 대체 글꼴에서 가져옵니다 ([9e331a2](https://github.com/MMFoundation/WallpaperMachine/commit/9e331a2e0af1b9374d5ae2a28617a5adf69d7d26))
+- 퍼핏과 3D 모델이 Wallpaper Engine처럼 애니메이션을 혼합하고 IK 체인을 따르며 중력과 바람에 로프가 흔들리고 뼈 물리와 눈 깜박임이 유지됩니다 ([093d492](https://github.com/MMFoundation/WallpaperMachine/commit/093d492f95b0c809f25fd1f3f1632d68afa54c5c))
+- 파티클 효과가 노이즈, 난류, 소용돌이, 군집, 커서를 따라가는 제어점, 로프 궤적까지 Wallpaper Engine 2.8에 더 가깝게 표현됩니다 ([6e49742](https://github.com/MMFoundation/WallpaperMachine/commit/6e49742a013ca4c4215fcf48a6cc3f22f201e786))
+- Wallpaper Engine 2.8 스크립트 기능을 더 지원하고 스크립트 데이터를 배경화면과 디스플레이별로 저장하며 클릭도 똑같이 처리해 더 많은 스크립트 장면이 작동합니다 ([1ea87c3](https://github.com/MMFoundation/WallpaperMachine/commit/1ea87c3a4b118bf86249aaa8d3d8be8750edf7d4))
+- 이제 장면에서 볼륨 텍스처와 모든 Wallpaper Engine 텍스처 형식을 불러오며 비스듬한 각도에서도 텍스처가 더 선명합니다 ([b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+- 더 많은 셰이더가 변환되고 컴파일할 수 없는 셰이더는 장면을 멈추는 대신 Wallpaper Engine 대체 셰이더로 그려져 특수한 셰이더를 쓰는 장면도 계속 재생됩니다 ([ca70c04](https://github.com/MMFoundation/WallpaperMachine/commit/ca70c04d2d54bd63ff67d242a2f28a08484d065e), [b1a3cdb](https://github.com/MMFoundation/WallpaperMachine/commit/b1a3cdbdc66c32618a62fc7cf49c5122cd7d48e8))
+
+#### 버그 수정
+
+- Steam 창작마당 페이지에서 Steam에 로그인하면 검색 결과의 '의심' 및 '성인' 등급 배경화면이 Steam보다 훨씬 적게 나오던 문제가 해결되었습니다 ([81a7948](https://github.com/MMFoundation/WallpaperMachine/commit/81a79487ec63dfcdb76a9de6c5d9ad824b64b9ac))
+- 동영상 배경화면을 쓸 때 로드 후 최대 15초 동안 메뉴 막대와 Mission Control에 이전 그림이 보이던 문제가 해결되었습니다 ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- 디스플레이에서 동영상 배경화면을 제거하면 동영상의 마지막 프레임 대신 원래 데스크탑 사진이 돌아옵니다 ([68ed5d8](https://github.com/MMFoundation/WallpaperMachine/commit/68ed5d817475868c117250f0fa4d28221a9aa18d))
+- Music Visualizer | iOS Style처럼 앨범 표지를 페이드인하는 미디어 배경화면에 빈 회색 사각형 대신 표지가 표시됩니다 ([59eb679](https://github.com/MMFoundation/WallpaperMachine/commit/59eb6791f12ba70f2ec078a2001dd6c57bb0bf87))
+
+이번 릴리스에 기여해 주신 [@Hoshino-Yumetsuki](https://github.com/Hoshino-Yumetsuki) 님께 감사드립니다.
+
 ## [1.6.6](https://github.com/WallpaperMachine/WallpaperMachine/compare/v1.6.5...v1.6.6) (2026-10-29)
 
 ### English
