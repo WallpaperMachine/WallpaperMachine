@@ -236,9 +236,11 @@ Apple의 공증을 받지 않은 빌드라서 macOS는 시스템 설정 → 개�
 <summary><b>WallpaperMachine은 정말 무료인가요?</b></summary>
 
 네. 서명된 빌드는 무료이고, 소스 코드 전체가 공개되어 있어서 직접 빌드해도 됩니다.
-후원하면 웹사이트와 이 README의 후원자 목록에 이름을 올릴 수 있고, 우선 지원도 받습니다.
-다만 라이선스를 사는 것은 아니라서, 후원 여부와 상관없이 앱은 똑같습니다.
-혜택과 후원 방법은 [SPONSORS.md](SPONSORS.md)(영문)를 참고하세요.
+돈을 내서 달라지는 기능은 없습니다. 후원하고 싶다면 WallpaperMachine을 만드는 MMFoundation을
+[Open Collective](https://opencollective.com/mmfoundation)에서 후원해 주세요.
+웹사이트의 [우선 지원](https://www.wallpapermachine.app/pricing/)은 질문에 먼저 답해 드리는 유료 서비스입니다.
+라이선스를 사는 것은 아니라서, 구매 여부와 상관없이 앱은 똑같습니다.
+두 가지 모두 [SPONSORS.md](SPONSORS.md)(영문)에 설명되어 있습니다.
 
 </details>
 
@@ -289,20 +291,22 @@ python3 scripts/build.py --configuration Release   # 렌더러, 바인딩, Xcode
 | [docs/testing/README.md](docs/testing/README.md) | 테스트 전략, 명령어, 검증 기록 기준 |
 | [docs/release.md](docs/release.md) | 버전 관리, 릴리스 노트, CI 릴리스 파이프라인 |
 | [CHANGELOG.md](CHANGELOG.md) | 공개된 각 버전의 변경 내역 |
-| [LICENSING.md](LICENSING.md) | 라이선스, 코드 출처, 후원자 모델, 구성 요소별 라이선스 |
-| [SPONSORS.md](SPONSORS.md) | 후원 금액, 혜택, 그 밖의 도움 방법 |
+| [LICENSING.md](LICENSING.md) | 라이선스, 코드 출처, 우선 지원, 구성 요소별 라이선스 |
+| [SPONSORS.md](SPONSORS.md) | Open Collective 후원, 우선 지원, 그 밖의 도움 방법 |
 | [AGENTS.md](AGENTS.md) | 이 저장소에서 작업하는 AI 에이전트를 위한 규칙 |
 
-## 후원자
+## 우선 지원 이용자께 감사드립니다
 
-공개를 선택한 후원자의 이름은 아래와
-웹사이트의 [후원자 목록](https://www.wallpapermachine.app/#sponsors)에 올라갑니다.
-후원은 일회성 구매이며, 우선 지원을 받을 수 있습니다. 앱과 소스는 모두에게 계속 무료입니다.
-후원 방법은 [SPONSORS.md](SPONSORS.md)(영문)를 참고하세요.
+공개를 선택한 우선 지원 이용자의 이름은 아래와
+웹사이트의 [감사의 벽](https://www.wallpapermachine.app/#sponsors)에 올라갑니다.
+‘후원자’라는 이름으로 구매한 분들은 약속받은 자리를 그대로 유지합니다.
+새 구매자는 감사의 벽에 표시될지 선택할 수 있습니다. 기본값은 꺼짐이며, 구매 내용에는 포함되지 않습니다.
+[우선 지원](https://www.wallpapermachine.app/pricing/)은 질문에 먼저 답해 드리는 유료 서비스이고,
+앱과 소스는 모두에게 계속 무료입니다. 프로젝트를 후원하는 방법은 [SPONSORS.md](SPONSORS.md)(영문)를 참고하세요.
 
-<!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
+<!-- supporters:start: written by scripts/update_sponsors.py from the website's thank-you wall; edits here are overwritten -->
 <p align="center">
-  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=9e4cd6c8b6fa" width="100%" alt="WallpaperMachine Supporters: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Supporters on the wall. 4 more support privately."></a>
+  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=dcf8135022b9" width="100%" alt="WallpaperMachine Priority Support members: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Priority Support members on the wall. 5 more stay private."></a>
 </p>
 <!-- supporters:end -->
 
@@ -313,10 +317,10 @@ python3 scripts/build.py --configuration Release   # 렌더러, 바인딩, Xcode
 소스는 GNU General Public License 버전 3에 따라 제공됩니다(GPL-3.0-only, 이후 버전은 적용되지 않음).
 전문은 [LICENSE](LICENSE)에 있습니다. 함께 들어 있는 서드파티 코드는 각자의 저작권과 라이선스
 고지를 그대로 유지하며, 그 내용은 [ThirdParty/provenance.json](ThirdParty/provenance.json)에
-기록되어 있습니다. 소스를 받는 모든 사람은 후원 여부와 상관없이 GPL이 부여하는 모든 권리를
+기록되어 있습니다. 소스를 받는 모든 사람은 우선 지원 구매 여부와 상관없이 GPL이 부여하는 모든 권리를
 그대로 가집니다.
 
-[LICENSING.md](LICENSING.md)에는 코드의 출처, 서드파티 구성 요소별 라이선스, 후원자 모델,
+[LICENSING.md](LICENSING.md)에는 코드의 출처, 서드파티 구성 요소별 라이선스, 우선 지원,
 각 다운로드의 소스 위치가 정리되어 있습니다.
 
 예전에 빌드에 링크하던 Apache-2.0 및 GPL-3.0 구성 요소(MoltenVK, Vulkan loader,

@@ -247,10 +247,12 @@ outside global mode, route `steamserver.net`, `steamcontent.com`,
 <summary><b>Is WallpaperMachine really free?</b></summary>
 
 Yes. The signed download is free, and the complete source is here if you
-would rather build it yourself. Becoming a Supporter adds a sponsor place on the
-website and in this README, plus priority support. It buys no license: the app
-is the same with or without it. What it includes and how to become one:
-[SPONSORS.md](SPONSORS.md).
+would rather build it yourself. Nothing you can pay for changes the app. To give,
+sponsor MMFoundation, which makes WallpaperMachine, on
+[Open Collective](https://opencollective.com/mmfoundation).
+[Priority Support](https://www.wallpapermachine.app/pricing/) is a paid service on
+the website that answers your questions first. It buys no license: the app is the
+same with or without it. Both are explained in [SPONSORS.md](SPONSORS.md).
 
 </details>
 
@@ -300,21 +302,24 @@ no code needed ([how it reaches the app](docs/localization.md#contributing-trans
 | [docs/testing/README.md](docs/testing/README.md) | Test strategy, commands, evidence policy |
 | [docs/release.md](docs/release.md) | Versioning, release notes and the CI release pipeline |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each published version |
-| [LICENSING.md](LICENSING.md) | License, code origin, Supporter model and component licenses |
-| [SPONSORS.md](SPONSORS.md) | Supporter pricing, what it includes and other ways to help |
+| [LICENSING.md](LICENSING.md) | License, code origin, Priority Support and component licenses |
+| [SPONSORS.md](SPONSORS.md) | Sponsoring on Open Collective, Priority Support and other ways to help |
 | [AGENTS.md](AGENTS.md) | Rules for agents working in this repository |
 
-## Thank you. To every Supporter.
+## Thank you. To every Priority Support member.
 
-Supporters who choose to be shown are listed here and on the
-[sponsor wall](https://www.wallpapermachine.app/#sponsors). Supporter is a
-one-time purchase for a sponsor place and priority support; the app and its
-source stay free for everyone. If WallpaperMachine has earned a place on your
-desktop, [become a Supporter](SPONSORS.md).
+Priority Support members who choose to be shown are listed here and on the
+[thank-you wall](https://www.wallpapermachine.app/#sponsors). Those who bought it
+under its earlier name, Supporter, keep the place it promised them. New buyers can
+choose to appear on the thank-you wall. It's off by default and isn't part of what
+they buy.
+[Priority Support](https://www.wallpapermachine.app/pricing/) is a paid service
+that answers your questions first; the app and its source stay free for everyone.
+To sponsor the project, see [SPONSORS.md](SPONSORS.md).
 
-<!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
+<!-- supporters:start: written by scripts/update_sponsors.py from the website's thank-you wall; edits here are overwritten -->
 <p align="center">
-  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=9e4cd6c8b6fa" width="100%" alt="WallpaperMachine Supporters: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Supporters on the wall. 4 more support privately."></a>
+  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=dcf8135022b9" width="100%" alt="WallpaperMachine Priority Support members: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Priority Support members on the wall. 5 more stay private."></a>
 </p>
 <!-- supporters:end -->
 
@@ -323,10 +328,10 @@ desktop, [become a Supporter](SPONSORS.md).
 The source is offered under the GNU General Public License, version 3 only
 ([LICENSE](LICENSE)). Vendored third-party code keeps its own copyright and license notices,
 recorded in [ThirdParty/provenance.json](ThirdParty/provenance.json). Every recipient
-keeps every right the GPL grants, whether or not they are a Supporter.
+keeps every right the GPL grants, whether or not they buy Priority Support.
 
 [LICENSING.md](LICENSING.md) is the account of where the code comes from, the license of
-each third-party component, the Supporter model, and where the source of each download is. The
+each third-party component, Priority Support, and where the source of each download is. The
 Apache-2.0 and GPL-3.0 components the build used to link (MoltenVK, the Vulkan loader,
 SPIRV-Tools, glslang, the vendored spirv_reflect, and the spirv Rust crate) were removed
 on 2026-10-17 under the earlier GPL-2.0-only policy and are GPLv3-compatible. Workshop

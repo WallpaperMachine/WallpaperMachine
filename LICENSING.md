@@ -2,7 +2,7 @@
 
 How WallpaperMachine's source and its downloads are licensed, where the code came
 from, the licenses of the third-party components it contains, and what the
-Supporter purchase is. This is a description, not legal advice. The terms are the
+Priority Support purchase is. This is a description, not legal advice. The terms are the
 root [`LICENSE`](LICENSE) and the notices of each component; where this file and
 those texts differ, the texts govern.
 
@@ -11,7 +11,7 @@ those texts differ, the texts govern.
 | Question | Answer |
 |---|---|
 | Under which license is the source offered? | GNU GPL version 3 only, the text in the root [`LICENSE`](LICENSE). Third-party code keeps its own license. See [Source license](#source-license-gpl-30-only). |
-| Is the app sold? | No. The download is free and the source is here. The only purchase is the optional Supporter one, which buys a sponsor place and priority support, not software. See [Supporter model](#supporter-model-free-signed-download-paid-sponsorship-and-support). |
+| Is the app sold? | No. The download is free and the source is here. The only purchase is the optional Priority Support, a paid support service, not software. See [Priority Support](#priority-support-a-paid-service-not-the-software). |
 | Where is the source of a download? | This repository at the release's tag `vx.y.z`. See [Corresponding source](#corresponding-source). |
 | Which licenses do the bundled components use? | GPLv3-compatible ones only, checked by `scripts/check_licenses.py`. See [Components and their licenses](#components-and-their-licenses). |
 | Is the download notarized? | Not yet. See [Signing and notarization](#signing-and-notarization). |
@@ -56,36 +56,44 @@ The Workshop browser and downloader were written for this client; no code from
 [Unayung/wallpaper-engine-mac](https://github.com/Unayung/wallpaper-engine-mac) was
 copied, translated or adapted.
 
-## Supporter model: free signed download, paid sponsorship and support
+## Priority Support: a paid service, not the software
 
-The website (https://www.wallpapermachine.app) offers WallpaperMachine in two
-tiers. Neither changes the license, and no copy of the software is sold:
+The website (https://www.wallpapermachine.app) offers WallpaperMachine free and sells
+one optional service beside it. Neither changes the license, and no copy of the
+software is sold:
 
 1. **Free.** The signed download built from a tagged release, or the source in this
    repository to build yourself.
-2. **Supporter.** A one-time purchase through Paddle.com, the website's reseller and
-   Merchant of Record, that buys:
-   - a **sponsor place**: a name and picture on the website's sponsor wall and in the
-     [README's sponsor list](README.md#thank-you-to-every-supporter), shown only if
-     the Supporter turns it on;
-   - **priority support**: compatibility questions and feature requests on the
-     supporter forum, answered ahead of general requests.
+2. **Priority Support.** A one-time purchase through Paddle.com, the website's reseller
+   and Merchant of Record: compatibility questions and feature requests on the support
+   forum are answered ahead of general requests.
 
-GPLv3 allows charging for support (section 4), and a sponsor listing is a service the
-license does not regulate (sections 2 and 9). What follows from the license:
+GPLv3 allows charging for support (section 4). Priority Support is a service the
+developer sells, not a donation and not a way to sponsor the project, and its money
+does not pass through MMFoundation's Open Collective. Sponsoring MMFoundation there is
+a gift that buys nothing in return ([SPONSORS.md](SPONSORS.md)).
+
+A listing on the website's thank-you wall and in the
+[README's list](README.md#thank-you-to-every-priority-support-member) is not part of
+the purchase. People who bought Priority Support under its earlier name, Supporter,
+were promised that listing and keep it. A new buyer may turn the same listing on as a
+courtesy; it is off by default and not part of what they buy.
+
+What follows from the license:
 
 - **The software is never the product.** Nothing in the app checks for, unlocks or
-  changes with a Supporter purchase: no license key, no Supporter build, no feature gate.
+  changes with a purchase: no license key, no special build, no feature gate.
 - **Every recipient keeps every GPL right.** Anyone who has the download may run it,
-  study and change its source, and redistribute or sell copies under GPLv3. Supporters
-  get exactly the license everyone else does, and a refund takes none of it back.
+  study and change its source, and redistribute or sell copies under GPLv3. Buyers get
+  exactly the license everyone else does, and a refund takes none of it back.
 - **No additional end-user agreement.** The download ships with the GPLv3 text and the
   third-party notices only. The website's terms (https://www.wallpapermachine.app/terms/)
   state that this repository's license, not those terms, governs the software; they
-  and the refund policy (https://www.wallpapermachine.app/refunds/) cover the Supporter
-  purchase only.
-- **Warranty.** The GPLv3 disclaimer (sections 15 and 16) applies. A paid support
-  commitment, if one is ever offered, binds this project alone and no upstream author.
+  and the refund policy (https://www.wallpapermachine.app/refunds/) cover the Priority
+  Support purchase only.
+- **Warranty.** The GPLv3 disclaimer (sections 15 and 16) applies to the software.
+  Priority Support is the developer's own commitment to answer questions first, sold
+  through Paddle; it is no warranty of the software and binds no upstream author.
 
 ## Corresponding source
 

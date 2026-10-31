@@ -40,7 +40,7 @@
   <a href="#código-aberto-livre-para-compilar">Compile você mesmo</a>&ensp;·&ensp;
   <a href="https://www.wallpapermachine.app/guides/">Guias (em inglês)</a>&ensp;·&ensp;
   <a href="docs/README.md">Documentação (em inglês)</a>&ensp;·&ensp;
-  <a href="SPONSORS.md">Apoie</a>
+  <a href="SPONSORS.md">Patrocine</a>
 </p>
 
 <p align="center">
@@ -243,10 +243,12 @@ fora do modo global, encaminhe `steamserver.net`, `steamcontent.com`,
 <summary><b>O WallpaperMachine é mesmo gratuito?</b></summary>
 
 Sim. O download assinado é gratuito, e o código-fonte completo está aqui se você
-preferir compilar você mesmo. Tornar-se Apoiador dá um lugar entre os patrocinadores no
-site e neste README, além de suporte prioritário. Não compra nenhuma licença: o app
-é o mesmo com ou sem ele. O que está incluído e como se tornar Apoiador:
-[SPONSORS.md](SPONSORS.md) (em inglês).
+preferir compilar você mesmo. Nada que você pague muda o app. Para contribuir,
+patrocine a MMFoundation, que faz o WallpaperMachine, no
+[Open Collective](https://opencollective.com/mmfoundation). O
+[Suporte Prioritário](https://www.wallpapermachine.app/pricing/) é um serviço pago no
+site que responde às suas perguntas primeiro. Não compra nenhuma licença: o app é o
+mesmo com ou sem ele. Os dois estão explicados em [SPONSORS.md](SPONSORS.md) (em inglês).
 
 </details>
 
@@ -298,21 +300,23 @@ Os documentos abaixo estão em inglês.
 | [docs/testing/README.md](docs/testing/README.md) | Estratégia de testes, comandos e política de evidências |
 | [docs/release.md](docs/release.md) | Versionamento, notas da versão e o pipeline de lançamento no CI |
 | [CHANGELOG.md](CHANGELOG.md) | O que mudou em cada versão publicada |
-| [LICENSING.md](LICENSING.md) | Licença, origem do código, modelo de Apoiador e licenças dos componentes |
-| [SPONSORS.md](SPONSORS.md) | Preço do Apoiador, o que está incluído e outras formas de ajudar |
+| [LICENSING.md](LICENSING.md) | Licença, origem do código, Suporte Prioritário e licenças dos componentes |
+| [SPONSORS.md](SPONSORS.md) | Patrocínio no Open Collective, Suporte Prioritário e outras formas de ajudar |
 | [AGENTS.md](AGENTS.md) | Regras para agentes que trabalham neste repositório |
 
-## Obrigado. A cada Apoiador.
+## Obrigado. A cada membro do Suporte Prioritário.
 
-Os Apoiadores que escolhem aparecer estão listados aqui e no
-[mural de patrocinadores](https://www.wallpapermachine.app/#sponsors). Apoiador é uma
-compra única que dá um lugar entre os patrocinadores e suporte prioritário; o app e o seu
-código-fonte continuam gratuitos para todo mundo. Se o WallpaperMachine conquistou um lugar na sua
-mesa, [torne-se Apoiador](SPONSORS.md).
+Os membros do Suporte Prioritário que escolhem aparecer estão listados aqui e no
+[mural de agradecimentos](https://www.wallpapermachine.app/#sponsors). Quem comprou como
+Apoiador mantém o lugar que lhe foi prometido. Novos compradores podem escolher aparecer no
+mural de agradecimentos; isso vem desativado por padrão e não faz parte do que compram. O
+[Suporte Prioritário](https://www.wallpapermachine.app/pricing/) é um serviço pago que
+responde às suas perguntas primeiro; o app e o seu código-fonte continuam gratuitos para
+todo mundo. Para patrocinar o projeto, veja [SPONSORS.md](SPONSORS.md) (em inglês).
 
-<!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
+<!-- supporters:start: written by scripts/update_sponsors.py from the website's thank-you wall; edits here are overwritten -->
 <p align="center">
-  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=9e4cd6c8b6fa" width="100%" alt="WallpaperMachine Supporters: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Supporters on the wall. 4 more support privately."></a>
+  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=dcf8135022b9" width="100%" alt="WallpaperMachine Priority Support members: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Priority Support members on the wall. 5 more stay private."></a>
 </p>
 <!-- supporters:end -->
 
@@ -323,10 +327,10 @@ Esta seção é uma tradução; em caso de divergência, prevalecem o [README](R
 O código-fonte é oferecido sob a GNU General Public License, somente a versão 3
 ([LICENSE](LICENSE)). O código de terceiros incluído mantém seus próprios avisos de direitos autorais e de licença,
 registrados em [ThirdParty/provenance.json](ThirdParty/provenance.json). Todo destinatário
-mantém todos os direitos que a GPL concede, seja ou não Apoiador.
+mantém todos os direitos que a GPL concede, tendo ou não comprado o Suporte Prioritário.
 
 O [LICENSING.md](LICENSING.md) descreve de onde vem o código, a licença de
-cada componente de terceiros, o modelo de Apoiador e onde está o código-fonte de cada download. Os
+cada componente de terceiros, o Suporte Prioritário e onde está o código-fonte de cada download. Os
 componentes Apache-2.0 e GPL-3.0 aos quais a compilação era vinculada (MoltenVK, o Vulkan loader,
 SPIRV-Tools, glslang, o spirv_reflect incluído e o crate Rust spirv) foram removidos
 em 2026-10-17 sob a política anterior GPL-2.0-only e são compatíveis com a GPLv3. Os papéis de parede

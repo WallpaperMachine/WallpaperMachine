@@ -13,13 +13,13 @@ CODE_OF_CONDUCT.md                 conduct expected in the project's spaces and 
 CONTRIBUTING.md                    contributor working agreement
 crowdin.yml                        Crowdin project config: the three string catalogs as multilingual sources; no credentials (docs/localization.md#crowdin)
 LICENSE                            GNU GPL version 3 text; the license of this repository's source
-LICENSING.md                       GPL-3.0-only license, Supporter model, component licenses and notices
-README.md                          product overview after the website, build quickstart, FAQ, sponsor list (written by scripts/update_sponsors.py), documentation index
-README.zh-CN.md                    README.md in 简体中文; change it with README.md (same sponsor list block)
-README.pt-BR.md                    README.md in Português; change it with README.md (same sponsor list block)
-README.ko.md                       README.md in 한국어; change it with README.md (same sponsor list block)
+LICENSING.md                       GPL-3.0-only license, Priority Support, component licenses and notices
+README.md                          product overview after the website, build quickstart, FAQ, Priority Support member list (written by scripts/update_sponsors.py), documentation index
+README.zh-CN.md                    README.md in 简体中文; change it with README.md (same member list block)
+README.pt-BR.md                    README.md in Português; change it with README.md (same member list block)
+README.ko.md                       README.md in 한국어; change it with README.md (same member list block)
 SECURITY.md                        private vulnerability reporting, supported versions and scope
-SPONSORS.md                        Supporter pricing, benefits and other ways to help; follows the website's pricing page
+SPONSORS.md                        sponsoring on Open Collective, Priority Support and other ways to help; follows the website's pricing page
 project.yml                        XcodeGen spec: the only source of truth for targets/settings/versions
 WallpaperMachine.xcodeproj/        generated from project.yml by xcodegen; committed, never hand-edited
 App/                               WallpaperMachine application target sources only

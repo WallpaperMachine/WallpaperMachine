@@ -753,9 +753,10 @@ publishes nothing.
 
 ### Supporters (`supporters.yml`)
 
-Keeps the [README's Supporter list](../README.md#thank-you-to-every-supporter), and
-the same list in its translations `README.zh-CN.md`, `README.pt-BR.md` and `README.ko.md`, in step with the website's
-[sponsor wall](https://www.wallpapermachine.app/#sponsors). Every hour (and on
+Keeps the [README's Supporter list](../README.md#thank-you-to-every-priority-support-member)
+of Priority Support members, and the same list in its translations `README.zh-CN.md`,
+`README.pt-BR.md` and `README.ko.md`, in step with the website's
+[thank-you wall](https://www.wallpapermachine.app/#sponsors). Every hour (and on
 demand from **Actions -> Supporters -> Run workflow**) it runs
 `python3 scripts/update_sponsors.py` on `main`, which reads the wall's JSON from
 `https://www.wallpapermachine.app/api/sponsors` and rewrites the block between the
@@ -939,10 +940,9 @@ carries `CHANGELOG.md` as it is at the patch's tag, and that copy is not rewritt
 CI publishes the disk image although the questions in
 [../LICENSING.md](../LICENSING.md) remain unresolved; the licensing gate that
 once failed Build was removed for 1.0.0 by maintainer decision. That file also
-records the intended Supporter model (a free Developer ID signed and notarized
-download, and a one-time Supporter purchase for a sponsor place and priority
-support, under the GPL with corresponding source alongside). Neither Developer
-ID signing nor notarization is part of this pipeline: `scripts/package.py`
+describes the distribution (a free signed download beside the paid Priority
+Support service, under the GPL with corresponding source alongside). Neither
+Developer ID signing nor notarization is part of this pipeline: `scripts/package.py`
 signs with a self-signed certificate that only keeps the designated requirement
 stable ([build.md](build.md#release-signing)), a provenance attestation records
 who built an artifact rather than who vouches for it, and neither is license

@@ -1,4 +1,4 @@
-# Keep the READMEs' Supporter list in step with the website's sponsor wall.
+# Keep the READMEs' Supporter list in step with the website's thank-you wall.
 #
 # Every hour, and on demand from Actions -> Supporters -> Run workflow, this reads the
 # wall (https://www.wallpapermachine.app/api/sponsors) with scripts/update_sponsors.py

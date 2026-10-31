@@ -909,8 +909,8 @@ clean-room by 2026-10-22; `Renderer/` holds the rewrite, and the imported code i
 history ([../LICENSING.md](../LICENSING.md#source-license-gpl-30-only)).
 `ThirdParty/provenance.json` records that history and, for vendored code, the repositories, pinned
 revisions and modification status, with the current `distributionStatus`. The Workshop browser is recorded there and in
-[../LICENSING.md](../LICENSING.md) as independently implemented. Licence policy, the Supporter
-model and the component licenses live in `LICENSING.md`; which notices `scripts/package.py`
+[../LICENSING.md](../LICENSING.md) as independently implemented. Licence policy, Priority
+Support and the component licenses live in `LICENSING.md`; which notices `scripts/package.py`
 bundles is in [build.md](build.md#packaging-and-installing).
 
 ## Targets

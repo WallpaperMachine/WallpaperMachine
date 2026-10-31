@@ -38,7 +38,7 @@
   <a href="#开源与自行构建">自行构建</a>&ensp;·&ensp;
   <a href="https://www.wallpapermachine.app/zh/guides/">使用指南</a>&ensp;·&ensp;
   <a href="docs/README.md">文档（英文）</a>&ensp;·&ensp;
-  <a href="https://www.wallpapermachine.app/zh/pricing/">支持我们</a>
+  <a href="SPONSORS.md">赞助</a>
 </p>
 
 <p align="center">
@@ -172,12 +172,12 @@ WallpaperMachine 支持场景、视频和网页渲染。兼容性因壁纸而异
 <details>
 <summary><b>WallpaperMachine 真的免费吗？</b></summary>
 
-是的。签名版免费下载，如果你更想自己构建，完整源代码就在这里。成为支持者，可在网站和本 README 上获得赞助者位置，并享有优先支持。它不购买任何许可：有没有它，应用都一样。包含哪些内容以及如何成为支持者，见[价格页面](https://www.wallpapermachine.app/zh/pricing/)。
+是的。签名版免费下载，如果你更想自己构建，完整源代码就在这里。付费不会改变应用的任何部分。想支持它，可以在 [Open Collective](https://opencollective.com/mmfoundation) 上赞助开发 WallpaperMachine 的 MMFoundation。网站上的[优先支持](https://www.wallpapermachine.app/zh/pricing/)是一项付费服务，你的问题会优先得到回复。它不购买任何许可：有没有它，应用都一样。两者的说明见 [SPONSORS.md](SPONSORS.md)（英文）。
 
 </details>
 
 <details>
-<summary><b>可以用支付宝或微信支付吗？</b></summary>
+<summary><b>购买优先支持时可以用支付宝或微信支付吗？</b></summary>
 
 可以，前提是你从中国 IP 访问网站。结账时提供的支付方式由你的 IP 地址决定，支付宝和微信支付只对中国 IP 显示。如果你正在使用 VPN 或代理，请先关闭再结账。
 
@@ -218,17 +218,17 @@ python3 scripts/build.py --configuration Release   # 渲染器、绑定、Xcode 
 | [docs/testing/README.md](docs/testing/README.md) | 测试策略、命令与验证记录规范 |
 | [docs/release.md](docs/release.md) | 版本号、发布说明与 CI 发布流程 |
 | [CHANGELOG.md](CHANGELOG.md) | 每个已发布版本的变更，含简体中文 |
-| [LICENSING.md](LICENSING.md) | 许可证、代码来源、支持者模式与组件许可证 |
-| [SPONSORS.md](SPONSORS.md) | 支持者价格、包含内容及其他支持方式 |
+| [LICENSING.md](LICENSING.md) | 许可证、代码来源、优先支持与组件许可证 |
+| [SPONSORS.md](SPONSORS.md) | 在 Open Collective 上赞助、优先支持及其他支持方式 |
 | [AGENTS.md](AGENTS.md) | 在本仓库中工作的 AI 代理须遵守的规则 |
 
-## 致每一位支持者
+## 致每一位优先支持用户
 
-选择公开展示的支持者会列在这里和[赞助墙](https://www.wallpapermachine.app/zh/#sponsors)上。支持者是一次性购买，获得赞助者位置和优先支持；应用及其源代码对所有人始终免费。如果 WallpaperMachine 在你的桌面上占有了一席之地，欢迎[成为支持者](https://www.wallpapermachine.app/zh/pricing/)。
+选择公开展示的优先支持用户会列在这里和[致谢墙](https://www.wallpapermachine.app/zh/#sponsors)上。以“支持者”名义购买的用户，保留当时承诺给他们的位置。新购买者可以选择出现在致谢墙上；默认关闭，不算在购买内容里。[优先支持](https://www.wallpapermachine.app/zh/pricing/)是一项付费服务，你的问题会优先得到回复；应用及其源代码对所有人始终免费。想赞助这个项目，请看 [SPONSORS.md](SPONSORS.md)（英文）。
 
-<!-- supporters:start: written by scripts/update_sponsors.py from the website's sponsor wall; edits here are overwritten -->
+<!-- supporters:start: written by scripts/update_sponsors.py from the website's thank-you wall; edits here are overwritten -->
 <p align="center">
-  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=9e4cd6c8b6fa" width="100%" alt="WallpaperMachine Supporters: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Supporters on the wall. 4 more support privately."></a>
+  <a href="https://www.wallpapermachine.app/#sponsors"><img src="https://www.wallpapermachine.app/sponsors/wall?v=dcf8135022b9" width="100%" alt="WallpaperMachine Priority Support members: xwei12, umitsurumi, ReinforceZwei, hahagei2580, 你识认我, Yanami, LettuceWeng, Slikk878, 我懶得想, ZhuLegend. 10 Priority Support members on the wall. 5 more stay private."></a>
 </p>
 <!-- supporters:end -->
 
@@ -236,9 +236,9 @@ python3 scripts/build.py --configuration Release   # 渲染器、绑定、Xcode 
 
 本节为译文，如有出入，以英文 [README](README.md#license) 和 [LICENSE](LICENSE) 为准。
 
-源代码以 GNU 通用公共许可证第 3 版（仅限该版本）提供（[LICENSE](LICENSE)）。内置的第三方代码保留其各自的版权和许可声明，记录在 [ThirdParty/provenance.json](ThirdParty/provenance.json) 中。无论是否为支持者，每位接收者都享有 GPL 授予的全部权利。
+源代码以 GNU 通用公共许可证第 3 版（仅限该版本）提供（[LICENSE](LICENSE)）。内置的第三方代码保留其各自的版权和许可声明，记录在 [ThirdParty/provenance.json](ThirdParty/provenance.json) 中。无论是否购买优先支持，每位接收者都享有 GPL 授予的全部权利。
 
-[LICENSING.md](LICENSING.md) 说明了代码的来源、每个第三方组件的许可证、支持者模式，以及每个下载对应的源代码在哪里。构建过去所链接的 Apache-2.0 与 GPL-3.0 组件（MoltenVK、Vulkan loader、SPIRV-Tools、glslang、内置的 spirv_reflect，以及 spirv Rust crate）已于 2026-10-17 在早先的 GPL-2.0-only 政策下移除，这些组件与 GPLv3 兼容。创意工坊壁纸归其创作者所有，场景资源来自你所拥有的 Wallpaper Engine；应用两者都不附带。
+[LICENSING.md](LICENSING.md) 说明了代码的来源、每个第三方组件的许可证、优先支持，以及每个下载对应的源代码在哪里。构建过去所链接的 Apache-2.0 与 GPL-3.0 组件（MoltenVK、Vulkan loader、SPIRV-Tools、glslang、内置的 spirv_reflect，以及 spirv Rust crate）已于 2026-10-17 在早先的 GPL-2.0-only 政策下移除，这些组件与 GPLv3 兼容。创意工坊壁纸归其创作者所有，场景资源来自你所拥有的 Wallpaper Engine；应用两者都不附带。
 
 ## 友情链接
 
