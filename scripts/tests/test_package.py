@@ -34,6 +34,56 @@ class RaisedMinimumTests(unittest.TestCase):
         self.assertEqual(list(newer), ["libfreetype.6.dylib"])
 
 
+class ResolveLibrariesTests(unittest.TestCase):
+    """The Homebrew closure the app bundles, read from fake load commands."""
+
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        root = Path(self.scratch.name).resolve()
+        self.prefix = root / "homebrew"
+        self.app = root / "build/WallpaperMachine.app/Contents/MacOS/WallpaperMachine"
+        self.freetype = self.prefix / "opt/freetype/lib/libfreetype.6.dylib"
+        self.decoder = self.prefix / "opt/brotli/lib/libbrotlidec.1.dylib"
+        self.common = self.prefix / "opt/brotli/lib/libbrotlicommon.1.dylib"
+        for file in (self.app, self.freetype, self.decoder, self.common):
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"")
+        self.loads = {
+            self.app: [str(self.freetype), "@rpath/libswiftCore.dylib"],
+            self.freetype: [str(self.decoder)],
+            # brotli's decoder loads its sibling through @rpath and its own @loader_path rpath.
+            self.decoder: ["@rpath/libbrotlicommon.1.dylib"],
+            self.common: [],
+        }
+        self.rpaths = {self.decoder: ["@loader_path/../lib"]}
+
+    def tearDown(self):
+        self.scratch.cleanup()
+
+    def resolve(self):
+        with mock.patch.object(package, "dependencies", lambda file: self.loads[Path(file).resolve()]), \
+             mock.patch.object(package, "rpaths", lambda file: self.rpaths.get(Path(file).resolve(), [])):
+            return package.resolve_libraries([self.app], [], self.prefix)
+
+    def test_a_keg_library_loaded_through_its_own_rpath_is_bundled(self):
+        libraries = self.resolve()
+        self.assertEqual(sorted(libraries), ["libbrotlicommon.1.dylib", "libbrotlidec.1.dylib", "libfreetype.6.dylib"])
+        self.assertEqual(libraries["libbrotlicommon.1.dylib"], self.common.resolve())
+
+    def test_an_app_already_relocated_by_an_earlier_run_is_refused(self):
+        self.loads[self.app] = ["@rpath/libfreetype.6.dylib"]
+        with self.assertRaisesRegex(package.PackagingError, "fresh, unrelocated"):
+            self.resolve()
+
+    def test_an_rpath_that_leaves_the_homebrew_prefix_is_not_followed(self):
+        outside = Path(self.scratch.name).resolve() / "elsewhere/lib"
+        outside.mkdir(parents=True)
+        (outside / "libbrotlicommon.1.dylib").write_bytes(b"")
+        self.rpaths[self.decoder] = [str(outside)]
+        with self.assertRaisesRegex(package.PackagingError, "libbrotlicommon"):
+            self.resolve()
+
+
 class ReportTests(unittest.TestCase):
     def test_a_warning_seen_by_both_the_bundle_and_the_image_check_prints_once(self):
         reported = set()

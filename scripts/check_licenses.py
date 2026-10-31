@@ -243,6 +243,7 @@ COMPONENTS = {
     "lz4": Entry("BSD-2-Clause", "Homebrew dylib"),
     "freetype": Entry("FTL OR GPL-2.0-or-later", "Homebrew dylib; the keg's LICENSE.TXT offers either"),
     "libpng": Entry("libpng-2.0", "Homebrew dylib, a FreeType dependency"),
+    "brotli": Entry("MIT", "Homebrew dylibs (libbrotlidec, libbrotlicommon), a FreeType dependency"),
     "mediaremote-adapter": Entry("BSD-3-Clause", "ThirdParty/mediaremote-adapter, embedded framework"),
     "(apple system)": Entry(None, "Apple system library or framework", "system"),
     "(build tool)": Entry(None, "build-time tool, not part of the product", "tool"),
@@ -273,6 +274,7 @@ FIRST_PARTY_ARCHIVE = re.compile(r"^((wp|wm)[A-Z]\w*|wescene-renderer)$")
 # (an already packaged app, or a machine without Homebrew).
 LIBRARY_STEMS = {
     "liblz4": "lz4", "libfreetype": "freetype", "libpng16": "libpng",
+    "libbrotlidec": "brotli", "libbrotlicommon": "brotli",
     "libqjs": "quickjs-ng", "MediaRemoteAdapter": "mediaremote-adapter",
 }
 

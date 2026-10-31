@@ -116,6 +116,7 @@ component, with its version, is listed in the bundled `THIRD-PARTY-NOTICES.txt`.
 | lz4 | Homebrew `lz4` | BSD-2-Clause | Compatible |
 | FreeType | Homebrew `freetype` | FTL or GPL-2.0-or-later | Compatible, used under GPL-2.0-or-later |
 | libpng | Homebrew `libpng` (FreeType dependency) | libpng-2.0 | Compatible |
+| Brotli | Homebrew `brotli` (FreeType dependency since FreeType 2.15: `libbrotlidec`, `libbrotlicommon`) | MIT | Compatible |
 | naga | Rust crate, patched copy in `ThirdParty/naga` (`PATCHES.md`) | MIT OR Apache-2.0, used under MIT | Compatible |
 | uniffi, option-ext | Rust crates | MPL-2.0 | Compatible through MPL-2.0 section 3.3 |
 | The other linked Rust crates | `Renderer/Cargo.lock` | MIT, alone or as a choice; a few Zlib or BSD-3-Clause | Compatible |

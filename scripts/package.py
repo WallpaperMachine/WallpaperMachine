@@ -83,14 +83,50 @@ def dependencies(file):
     return [line.strip().split(" (compatibility")[0] for line in output(["otool", "-L", file]).splitlines()[1:] if line.strip()]
 
 
+def rpaths(file):
+    """The LC_RPATH entries of a Mach-O file, in load-command order."""
+    load_commands = output(["otool", "-l", file]).splitlines()
+    return [load_commands[index + 2].strip().split(" (offset")[0].removeprefix("path ")
+            for index, line in enumerate(load_commands) if line.strip() == "cmd LC_RPATH"]
+
+
+def keg_rpath_target(file, dependency, prefix):
+    """The Homebrew file an `@rpath/` dependency of a Homebrew dylib names, or None.
+
+    Some kegs load a sibling library through `@rpath` and an `@loader_path/../lib` entry
+    of their own (brotli's decoder loads its common library that way, and FreeType loads
+    brotli since 2.15). Only rpaths that stay inside the Homebrew prefix are followed:
+    a bundle relocated by an earlier run points its rpaths at Contents/Frameworks, and
+    that input is still refused.
+    """
+    root = Path(prefix).resolve()
+    if not Path(file).resolve().is_relative_to(root):
+        return None
+    name = dependency.removeprefix("@rpath/")
+    for entry in rpaths(file):
+        if entry.startswith("@loader_path/"):
+            base = Path(file).parent / entry.removeprefix("@loader_path/")
+        elif entry.startswith(str(prefix)):
+            base = Path(entry)
+        else:
+            continue
+        # Named as it is loaded, like an absolute dependency, so the bundled copy keeps that
+        # name; the check that it stays in the prefix follows any links.
+        candidate = base / name
+        if candidate.is_file() and candidate.resolve().is_relative_to(root):
+            return candidate
+    return None
+
+
 def resolve_libraries(roots, seeds, prefix):
     """Every Homebrew dylib the roots load, directly or transitively, keyed by file name.
 
     Read-only: the walk runs over the Homebrew files themselves, so the bundle is
-    known before anything is copied into it. An `@rpath` dependency that is not a
-    Swift runtime library means the input was already relocated by an earlier run,
-    whose provenance this script does not track, so it is refused rather than
-    resolved against whatever the host has installed.
+    known before anything is copied into it. A Homebrew dylib's `@rpath` dependency is
+    followed through that dylib's own rpaths inside the prefix (`keg_rpath_target`).
+    Any other `@rpath` dependency that is not a Swift runtime library means the input
+    was already relocated by an earlier run, whose provenance this script does not
+    track, so it is refused rather than resolved against whatever the host has installed.
     """
     libraries = {}
     relocated = []
@@ -109,7 +145,11 @@ def resolve_libraries(roots, seeds, prefix):
             if dependency.startswith(str(prefix)):
                 add(Path(dependency))
             elif dependency.startswith("@rpath/") and Path(dependency).name not in libraries and "libswift" not in dependency:
-                relocated.append(f"{file}: {dependency}")
+                target = keg_rpath_target(file, dependency, prefix)
+                if target is not None:
+                    add(target)
+                else:
+                    relocated.append(f"{file}: {dependency}")
     if relocated:
         raise PackagingError(f"{FRESH_BUILD}\n  " + "\n  ".join(relocated))
     return libraries

@@ -201,7 +201,11 @@ bundle is absent.
      instead of it failing to load a library. `--require-deployment-target`,
      which the release workflow passes, exits 1 instead.
 1. **Dylib relocation.** Starting from the app and extension binaries, it walks `otool -L` transitively. Every dependency under
-   the Homebrew prefix is copied into `Contents/Frameworks`, given an
+   the Homebrew prefix is copied into `Contents/Frameworks`, including a
+   sibling a Homebrew library loads through `@rpath` and its own
+   `@loader_path/../lib` rpath (Brotli's decoder, which FreeType loads from
+   2.15, loads its common library that way; only rpaths that stay inside the
+   prefix are followed), given an
    `@rpath/<name>` install name, and rewritten in its dependents with
    `install_name_tool -change`. Absolute `LC_RPATH` entries pointing into the
    Homebrew prefix or the repository are deleted, and
