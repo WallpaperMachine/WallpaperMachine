@@ -780,7 +780,11 @@ on Linux. Swift runs on `macos-26`: `prepare-build` and
 `python3 scripts/build.py --renderer-only` first, untraced, then CodeQL traces
 `scripts/build.py --swift-only` with the `--xcode-setting` overrides CodeQL's own
 Swift autobuild uses (no signing, no compilation cache, no integrated driver), so
-the extractor sees every Swift compile. C/C++ (only vendored third-party code is
+the extractor sees every Swift compile. The traced build also leaves out the `.metal`
+sources (`EXCLUDED_SOURCE_FILE_NAMES=*.metal`): under CodeQL's tracer Xcode 26 cannot
+find the Metal Toolchain that `prepare-build` installed
+([github/codeql-action#3978](https://github.com/github/codeql-action/issues/3978)), and
+they hold no Swift. C/C++ (only vendored third-party code is
 visible to it), Ruby (the repository has none) and JavaScript/TypeScript (none since
 the SwiftUI control panel; CodeQL fails a language with no code) are deliberately not
 analyzed.

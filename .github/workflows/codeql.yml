@@ -83,12 +83,17 @@ jobs:
 
       - name: Build the app
         if: matrix.language == 'swift'
+        # Under CodeQL's build tracer Xcode 26 cannot find the Metal Toolchain that
+        # prepare-build installed (github/codeql-action#3978), so CompileMetalFile fails.
+        # The Metal sources carry no Swift, and their library is only loaded at run time,
+        # so the traced build leaves them out.
         run: |
           python3 scripts/build.py --swift-only \
             --xcode-setting CODE_SIGNING_ALLOWED=NO \
             --xcode-setting COMPILATION_CACHE_ENABLE_CACHING=NO \
             --xcode-setting SWIFT_ENABLE_COMPILE_CACHE=NO \
-            --xcode-setting SWIFT_USE_INTEGRATED_DRIVER=NO
+            --xcode-setting SWIFT_USE_INTEGRATED_DRIVER=NO \
+            --xcode-setting 'EXCLUDED_SOURCE_FILE_NAMES=*.metal'
 
       - uses: github/codeql-action/analyze@v4
         with:
