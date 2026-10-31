@@ -59,9 +59,10 @@ final class DesktopSpaceWallpaperAPI {
                 identifier == "Main" || $0.value.caseInsensitiveCompare(identifier) == .orderedSame
             }.keys.sorted()
             for space in spaces {
-                // Fullscreen app Spaces are not desktop thumbnails.
+                // macOS names the primary desktop with an empty UUID string, including in the
+                // system wallpaper store (`Spaces[""]`) and `DesktopPictureCopyDisplayForSpace`.
                 guard (space["type"] as? NSNumber)?.intValue == 0,
-                      let uuid = space["uuid"] as? String, !uuid.isEmpty else { continue }
+                      let uuid = space["uuid"] as? String else { continue }
                 for display in matching {
                     let target = DesktopPictureTarget(display: display, space: uuid)
                     if !result.contains(target) { result.append(target) }

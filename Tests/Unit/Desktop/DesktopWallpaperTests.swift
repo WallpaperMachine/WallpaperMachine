@@ -1127,11 +1127,12 @@ final class DesktopWallpaperTests: XCTestCase {
 
     @MainActor
     func testTopologyEnumeratesInactiveDesktopSpacesExcludesFullscreenAndSupportsSharedSpaces() {
+        let primary = DesktopPictureTarget(display: "1", space: "")
         let groups: [[String: Any]] = [["Display Identifier": "uuid-a", "Spaces": [
-            ["uuid": "one", "type": 0], ["uuid": "two", "type": 0],
-            ["uuid": "full", "type": 4], ["uuid": "", "type": 0], ["uuid": "unknown"]
+            ["uuid": "", "type": 0], ["uuid": "one", "type": 0], ["uuid": "two", "type": 0],
+            ["uuid": "full", "type": 4], ["uuid": "unknown"]
         ]], ["Display Identifier": "uuid-b", "Spaces": [["uuid": "external", "type": 0]]]]
-        XCTAssertEqual(Set(DesktopSpaceWallpaperAPI.targets(groups: groups, displays: ["1": "UUID-A", "2": "UUID-B"])), [one, two, external])
+        XCTAssertEqual(Set(DesktopSpaceWallpaperAPI.targets(groups: groups, displays: ["1": "UUID-A", "2": "UUID-B"])), [primary, one, two, external])
         let shared: [[String: Any]] = [["Display Identifier": "Main", "Spaces": [["uuid": "one", "type": 0]]]]
         XCTAssertEqual(Set(DesktopSpaceWallpaperAPI.targets(groups: shared, displays: ["1": "A", "2": "B"])), [one, DesktopPictureTarget(display: "2", space: "one")])
     }
@@ -2254,24 +2255,29 @@ final class DesktopWallpaperTests: XCTestCase {
     @MainActor
     func testOtherDesktopsOfASpaceDisplayGetTheirOwnPosterAndAreRestoredAtQuit() throws {
         let workspace = MemoryDesktopWorkspace()
+        let primary = DesktopPictureTarget(display: "1", space: "")
         let three = DesktopPictureTarget(display: "1", space: "three")
-        workspace.pictures = [one: original("one"), two: original("two"), three: original("three"),
-                              external: original("external")]
+        workspace.pictures = [primary: original("primary"), one: original("one"), two: original("two"),
+                              three: original("three"), external: original("external")]
         let ledger = try DesktopWallpaperLedger(folder: root, workspace: workspace)
 
-        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1", "2"], targetSpaces: ["1": ["one"]],
+        try ledger.synchronize(posters: ["1": Data([1])], liveDisplays: ["1", "2"], targetSpaces: ["1": ["default"]],
                                spacePosters: ["1": ["two": Data([2])], "2": ["external": Data([9])]])
 
-        XCTAssertEqual(Set(workspace.writes), [one, two])
+        XCTAssertEqual(Set(workspace.writes), [primary, two])
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[primary]?.url)), Data([1]),
+                       "the primary desktop's empty UUID matches its 'default' Space identity")
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([2]))
+        XCTAssertEqual(workspace.pictures[one], original("one"))
         XCTAssertEqual(workspace.pictures[three], original("three"), "a desktop without a poster of its own is left alone")
         XCTAssertEqual(workspace.pictures[external], original("external"),
                        "a display that does not follow Spaces takes nothing scoped")
 
         workspace.writes.removeAll()
         try ledger.synchronize(posters: [:], liveDisplays: ["1"], targetSpaces: ["1": []],
-                               spacePosters: ["1": ["two": Data([3])]])
-        XCTAssertEqual(workspace.writes, [two], "a held current desktop keeps its poster while the others still update")
+                               spacePosters: ["1": ["default": Data([5]), "two": Data([3])]])
+        XCTAssertEqual(Set(workspace.writes), [primary, two], "a held current desktop keeps its poster while the others still update")
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[primary]?.url)), Data([5]))
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[two]?.url)), Data([3]))
 
         workspace.writes.removeAll()
@@ -2281,6 +2287,7 @@ final class DesktopWallpaperTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(workspace.pictures[one]?.url)), Data([4]))
 
         try ledger.restoreAll()
+        XCTAssertEqual(workspace.pictures[primary], original("primary"))
         XCTAssertEqual(workspace.pictures[one], original("one"))
         XCTAssertEqual(workspace.pictures[two], original("two"))
     }

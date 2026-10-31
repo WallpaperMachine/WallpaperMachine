@@ -225,8 +225,9 @@ deliberately not used to show posters. Only a full restoration edits the store a
 restarts WallpaperAgent, to put back choices this API cannot write (see [the journal of
 originals](#the-journal-of-originals)).
 
-A target is a display and the UUID of one of its regular desktops; fullscreen-app
-Spaces are not desktop thumbnails and are skipped.
+A target is a display and the UUID of one of its regular desktops (including the primary
+desktop's empty UUID `""`, which matches `WallpaperSpaceMonitor`'s `"default"` identity);
+fullscreen-app Spaces are not desktop thumbnails and are skipped.
 
 `SystemDesktopPictureWorkspace.referencedPictureURLs` reads the system wallpaper store
 (`~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`) read-only, to

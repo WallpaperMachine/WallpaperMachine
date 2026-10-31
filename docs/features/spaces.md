@@ -181,9 +181,12 @@ currently applied per-display content.
 
 `WallpaperSpaceMonitor` reads the optional private `CGSCopyManagedDisplaySpaces` entry point and
 decodes `Display Identifier`, `Spaces`, `Current Space` and the current desktop's `ManagedSpaceID`.
-The data shape is private and not guaranteed on every macOS version, so the symbol and decoding are
-optional; no Accessibility permission, synthetic gesture, Space mutation, plist patch or Dock restart
-is used.
+macOS names the primary desktop with an empty `uuid` string (`""`), which `WallpaperSpaceMonitor`
+normalizes to `"default"` so every desktop has a non-empty identity while `DesktopSpaceWallpaperAPI`
+and `DesktopWallpaperLedger` match it to the `""` key in the system wallpaper store and per-Space
+picture calls. The data shape is private and not guaranteed on every macOS version, so the symbol
+and decoding are optional; no Accessibility permission, synthetic gesture, Space mutation, plist
+patch or Dock restart is used.
 
 Poster requests carry a context containing the current visit, assignment and content revision. Scene,
 Web and native-video producers return the context of the original request, and the coordinator rejects
@@ -208,7 +211,7 @@ recreation may not match; those choices remain unavailable until explicitly reas
 events and Focus recovery on successful restore; failed restore journals put that local state back.
 The saved posters are a cache and are not backed up.
 
-Topology, the current `ManagedSpaceID`, shared/independent groups, reordered UUIDs, fullscreen Spaces,
+Topology, the primary desktop's empty UUID (`"default"`), the current `ManagedSpaceID`, shared/independent groups, reordered UUIDs, fullscreen Spaces,
 malformed topology, persistent visits and notification teardown are covered by
 `WallpaperSpaceMonitorTests`, with every desktop's `ManagedSpaceID`; manual overrides, a hand-picked wallpaper becoming the desktop's own,
 unmapped visits, a desktop following Desktop 1, rapid queued switches, paused catch-up, the pending choice and Focus exit while
