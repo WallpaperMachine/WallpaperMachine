@@ -643,7 +643,9 @@ summary.
    `scripts/publish_release.py`.
 
 **`prepare-build` and the caches.** The composite action selects the newest
-non-beta `/Applications/Xcode_26*.app`, `brew install --quiet`s the
+non-beta `/Applications/Xcode_26*.app`, downloads that Xcode's Metal Toolchain when
+`xcrun metal` cannot run (the runner images do not always carry it, and the extension
+compiles a Core Image kernel), `brew install --quiet`s the
 XcodeGen/CMake/renderer package set with `ccache`, and restores two
 `actions/cache` entries. Every key carries the runner's macOS (`<os>` below is
 `macos-15` or `macos-26`), because bottles and compiled objects

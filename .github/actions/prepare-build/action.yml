@@ -1,5 +1,6 @@
-# Everything a macOS job needs before scripts/build.py can run: Xcode 26, the Homebrew
-# packages, and the two caches that keep a release from compiling the world. Shared by
+# Everything a macOS job needs before scripts/build.py can run: Xcode 26 with its Metal
+# Toolchain, the Homebrew packages, and the two caches that keep a release from compiling
+# the world. Shared by
 # Build's build job, the Test workflow's jobs and Warm caches, so all of them read and
 # write the same cache entries.
 #
@@ -16,7 +17,7 @@
 #   the lock file and the vendored revision. It is restored only from entries built by
 #   the same toolchain, whose target directories are the only ones cargo can reuse.
 name: Prepare build
-description: Select Xcode 26, install the build dependencies and restore the build caches.
+description: Select Xcode 26 and its Metal Toolchain, install the build dependencies and restore the build caches.
 
 inputs:
   save-object-cache:
@@ -33,6 +34,19 @@ runs:
         set -euo pipefail
         xcode="$(ls -d /Applications/Xcode_26*.app | grep -iv beta | sort -V | tail -n 1)"
         sudo xcode-select -s "${xcode}"
+
+    - name: Install the Metal Toolchain
+      # Xcode 26 downloads the Metal compiler separately, and the runner images do not always
+      # have it for the Xcode selected above (actions/runner-images#13014). The extension
+      # compiles a Core Image kernel (Shared/WallpaperEngineColor.ci.metal), so without it
+      # the app build stops at CompileMetalFile. The download is skipped when it is there.
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! xcrun metal --version > /dev/null 2>&1; then
+          xcodebuild -downloadComponent MetalToolchain
+        fi
+        xcrun metal --version
 
     - name: Install renderer and Xcode project dependencies
       id: brew
