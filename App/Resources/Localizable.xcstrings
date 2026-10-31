@@ -6366,6 +6366,9 @@
     "GNU General Public License v3" : {
       "localizations" : {"pt-BR" : {"stringUnit" : {"state" : "translated", "value" : "Licença Pública Geral GNU v3"}}, "ko" : {"stringUnit" : {"state" : "translated", "value" : "GNU 일반 공중 사용 허가서 버전 3"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "GNU一般公衆利用許諾契約書 バージョン3"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "GNU 通用公共许可证第 3 版"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "GNU 通用公共授權條款第 3 版"}}}
     },
+    "MMFoundation" : {
+      "localizations" : {"pt-BR" : {"stringUnit" : {"state" : "translated", "value" : "MMFoundation"}}, "ko" : {"stringUnit" : {"state" : "translated", "value" : "MMFoundation"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "MMFoundation"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "MMFoundation"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "MMFoundation"}}}
+    },
     "Untitled" : {
       "localizations" : {"pt-BR" : {"stringUnit" : {"state" : "translated", "value" : "Sem título"}}, "ko" : {"stringUnit" : {"state" : "translated", "value" : "무제"}}, "ja" : {"stringUnit" : {"state" : "translated", "value" : "無題"}}, "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "无标题"}}, "zh-Hant" : {"stringUnit" : {"state" : "translated", "value" : "未命名"}}}
     },

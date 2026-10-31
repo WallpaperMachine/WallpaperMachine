@@ -48,7 +48,8 @@ struct AboutSettingsSection: View {
   static let creditsItem = SettingsItem(
     id: "about.credits", section: .about, group: credits, title: "GNU General Public License v3",
     note:
-      "Not affiliated with Wallpaper Engine or Valve. WallpaperMachine itself is open source under GPL-3.0-only. Workshop browsing is independently implemented. No warranty is provided."
+      "Not affiliated with Wallpaper Engine or Valve. WallpaperMachine itself is open source under GPL-3.0-only. Workshop browsing is independently implemented. No warranty is provided.",
+    keywords: ["MMFoundation"]
   )
 
   static let items = [
@@ -370,7 +371,14 @@ private struct AboutCreditsRow: View {
             .font(.system(size: 12))
             .foregroundStyle(theme.surface.muted.color)
         }
-        Button("GNU General Public License v3") { ExternalLink.open(ExternalLink.gnuGPL3) }
+        HStack(spacing: 8) {
+          Button("GNU General Public License v3") { ExternalLink.open(ExternalLink.gnuGPL3) }
+          // MMFoundation makes the app; its website is where its other projects and its sponsors are.
+          Button { ExternalLink.open(ExternalLink.mmfoundation) } label: {
+            Text(verbatim: "MMFoundation")
+          }
+          .help(ExternalLink.mmfoundation.absoluteString)
+        }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 12)

@@ -252,6 +252,9 @@ the rest opens in a popover from the ⓘ beside the title.
   **Automatically download and install updates** is on (see [updates](updates.md)). The application menu item **Check for Updates…** opens
   this section. **Spread the word** has **Share WallpaperMachine…** and **Star on
   GitHub** ([one-time prompts](first-run.md#star-prompt-the-performance-data-question-and-the-subscriptions-offer)).
+  The section ends with the licence note and two links: **GNU General Public License
+  v3** and **MMFoundation**, the website of the organization that makes the app
+  (https://mmfoundation.dev/).
 - **Storage** opens with **Wallpaper library location**: where the installed
   wallpapers and downloads are kept, **Show in Finder**, **Move…** to another folder
   or an external drive and **Move to This Mac…** ([library location](library-location.md)).

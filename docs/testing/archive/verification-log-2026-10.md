@@ -9,6 +9,19 @@ level.
 These are historical results about the trees they were taken on. They are not
 evidence about the current tree and must never be cited as such.
 
+## 2026-10-30 — Keyed shader constant played by a script without update
+
+A cover cross-fade (blend amount keyed 1 to 0, start-paused, played by a mediaThumbnailChanged handler that only calls thisObject.getAnimation().play()) stayed on its first key, so the previous-cover slot covered the current cover. The handler-only script was never started; it now runs on the clock its constant's timeline plays on.
+
+- Wallpaper Engine 2.8.0.42 probe (generated opacity cells, scene version 4, two shots): no script 255 / 255 before / 255 after; init plays with no update 0 / 255 / 0; init plays with update(value) 0 / 128 / 128 (not fixed, documented in renderer.md); static 0.25 64 / 64 / 64; keys not paused 0 / 0 / 0
+- `we_reference.py compare` on the probe: before mean 21.73, off48 11.7%, corr 0.634; after mean 7.69, off48 6.2%, corr 0.883 (the update(value) cell and the watermark remain)
+- Workshop 3280146735 in the poster harness with `WE_TEST_MEDIA_ARTWORK=64x64:e01010` and playing/thumbnail events: cover centre (30,30,30) before, (224,16,16) after, at 8 s and 15 s
+- Not compared: that wallpaper against Wallpaper Engine (the VM has no player, so its card hides on PLAYBACK_STOPPED), and a live Apple Music cover in the app (needs a desktop run)
+- Cost: about 0.36 µs per tick per such constant (one update-less script evaluation, as other handler-only scripts)
+- `scenescript_behavior_test --gtest_filter=ScriptKeyedSettingObject.*`: 5 passed; both new tests failed before the fix
+- `python3 scripts/check_renderer.py` — exit 0; local-corpus tests skipped (no corpus environment)
+- `python3 scripts/test.py` — 4211 passed, 0 failed, 49 skipped (after clearing build-product xattrs and rebuilding a stale `libwallpaper_bridge.a` with `build.py --renderer-only`)
+
 ## 2026-10-29 — Keep SteamCMD current, SteamCMD canary, hotfix releases
 
 - python3 scripts/test.py on the branch rebased onto e20f6223: 4211 passed, 0 failed, 49 skipped (Python, XcodeGen, native).

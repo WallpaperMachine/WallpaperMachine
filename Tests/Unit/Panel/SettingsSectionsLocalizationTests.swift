@@ -12,8 +12,8 @@ final class SettingsSectionsLocalizationTests: XCTestCase {
     .quick, .general, .appearance, .desktop, .playback, .performance,
     .displays, .shortcuts, .library, .storage, .about,
   ]
-  /// Words that are the same in every language on purpose: figures, units and file names.
-  private static let sameEverywhere: Set<String> = []
+  /// Words that are the same in every language on purpose: figures, units, file names and names.
+  private static let sameEverywhere: Set<String> = ["MMFoundation"]
   /// Phrases a language writes exactly as English does: Portuguese shares these words, and macOS
   /// keeps Spaces in English.
   private static let sameIn: [String: Set<String>] = [

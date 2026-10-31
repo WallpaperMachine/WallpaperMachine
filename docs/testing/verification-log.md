@@ -25,6 +25,15 @@ and moves whatever falls past ten verbatim into a monthly file under
 [archive/](archive/); promote anything durable before it goes. Editing an
 entry's recorded result is not allowed.
 
+## 2026-11-01 — MMFoundation link in Settings › About
+
+Settings › About gains an MMFoundation button beside the GPL link, opening https://mmfoundation.dev/ through ExternalLink's allowlist (mmfoundation.dev added); READMEs in all four languages name MMFoundation with a link. Run while another task's uncommitted Spaces/desktop-picture edits were in the same checkout.
+
+- `python3 scripts/test.py --only ExternalLinkTests` — 5 passed (after `xattr -cr build/Build/Products/Debug`, docs/build.md)
+- `python3 scripts/test.py --only SettingsSectionsLocalizationTests` — 2 passed; MMFoundation added to its same-everywhere names
+- `python3 scripts/test.py` — first run 2 failed: the localization test above (fixed) and EnergyUsageMonitorTests.testKernelCountersForThisProcessAdvanceWithGPUWork (3.4 mW, hardware counter); rerun 4258 passed, 0 failed, 52 skipped
+- Not checked: the button on screen (no desktop run requested); no Release build
+
 ## 2026-10-31 — Video windows and the desktop picture (PR #138)
 
 The poster sync now hears about native video windows that open or close after a snapshot (`DesktopWallpaperSync.surfacesChanged`).
@@ -106,16 +115,3 @@ The poster sync now hears about native video windows that open or close after a 
 - WE comparisons: particle G/H/I effective CP/world samples agree within one encoded channel; volume inside point ROI is exact and spot maximum difference is one. Caster-on ROI MAE improved 27.2271→0.34573 (point) and 3.67252→0.17549 (spot); shadow-edge differences remain.
 - Private reflection candidate: 91 CPU and 27 GPU checks passed; combined reflection/volume/HDR candidate passed 71 CPU and 44 distinct GPU checks with Metal validation. Core reflection ROIs and explicit null/forward/winding controls match WE; this candidate is not enabled in MAIN.
 - Physical EDR appearance, live desktop/audio/network options, the final 17-scene sweep and remaining advanced plan contracts are not verified by this milestone. Ordinary direct clip-space culling differs from WE and is recorded in renderer limitations.
-
-## 2026-10-30 — Keyed shader constant played by a script without update
-
-A cover cross-fade (blend amount keyed 1 to 0, start-paused, played by a mediaThumbnailChanged handler that only calls thisObject.getAnimation().play()) stayed on its first key, so the previous-cover slot covered the current cover. The handler-only script was never started; it now runs on the clock its constant's timeline plays on.
-
-- Wallpaper Engine 2.8.0.42 probe (generated opacity cells, scene version 4, two shots): no script 255 / 255 before / 255 after; init plays with no update 0 / 255 / 0; init plays with update(value) 0 / 128 / 128 (not fixed, documented in renderer.md); static 0.25 64 / 64 / 64; keys not paused 0 / 0 / 0
-- `we_reference.py compare` on the probe: before mean 21.73, off48 11.7%, corr 0.634; after mean 7.69, off48 6.2%, corr 0.883 (the update(value) cell and the watermark remain)
-- Workshop 3280146735 in the poster harness with `WE_TEST_MEDIA_ARTWORK=64x64:e01010` and playing/thumbnail events: cover centre (30,30,30) before, (224,16,16) after, at 8 s and 15 s
-- Not compared: that wallpaper against Wallpaper Engine (the VM has no player, so its card hides on PLAYBACK_STOPPED), and a live Apple Music cover in the app (needs a desktop run)
-- Cost: about 0.36 µs per tick per such constant (one update-less script evaluation, as other handler-only scripts)
-- `scenescript_behavior_test --gtest_filter=ScriptKeyedSettingObject.*`: 5 passed; both new tests failed before the fix
-- `python3 scripts/check_renderer.py` — exit 0; local-corpus tests skipped (no corpus environment)
-- `python3 scripts/test.py` — 4211 passed, 0 failed, 49 skipped (after clearing build-product xattrs and rebuilding a stale `libwallpaper_bridge.a` with `build.py --renderer-only`)
