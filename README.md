@@ -366,7 +366,7 @@ Engine you own; the app bundles neither.
 <p align="center">
   <sub>
     Made for a more personal Mac.<br>
-    An independent project. Not affiliated with Wallpaper Engine or Valve.<br>
+    A project of <a href="https://mmfoundation.dev/">MMFoundation</a>. Not affiliated with Wallpaper Engine or Valve.<br>
     Wallpapers shown: <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3632513108">千咲 · 不散的春之花</a> and <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3276911872">流萤 · 仲夏萤火之约</a> by 夜莺Night, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3521337568">Cyberpunk: Edgerunner-Lucy</a> by 凉粥, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3648679058">RedBull F1 2026</a> by a bad driver, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3288938880">绝区零 · 艾莲乔</a> by BIGDEECK and <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3626305963">Into The Abyss</a> by Blloopy. All artwork rights remain with their owners.
   </sub>
 </p>

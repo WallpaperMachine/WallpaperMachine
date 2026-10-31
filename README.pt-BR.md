@@ -365,7 +365,7 @@ Engine que você tenha; o app não inclui nenhum dos dois.
 <p align="center">
   <sub>
     Feito para um Mac mais a sua cara.<br>
-    Um projeto independente. Sem vínculo com o Wallpaper Engine nem com a Valve.<br>
+    Um projeto da <a href="https://mmfoundation.dev/">MMFoundation</a>. Sem vínculo com o Wallpaper Engine nem com a Valve.<br>
     Papéis de parede exibidos: <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3632513108">千咲 · 不散的春之花</a> e <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3276911872">流萤 · 仲夏萤火之约</a>, de 夜莺Night, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3521337568">Cyberpunk: Edgerunner-Lucy</a>, de 凉粥, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3648679058">RedBull F1 2026</a>, de a bad driver, <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3288938880">绝区零 · 艾莲乔</a>, de BIGDEECK, e <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3626305963">Into The Abyss</a>, de Blloopy. Todos os direitos das obras pertencem aos seus donos.
   </sub>
 </p>

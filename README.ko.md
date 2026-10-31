@@ -358,7 +358,7 @@ GPL-2.0-only 정책에 따라 2026-10-17에 제거되었습니다. 이 구성 �
 <p align="center">
   <sub>
     더 나다운 Mac을 위해.<br>
-    독립 프로젝트입니다. Wallpaper Engine 및 Valve와 관련이 없습니다.<br>
+    <a href="https://mmfoundation.dev/">MMFoundation</a>의 프로젝트입니다. Wallpaper Engine 및 Valve와 관련이 없습니다.<br>
     표시된 배경화면: 夜莺Night의 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3632513108">千咲 · 不散的春之花</a>와 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3276911872">流萤 · 仲夏萤火之约</a>, 凉粥의 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3521337568">Cyberpunk: Edgerunner-Lucy</a>, a bad driver의 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3648679058">RedBull F1 2026</a>, BIGDEECK의 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3288938880">绝区零 · 艾莲乔</a>, Blloopy의 <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3626305963">Into The Abyss</a>. 모든 작품의 권리는 각 소유자에게 있습니다.
   </sub>
 </p>
